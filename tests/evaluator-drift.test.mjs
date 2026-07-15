@@ -28,27 +28,9 @@ function requiredMetricSet(resultSchema, modelFamily) {
   return new Set(oneOfBranch(resultSchema, modelFamily).properties.metrics.required);
 }
 
-function resolveLocalRef(schema, ref) {
-  assert.ok(ref.startsWith("#/"), `unexpected non-local ref ${ref}`);
-  return ref
-    .slice(2)
-    .split("/")
-    .reduce((current, segment) => current?.[segment], schema);
-}
-
-async function scenarioInputProperties(scenarioSchema, family) {
-  if (family === "aircraft_support_v1") {
-    const inputSchema = await readJson("contracts/aircraft_support_v1_input.schema.json");
-    return inputSchema.properties;
-  }
-  const selectorConst = "AviationSupportModelSelector";
-  const branch = scenarioSchema.oneOf.find((candidate) => {
-    const ref = candidate.properties?.simulation_model?.$ref;
-    return ref && ref.endsWith(`/${selectorConst}`);
-  });
-  const inputRef = branch?.properties?.simulation_inputs?.$ref;
-  assert.ok(inputRef, `missing scenario input branch for ${family}`);
-  return resolveLocalRef(scenarioSchema, inputRef).properties;
+async function scenarioInputProperties() {
+  const inputSchema = await readJson("contracts/aircraft_support_v1_input.schema.json");
+  return inputSchema.properties;
 }
 
 test("project schema required roots stay aligned with frontend Project JSON contract", async () => {
@@ -76,34 +58,45 @@ test("project schema keeps airports as string inputs", async () => {
 test("schema manifest lists every checked fixture and each fixture validates", async () => {
   const manifest = await readJson("contracts/README.md.json");
   const expectedFixtures = [
-    "tests/fixtures/aviation_support_project.json",
-    "tests/fixtures/aviation_support_scenario.json",
-    "tests/fixtures/aviation_support_run.json",
-    "tests/fixtures/aviation_support_result.json",
-    "tests/fixtures/aviation_support_artifact_manifest.json",
+    "tests/fixtures/aircraft_support_v1_project.json",
+    "tests/fixtures/aircraft_support_v1_scenario.json",
+    "tests/fixtures/aircraft_support_v1_run.json",
+    "tests/fixtures/aircraft_support_v1_result.json",
+    "tests/fixtures/aircraft_support_v1_artifact_manifest.json",
   ];
 
   assert.deepEqual(manifest.fixture_files, expectedFixtures);
 
   const fixtureSchemas = {
-    "tests/fixtures/aviation_support_project.json": "contracts/project.schema.json",
-    "tests/fixtures/aviation_support_scenario.json": "contracts/scenario.schema.json",
-    "tests/fixtures/aviation_support_run.json": "contracts/run.schema.json",
-    "tests/fixtures/aviation_support_result.json": "contracts/result.schema.json",
-    "tests/fixtures/aviation_support_artifact_manifest.json": "contracts/artifact_manifest.schema.json",
+    "tests/fixtures/aircraft_support_v1_project.json": "contracts/project.schema.json",
+    "tests/fixtures/aircraft_support_v1_scenario.json": "contracts/scenario.schema.json",
+    "tests/fixtures/aircraft_support_v1_run.json": "contracts/run.schema.json",
+    "tests/fixtures/aircraft_support_v1_result.json": "contracts/result.schema.json",
+    "tests/fixtures/aircraft_support_v1_artifact_manifest.json": "contracts/artifact_manifest.schema.json",
   };
 
   for (const fixturePath of manifest.fixture_files) {
     const schema = await readJson(fixtureSchemas[fixturePath]);
     const fixture = await readJson(fixturePath);
-    assert.deepEqual(validateSchema(schema, fixture), [], `${fixturePath} drifted from ${fixtureSchemas[fixturePath]}`);
+    const referencedSchemas = fixturePath.endsWith("_scenario.json")
+      ? {
+          "https://spare-mvp.local/contracts/aircraft_support_v1_input.schema.json": await readJson(
+            "contracts/aircraft_support_v1_input.schema.json"
+          ),
+        }
+      : {};
+    assert.deepEqual(
+      validateSchema(schema, fixture, "$", referencedSchemas),
+      [],
+      `${fixturePath} drifted from ${fixtureSchemas[fixturePath]}`
+    );
   }
 });
 
 test("schema manifest traces Result contracts to normalized model snapshots", async () => {
   const manifest = await readJson("contracts/README.md.json");
   assert.deepEqual(manifest.source_inputs, [
-    "src/spare_mvp_abm/aviation_support/model.py snapshot()",
+    "src/spare_mvp_abm/aircraft_support_v1/model.py snapshot()",
     "Simulation Adapter Result normalization",
   ]);
   assert.equal(manifest.source_inputs.some((source) => source.includes("visualization_state()")), false);
@@ -134,6 +127,7 @@ test("schema validator rejects null for object-typed values", () => {
 test("scenario adapter mapping covers every compiled simulation input for each model family", async () => {
   const scenarioSchema = await readJson("contracts/scenario.schema.json");
   const mapping = await readJson("contracts/scenario_adapter_mapping.json");
+  assert.deepEqual(Object.keys(mapping.model_families), ["aircraft_support_v1"]);
 
   for (const [family, familyMapping] of Object.entries(mapping.model_families)) {
     const scenarioInputs = Object.keys(await scenarioInputProperties(scenarioSchema, family)).sort();
@@ -153,25 +147,6 @@ test("scenario adapter mapping covers every compiled simulation input for each m
       }
     }
   }
-
-  assert.equal(mapping.model_families.aviation_support.simulation_inputs.aircraft_count.constructor_param, "aircraft_count");
-  assert.equal(
-    mapping.model_families.aviation_support.simulation_inputs.lru_failure_multiplier.constructor_param,
-    "lru_failure_multiplier"
-  );
-  assert.equal(mapping.model_families.aviation_support.simulation_inputs.maintenance_bays.constructor_param, "maintenance_bays");
-  assert.equal(mapping.model_families.aviation_support.simulation_inputs.mission_count.constructor_param, "mission_count");
-});
-
-test("aviation mapping exposes approved formal execution constructor rules", async () => {
-  const mapping = await readJson("contracts/scenario_adapter_mapping.json");
-  const aviationInputs = mapping.model_families.aviation_support.simulation_inputs;
-
-  for (const field of ["mechanic_teams", "fuel_trucks", "maintenance_bays", "lru_failure_multiplier"]) {
-    assert.equal(aviationInputs[field].status, undefined, `${field} should be executable after M9.4 alignment`);
-    assert.equal(aviationInputs[field].constructor_param, field, `${field} should publish its constructor mapping`);
-    assert.equal(typeof aviationInputs[field].source, "string");
-  }
 });
 
 test("aircraft support mapping keeps identity metadata separate from formal Monte Carlo config", async () => {
@@ -187,64 +162,50 @@ test("aircraft support mapping keeps identity metadata separate from formal Mont
   assert.doesNotMatch(inputs.monte_carlo.source, /project\.monteCarlo/);
 });
 
-test("scenario schema no longer includes the retired smoke branch", async () => {
+test("scenario schema exposes only the current aircraft_support_v1 selector", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
 
   assert.equal(schema.$defs.SmokeModelSelector, undefined);
   assert.equal(schema.$defs.SmokeInputs, undefined);
-  assert.deepEqual(schema.properties.simulation_model.properties.family.enum, ["aviation_support", "aircraft_support_v1"]);
-  assert.deepEqual(schema.properties.simulation_model.properties.model_id.enum, ["AviationSupportModel", "AircraftSupportV1Model"]);
+  assert.equal(schema.$defs.AviationSupportModelSelector, undefined);
+  assert.equal(schema.$defs.AviationSupportInputs, undefined);
+  assert.equal(schema.properties.simulation_model.properties.family.const, "aircraft_support_v1");
+  assert.equal(schema.properties.simulation_model.properties.model_id.const, "AircraftSupportV1Model");
 });
 
-test("schema selectors label aviation_support as legacy contract evidence", async () => {
-  const scenarioSchema = await readJson("contracts/scenario.schema.json");
-  const runSchema = await readJson("contracts/run.schema.json");
-  const legacyText = [
-    scenarioSchema.$defs.AviationSupportModelSelector.description,
-    scenarioSchema.$defs.AviationSupportInputs.description,
-    scenarioSchema.properties.simulation_model.properties.family.description,
-    scenarioSchema.properties.simulation_model.properties.model_id.description,
-    runSchema.properties.model_family.description,
-    runSchema.properties.model_id.description,
-  ].join("\n");
-
-  assert.match(legacyText, /aviation_support/);
-  assert.match(legacyText, /legacy contract evidence/);
-  assert.match(legacyText, /retired formal runtime/);
-  assert.match(legacyText, /aircraft_support_v1/);
-});
-
-test("result schema keeps aviation support metrics scoped to historical fixtures", async () => {
+test("result schema exposes only aircraft_support_v1 metrics", async () => {
   const schema = await readJson("contracts/result.schema.json");
-  const aviationRequired = requiredMetricSet(schema, "aviation_support");
+  const currentRequired = requiredMetricSet(schema, "aircraft_support_v1");
 
   assert.equal(oneOfBranch(schema, "smoke"), undefined);
-  assert.deepEqual(schema.properties.model_family.enum, ["aviation_support", "aircraft_support_v1"]);
+  assert.equal(oneOfBranch(schema, "aviation_support"), undefined);
+  assert.equal(schema.properties.model_family.const, "aircraft_support_v1");
   assert.deepEqual(
-    aviationRequired,
+    currentRequired,
     new Set([
       "sortie_completion_rate",
       "available_aircraft",
       "active_jobs",
       "spare_stock_total",
       "avg_departure_delay",
+      "maintenance_backlog",
+      "lru_failures",
     ])
   );
-  assert.equal(aviationRequired.has("mission_success_rate"), false);
 });
 
-test("aviation support result metrics stay aligned with snapshot fields", async () => {
-  const modelSource = await readText("src/spare_mvp_abm/aviation_support/model.py");
-  const snapshotMatch = modelSource.match(/def snapshot\(self\) -> dict:[\s\S]*?return \{([\s\S]*?)\n        \}/);
-  assert.ok(snapshotMatch, "could not find AviationSupportModel snapshot return fields");
+test("aircraft support result metrics stay aligned with snapshot fields", async () => {
+  const modelSource = await readText("src/spare_mvp_abm/aircraft_support_v1/model.py");
+  const snapshotMatch = modelSource.match(/def snapshot\(self\) -> dict\[str, Any\]:[\s\S]*?return \{([\s\S]*?)\n        \}/);
+  assert.ok(snapshotMatch, "could not find AircraftSupportV1Model snapshot return fields");
 
   const sourceMetricIds = new Set(
     [...snapshotMatch[1].matchAll(/"([^"]+)":/g)].map((match) => match[1])
   );
   const schema = await readJson("contracts/result.schema.json");
-  const aviationRequired = requiredMetricSet(schema, "aviation_support");
+  const currentRequired = requiredMetricSet(schema, "aircraft_support_v1");
 
-  for (const metricId of aviationRequired) {
+  for (const metricId of currentRequired) {
     assert.ok(sourceMetricIds.has(metricId), `${metricId} is required by schema but absent from snapshot()`);
   }
 });
@@ -252,7 +213,7 @@ test("aviation support result metrics stay aligned with snapshot fields", async 
 test("artifact manifest preserves run and scenario identity chain", async () => {
   const schema = await readJson("contracts/artifact_manifest.schema.json");
 
-  for (const family of ["aviation_support"]) {
+  for (const family of ["aircraft_support_v1"]) {
     const run = await readJson(`tests/fixtures/${family}_run.json`);
     const scenario = await readJson(`tests/fixtures/${family}_scenario.json`);
     const result = await readJson(`tests/fixtures/${family}_result.json`);

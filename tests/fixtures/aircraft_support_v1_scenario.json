@@ -1,0 +1,143 @@
+{
+  "schema_version": "scenario-v0",
+  "scenario_id": "scenario-aircraft-support-contract-001",
+  "project_id": "project-aircraft-support-contract-001",
+  "scenario_version": "scenario-v0.1",
+  "simulation_model": {
+    "family": "aircraft_support_v1",
+    "model_id": "AircraftSupportV1Model",
+    "contract_version": "1.0.0"
+  },
+  "compiled_by": "Simulation Adapter Agent",
+  "compiled_from": {
+    "project_id": "project-aircraft-support-contract-001",
+    "project_version": "project-v0.1",
+    "project_schema_version": "project-v0",
+    "mesa_contract_version": "1.0.0"
+  },
+  "simulation_inputs": {
+    "schema_version": "aircraft-support-v1-input-v0",
+    "project_identity": {
+      "project_id": "project-aircraft-support-contract-001",
+      "project_version": "project-v0.1",
+      "scenario_id": "aircraft-support-contract-demo",
+      "source_import_id": null
+    },
+    "mission_profile": {
+      "profile_id": "mission-profile-current-001",
+      "name": "current aircraft support mission",
+      "duration_minutes": 60,
+      "basic_missions": [
+        {
+          "id": "basic-small",
+          "name": "small sortie"
+        }
+      ],
+      "composite_tasks": [],
+      "periodic_tasks": [],
+      "mission_phases": [
+        {
+          "id": "phase-sortie",
+          "name": "sortie",
+          "durationMinutes": 30
+        }
+      ],
+      "airports": [
+        {
+          "id": "airport-a",
+          "name": "A"
+        }
+      ]
+    },
+    "aircraft": {
+      "fleet_count": 1,
+      "initial_ready": 1,
+      "models": [
+        "J-15"
+      ],
+      "assets": [
+        {
+          "tail_number": "J15-001",
+          "aircraft_type": "J-15",
+          "model": "J-15",
+          "initial_state": "available",
+          "airport": "A",
+          "airport_id": "airport-a"
+        }
+      ]
+    },
+    "equipment_tree": {
+      "root_component_id": "whole-aircraft",
+      "components": [
+        {
+          "id": "whole-aircraft",
+          "name": "whole aircraft",
+          "quantity": 1,
+          "failure_rate": 0.01
+        }
+      ]
+    },
+    "support_network": {
+      "nodes": [
+        {
+          "id": "node-a",
+          "name": "node A",
+          "personnel_capacity": 1,
+          "equipment_capacity": 1,
+          "inventory": {
+            "aircraft_support_v1_spares": 2
+          },
+          "transport_policies": []
+        }
+      ]
+    },
+    "support_activities": {
+      "activities": [
+        {
+          "id": "corrective",
+          "name": "corrective",
+          "activity_type": "corrective",
+          "equipment_id": "whole-aircraft",
+          "resource_id": "node-a-personnel",
+          "jobs": [
+            {
+              "activityCode": "job-1"
+            }
+          ]
+        }
+      ]
+    },
+    "time": {
+      "duration_minutes": 60,
+      "tick_minutes": 1,
+      "sample_every_minutes": 30,
+      "max_state_frames_single": 120,
+      "requested_steps": 2
+    },
+    "monte_carlo": {
+      "sample_count": 1,
+      "sweep": {
+        "failureRates": [
+          1.0
+        ],
+        "spareMultipliers": [
+          1.0
+        ],
+        "supportCapacities": [
+          1
+        ]
+      }
+    },
+    "seed": 20260716,
+    "stop_policy": {
+      "schema_version": "stop-policy-v0",
+      "mode": "or",
+      "conditions": [
+        {
+          "type": "duration",
+          "duration_minutes": 60
+        }
+      ]
+    }
+  }
+}
