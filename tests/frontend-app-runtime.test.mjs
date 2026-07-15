@@ -2618,11 +2618,22 @@ test("experiment plan save posts composed projectJson without mutating source pr
     await runtime.change("[data-experiment-seed-policy]", {}, { value: "fixed" });
     await runtime.change("[data-experiment-seed-base]", {}, { value: "909", type: "number" });
     await runtime.change("[data-experiment-stop-mode]", {}, { value: "and" });
+    assert.match(runtime.appNode.innerHTML, /data-experiment-stop-condition="duration"[^>]*checked/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-stop-condition="failure"[^>]*checked/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-stop-condition="specifiedTime"[^>]*checked/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-stop-time-minute[^>]*disabled/);
     await runtime.change(
       "[data-experiment-stop-condition]",
-      { experimentStopCondition: "failure" },
+      { experimentStopCondition: "specifiedTime" },
+      { checked: false, type: "checkbox" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-experiment-stop-time-minute[^>]*disabled/);
+    await runtime.change(
+      "[data-experiment-stop-condition]",
+      { experimentStopCondition: "specifiedTime" },
       { checked: true, type: "checkbox" }
     );
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-stop-time-minute[^>]*disabled/);
     await runtime.click("[data-scenario-override-add]");
     await runtime.change(
       "[data-scenario-override-path]",
@@ -2653,7 +2664,7 @@ test("experiment plan save posts composed projectJson without mutating source pr
     assert.deepEqual(body.config.stopPolicy, {
       schemaVersion: "stop-policy-v0",
       mode: "and",
-      conditions: [{ type: "duration" }, { type: "failure" }]
+      conditions: [{ type: "duration" }, { type: "failure" }, { type: "specifiedTime", minute: 1440 }]
     });
     assert.equal(body.config.projectJson.supportResources[0].quantity, 12);
     assert.equal(body.config.analysisRequests.largeSample.samples, 5);

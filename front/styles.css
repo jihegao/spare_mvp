@@ -542,6 +542,42 @@ h4 {
   gap: 12px;
 }
 
+.experiment-stop-policy-grid,
+.experiment-stop-conditions {
+  display: grid;
+  gap: 12px;
+}
+
+.experiment-stop-condition-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.experiment-stop-condition-checkbox {
+  width: 42px;
+  min-height: 40px;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.experiment-stop-condition-field {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+}
+
+.experiment-stop-minute-field input:disabled {
+  cursor: not-allowed;
+  background: #eef2f7;
+  color: var(--muted);
+}
+
 .preventive-rule-row {
   grid-column: 1 / -1;
   display: grid;

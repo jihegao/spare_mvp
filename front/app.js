@@ -2504,6 +2504,19 @@ function bindEvents() {
     if (experimentStopModeSelect) {
       const policy = experimentPlanStopPolicy();
       policy.mode = experimentStopModeSelect.value === "and" ? "and" : "or";
+      if (policy.mode === "and") {
+        const conditionsByType = new Map(policy.conditions.map((condition) => [
+          normalizedExperimentStopConditionType(condition.type),
+          condition
+        ]));
+        policy.conditions = ["duration", "failure", "specifiedTime"].map((type) => {
+          const condition = conditionsByType.get(type);
+          if (type === "specifiedTime") {
+            return { type, minute: positiveExperimentStopMinute(condition?.minute ?? 1440) };
+          }
+          return condition || { type };
+        });
+      }
       delete policy.defaulted;
       experimentPlanDraft.stopPolicy = policy;
       experimentPlanBranchActive = true;
@@ -10539,17 +10552,28 @@ function renderExperimentStopPolicyControls(stopPolicy) {
       <h3>停止策略</h3>
       <span>${stopPolicy.mode === "and" ? "全部选中条件满足后停止" : "满足任一选中条件即停止"}</span>
     </div>
-    <div class="form-table-grid">
+    <div class="experiment-stop-policy-grid">
       <label>组合方式
         <select data-experiment-stop-mode>
           <option value="or" ${stopPolicy.mode === "or" ? "selected" : ""}>任一 OR</option>
           <option value="and" ${stopPolicy.mode === "and" ? "selected" : ""}>全部 AND</option>
         </select>
       </label>
-      <label><input data-experiment-stop-condition="duration" type="checkbox" ${conditions.has("duration") ? "checked" : ""}> 达到任务时长</label>
-      <label><input data-experiment-stop-condition="failure" type="checkbox" ${conditions.has("failure") ? "checked" : ""}> 任务失败</label>
-      <label><input data-experiment-stop-condition="specifiedTime" type="checkbox" ${conditions.has("specifiedTime") ? "checked" : ""}> 达到指定时间</label>
-      <label>停止分钟<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}" ${conditions.has("specifiedTime") ? "" : "disabled"}></label>
+      <div class="experiment-stop-conditions">
+        <div class="experiment-stop-condition-row">
+          <input class="experiment-stop-condition-checkbox" id="experiment-stop-condition-duration" data-experiment-stop-condition="duration" type="checkbox" aria-label="达到任务时长" ${conditions.has("duration") ? "checked" : ""}>
+          <label class="experiment-stop-condition-field" for="experiment-stop-condition-duration">达到任务时长</label>
+        </div>
+        <div class="experiment-stop-condition-row">
+          <input class="experiment-stop-condition-checkbox" id="experiment-stop-condition-failure" data-experiment-stop-condition="failure" type="checkbox" aria-label="任务失败" ${conditions.has("failure") ? "checked" : ""}>
+          <label class="experiment-stop-condition-field" for="experiment-stop-condition-failure">任务失败</label>
+        </div>
+        <div class="experiment-stop-condition-row">
+          <input class="experiment-stop-condition-checkbox" id="experiment-stop-condition-specified-time" data-experiment-stop-condition="specifiedTime" type="checkbox" aria-label="达到指定时间" ${conditions.has("specifiedTime") ? "checked" : ""}>
+          <label class="experiment-stop-condition-field" for="experiment-stop-condition-specified-time">达到指定时间</label>
+        </div>
+        <label class="experiment-stop-minute-field">停止分钟<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}" ${conditions.has("specifiedTime") ? "" : "disabled"}></label>
+      </div>
     </div>
   `;
 }
