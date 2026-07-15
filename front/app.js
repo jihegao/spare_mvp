@@ -6,6 +6,7 @@ import {
   getVisibleFeaturePagesForRole,
   groupFeaturePages
 } from "./feature-catalog.mjs";
+import { buildPermissionMenuTree, PERMISSION_MENU_ROLES } from "./permission-menu-tree.mjs";
 import { normalizeAviationSupportState } from "./aviation-support-state.mjs";
 import {
   buildBackendProjectJson,
@@ -4497,18 +4498,32 @@ function renderSystemUserEditor() {
 }
 
 function renderPermissionManagementConfig() {
+  const menuTree = buildPermissionMenuTree();
   return `
-    <p class="inline-status">${htmlEscape(permissionConfigStatus)}</p>
-    ${permissionConfigFeature ? renderPermissionConfigEditor() : ""}
-    <div class="table-wrap">
+    <p class="inline-status">按左侧菜单的最小叶子项展示当前角色可见性；此处不修改既有三类角色权限口径。</p>
+    <div class="table-wrap permission-menu-table-wrap">
       <table>
-        <thead><tr><th>功能层级</th><th>系统管理员</th><th>数据管理员</th><th>项目用户</th><th>配置权限</th></tr></thead>
-        <tbody>${SYSTEM_PERMISSION_ROWS.map((row) => `
-          <tr><td>${row.feature}</td><td>${row.admin}</td><td>${row.data}</td><td>${row.user}</td><td><button type="button" class="inline-action" data-permission-configure="${htmlEscape(row.feature)}">配置权限</button></td></tr>
+        <thead><tr><th>左侧菜单层级</th>${PERMISSION_MENU_ROLES.map(({ label }) => `<th>${label}</th>`).join("")}</tr></thead>
+        <tbody>${menuTree.map(({ module, secondaryGroups }) => `
+          <tr class="permission-menu-module-row"><th colspan="4" scope="rowgroup">${htmlEscape(module)}</th></tr>
+          ${secondaryGroups.map(({ secondary, leaves }) => `
+            <tr class="permission-menu-secondary-row"><th colspan="4" scope="rowgroup">${htmlEscape(secondary)}</th></tr>
+            ${leaves.map(({ tertiary, visibility }) => `
+              <tr data-permission-menu-leaf="${htmlEscape(tertiary)}">
+                <th scope="row" class="permission-menu-leaf"><span aria-hidden="true">└</span>${htmlEscape(tertiary)}</th>
+                ${PERMISSION_MENU_ROLES.map(({ key }) => renderPermissionVisibility(visibility[key])).join("")}
+              </tr>
+            `).join("")}
+          `).join("")}
         `).join("")}</tbody>
       </table>
     </div>
   `;
+}
+
+function renderPermissionVisibility(visible) {
+  const label = visible ? "可见" : "不可见";
+  return `<td><span class="permission-visibility ${visible ? "is-visible" : "is-hidden"}">${label}</span></td>`;
 }
 
 function renderPermissionConfigEditor() {
