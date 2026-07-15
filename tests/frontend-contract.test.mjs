@@ -749,7 +749,7 @@ test("results analysis pages route to independent Mesa session wrappers", async 
   assert.match(appSource, /分析设定/);
   assert.match(appSource, /分析结果明细/);
   assert.match(appSource, /lite-mesa-analysis-setting-line/);
-  assert.match(appSource, /置信度目标/);
+  assert.match(appSource, /备件满足率下限/);
   assert.match(appSource, /data-lite-mesa-analysis-field="missionConfidenceTarget"/);
   assert.match(appSource, /data-lite-mesa-analysis-field="maxTimeWindow"/);
   assert.match(appSource, /data-lite-mesa-analysis-field="topN"/);
@@ -3891,9 +3891,13 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
 
   assert.match(carryDefinitionSource, /metricLabels: \["建议携行总数", "高优先级备件"\]/);
   assert.match(downtimeDefinitionSource, /metricLabels: \["停机因素项", "首要因素", "最高贡献度"\]/);
-  assert.match(metricFilterSource, /carry_list: new Set\(\["置信度目标", "样本数"\]\)/);
+  assert.match(metricFilterSource, /carry_list: new Set\(\["备件满足率下限", "置信度目标", "样本数"\]\)/);
   assert.match(metricFilterSource, /downtime_factors: new Set\(\["样本数"\]\)/);
   assert.doesNotMatch(carryBodySource, /<th>置信度目标<\/th>|row\.confidenceTarget/);
+  assert.match(carryBodySource, /data-carry-hide-zero/);
+  assert.match(carryBodySource, /隐藏需求数值为 0 的备件/);
+  assert.match(carryBodySource, /<th>机型<\/th>/);
+  assert.match(carryBodySource, /<th>有寿件<\/th><th>起落寿命<\/th><th>使用寿命\(h\)<\/th>/);
 });
 
 test("lite Mesa Monte Carlo detail uses decimal ratios and hides metadata chrome", async () => {

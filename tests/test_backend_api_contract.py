@@ -2537,6 +2537,9 @@ class BackendApiContractTest(unittest.TestCase):
         expected_types = ["发动机备件", "液压备件", "航电模块"]
         self.assertEqual([row["spareType"] for row in shortfall["rows"]], expected_types)
         self.assertEqual([row["spareType"] for row in carry["rows"]], expected_types)
+        self.assertTrue(all("aircraftModel" in row for row in carry["rows"]))
+        self.assertTrue(all("lifeLimited" in row and "lifeLandings" in row and "lifeHours" in row for row in carry["rows"]))
+        self.assertIn(["备件满足率下限", "0.90"], carry["metrics"])
         self.assertNotIn("aircraft_support_v1_spares", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
         self.assertNotIn("前出备件", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
         self.assertNotIn("仓库备件", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})

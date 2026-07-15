@@ -16599,7 +16599,7 @@ function liteMesaAnalysisSettingItems(definition, settings, result = null) {
     ["随机种子", settings.seed ?? 20260621]
   ];
   if (definition.analysisType === "carry_list") {
-    items.push(["目标函数", "携行备件总量最小"]);
+    items.push(["优化方向", "满足率达标后，备件利用率越高越好"]);
   }
   return items;
 }
@@ -16608,7 +16608,7 @@ function renderLiteMesaAnalysisEditableSettings(definition, settings) {
   if (definition.analysisType === "carry_list") {
     return `
       <label class="lite-mesa-setting-chip editable">
-        <span>置信度目标</span>
+        <span>备件满足率下限</span>
         <input data-lite-mesa-analysis-field="missionConfidenceTarget" type="number" min="0" max="1" step="0.01" value="${htmlEscape(settings.missionConfidenceTarget ?? 0.9)}">
       </label>
     `;
@@ -16759,7 +16759,7 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 
 function liteMesaAnalysisVisibleMetrics(definition, metrics) {
   const hiddenLabels = {
-    carry_list: new Set(["置信度目标", "样本数"]),
+    carry_list: new Set(["备件满足率下限", "置信度目标", "样本数"]),
     downtime_factors: new Set(["样本数"])
   }[definition.analysisType] || new Set();
   return (metrics || []).filter(([label]) => !hiddenLabels.has(String(label)));
@@ -16795,10 +16795,17 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     </table></div>`;
   }
   if (definition.analysisType === "carry_list") {
-    return `<div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>机型</th><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>优先级</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
-    </table></div>`;
+    const visibleRows = rows.filter((row) => !carryHideZeroDemand || Number(row.demand || 0) > 0);
+    return `
+      <div class="toolbar-row">
+        <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
+        <span>有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span>
+      </div>
+      <div class="table-wrap"><table class="lite-mesa-stat-table">
+        <thead><tr><th>机型</th><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>有寿件</th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
+        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="9">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+      </table></div>
+    `;
   }
   if (definition.analysisType === "mission_reliability") {
     return `
