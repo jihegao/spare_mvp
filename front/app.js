@@ -104,6 +104,7 @@ let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-equipment-system";
+const PLATFORM_DISPLAY_NAME = "备件规划及任务可靠度验证评估平台 V1.0";
 const DEMO_USERS = [
   { username: "admin", role: "系统管理员" },
   { username: "data", role: "数据管理员" },
@@ -2818,7 +2819,7 @@ function render() {
       <div class="left">
         <div class="brand-mark">BJGH</div>
         <div>
-          <h1>备件规划及任务可靠度验证评估平台</h1>
+          <h1>${PLATFORM_DISPLAY_NAME}</h1>
           <p>${htmlEscape(currentProject?.name || "未选择项目")}</p>
         </div>
       </div>
@@ -2839,7 +2840,7 @@ function renderLoginPage() {
     <main class="auth-page">
       <section class="auth-panel">
         <div class="brand-mark">BJGH</div>
-        <h1>备件规划及任务可靠度验证评估平台</h1>
+        <h1>${PLATFORM_DISPLAY_NAME}</h1>
         <p>登录后进入项目列表，再选择项目进入功能导航页。</p>
         <div class="auth-form">
           <label>用户名<input value="${currentUser.username}" aria-label="用户名" data-login-username></label>

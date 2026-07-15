@@ -387,7 +387,11 @@ test("support organization fourth-level tab ids resolve to distinct resource pag
 
 test("equipment system modeling is the post-project landing page and plan name links back to plan list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const indexSource = await readFile(new URL("../front/index.html", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  assert.match(appSource, /const PLATFORM_DISPLAY_NAME = "备件规划及任务可靠度验证评估平台 V1\.0"/);
+  assert.match(appSource, /<h1>\$\{PLATFORM_DISPLAY_NAME\}<\/h1>/);
+  assert.match(indexSource, /<h1>备件规划及任务可靠度验证评估平台 V1\.0<\/h1>/);
   assert.match(appSource, /const DEFAULT_FEATURE_ID = "spare-planning-equipment-system"/);
   assert.equal(getFeaturePageById("spare-planning-equipment-system").module, "备件规划评估模块");
   assert.equal(getFeaturePageById("spare-planning-equipment-system").secondary, "仿真建模");
