@@ -609,6 +609,7 @@ let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
 let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
 let rmsEquipmentImportStatus = "当前装备树为 RMS 分配工作台独立数据，未写入项目建模。";
+let rmsSelectedEquipmentNodeId = rmsAllocationProject.rootId;
 let rmsCalculationInFlight = false;
 let modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
 let modelingImportPublishedPackage = null;
@@ -1885,6 +1886,13 @@ function bindEvents() {
       return;
     }
 
+    const rmsEquipmentNodeButton = event.target.closest("[data-rms-equipment-node]");
+    if (rmsEquipmentNodeButton) {
+      rmsSelectedEquipmentNodeId = rmsEquipmentNodeButton.dataset.rmsEquipmentNode;
+      render();
+      return;
+    }
+
     const equipmentTemplateButton = event.target.closest("[data-equipment-download-template]");
     if (equipmentTemplateButton) {
       downloadEquipmentStructureTemplate();
@@ -2566,7 +2574,17 @@ function bindEvents() {
     const rmsInput = event.target.closest("[data-rms-path]");
     if (rmsInput) {
       setPath(rmsAllocationPlan, rmsInput.dataset.rmsPath, parseInput(rmsInput));
-      recalculateRmsAllocation();
+      render();
+      return;
+    }
+
+    const rmsEquipmentField = event.target.closest("[data-rms-equipment-field]");
+    if (rmsEquipmentField) {
+      updateRmsEquipmentField(
+        rmsEquipmentField.dataset.rmsEquipmentNodeId,
+        rmsEquipmentField.dataset.rmsEquipmentField,
+        rmsEquipmentField.value
+      );
       render();
       return;
     }
@@ -3122,6 +3140,7 @@ function renderMainComponent(page) {
     plan: rmsAllocationPlan,
     result: rmsAllocationResult,
     importStatus: rmsEquipmentImportStatus,
+    selectedEquipmentNodeId: rmsSelectedEquipmentNodeId,
     isCalculating: rmsCalculationInFlight,
     htmlEscape,
     fixed,
@@ -12462,6 +12481,7 @@ function applyRmsEquipmentImport(rowsOrProject, statusText) {
     baseProject: rmsAllocationProject
   });
   rmsAllocationProject = selectRmsAllocationEquipmentRoot(rmsAllocationProject, rmsEquipmentRoots(rmsAllocationProject)[0]?.id || rmsAllocationProject.rootId);
+  rmsSelectedEquipmentNodeId = rmsAllocationProject.rootId;
   const rootNames = rmsEquipmentRoots(rmsAllocationProject).map((node) => node.name);
   const selectedRoot = rmsEquipmentRoots(rmsAllocationProject).find((node) => node.id === rmsAllocationProject.rootId);
   const importedSimilarProduct = rmsAllocationProject.equipmentNodes.find((node) => node.rms?.similar)?.rms?.similar;
@@ -12488,6 +12508,7 @@ function applyRmsEquipmentImport(rowsOrProject, statusText) {
 
 function setRmsEquipmentRoot(rootId) {
   rmsAllocationProject = selectRmsAllocationEquipmentRoot(rmsAllocationProject, rootId);
+  rmsSelectedEquipmentNodeId = rmsAllocationProject.rootId;
   const roots = rmsEquipmentRoots(rmsAllocationProject);
   const selectedRoot = roots.find((node) => node.id === rmsAllocationProject.rootId);
   const currentSource = rmsAllocationPlan.methods?.similarProduct?.sourceModel || "";
@@ -12506,6 +12527,39 @@ function setRmsEquipmentRoot(rootId) {
       }
     }
   };
+  recalculateRmsAllocation();
+}
+
+function updateRmsEquipmentField(nodeId, field, rawValue) {
+  const node = rmsAllocationProject.equipmentNodes.find((item) => item.id === nodeId);
+  if (!node) return;
+  const value = String(rawValue ?? "").trim();
+  if (field === "name") {
+    if (!value) {
+      rmsEquipmentImportStatus = "系统名称不能为空。";
+      return;
+    }
+    node.name = value;
+  } else if (field === "model") {
+    node.model = value;
+  } else if (field === "quantity") {
+    const quantity = Number(value);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      rmsEquipmentImportStatus = "安装数必须为大于 0 的整数。";
+      return;
+    }
+    node.quantity = quantity;
+  } else if (field === "runningRatio") {
+    const runningRatio = Number(value);
+    if (!Number.isFinite(runningRatio) || runningRatio < 0 || runningRatio > 1) {
+      rmsEquipmentImportStatus = "运行比必须在 0 到 1 之间。";
+      return;
+    }
+    node.missionUse = { ...(node.missionUse || {}), runningRatio };
+  } else {
+    return;
+  }
+  rmsEquipmentImportStatus = "已更新 RMS 指标分配装备树独立数据。";
   recalculateRmsAllocation();
 }
 

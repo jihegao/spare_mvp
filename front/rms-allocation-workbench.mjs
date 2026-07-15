@@ -4,7 +4,7 @@ const RELIABILITY_METHODS = [
   ["similar", "相似产品分配法"]
 ];
 
-export function renderRmsAllocationWorkbench({ project, plan, result, importStatus, isCalculating = false, htmlEscape, fixed, pct }) {
+export function renderRmsAllocationWorkbench({ project, plan, result, importStatus, selectedEquipmentNodeId = project.rootId, isCalculating = false, htmlEscape, fixed, pct }) {
   const equipmentRoots = project.equipmentNodes.filter((node) => !node.parentId);
   return `
     <div class="rms-allocation-workbench" aria-busy="${isCalculating ? "true" : "false"}">
@@ -19,7 +19,7 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
             <h4>装备结构树</h4>
             <span>独立导入数据</span>
           </div>
-          ${renderEquipmentTree(project, result, htmlEscape)}
+          ${renderEquipmentTree(project, result, selectedEquipmentNodeId, htmlEscape)}
         </aside>
         <section class="detail-panel equipment-system-table-panel rms-installation-panel">
           <div class="detail-card">
@@ -29,9 +29,7 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
             <label class="rms-file-button rms-import-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
             <p class="rms-import-status">${htmlEscape(importStatus || "当前安装数为 RMS 分配工作台独立数据。")}</p>
           </div>
-          <div class="table-wrap"><table><thead><tr><th>系统名称</th><th>型号</th><th>安装数</th><th>运行比</th></tr></thead><tbody>
-            ${result.nodeResults.map((row) => `<tr><td>${htmlEscape(row.nodeName)}</td><td>${htmlEscape(row.model || "-")}</td><td>${row.installationCount}</td><td>${compactNumber(row.runningRatio)}</td></tr>`).join("")}
-          </tbody></table></div>
+          ${renderInstallationTable(project, selectedEquipmentNodeId, htmlEscape)}
           </div>
         </section>
       </section>
@@ -80,7 +78,26 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
   `;
 }
 
-function renderEquipmentTree(project, result, htmlEscape) {
+function renderInstallationTable(project, selectedNodeId, htmlEscape) {
+  const visibleNodes = rmsEquipmentSubtree(project, selectedNodeId);
+  const selectedNode = project.equipmentNodes.find((node) => node.id === selectedNodeId);
+  return `
+    <div class="rms-table-context">${htmlEscape(selectedNode?.name || "装备结构树")}及以下节点（${visibleNodes.length}）</div>
+    <div class="table-wrap"><table><thead><tr><th>系统名称</th><th>型号</th><th>安装数</th><th>运行比</th></tr></thead><tbody>
+      ${visibleNodes.map((node) => {
+        const runningRatio = runningRatioForNode(node);
+        return `<tr data-rms-equipment-row="${htmlEscape(node.id)}">
+          <td><input aria-label="${htmlEscape(node.name)} 系统名称" data-rms-equipment-field="name" data-rms-equipment-node-id="${htmlEscape(node.id)}" value="${htmlEscape(node.name)}"></td>
+          <td><input aria-label="${htmlEscape(node.name)} 型号" data-rms-equipment-field="model" data-rms-equipment-node-id="${htmlEscape(node.id)}" value="${htmlEscape(node.model || node.partNumber || "")}" placeholder="未填写"></td>
+          <td><input aria-label="${htmlEscape(node.name)} 安装数" data-rms-equipment-field="quantity" data-rms-equipment-node-id="${htmlEscape(node.id)}" type="number" min="1" step="1" value="${htmlEscape(node.quantity)}"></td>
+          <td><input aria-label="${htmlEscape(node.name)} 运行比" data-rms-equipment-field="runningRatio" data-rms-equipment-node-id="${htmlEscape(node.id)}" type="number" min="0" max="1" step="0.01" value="${htmlEscape(compactNumber(runningRatio))}"></td>
+        </tr>`;
+      }).join("")}
+    </tbody></table></div>
+  `;
+}
+
+function renderEquipmentTree(project, result, selectedNodeId, htmlEscape) {
   const rootNodes = project.equipmentNodes.filter((node) => !node.parentId);
   const childNodesByParent = project.equipmentNodes.reduce((acc, node) => {
     if (node.parentId) {
@@ -94,11 +111,11 @@ function renderEquipmentTree(project, result, htmlEscape) {
     return `
       <div class="tree-node-item">
         <div class="tree-node-row">
-          <span class="tree-node-label">
+          <button type="button" class="tree-node-label${node.id === selectedNodeId ? " selected" : ""}" data-rms-equipment-node="${htmlEscape(node.id)}">
             <span class="tree-node-toggle">•</span>
             <span class="tree-node-text">${htmlEscape(node.name)}</span>
-            <span class="tree-node-meta">${htmlEscape(node.level)} / 运行比 ${compactNumber(row?.runningRatio)}</span>
-          </span>
+            <span class="tree-node-meta">${htmlEscape(node.level)} / 运行比 ${compactNumber(row?.runningRatio ?? runningRatioForNode(node))}</span>
+          </button>
         </div>
         ${childNodesByParent[node.id]?.length ? `<div class="tree-node-children">${renderChildren(node.id)}</div>` : ""}
       </div>
@@ -114,7 +131,7 @@ function renderEquipmentTree(project, result, htmlEscape) {
           ${rootNodes.map((root) => `
             <div class="tree-node-item">
               <div class="tree-node-row">
-                <button type="button" class="tree-node-label${root.id === project.rootId ? " selected" : ""}" data-rms-equipment-root="${htmlEscape(root.id)}">
+                <button type="button" class="tree-node-label${root.id === selectedNodeId ? " selected" : ""}" data-rms-equipment-root="${htmlEscape(root.id)}" data-rms-equipment-node="${htmlEscape(root.id)}">
                   <span class="tree-node-toggle">${childNodesByParent[root.id]?.length ? "▼" : "•"}</span>
                   <span class="tree-node-text">${htmlEscape(root.name)}</span>
                   <span class="tree-node-meta">整机级</span>
@@ -127,6 +144,29 @@ function renderEquipmentTree(project, result, htmlEscape) {
       </div>
     </div>
   `;
+}
+
+function rmsEquipmentSubtree(project, selectedNodeId) {
+  const childNodesByParent = (project.equipmentNodes || []).reduce((acc, node) => {
+    if (node.parentId) {
+      acc[node.parentId] ||= [];
+      acc[node.parentId].push(node);
+    }
+    return acc;
+  }, {});
+  const visibleNodes = [];
+  const visit = (nodeId) => {
+    const node = project.equipmentNodes.find((item) => item.id === nodeId);
+    if (!node) return;
+    visibleNodes.push(node);
+    (childNodesByParent[node.id] || []).forEach((child) => visit(child.id));
+  };
+  visit(selectedNodeId);
+  return visibleNodes;
+}
+
+function runningRatioForNode(node) {
+  return node.missionUse?.runningRatio ?? node.missionUse?.dutyCycle ?? node.runningRatio ?? 1;
 }
 
 function input(label, path, value, type, step, htmlEscape) {

@@ -1638,6 +1638,32 @@ test("RMS method selection updates method-specific parameters at runtime", async
   }
 });
 
+test("RMS method changes retain results until the calculation overlay completes", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+
+  try {
+    const initialResultPanel = htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel");
+    assert.match(initialResultPanel, /25%/);
+
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
+
+    assert.match(runtime.appNode.innerHTML, /<option value="proportional" selected>比例分配法<\/option>/);
+    assert.equal(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), initialResultPanel);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    assert.equal(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), initialResultPanel);
+
+    await new Promise((resolve) => setTimeout(resolve, 2050));
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("RMS calculation shows a blocking two-second progress state before completing", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
 
@@ -1692,6 +1718,62 @@ test("RMS imported aircraft models filter the tree and remain available as simil
   }
 });
 
+test("RMS installation table filters to a selected subtree and persists editable node fields", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+
+  try {
+    const file = {
+      name: "rms-nested-tree.csv",
+      async text() {
+        return [
+          "id,parentId,name,model,level,quantity,runningRatio",
+          "root,,测试整机,PLATFORM,装备,1,1",
+          "power,root,动力系统,POWER-1,系统,2,1",
+          "engine,power,发动机,ENGINE-1,分系统,4,0.8",
+          "radar,root,雷达系统,RADAR-1,系统,1,0.5"
+        ].join("\n");
+      }
+    };
+
+    await runtime.change("[data-rms-equipment-import-file]", {}, { files: [file], value: file.name });
+    await runtime.click("[data-rms-equipment-node]", { rmsEquipmentNode: "power" });
+
+    const installationTable = runtime.appNode.innerHTML.slice(
+      runtime.appNode.innerHTML.indexOf('class="rms-table-context"'),
+      runtime.appNode.innerHTML.indexOf("</section>", runtime.appNode.innerHTML.indexOf('class="rms-table-context"'))
+    );
+    assert.match(installationTable, /动力系统及以下节点（2）/);
+    assert.match(installationTable, /动力系统/);
+    assert.match(installationTable, /发动机/);
+    assert.doesNotMatch(installationTable, /雷达系统/);
+
+    await runtime.change("[data-rms-equipment-field]", {
+      rmsEquipmentNodeId: "engine",
+      rmsEquipmentField: "name"
+    }, { value: "改进发动机" });
+    await runtime.change("[data-rms-equipment-field]", {
+      rmsEquipmentNodeId: "engine",
+      rmsEquipmentField: "model"
+    }, { value: "ENGINE-2" });
+    await runtime.change("[data-rms-equipment-field]", {
+      rmsEquipmentNodeId: "engine",
+      rmsEquipmentField: "quantity"
+    }, { value: "5" });
+    await runtime.change("[data-rms-equipment-field]", {
+      rmsEquipmentNodeId: "engine",
+      rmsEquipmentField: "runningRatio"
+    }, { value: "0.6" });
+
+    assert.match(runtime.appNode.innerHTML, /改进发动机/);
+    assert.match(runtime.appNode.innerHTML, /value="ENGINE-2"/);
+    assert.match(runtime.appNode.innerHTML, /value="5"/);
+    assert.match(runtime.appNode.innerHTML, /value="0\.6"/);
+    assert.match(runtime.appNode.innerHTML, /已更新 RMS 指标分配装备树独立数据。/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("RMS runtime shows an explicit failure when proportional weights sum to zero", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
   try {
@@ -1708,6 +1790,11 @@ test("RMS runtime shows an explicit failure when proportional weights sum to zer
     };
     await runtime.change("[data-rms-equipment-import-file]", {}, { files: [file], value: file.name });
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /方法不适用|RMS_ALLOCATION_ZERO_WEIGHT/);
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    await new Promise((resolve) => setTimeout(resolve, 2050));
 
     assert.match(runtime.appNode.innerHTML, /方法不适用/);
     assert.match(runtime.appNode.innerHTML, /RMS_ALLOCATION_ZERO_WEIGHT/);

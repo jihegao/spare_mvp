@@ -3932,6 +3932,9 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(appSource, /data-rms-path/);
   assert.match(appSource, /data-rms-equipment-import-file/);
   assert.match(appSource, /data-rms-equipment-root/);
+  assert.match(appSource, /data-rms-equipment-node/);
+  assert.match(appSource, /data-rms-equipment-field/);
+  assert.match(appSource, /function updateRmsEquipmentField/);
   assert.match(appSource, /normalizeRmsEquipmentImportRows/);
   assert.match(appSource, /selectRmsAllocationEquipmentRoot/);
   assert.match(appSource, /calculateRmsAllocation\(rmsAllocationPlan, rmsAllocationProject\)/);
@@ -3958,6 +3961,9 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(workbenchSource, /tree-node-label root/);
   assert.match(workbenchSource, /<th>系统名称<\/th><th>型号<\/th><th>安装数<\/th><th>运行比<\/th>/);
   assert.match(workbenchSource, /data-rms-equipment-root/);
+  assert.match(workbenchSource, /data-rms-equipment-node/);
+  assert.match(workbenchSource, /data-rms-equipment-field="name"/);
+  assert.match(workbenchSource, /及以下节点/);
   assert.doesNotMatch(workbenchSource, /<select data-rms-equipment-root/);
   assert.match(workbenchSource, /指标分配方法/);
   assert.match(workbenchSource, /等分配法/);
@@ -3984,6 +3990,12 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(workbenchSource, /rms-calculation-overlay/);
   assert.match(appSource, /function startRmsAllocationCalculation\(\)/);
   assert.match(appSource, /globalThis\.setTimeout\([\s\S]*?\}, 2000\);/);
+  const rmsInputChangeSource = appSource.slice(
+    appSource.indexOf('const rmsInput = event.target.closest("[data-rms-path]")'),
+    appSource.indexOf('const mcArrayInput = event.target.closest("[data-mc-array-path]")')
+  );
+  assert.match(rmsInputChangeSource, /setPath\(rmsAllocationPlan/);
+  assert.doesNotMatch(rmsInputChangeSource, /recalculateRmsAllocation\(\)/);
 });
 
 test("RMS allocation workbench renders parameters for only the selected method", () => {
@@ -4015,6 +4027,7 @@ test("RMS allocation workbench renders parameters for only the selected method",
   assert.match(equalHtml, /分配份额/);
   assert.match(equalHtml, /任务计算机LRU/);
   assert.match(equalHtml, /运行比 0\.65/);
+  assert.match(equalHtml, /value="0\.65"/);
 
   const proportionalHtml = renderWithMethod("proportional");
   assert.doesNotMatch(proportionalHtml, /比例修正系数|相似修正系数/);
