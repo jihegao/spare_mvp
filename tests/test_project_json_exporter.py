@@ -436,11 +436,39 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertEqual(clean["supportActivities"][0]["aircraftModel"], "J-15")
         self.assertEqual(clean["supportActivityJobs"][0]["applicableAircraft"], "J-15")
 
-    def test_exporter_rejects_basic_mission_support_activity_name_matching_only_legacy_name(self) -> None:
+    def test_exporter_migrates_basic_mission_support_activity_name_matching_legacy_name(self) -> None:
         project = self._polluted_project()
         project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
         project["supportActivities"][0]["name"] = "Legacy display name"
         project["supportActivities"][0]["activityName"] = "Canonical support plan"
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        self.assertEqual(clean["basicMissions"][0]["supportActivityName"], "Canonical support plan")
+        self.assertEqual(project["basicMissions"][0]["supportActivityName"], "Legacy display name")
+
+    def test_exporter_rejects_ambiguous_legacy_support_activity_name(self) -> None:
+        project = self._polluted_project()
+        project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
+        project["supportActivities"][0].update({"name": "Legacy display name", "activityName": "Canonical support plan"})
+        project["supportActivities"].append({
+            **deepcopy(project["supportActivities"][0]),
+            "id": "duplicate-legacy-display-name",
+            "activityName": "Other support plan",
+        })
+
+        with self.assertRaisesRegex(ValueError, "basicMissions.0.supportActivityName"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+    def test_exporter_rejects_legacy_name_targeting_duplicate_activity_name(self) -> None:
+        project = self._polluted_project()
+        project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
+        project["supportActivities"][0].update({"name": "Legacy display name", "activityName": "Canonical support plan"})
+        project["supportActivities"].append({
+            **deepcopy(project["supportActivities"][0]),
+            "id": "duplicate-canonical-support-plan",
+            "name": "Different legacy display name",
+        })
 
         with self.assertRaisesRegex(ValueError, "basicMissions.0.supportActivityName"):
             ProjectJsonExporter(target="aircraft_support_v1").export(project)

@@ -811,7 +811,7 @@ class BackendApiContractTest(unittest.TestCase):
             self.api.save_project(project)
         self.assertEqual(ctx.exception.code, "invalid_project")
 
-    def test_save_project_rejects_basic_mission_support_activity_name_matching_only_legacy_name(self) -> None:
+    def test_save_project_migrates_basic_mission_support_activity_name_matching_legacy_name(self) -> None:
         project = small_aircraft_support_project("project-invalid-support-activity-name")
         project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
         project["supportActivities"][0]["name"] = "Legacy display name"
@@ -819,15 +819,54 @@ class BackendApiContractTest(unittest.TestCase):
 
         validation = self.api.validate_project(project)
 
-        self.assertFalse(validation["ok"])
-        relationship_errors = [
-            error for error in validation["errors"]
-            if error["code"] == "invalid_basic_mission_support_activity_name"
-        ]
-        self.assertEqual(relationship_errors[0]["path"], "basicMissions[0].supportActivityName")
-        with self.assertRaises(BackendApiError) as ctx:
-            self.api.save_project(project)
-        self.assertEqual(ctx.exception.code, "invalid_project")
+        self.assertTrue(validation["ok"])
+        self.api.save_project(project)
+        stored = self.api.get_project(project["project_id"])
+        self.assertEqual(stored["basicMissions"][0]["supportActivityName"], "Canonical support plan")
+
+    def test_get_project_migrates_legacy_basic_mission_support_activity_name(self) -> None:
+        project = small_aircraft_support_project("project-loaded-legacy-support-activity-name")
+        project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
+        project["supportActivities"][0].update({
+            "name": "Legacy display name",
+            "activityName": "Canonical support plan",
+        })
+        self.api.repository.upsert_project(project)
+
+        loaded = self.api.get_project(project["project_id"])
+
+        self.assertEqual(loaded["basicMissions"][0]["supportActivityName"], "Canonical support plan")
+
+    def test_save_project_rejects_ambiguous_or_missing_legacy_support_activity_name_migration(self) -> None:
+        for suffix, activities in (
+            (
+                "ambiguous-legacy-name",
+                [
+                    {"id": "support-a", "name": "Legacy display name", "activityName": "Canonical support plan", "jobs": []},
+                    {"id": "support-b", "name": "Legacy display name", "activityName": "Other support plan", "jobs": []},
+                ],
+            ),
+            (
+                "missing-canonical-name",
+                [{"id": "support-a", "name": "Legacy display name", "jobs": []}],
+            ),
+        ):
+            with self.subTest(suffix=suffix):
+                project = small_aircraft_support_project(f"project-{suffix}")
+                project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
+                project["supportActivities"] = activities
+
+                validation = self.api.validate_project(project)
+
+                self.assertFalse(validation["ok"])
+                relationship_errors = [
+                    error for error in validation["errors"]
+                    if error["code"] == "invalid_basic_mission_support_activity_name"
+                ]
+                self.assertEqual(relationship_errors[0]["path"], "basicMissions[0].supportActivityName")
+                with self.assertRaises(BackendApiError) as ctx:
+                    self.api.save_project(project)
+                self.assertEqual(ctx.exception.code, "invalid_project")
 
     def test_save_project_rejects_duplicate_basic_mission_support_activity_name_matches(self) -> None:
         project = small_aircraft_support_project("project-duplicate-support-activity-name")
