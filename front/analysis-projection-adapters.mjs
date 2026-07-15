@@ -211,7 +211,10 @@ function normalizeMissionReliability(payload) {
     steepestDrop,
     profileReliability: clamp01(numberOrZero(data.profile_reliability ?? probability)),
     periodCompletionProbability: clamp01(numberOrZero(data.period_completion_probability)),
+    periodDurationDays: Math.max(0, numberOrZero(data.period_duration_days)),
+    totalSamples: Math.max(0, Math.round(numberOrZero(data.total_samples ?? data.valid_samples))),
     successfulSamples: Math.max(0, Math.round(numberOrZero(data.successful_samples))),
+    failedSamples: Math.max(0, Math.round(numberOrZero(data.failed_samples))),
     validSamples: Math.max(0, Math.round(numberOrZero(data.valid_samples))),
     metrics: [
       ["任务成功概率", fixed(probability, 2)],

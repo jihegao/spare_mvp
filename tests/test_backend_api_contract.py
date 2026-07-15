@@ -253,22 +253,27 @@ class BackendApiContractTest(unittest.TestCase):
             self.api.replace_project(project["project_id"], replacement, expected_updated_at=expected, actor_user_id="user-admin")
         self.assertEqual(conflict.exception.code, "project_version_conflict")
 
-    def test_seven_day_completion_and_four_downtime_contract(self) -> None:
-        daily_success = [{"day": day, "plannedWaves": 1, "successfulWaves": 1} for day in range(1, 8)]
-        daily_failure = copy.deepcopy(daily_success)
+    def test_arbitrary_period_completion_and_four_downtime_contract(self) -> None:
+        daily_success = [{"day": day, "plannedWaves": 1, "successfulWaves": 1} for day in range(1, 15)]
+        daily_failure = copy.deepcopy(daily_success[:7])
         daily_failure[3]["successfulWaves"] = 0
         reliability = _lite_mesa_mission_reliability_result(
             {"data": {"mission_success_probability": 0.91, "sortie_rate": 0.8}},
             [
-                {"metrics": {"ready_rate": 1, "failed_sorties": 0, "simulation_days": 7}, "daily_mission_reliability": daily_success},
+                {"metrics": {"ready_rate": 1, "failed_sorties": 0, "simulation_days": 14}, "daily_mission_reliability": daily_success},
                 {"metrics": {"ready_rate": 1, "failed_sorties": 1, "simulation_days": 7}, "daily_mission_reliability": daily_failure},
                 {"metrics": {"ready_rate": 1, "failed_sorties": 0, "simulation_days": 3}, "daily_mission_reliability": daily_success[:3]},
             ],
             {"maxTimeWindow": 20},
         )
-        self.assertEqual(reliability["successful_samples"], 1)
-        self.assertEqual(reliability["valid_samples"], 2)
-        self.assertEqual(reliability["period_completion_probability"], 0.5)
+        self.assertEqual(reliability["total_samples"], 3)
+        self.assertEqual(reliability["successful_samples"], 2)
+        self.assertEqual(reliability["failed_samples"], 1)
+        self.assertEqual(reliability["valid_samples"], 3)
+        self.assertAlmostEqual(reliability["period_completion_probability"], 2 / 3)
+        self.assertEqual(reliability["period_duration_days"], 14)
+        self.assertIn(["仿真实验总次数", "3"], reliability["metrics"])
+        self.assertIn(["整周期任务失败次数", "1"], reliability["metrics"])
         downtime = _lite_mesa_downtime_factors_result(
             {"data": []},
             {
@@ -2335,6 +2340,12 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(mission_payload["aggregate_metrics"]["simulation_days"], 3.0)
         self.assertEqual(downtime_payload["aggregate_metrics"]["simulation_days"], 3.0)
         self.assertEqual(sorted({row["dayIndex"] for row in mission_payload["wave_rows"]}), [1, 2, 3])
+        self.assertEqual(mission_payload["period_duration_days"], 3.0)
+        self.assertEqual(mission_payload["period_total_samples"], 1)
+        self.assertEqual(
+            mission_payload["successful_samples"] + mission_payload["period_failed_samples"],
+            mission_payload["period_total_samples"],
+        )
 
     def test_lite_mesa_downtime_event_snapshots_use_model_event_log_snapshots(self) -> None:
         snapshots = _lite_mesa_downtime_event_snapshots(

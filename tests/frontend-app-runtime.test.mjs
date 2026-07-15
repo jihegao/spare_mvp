@@ -1280,8 +1280,11 @@ test("task reliability analysis renders mission wave average mission success lin
     assert.match(runtime.appNode.innerHTML, /任务波次平均成功率/);
     assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
     assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);
-    assert.match(runtime.appNode.innerHTML, /任务失败次数/);
-    assert.match(runtime.appNode.innerHTML, /任务失败次数[\s\S]*<strong>3<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /仿真实验总次数/);
+    assert.match(runtime.appNode.innerHTML, /整周期任务失败次数/);
+    assert.match(runtime.appNode.innerHTML, /任务周期[\s\S]*21 天/);
+    assert.match(runtime.appNode.innerHTML, /成功 \/ 总实验[\s\S]*1 \/ 27/);
+    assert.match(runtime.appNode.innerHTML, /整周期任务可靠度/);
     assert.match(runtime.appNode.innerHTML, />1\.0<\/text>/);
     assert.match(runtime.appNode.innerHTML, />0\.5<\/text>/);
     assert.match(runtime.appNode.innerHTML, />0\.0<\/text>/);
@@ -3746,10 +3749,11 @@ async function setupRuntimeApp({
 		          ["因维修延误导致的任务取消次数", "2"]
 		        ],
 		        mission_reliability: [
-		          ["任务成功率", "0.800"],
-		          ["出动架次率", "0.750"],
-		          ["战备完好率", "0.460"],
-		          ["任务失败次数", "3"]
+		          ["仿真实验总次数", String(samples)],
+		          ["整周期任务成功次数", "1"],
+		          ["整周期任务失败次数", String(Math.max(0, samples - 1))],
+		          ["整周期任务可靠度", samples ? (1 / samples).toFixed(3) : "0.000"],
+		          ["任务可靠度百分比", samples ? `${Math.round(100 / samples)}%` : "0%"]
 		        ]
 		      };
           const runId = `lite-mesa-runtime-${analysisType}`;
@@ -3824,6 +3828,11 @@ async function setupRuntimeApp({
               }
 	            ]
 	          : [],
+	        period_duration_days: analysisType === "mission_reliability" ? 21 : null,
+	        period_total_samples: analysisType === "mission_reliability" ? samples : null,
+	        successful_samples: analysisType === "mission_reliability" ? 1 : null,
+	        period_failed_samples: analysisType === "mission_reliability" ? Math.max(0, samples - 1) : null,
+	        period_completion_probability: analysisType === "mission_reliability" && samples ? 1 / samples : null,
 	        visualization_state_series: createRuntimeVisualizationStateSeries(runId),
 	        limitations: ["本次分析结果不写入正式结果账本。"],
 	        message: "",

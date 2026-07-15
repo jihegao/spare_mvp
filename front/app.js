@@ -147,10 +147,10 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
   mission_reliability: {
     experimentId: "project_baseline_at_current_granularity",
     title: "任务可靠度评估",
-    subtitle: "任务成功概率、出动架次率和目标达成统计",
+    subtitle: "按完整任务周期统计全部任务均成功的实验比例",
     settingSubject: "任务维度与时间维度",
     settingMethod: "目标达成统计",
-    metricLabels: ["任务成功率", "出动架次率", "战备完好率", "任务失败次数"]
+    metricLabels: ["仿真实验总次数", "整周期任务成功次数", "整周期任务失败次数", "整周期任务可靠度", "任务可靠度百分比"]
   },
   downtime_factors: {
     experimentId: "project_baseline_at_current_granularity",
@@ -16418,7 +16418,7 @@ function renderFormalProjectionBody(formalProjection) {
     const rows = formalProjection.rows || [];
     const drop = formalProjection.steepestDrop;
     return `
-      <div class="kpi-strip"><div class="kpi-card"><span>任务剖面可靠性</span><strong>${pct(formalProjection.profileReliability)}</strong></div><div class="kpi-card"><span>连续7天完成可靠性</span><strong>${pct(formalProjection.periodCompletionProbability)}</strong></div><div class="kpi-card"><span>成功/有效样本</span><strong>${formalProjection.successfulSamples}/${formalProjection.validSamples}</strong></div></div><div class="analysis-chart-panel"><div class="chart-title">projection payload 任务波次平均成功率</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
+      <div class="kpi-strip"><div class="kpi-card"><span>任务剖面可靠性</span><strong>${pct(formalProjection.profileReliability)}</strong></div><div class="kpi-card"><span>整周期任务可靠度</span><strong>${pct(formalProjection.periodCompletionProbability)}</strong></div><div class="kpi-card"><span>成功/总样本</span><strong>${formalProjection.successfulSamples}/${formalProjection.totalSamples}</strong></div><div class="kpi-card"><span>失败样本</span><strong>${formalProjection.failedSamples}</strong></div></div><div class="analysis-chart-panel"><div class="chart-title">projection payload 任务波次平均成功率</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
       <div class="decision-support-card"><strong>最大下降波次</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，${htmlEscape(drop.fromTime)} 到 ${htmlEscape(drop.toTime)}，下降 ${fixed(drop.drop, 3)}` : "未发现下降波次"}</span></div>
       <div class="table-wrap">
         <table>
@@ -16825,6 +16825,11 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     waveRows: waveRows.length ? waveRows : rows,
     dailyRows: Array.isArray(payload.daily_rows) ? payload.daily_rows : [],
     eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
+    periodDurationDays: Number(payload.period_duration_days || 0),
+    periodTotalSamples: Number(payload.period_total_samples || payload.sample_count || 0),
+    periodSuccessfulSamples: Number(payload.successful_samples || 0),
+    periodFailedSamples: Number(payload.period_failed_samples || 0),
+    periodCompletionProbability: Number(payload.period_completion_probability || 0),
     limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
     message: payload.message || ""
   };
@@ -16899,6 +16904,12 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   }
   if (definition.analysisType === "mission_reliability") {
     return `
+      <div class="kpi-strip">
+        <div class="kpi-card"><span>任务周期</span><strong>${formatPeriodDurationDays(result.periodDurationDays)}</strong></div>
+        <div class="kpi-card"><span>成功 / 总实验</span><strong>${result.periodSuccessfulSamples} / ${result.periodTotalSamples}</strong></div>
+        <div class="kpi-card"><span>失败实验</span><strong>${result.periodFailedSamples}</strong></div>
+        <div class="kpi-card"><span>整周期任务可靠度</span><strong>${pct(result.periodCompletionProbability)}</strong></div>
+      </div>
       ${renderLiteMesaMissionReliabilityWaveChart(rows)}
       <details class="lite-mesa-collapsible-table">
         <summary>样本明细（${rows.length}）</summary>
@@ -16916,6 +16927,12 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     </table></div>
     ${renderLiteMesaDowntimeEventSnapshots(result.eventSnapshots || [])}
   `;
+}
+
+function formatPeriodDurationDays(value) {
+  const days = Number(value || 0);
+  if (!(days > 0)) return "--";
+  return `${Number.isInteger(days) ? days : fixed(days, 2)} 天`;
 }
 
 function formatLiteMesaAnalysisMetricValue(label, value) {

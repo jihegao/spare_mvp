@@ -26,7 +26,7 @@
    显式选择保存方案进行可视化时，`experiment_plan_id` 与经边界校验的 `steps/samples/seed` 通过 iframe 运行上下文传给 Solara sidecar，并以 `runtime_config` 进入 Scenario 编译，不写回 clean Project。
 8. `aircraft_support_v1` 是当前正式模型族；历史 `aviation_support` 只保留为 schema/fixture 归档证据且 adapter 编译运行入口返回 `retired_model_family`。
 9. 四个结果分析页当前为独立轻量 Mesa 会话页：前端提交当前 Project 与页面设置到 `POST /api/mesa-analysis-runs`，后端编译为 `aircraft_support_v1` simulation inputs 后只在内存中运行样本并返回页面摘要；该路径不创建 `/api/runs`、SQLite run、Result 或正式 artifact，也不读取 current result 面板。
-10. 轻量 Mesa 指标口径：`出动架次率 = 起飞总架次 / 飞机总数 / 仿真总天数`，展示为小数；`仿真总天数` 来自编译后的仿真窗口，周期任务有显式星期排程时按最后有任务日停止，没有显式任务日时才回退整周期/重复次数或 `durationHours`；`战备完好率 = 每天 14:00 的可用飞机数量 / 总飞机数量`，多天结果取日采样均值；`平均备件延误时间(h) = 总调运延误时间(分钟) / 60 / 备件调运次数`，用于备件短板页替代原先会被误读为缺件次数的分钟累计值。备件短板明细按“机型 + 备件类别”聚合，需求/满足/缺件数量来自对应事件数量，并允许按需求数量升序、降序或恢复默认顺序查看。
+10. 轻量 Mesa 指标口径：`出动架次率 = 起飞总架次 / 飞机总数 / 仿真总天数`，展示为小数；`仿真总天数` 来自编译后的仿真窗口，周期任务有显式星期排程时按最后有任务日停止，没有显式任务日时才回退整周期/重复次数或 `durationHours`；`整周期任务可靠度 = 全部计划任务均已评估且成功的实验数 / 已执行实验总数`，未评估或失败的任一计划任务都会使该次实验判为整周期失败，周期支持天、周、月等由 Project 实际配置形成的任意长度；`战备完好率 = 每天 14:00 的可用飞机数量 / 总飞机数量`，多天结果取日采样均值；`平均备件延误时间(h) = 总调运延误时间(分钟) / 60 / 备件调运次数`，用于备件短板页替代原先会被误读为缺件次数的分钟累计值。备件短板明细按“机型 + 备件类别”聚合，需求/满足/缺件数量来自对应事件数量，并允许按需求数量升序、降序或恢复默认顺序查看。
 11. 阶段 6P 仿真分析验收数据包保留在 `tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`，用于验证平台标准建模导入案例可以通过 validation 并编译为 `aircraft_support_v1` Scenario；不再要求 6P canonical 生成正式分析产物。
 12. 任务字段按单一归属保存：`basicMissions[].minRequiredSorties` 是最小装备数量唯一来源，复合任务项只读继承；`compositeTasks[].priority` 是任务优先级唯一来源。基本任务与复合任务项中的旧 `priority`、以及 task item 的旧 `minRequiredSystems` 都只在迁移时读取后删除。修改该边界时必须同步更新 contract、后台 Project 迁移、canonical/M9.6/clean Project 导出 JSON，并运行两条 fixture drift check；已发布 import 和历史 run/snapshot 不得原地覆盖，应发布新版本后创建新 Project。
 
