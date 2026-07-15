@@ -2371,6 +2371,7 @@ class BackendApiContractTest(unittest.TestCase):
             {
                 "data": [
                     {
+                        "aircraft_model": "J-15",
                         "spare_type": "航电模块",
                         "fill_rate": 0.55,
                         "risk_level": "high",
@@ -2432,6 +2433,11 @@ class BackendApiContractTest(unittest.TestCase):
                 "inventory": {"仓库备件": 12},
             },
         ]
+        project["components"].extend([
+            {"id": "engine-spare", "name": "发动机控制模块", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "spareType": "发动机备件", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
+            {"id": "hydraulic-spare", "name": "液压执行器", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "spareType": "液压备件", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
+            {"id": "avionics-spare", "name": "航电模块", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "spareType": "航电模块", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
+        ])
 
         shortfall = self.api.run_lite_mesa_analysis(
             project,
@@ -2463,6 +2469,7 @@ class BackendApiContractTest(unittest.TestCase):
                             "event": "spare_shortage",
                             "details": {
                                 "job_id": "job-001",
+                                "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "航电模块",
                                 "required_quantity": 1,
@@ -2472,6 +2479,7 @@ class BackendApiContractTest(unittest.TestCase):
                             "event": "spare_shortage",
                             "details": {
                                 "job_id": "job-001",
+                                "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "航电模块",
                                 "required_quantity": 1,
@@ -2481,6 +2489,7 @@ class BackendApiContractTest(unittest.TestCase):
                             "event": "spare_consumed",
                             "details": {
                                 "job_id": "job-001",
+                                "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "航电模块",
                                 "quantity": 1,
@@ -2493,7 +2502,7 @@ class BackendApiContractTest(unittest.TestCase):
                 "mission_profile": {
                     "airports": [{"id": "carrier-deck", "name": "航母飞行甲板", "supportNodeId": "carrier-deck"}],
                 },
-                "aircraft": {"assets": [{"tail_number": "J15-001", "airport": "航母飞行甲板"}]},
+                "aircraft": {"assets": [{"tail_number": "J15-001", "model": "J-15", "airport": "航母飞行甲板"}]},
                 "support_network": {
                     "nodes": [
                         {
@@ -2550,8 +2559,8 @@ class BackendApiContractTest(unittest.TestCase):
                 },
                 "aircraft": {
                     "assets": [
-                        {"tail_number": "J15-001", "airport": "航母飞行甲板"},
-                        {"tail_number": "J35-001", "airport": "航母飞行甲板"},
+                        {"tail_number": "J15-001", "model": "J-15", "airport": "航母飞行甲板"},
+                        {"tail_number": "J35-001", "model": "J-35", "airport": "航母飞行甲板"},
                     ],
                 },
                 "support_network": {
@@ -2571,6 +2580,36 @@ class BackendApiContractTest(unittest.TestCase):
             [(row["aircraft_model"], row["spare_type"]) for row in rows],
             [("J-15", "发动机备件"), ("J-35", "雷达备件")],
         )
+
+    def test_aircraft_support_spare_projection_uses_only_modeled_aircraft_spare_pairs(self) -> None:
+        projections = self.adapter._aircraft_support_v1_analysis_projections(
+            {"planned_sorties": 4, "spare_fill_rate": 1.0, "spare_utilization": 0.0},
+            "base-artifact",
+            simulation_inputs={
+                "aircraft": {
+                    "assets": [
+                        {"tail_number": "J15-001", "model": "J-15"},
+                        {"tail_number": "J35-001", "model": "J-35"},
+                    ],
+                },
+                "equipment_tree": {
+                    "components": [
+                        {"id": "j15-engine", "aircraft_model": "J-15", "spare_type": "发动机备件"},
+                        {"id": "j35-radar", "aircraft_model": "J-35", "spare_type": "雷达备件"},
+                    ],
+                },
+                "support_network": {
+                    "nodes": [{"id": "carrier-deck", "inventory": {"发动机备件": 2, "雷达备件": 3, "未知备件": 9}}],
+                },
+            },
+        )
+
+        rows = projections["spare_shortfall"]["data"]
+        self.assertEqual(
+            [(row["aircraft_model"], row["spare_type"]) for row in rows],
+            [("J-15", "发动机备件"), ("J-35", "雷达备件")],
+        )
+        self.assertNotIn("全部机型", {row["aircraft_model"] for row in rows})
 
     def test_run_service_submits_aircraft_support_v1_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()

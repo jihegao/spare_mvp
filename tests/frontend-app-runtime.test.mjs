@@ -1065,7 +1065,8 @@ test("spare shortfall result keeps aircraft-spare pairs and sorts demand quantit
       rows: [
         { aircraftModel: "J-15", spareType: "发动机备件", demand: 8, filled: 3, meanTransportDelayHours: 1.5, fillRate: 0.38, riskLevel: "高" },
         { aircraftModel: "J-35", spareType: "雷达备件", demand: 2, filled: 0, meanTransportDelayHours: 1.5, fillRate: 0, riskLevel: "高" },
-        { aircraftModel: "J-15", spareType: "液压备件", demand: 5, filled: 4, meanTransportDelayHours: 0, fillRate: 0.8, riskLevel: "中" }
+        { aircraftModel: "J-15", spareType: "液压备件", demand: 5, filled: 4, meanTransportDelayHours: 0, fillRate: 0.8, riskLevel: "中" },
+        { aircraftModel: "全部机型", spareType: "泛化备件", demand: 99, filled: 0, meanTransportDelayHours: 0, fillRate: 0, riskLevel: "高" }
       ]
     }
   });
@@ -1077,7 +1078,15 @@ test("spare shortfall result keeps aircraft-spare pairs and sorts demand quantit
     assert.match(runtime.appNode.innerHTML, /J-15[\s\S]*发动机备件/);
     assert.match(runtime.appNode.innerHTML, /J-35[\s\S]*雷达备件/);
     assert.match(runtime.appNode.innerHTML, /最高缺件备件[\s\S]*发动机备件、雷达备件/);
+    assert.match(runtime.appNode.innerHTML, /data-spare-aircraft-filter/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /泛化备件|<td>全部机型<\/td>/);
 
+    await runtime.change("[data-spare-aircraft-filter]", {}, { value: "J-35" });
+    const j35Rows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.match(j35Rows, /J-35[\s\S]*雷达备件/);
+    assert.doesNotMatch(j35Rows, /J-15|发动机备件|液压备件/);
+
+    await runtime.change("[data-spare-aircraft-filter]", {}, { value: "" });
     await runtime.click("[data-spare-demand-sort]", { spareDemandSort: "asc" });
     const ascending = runtime.appNode.innerHTML;
     const ascendingRows = ascending.slice(ascending.indexOf('<table class="lite-mesa-stat-table">'));

@@ -144,6 +144,7 @@ _COMPONENT_FIELDS = {
     "parentId",
     "aircraftModel",
     "productType",
+    "spareType",
     "quantity",
     "failureDistribution",
     "repairDistribution",
@@ -1199,7 +1200,6 @@ def _strip_component_non_model_fields(value: Any) -> None:
             "lifeLimitHours",
             "mtbfHours",
             "rms",
-            "spareType",
         ):
             component.pop(field, None)
         profile = component.get("specialRepairProfile")

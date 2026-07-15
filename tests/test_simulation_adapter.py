@@ -163,6 +163,10 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertNotIn("analysisRequests", project)
         self.assertNotIn("monteCarlo", project)
         self.assertEqual(len(inputs["equipment_tree"]["components"]), len(project["components"]))
+        self.assertEqual(
+            [component["spare_type"] for component in inputs["equipment_tree"]["components"]],
+            [str(component.get("spareType") or "") for component in project["components"]],
+        )
         self.assertEqual(len(inputs["support_network"]["nodes"]), len(project["supportNodes"]))
         self.assertEqual(len(inputs["support_activities"]["activities"]), len(project["supportActivities"]))
         self.assertEqual(inputs["monte_carlo"]["sample_count"], 24)
@@ -170,6 +174,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(provenance["model_family"], "aircraft_support_v1")
         self.assertEqual(provenance["mapping_version"], "aircraft-support-v1-input-v0")
         self.assertIn("components[].failureDistribution", provenance["consumed_fields"])
+        self.assertIn("components[].spareType", provenance["consumed_fields"])
         self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
         self.assertIn("supportActivityJobs[]", provenance["consumed_fields"])
         self.assertIn("supportActivities[].activityCodes", provenance["consumed_fields"])
