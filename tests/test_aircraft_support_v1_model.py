@@ -237,6 +237,34 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             ("航电模块", 2),
         )
 
+    def test_spare_events_preserve_the_job_aircraft_model(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        task = {"spare": "航电模块,1", "durationMinutes": 1}
+        job = JobState(
+            job_id="job-aircraft-model",
+            tail_number=model.aircraft[0].tail_number,
+            kind="preflight",
+            activity_id="preflight",
+            activity_name="preflight",
+            tasks=[task],
+            priority=1,
+            resource_node_id="deck",
+        )
+        model.jobs.append(job)
+
+        model._start_waiting_jobs()
+
+        shortage = model.event_log[-1]
+        self.assertEqual(shortage["event"], "spare_shortage")
+        self.assertEqual(shortage["details"]["aircraft_model"], "J-15")
+
+        model.nodes["deck"]["inventory"]["航电模块"] = 1
+        model._consume_task_spare(job, task)
+
+        consumed = model.event_log[-1]
+        self.assertEqual(consumed["event"], "spare_consumed")
+        self.assertEqual(consumed["details"]["aircraft_model"], "J-15")
+
     def test_structured_no_spare_requirement_does_not_block_preflight(self) -> None:
         inputs = _minimal_inputs()
         preflight = next(activity for activity in inputs["support_activities"]["activities"] if activity["id"] == "preflight")

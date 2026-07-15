@@ -1097,11 +1097,13 @@ class AircraftSupportV1Model:
                 self.shortage_events += 1
                 reason = "in_transit" if self._has_in_transit_spare(node["id"], spare_type) else f"spare:{spare_type}"
                 job.shortage_reason = reason
+                aircraft = self._aircraft_by_tail(job.tail_number)
                 self._event(
                     "spare_shortage",
                     f"{job.job_id} blocked by {spare_type} shortage at {node['id']}",
                     {
                         "job_id": job.job_id,
+                        "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                         "resource_id": node["id"],
                         "spare_type": spare_type,
                         "required_quantity": spare_qty,
@@ -1440,11 +1442,13 @@ class AircraftSupportV1Model:
         if current >= spare_quantity:
             node["inventory"][spare_type] = current - spare_quantity
             self.spare_consumed_total += spare_quantity
+            aircraft = self._aircraft_by_tail(job.tail_number)
             self._event(
                 "spare_consumed",
                 f"{job.job_id} consumed {spare_quantity} {spare_type}",
                 {
                     "job_id": job.job_id,
+                    "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                     "resource_id": node["id"],
                     "spare_type": spare_type,
                     "quantity": spare_quantity,

@@ -2513,6 +2513,65 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(shortfall_row["shortage_count"], 1)
         self.assertEqual(carry_row["shortage_count"], 1)
 
+    def test_aircraft_support_spare_projection_keeps_the_aircraft_model_for_each_spare(self) -> None:
+        projections = self.adapter._aircraft_support_v1_analysis_projections(
+            {"planned_sorties": 4, "spare_fill_rate": 0.5, "spare_utilization": 0.5},
+            "base-artifact",
+            samples=[
+                {
+                    "sample_index": 0,
+                    "events": [
+                        {
+                            "event": "spare_shortage",
+                            "details": {
+                                "job_id": "job-j15",
+                                "aircraft_model": "J-15",
+                                "resource_id": "carrier-deck",
+                                "spare_type": "发动机备件",
+                                "required_quantity": 1,
+                            },
+                        },
+                        {
+                            "event": "spare_shortage",
+                            "details": {
+                                "job_id": "job-j35",
+                                "aircraft_model": "J-35",
+                                "resource_id": "carrier-deck",
+                                "spare_type": "雷达备件",
+                                "required_quantity": 1,
+                            },
+                        },
+                    ],
+                }
+            ],
+            simulation_inputs={
+                "mission_profile": {
+                    "airports": [{"id": "carrier-deck", "name": "航母飞行甲板", "supportNodeId": "carrier-deck"}],
+                },
+                "aircraft": {
+                    "assets": [
+                        {"tail_number": "J15-001", "airport": "航母飞行甲板"},
+                        {"tail_number": "J35-001", "airport": "航母飞行甲板"},
+                    ],
+                },
+                "support_network": {
+                    "nodes": [
+                        {
+                            "id": "carrier-deck",
+                            "name": "基地",
+                            "inventory": {"发动机备件": 0, "雷达备件": 0},
+                        }
+                    ]
+                },
+            },
+        )
+
+        rows = projections["spare_shortfall"]["data"]
+        self.assertEqual(
+            [(row["aircraft_model"], row["spare_type"]) for row in rows],
+            [("J-15", "发动机备件"), ("J-35", "雷达备件")],
+        )
+
     def test_run_service_submits_aircraft_support_v1_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()
         project = copy.deepcopy(created["project"])

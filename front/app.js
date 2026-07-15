@@ -16507,9 +16507,14 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     ? (result.waveRows || result.rows || [])
     : (result.rows || []);
   if (definition.analysisType === "spare_shortfall") {
-    return `<div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>备件类别</th><th>需求次数</th><th>满足次数</th><th>平均备件延误时间(h)</th><th>满足率</th><th>风险</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
+    const sortedRows = spareDemandSort === "asc"
+      ? [...rows].sort((left, right) => Number(left.demand || 0) - Number(right.demand || 0))
+      : spareDemandSort === "desc"
+        ? [...rows].sort((left, right) => Number(right.demand || 0) - Number(left.demand || 0))
+        : rows;
+    return `<div class="toolbar-row"><span>需求数量排序</span><button type="button" data-spare-demand-sort="asc" aria-pressed="${spareDemandSort === "asc"}">升序</button><button type="button" data-spare-demand-sort="desc" aria-pressed="${spareDemandSort === "desc"}">降序</button><button type="button" data-spare-demand-sort="default" aria-pressed="${spareDemandSort === "default"}">恢复默认</button></div><div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>机型</th><th>备件类别</th><th>需求数量</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>满足率</th><th>风险</th></tr></thead>
+      <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "全部机型")}</td><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
     </table></div>`;
   }
   if (definition.analysisType === "carry_list") {
