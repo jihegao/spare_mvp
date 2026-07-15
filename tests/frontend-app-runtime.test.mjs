@@ -1162,6 +1162,34 @@ test("spare shortfall result keeps aircraft-spare pairs and sorts demand quantit
   }
 });
 
+test("carry list result displays the modeled aircraft for each spare row", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-carry-list-analysis",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: {
+      metrics: [
+        ["建议携行总数", "7"],
+        ["高优先级备件", "1"]
+      ],
+      rows: [
+        { aircraftModel: "J-15", spareType: "发动机备件", recommended: 5, demand: 6, shortage: 1, riskLevel: "高" },
+        { aircraftModel: "J-35", spareType: "雷达备件", recommended: 2, demand: 2, shortage: 0, riskLevel: "低" }
+      ]
+    }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+
+    const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.match(detailPanel, /<th>机型<\/th><th>备件类别<\/th><th>建议携行数量<\/th>/);
+    assert.match(detailPanel, /J-15[\s\S]*发动机备件/);
+    assert.match(detailPanel, /J-35[\s\S]*雷达备件/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment plan management hides page-level current project context", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-management",

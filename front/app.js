@@ -16796,8 +16796,8 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   }
   if (definition.analysisType === "carry_list") {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>优先级</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
+      <thead><tr><th>机型</th><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>优先级</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
     </table></div>`;
   }
   if (definition.analysisType === "mission_reliability") {
