@@ -2850,6 +2850,10 @@ test("experiment plan editor exposes one runtime configuration and removes Scena
   assert.match(editorSource, /data-experiment-stop-mode/);
   assert.match(editorSource, /data-experiment-stop-condition/);
   assert.match(editorSource, /data-experiment-stop-time-minute/);
+  assert.match(editorSource, /experiment-stop-condition-row/);
+  assert.match(editorSource, /experiment-stop-condition-checkbox/);
+  assert.match(editorSource, /experiment-stop-minute-field/);
+  assert.match(editorSource, /data-experiment-stop-condition="specifiedTime"[\s\S]*data-experiment-stop-time-minute/);
   assert.match(editorSource, /基本信息/);
   assert.match(editorSource, /运行配置/);
   assert.match(editorSource, /分析配置/);
