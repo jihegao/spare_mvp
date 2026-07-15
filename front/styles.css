@@ -597,6 +597,10 @@ select {
   background: #fff;
 }
 
+.basic-mission-equipment-name {
+  background: #f1f3f5;
+}
+
 .table-edit-input,
 .table-edit-select {
   min-width: 120px;

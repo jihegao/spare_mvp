@@ -1638,6 +1638,8 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.match(stylesSource, /\.tree-node-label\.selected/);
   assert.match(appSource, /基本任务信息编辑/);
   assert.match(appSource, /任务编号/);
+  assert.match(basicMissionSource, /class="basic-mission-equipment-name"[^>]*readonly[^>]*aria-readonly="true"/);
+  assert.match(stylesSource, /\.basic-mission-equipment-name\s*\{\s*background:\s*#f1f3f5;/);
   assert.match(appSource, /任务成功点/);
   assert.match(appSource, /min: "0", max: "1", step: "0\.01"/);
   assert.doesNotMatch(appSource, /出发时间\(h\)/);
