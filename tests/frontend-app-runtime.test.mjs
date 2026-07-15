@@ -1044,6 +1044,12 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
       assert.match(settingsPanel, new RegExp(`样本量[\\s\\S]*<strong>${expectedSamples}<\\/strong>`));
       assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
       assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
+      for (const hiddenLabel of ["项目", "当前项目", "分析对象", "结果内容"]) {
+        assert.doesNotMatch(settingsPanel, new RegExp(`<span>${hiddenLabel}<\\/span>`), `${featureId} should hide ${hiddenLabel} from its analysis settings`);
+      }
+      const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+      assert.match(hero, /运行上下文/);
+      assert.match(hero, /data-current-experiment-plan/);
       assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
       for (const removedCopy of [
         "前端建模 + Mesa 分析",
@@ -1075,8 +1081,8 @@ test("spare shortfall analysis uses the shared read-only analysis setting line",
     assert.doesNotMatch(runtime.appNode.innerHTML, /full-settings/);
     assert.match(settingsPanel, /样本量[\s\S]*<strong>27<\/strong>/);
     assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
-    assert.match(settingsPanel, /当前项目建模数据/);
-    assert.match(settingsPanel, /短缺事件统计/);
+    assert.doesNotMatch(settingsPanel, /当前项目建模数据|短缺事件统计/);
+    assert.doesNotMatch(settingsPanel, /<span>项目<\/span>|<span>当前项目<\/span>|<span>分析对象<\/span>|<span>结果内容<\/span>/);
     assert.doesNotMatch(settingsPanel, /<input|<select|type="number"/);
     assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
     assert.doesNotMatch(settingsPanel, /project_baseline_at_current_granularity/);
@@ -3285,7 +3291,11 @@ test("mission reliability and downtime analysis keep current Project as default 
       await runtime.flush();
 
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-      assert.match(settingsPanel, /当前项目[\s\S]*<strong>当前项目：Runtime 项目<\/strong>/);
+      const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+      assert.match(hero, /运行上下文/);
+      assert.match(hero, /当前项目：Runtime 项目/);
+      assert.match(hero, /data-current-experiment-plan/);
+      assert.doesNotMatch(settingsPanel, /<span>当前项目<\/span>/);
       assert.match(settingsPanel, new RegExp(`样本量[\\s\\S]*<strong>${defaultSamples}<\\/strong>`));
       assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
       assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);

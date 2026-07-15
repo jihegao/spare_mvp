@@ -16590,10 +16590,6 @@ function renderLiteMesaAnalysisSettings(definition, settings, result = null) {
 function liteMesaAnalysisSettingItems(definition, settings, result = null) {
   const resultStatus = liteMesaAnalysisResultHeader(definition, result);
   const items = [
-    ["项目", currentProject?.name || selectedExperimentPlanProjectJson().projectInfo?.name || "当前项目"],
-    [selectedRunContextLabel(), selectedExperimentPlanName()],
-    ["分析对象", definition.settingSubject || "当前项目"],
-    ["结果内容", definition.subtitle],
     ["运行状态", resultStatus],
     ["样本量", settings.samples ?? 27],
     ["随机种子", settings.seed ?? 20260621]
