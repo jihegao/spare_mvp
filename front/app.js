@@ -551,6 +551,8 @@ const SYSTEM_PERMISSION_ROWS = [
   { feature: "结果分析", admin: "只读", data: "只读", user: "只读" }
 ];
 
+let permissionMenuVisibilityRows = createDefaultPermissionMenuVisibilityRows();
+
 function mergeProjectsById(projects) {
   const byId = new Map();
   for (const project of projects) {
@@ -1817,6 +1819,16 @@ function bindEvents() {
     if (permissionConfigureButton) {
       permissionConfigFeature = permissionConfigureButton.dataset.permissionConfigure;
       permissionConfigStatus = `正在配置权限：${permissionConfigFeature}`;
+      render();
+      return;
+    }
+
+    const permissionMenuVisibilityButton = event.target.closest("[data-permission-menu-visibility]");
+    if (permissionMenuVisibilityButton) {
+      togglePermissionMenuVisibility(
+        permissionMenuVisibilityButton.dataset.permissionMenuVisibility,
+        permissionMenuVisibilityButton.dataset.roleKey
+      );
       render();
       return;
     }
@@ -4681,6 +4693,7 @@ function createDefaultSystemRuntimeConfig() {
     activeGranularityProfile: DEFAULT_MODELING_GRANULARITY,
     granularityProfiles: modelingGranularityProfiles(),
     permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
+    permissionMenuVisibility: createDefaultPermissionMenuVisibilityRows(),
     modelingForms: {
       fieldUnits: createDefaultModelingFormFieldUnits(),
       personnelSpecialties: [...PERSONNEL_SPECIALTY_FALLBACK]
@@ -4706,6 +4719,10 @@ function currentSystemRuntimeConfigPayload() {
     activeGranularityProfile: selectedModelingGranularityKey,
     granularityProfiles: modelingGranularityProfiles(),
     permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
+    permissionMenuVisibility: permissionMenuVisibilityRows.map((row) => ({
+      ...row,
+      pageIds: [...row.pageIds]
+    })),
     modelingForms: {
       fieldUnits: normalizeModelingFormFieldUnits(modelingFormFieldUnits),
       personnelSpecialties: configuredPersonnelSpecialties()
@@ -4736,6 +4753,10 @@ function applySystemRuntimeConfig(payload = {}) {
       row.data = normalizePermissionLevel(saved.data);
       row.user = normalizePermissionLevel(saved.user);
     }
+  }
+
+  if (Array.isArray(payload.permissionMenuVisibility)) {
+    permissionMenuVisibilityRows = normalizePermissionMenuVisibilityRows(payload.permissionMenuVisibility);
   }
 
   if (payload.modelingForms && typeof payload.modelingForms === "object") {
@@ -4779,6 +4800,35 @@ async function saveSystemRuntimeConfig(contextLabel = "系统配置") {
 
 function normalizePermissionLevel(value) {
   return ["编辑", "管理"].includes(value) ? "编辑" : "只读";
+}
+
+function permissionMenuLeafKey(pageIds = []) {
+  return pageIds.map((pageId) => String(pageId || "").trim()).filter(Boolean).join("|");
+}
+
+function createDefaultPermissionMenuVisibilityRows() {
+  return buildPermissionMenuTree().flatMap(({ secondaryGroups }) => secondaryGroups.flatMap(({ leaves }) => (
+    leaves.map(({ pageIds, visibility }) => ({
+      leafKey: permissionMenuLeafKey(pageIds),
+      pageIds: [...pageIds],
+      ...Object.fromEntries(PERMISSION_MENU_ROLES.map(({ key }) => [key, Boolean(visibility[key])]))
+    }))
+  )));
+}
+
+function normalizePermissionMenuVisibilityRows(savedRows = []) {
+  const savedByLeafKey = new Map(savedRows.map((row) => [String(row?.leafKey || ""), row]));
+  return createDefaultPermissionMenuVisibilityRows().map((defaultRow) => {
+    const savedRow = savedByLeafKey.get(defaultRow.leafKey);
+    if (!savedRow) return defaultRow;
+    return {
+      ...defaultRow,
+      ...Object.fromEntries(PERMISSION_MENU_ROLES.map(({ key }) => [
+        key,
+        typeof savedRow[key] === "boolean" ? savedRow[key] : defaultRow[key]
+      ]))
+    };
+  });
 }
 
 function configuredPersonnelSpecialties() {
@@ -4948,8 +4998,8 @@ function renderSystemUserEditor() {
 
 function renderPermissionManagementConfig() {
   const menuTree = buildPermissionMenuTree();
+  const configuredVisibility = new Map(permissionMenuVisibilityRows.map((row) => [row.leafKey, row]));
   return `
-    <p class="inline-status">按左侧菜单的最小叶子项展示当前角色可见性；此处不修改既有三类角色权限口径。</p>
     <div class="table-wrap permission-menu-table-wrap">
       <table>
         <thead><tr><th>左侧菜单层级</th>${PERMISSION_MENU_ROLES.map(({ label }) => `<th>${label}</th>`).join("")}</tr></thead>
@@ -4957,10 +5007,16 @@ function renderPermissionManagementConfig() {
           <tr class="permission-menu-module-row"><th colspan="4" scope="rowgroup">${htmlEscape(module)}</th></tr>
           ${secondaryGroups.map(({ secondary, leaves }) => `
             <tr class="permission-menu-secondary-row"><th colspan="4" scope="rowgroup">${htmlEscape(secondary)}</th></tr>
-            ${leaves.map(({ tertiary, visibility }) => `
+            ${leaves.map(({ tertiary, pageIds, visibility }) => `
               <tr data-permission-menu-leaf="${htmlEscape(tertiary)}">
                 <th scope="row" class="permission-menu-leaf"><span aria-hidden="true">└</span>${htmlEscape(tertiary)}</th>
-                ${PERMISSION_MENU_ROLES.map(({ key }) => renderPermissionVisibility(visibility[key])).join("")}
+                ${PERMISSION_MENU_ROLES.map(({ key, label }) => renderPermissionVisibility({
+                  leafKey: permissionMenuLeafKey(pageIds),
+                  leafLabel: tertiary,
+                  roleKey: key,
+                  roleLabel: label,
+                  visible: configuredVisibility.get(permissionMenuLeafKey(pageIds))?.[key] ?? visibility[key]
+                })).join("")}
               </tr>
             `).join("")}
           `).join("")}
@@ -4970,9 +5026,9 @@ function renderPermissionManagementConfig() {
   `;
 }
 
-function renderPermissionVisibility(visible) {
+function renderPermissionVisibility({ leafKey, leafLabel, roleKey, roleLabel, visible }) {
   const label = visible ? "可见" : "不可见";
-  return `<td><span class="permission-visibility ${visible ? "is-visible" : "is-hidden"}">${label}</span></td>`;
+  return `<td><button type="button" class="permission-visibility ${visible ? "is-visible" : "is-hidden"}" data-permission-menu-visibility="${htmlEscape(leafKey)}" data-role-key="${htmlEscape(roleKey)}" aria-pressed="${visible}" aria-label="${htmlEscape(`${leafLabel} / ${roleLabel}：${label}，点击切换`)}">${label}</button></td>`;
 }
 
 function renderPermissionConfigEditor() {
@@ -13495,6 +13551,19 @@ function updatePermissionRole(feature, encodedRole) {
   if (["admin", "data", "user"].includes(roleKey)) {
     row[roleKey] = normalizePermissionLevel(value);
     permissionConfigStatus = `已更新 ${feature} / ${permissionRoleLabel(roleKey)}：${row[roleKey]}`;
+  }
+}
+
+function togglePermissionMenuVisibility(leafKey, roleKey) {
+  if (!PERMISSION_MENU_ROLES.some((role) => role.key === roleKey)) return;
+  let updated = false;
+  permissionMenuVisibilityRows = permissionMenuVisibilityRows.map((row) => {
+    if (row.leafKey !== leafKey) return row;
+    updated = true;
+    return { ...row, [roleKey]: !row[roleKey] };
+  });
+  if (updated) {
+    systemRuntimeConfigStatus = "菜单可见性已更新，待保存";
   }
 }
 

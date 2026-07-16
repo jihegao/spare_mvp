@@ -561,12 +561,20 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(permissionSource, /buildPermissionMenuTree/);
   assert.match(permissionSource, /PERMISSION_MENU_ROLES/);
   assert.match(permissionSource, /data-permission-menu-leaf/);
+  assert.match(permissionSource, /data-permission-menu-visibility/);
+  assert.match(permissionSource, /data-role-key/);
+  assert.match(permissionSource, /aria-pressed/);
   assert.match(permissionSource, /可见/);
   assert.match(permissionSource, /不可见/);
+  assert.doesNotMatch(permissionSource, /按左侧菜单的最小叶子项展示当前角色可见性/);
   assert.doesNotMatch(permissionSource, /新增权限项/);
   assert.doesNotMatch(permissionSource, /批量删除/);
+  assert.match(appSource, /permissionMenuVisibility: permissionMenuVisibilityRows\.map/);
+  assert.match(appSource, /Array\.isArray\(payload\.permissionMenuVisibility\)/);
   assert.match(eventSource, /const systemManagementButton = event\.target\.closest\("\[data-system-management-entry\]"\)/);
   assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
+  assert.match(eventSource, /const permissionMenuVisibilityButton = event\.target\.closest\("\[data-permission-menu-visibility\]"\)/);
+  assert.match(eventSource, /togglePermissionMenuVisibility/);
 });
 
 test("project data management exposes project list, template controls, and overview without raw json", async () => {

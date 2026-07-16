@@ -3643,6 +3643,71 @@ test("Monte Carlo setting changes do not rerender before lightweight Mesa run cl
   }
 });
 
+test("permission menu visibility toggles every leaf role and persists through the existing system-config save", async () => {
+  const leafKey = "system-management-project-data-management";
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-function-permission-management",
+    sessionUser: { username: "admin", role: "系统管理员" },
+    systemConfigPayload: {
+      permissionMenuVisibility: [{
+        leafKey,
+        pageIds: [leafKey],
+        admin: false,
+        data: true,
+        user: false
+      }]
+    }
+  });
+
+  try {
+    const initialHtml = runtime.appNode.innerHTML;
+    const leafCount = (initialHtml.match(/data-permission-menu-leaf=/g) || []).length;
+    const toggleCount = (initialHtml.match(/data-permission-menu-visibility=/g) || []).length;
+    assert.ok(leafCount > 0);
+    assert.equal(toggleCount, leafCount * 3, "each menu leaf should expose one toggle per Admin/Data/User role");
+    assert.doesNotMatch(initialHtml, /按左侧菜单的最小叶子项展示当前角色可见性/);
+    assert.match(
+      initialHtml,
+      new RegExp(`data-permission-menu-visibility="${leafKey}" data-role-key="admin" aria-pressed="false"`)
+    );
+
+    await runtime.click("[data-permission-menu-visibility]", {
+      permissionMenuVisibility: leafKey,
+      roleKey: "admin"
+    });
+
+    assert.match(runtime.appNode.innerHTML, /菜单可见性已更新，待保存/);
+    assert.match(
+      runtime.appNode.innerHTML,
+      new RegExp(`data-permission-menu-visibility="${leafKey}" data-role-key="admin" aria-pressed="true"`)
+    );
+
+    await runtime.click("[data-system-config-save]", { systemConfigSave: "basic-config" });
+
+    const saveRequest = runtime.requests.find((request) => (
+      request.url === "/api/system-configs/system-runtime-support"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(saveRequest, "the existing system-config save should persist menu visibility");
+    const savedPayload = JSON.parse(saveRequest.options.body || "{}").payload;
+    const savedLeaf = savedPayload.permissionMenuVisibility.find((row) => row.leafKey === leafKey);
+    assert.deepEqual(
+      { admin: savedLeaf.admin, data: savedLeaf.data, user: savedLeaf.user },
+      { admin: true, data: true, user: false }
+    );
+    assert.deepEqual(savedPayload.permissions, [
+      { feature: "项目管理", admin: "编辑", data: "编辑", user: "只读" },
+      { feature: "装备RMS指标分配", admin: "编辑", data: "编辑", user: "只读" },
+      { feature: "系统基础配置", admin: "编辑", data: "只读", user: "只读" },
+      { feature: "仿真建模", admin: "编辑", data: "编辑", user: "编辑" },
+      { feature: "结果分析", admin: "只读", data: "只读", user: "只读" }
+    ]);
+    assert.match(runtime.appNode.innerHTML, /basic-config已保存到后端/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 let runtimeImportCounter = 0;
 
 function runtimeBackendProjectEntry(projectId, experimentName = "Runtime 项目") {
@@ -3663,6 +3728,7 @@ async function setupRuntimeApp({
   experimentPlans = [],
   sessionUser = { username: "data", role: "数据管理员" },
   storageEntries = [],
+  systemConfigPayload = {},
   liteMesaAnalysisResponseOverrides = {},
   backendProjects = [{
     project_id: "project-runtime",
@@ -3773,6 +3839,14 @@ async function setupRuntimeApp({
     }
     if (url === "/api/auth/session") {
       return jsonResponse({ user: sessionUser });
+    }
+    if (url === "/api/system-configs/system-runtime-support" && method === "GET") {
+      return jsonResponse({ config_key: "system-runtime-support", payload: systemConfigPayload });
+    }
+    if (url === "/api/system-configs/system-runtime-support" && method === "POST") {
+      const body = JSON.parse(options.body || "{}");
+      systemConfigPayload = body.payload || {};
+      return jsonResponse({ config_key: "system-runtime-support", payload: systemConfigPayload });
     }
     if (url === "/api/projects" && method === "GET") {
       return jsonResponse({
