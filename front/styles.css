@@ -2818,6 +2818,85 @@ select[multiple].table-edit-select {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.carry-list-result-loader {
+  justify-content: space-between;
+}
+
+.carry-list-result-loader .experiment-plan-context-select {
+  min-width: min(360px, 100%);
+}
+
+.carry-sort-heading,
+.carry-life-heading,
+.carry-sort-controls {
+  display: inline-flex;
+  align-items: center;
+}
+
+.carry-sort-heading,
+.carry-life-heading {
+  gap: 6px;
+}
+
+.carry-sort-controls {
+  gap: 2px;
+}
+
+.carry-sort-controls button,
+.carry-life-help .inline-help {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.carry-sort-controls button[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.carry-life-help {
+  position: relative;
+  display: inline-flex;
+}
+
+.carry-life-help .inline-help {
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.carry-life-tooltip {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: none;
+  width: 300px;
+  max-width: min(300px, 70vw);
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #111827;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.2);
+}
+
+.carry-life-help:hover .carry-life-tooltip,
+.carry-life-help:focus-within .carry-life-tooltip {
+  display: block;
+}
+
 .lite-mesa-source-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

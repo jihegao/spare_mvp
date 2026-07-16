@@ -159,8 +159,8 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
   carry_list: {
     experimentId: "minimum_carry_list_search",
     title: "飞机转场携行清单分析",
-    subtitle: "按备件类别独立变化的最小携行清单搜索",
-    settingSubject: "备件类别独立变化",
+    subtitle: "按产品独立变化的最小携行清单搜索",
+    settingSubject: "产品独立变化",
     settingMethod: "最小携行清单搜索",
     metricLabels: ["建议携行总数", "高优先级备件"]
   },
@@ -785,6 +785,8 @@ let equipmentProductDraft = { name: "", model: "", kind: "LRU" };
 let spareDemandSort = "default";
 let spareAircraftFilter = "";
 let carryHideZeroDemand = true;
+let carryRecommendedSort = "default";
+let carryAircraftFilter = "";
 let selectedDowntimeFactorTypes = new Set(DOWNTIME_FACTOR_OPTIONS.map((item) => item.value));
 let selectedBasicMissionKey = "primary";
 let selectedBasicMissionTreeLevel = "mission";
@@ -2090,6 +2092,13 @@ function bindEvents() {
       return;
     }
 
+    const carrySortButton = event.target.closest("[data-carry-recommended-sort]");
+    if (carrySortButton) {
+      carryRecommendedSort = carrySortButton.dataset.carryRecommendedSort || "default";
+      render();
+      return;
+    }
+
     const downtimeSnapshotExportButton = event.target.closest("[data-downtime-snapshot-export]");
     if (downtimeSnapshotExportButton) {
       exportDowntimeAnomalySnapshots();
@@ -2222,6 +2231,12 @@ function bindEvents() {
     const carryZeroFilter = event.target.closest("[data-carry-hide-zero]");
     if (carryZeroFilter) {
       carryHideZeroDemand = carryZeroFilter.checked;
+      render();
+      return;
+    }
+    const carryAircraftFilterSelect = event.target.closest("[data-carry-aircraft-filter]");
+    if (carryAircraftFilterSelect) {
+      carryAircraftFilter = carryAircraftFilterSelect.value;
       render();
       return;
     }
@@ -17407,6 +17422,9 @@ function renderLiteMesaAnalysisPage(page) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const settings = liteMesaAnalysisEffectiveSettings(definition);
   const result = liteMesaAnalysisResults[definition.analysisType] || null;
+  if (definition.analysisType === "carry_list") {
+    return renderCarryListAnalysisPage(page, definition, result);
+  }
   const runCount = result?.sampleCount || 0;
   const statusText = result?.status === "session_complete"
     ? `分析结果已生成：${runCount} 个样本`
@@ -17439,6 +17457,25 @@ function renderLiteMesaAnalysisPage(page) {
         </div>
       </section>
       <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
+        <div class="section-head">
+          <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
+          <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
+        </div>
+        ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderLiteMesaAnalysisSessionBody(definition, result)}
+      </section>
+    </div>
+  `;
+}
+
+function renderCarryListAnalysisPage(page, definition, result) {
+  return `
+    <div class="lite-mesa-workbench lite-mesa-analysis-page carry-list-analysis-page">
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
+        <div class="toolbar-row carry-list-result-loader">
+          ${renderExperimentPlanContextDropdown(page)}
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">加载运行结果</button>
+        </div>
         <div class="section-head">
           <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
@@ -17715,15 +17752,32 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     </table></div>`;
   }
   if (definition.analysisType === "carry_list") {
-    const visibleRows = rows.filter((row) => !carryHideZeroDemand || Number(row.demand || 0) > 0);
+    const productsById = new Map((selectedExperimentPlanProjectJson().products || [])
+      .map((product) => [String(product?.id || "").trim(), product])
+      .filter(([productId]) => productId));
+    const aircraftModels = [...new Set(rows.map((row) => String(row.aircraftModel || "").trim()).filter(Boolean))].sort();
+    const activeAircraftFilter = aircraftModels.includes(carryAircraftFilter) ? carryAircraftFilter : "";
+    const filteredRows = rows.filter((row) => (
+      (!activeAircraftFilter || row.aircraftModel === activeAircraftFilter)
+      && (!carryHideZeroDemand || Number(row.demand || 0) > 0)
+    ));
+    const visibleRows = carryRecommendedSort === "default"
+      ? filteredRows
+      : filteredRows
+        .map((row, index) => ({ row, index }))
+        .sort((left, right) => {
+          const difference = Number(left.row.recommended || 0) - Number(right.row.recommended || 0);
+          return (carryRecommendedSort === "asc" ? difference : -difference) || left.index - right.index;
+        })
+        .map(({ row }) => row);
     return `
       <div class="toolbar-row">
+        <label>机型 <select data-carry-aircraft-filter><option value="">全部机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${activeAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label>
         <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
-        <span>有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span>
       </div>
       <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>机型</th><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>有寿件</th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
-        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="9">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
+        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="9">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
     `;
   }
@@ -17755,6 +17809,12 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     </table></div>
     ${renderLiteMesaDowntimeEventSnapshots(result.eventSnapshots || [])}
   `;
+}
+
+function carryListProductDisplayName(row, productsById) {
+  const productId = String(row?.productId || "").trim();
+  const product = productsById.get(productId);
+  return product ? productDisplayName(product) : (productId || "未关联产品");
 }
 
 function renderLiteMesaDowntimeFactorAnalysis(result) {

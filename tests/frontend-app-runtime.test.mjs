@@ -1027,7 +1027,6 @@ test("visual iframe host page does not expose support organization selector rows
 test("four result analysis pages omit Mesa from visible copy", async () => {
   const featureIds = [
     "spare-planning-spare-shortfall-analysis",
-    "spare-planning-carry-list-analysis",
     "mission-reliability-task-reliability",
     "mission-reliability-downtime-factor-analysis"
   ];
@@ -1273,16 +1272,22 @@ test("spare shortfall result keeps aircraft-spare pairs and sorts demand quantit
 test("carry list result exposes satisfaction, zero-demand, life-limit, and aircraft UI", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-carry-list-analysis",
-    projectJson: createRuntimeProjectJson(),
+    projectJson: createRuntimeProjectJson({
+      products: [
+        { id: "product-engine", name: "发动机控制模块", model: "EC-15", kind: "LRU" },
+        { id: "product-radar", name: "雷达组件", model: "RD-35", kind: "LRU" },
+        { id: "product-zero", name: "零需求产品", model: "ZERO", kind: "LRU" }
+      ]
+    }),
     liteMesaAnalysisResponseOverrides: {
       metrics: [
         ["建议携行总数", "7"],
         ["高优先级备件", "1"]
       ],
       rows: [
-        { aircraftModel: "J-15", spareType: "发动机备件", recommended: 5, demand: 6, shortage: 1, riskLevel: "高", lifeLimited: true, lifeLandings: 120, lifeHours: 240 },
-        { aircraftModel: "J-35", spareType: "雷达备件", recommended: 2, demand: 2, shortage: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 },
-        { aircraftModel: "J-15", spareType: "零需求备件", recommended: 0, demand: 0, shortage: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 }
+        { aircraftModel: "J-15", productId: "product-engine", spareType: "不得显示的旧发动机备件", recommended: 5, demand: 6, shortage: 1, riskLevel: "高", lifeLimited: true, lifeLandings: 120, lifeHours: 240 },
+        { aircraftModel: "J-35", productId: "product-radar", spareType: "不得显示的旧雷达备件", recommended: 2, demand: 2, shortage: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 },
+        { aircraftModel: "J-15", productId: "product-zero", spareType: "不得显示的旧零需求备件", recommended: 0, demand: 0, shortage: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 }
       ]
     }
   });
@@ -1291,18 +1296,38 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
-    assert.match(detailPanel, /<th>机型<\/th><th>备件类别<\/th><th>建议携行数量<\/th>/);
+    assert.match(detailPanel, /<th>机型<\/th><th>产品<\/th>/);
     assert.match(detailPanel, /隐藏需求数值为 0 的备件/);
     assert.match(detailPanel, /data-carry-hide-zero checked/);
-    assert.match(detailPanel, /有寿件寿命在预防性维修中配置/);
-    assert.match(detailPanel, /<th>有寿件<\/th><th>起落寿命<\/th><th>使用寿命\(h\)<\/th>/);
-    assert.match(detailPanel, /J-15[\s\S]*发动机备件/);
-    assert.match(detailPanel, /J-35[\s\S]*雷达备件/);
-    assert.match(detailPanel, /发动机备件[\s\S]*<td>是<\/td><td>120<\/td><td>240<\/td>/);
-    assert.doesNotMatch(detailPanel, /零需求备件/);
+    assert.match(detailPanel, /data-carry-aircraft-filter/);
+    assert.match(detailPanel, /data-carry-recommended-sort="asc"[\s\S]*data-carry-recommended-sort="desc"/);
+    assert.match(detailPanel, /aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip"/);
+    assert.match(detailPanel, /id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。/);
+    assert.doesNotMatch(detailPanel, /<span>有寿件寿命在预防性维修中配置/);
+    assert.match(detailPanel, /J-15[\s\S]*发动机控制模块 \/ EC-15/);
+    assert.match(detailPanel, /J-35[\s\S]*雷达组件 \/ RD-35/);
+    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>是<\/td><td>120<\/td><td>240<\/td>/);
+    assert.doesNotMatch(detailPanel, /不得显示的旧|零需求产品/);
+
+    await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "asc" });
+    const ascendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.ok(ascendingRows.indexOf("雷达组件 / RD-35") < ascendingRows.indexOf("发动机控制模块 / EC-15"));
+    assert.match(runtime.appNode.innerHTML, /data-carry-recommended-sort="asc"[^>]*aria-label="按建议携行数量升序排列" aria-pressed="true"/);
+
+    await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "desc" });
+    const descendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.ok(descendingRows.indexOf("发动机控制模块 / EC-15") < descendingRows.indexOf("雷达组件 / RD-35"));
+    assert.match(runtime.appNode.innerHTML, /data-carry-recommended-sort="desc"[^>]*aria-label="按建议携行数量降序排列" aria-pressed="true"/);
+
+    await runtime.change("[data-carry-aircraft-filter]", {}, { value: "J-15" });
+    const j15Rows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.match(j15Rows, /J-15[\s\S]*发动机控制模块/);
+    assert.doesNotMatch(j15Rows, /J-35|雷达组件/);
 
     await runtime.change("[data-carry-hide-zero]", {}, { checked: false });
-    assert.match(runtime.appNode.innerHTML, /零需求备件/);
+    const filteredAndSortedRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO/);
+    assert.ok(filteredAndSortedRows.indexOf("发动机控制模块 / EC-15") < filteredAndSortedRows.indexOf("零需求产品 / ZERO"));
   } finally {
     runtime.restore();
   }
@@ -1322,32 +1347,28 @@ test("experiment plan management hides page-level current project context", asyn
   }
 });
 
-test("carry list analysis labels its satisfaction floor and utilization objective", async () => {
+test("carry list analysis removes hero and settings while preserving result loading", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-carry-list-analysis",
     projectJson: createRuntimeProjectJson()
   });
 
   try {
-    const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-    const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-    assert.doesNotMatch(hero, /在给定置信度约束下探索建议携行数量、优先级和风险项。/);
-    assert.match(settingsPanel, /备件满足率下限[\s\S]*data-lite-mesa-analysis-field="missionConfidenceTarget"[\s\S]*value="0\.9"/);
-    assert.match(settingsPanel, /优化方向[\s\S]*满足率达标后，备件利用率越高越好/);
-    assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
-    assert.doesNotMatch(settingsPanel, /任务置信目标/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">|<section class="lite-mesa-settings lite-mesa-analysis-settings">/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<h3>飞机转场携行清单分析<\/h3>|<h3>分析设定<\/h3>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /运行状态|随机种子|优化方向|备件满足率下限|分析结果已生成|>运行分析<\/button>/);
+    assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">加载运行结果<\/button>/);
+    assert.match(runtime.appNode.innerHTML, /分析结果明细/);
 
-    await runtime.change(
-      "[data-lite-mesa-analysis-field]",
-      { liteMesaAnalysisField: "missionConfidenceTarget" },
-      { value: "0.82" }
-    );
     await runtime.click("[data-lite-mesa-analysis-action='run']");
     const analysisRun = runtime.requests
       .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"))
       .at(-1);
-    assert.equal(analysisRun.settings.missionConfidenceTarget, 0.82);
+    assert.equal(analysisRun.analysis_type, "carry_list");
+    assert.equal(analysisRun.settings.missionConfidenceTarget, 0.9);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">|<section class="lite-mesa-settings lite-mesa-analysis-settings">|分析结果已生成/);
   } finally {
     runtime.restore();
   }
@@ -3402,7 +3423,14 @@ test("saved run context survives a cold workbench restore", async () => {
     await runtime.flush();
     await runtime.flush();
     assert.match(runtime.appNode.innerHTML, /<option value="plan-restored" selected>恢复方案<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /样本量[\s\S]*<strong>13<\/strong>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /样本量|随机种子/);
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const analysisRun = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(analysisRun.settings.samples, 13);
+    assert.equal(analysisRun.settings.seed, 1313);
   } finally {
     runtime.restore();
   }

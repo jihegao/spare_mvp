@@ -3939,6 +3939,7 @@ test("lite Mesa spare shortfall page uses transport delay and repair cancellatio
 
 test("lite Mesa carry and downtime result detail hides requested setting-only fields", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const carryDefinitionSource = appSource.slice(
     appSource.indexOf("carry_list:"),
     appSource.indexOf("mission_reliability:")
@@ -3967,8 +3968,19 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
   assert.doesNotMatch(carryBodySource, /<th>置信度目标<\/th>|row\.confidenceTarget/);
   assert.match(carryBodySource, /data-carry-hide-zero/);
   assert.match(carryBodySource, /隐藏需求数值为 0 的备件/);
+  assert.match(carryBodySource, /data-carry-aircraft-filter/);
   assert.match(carryBodySource, /<th>机型<\/th>/);
-  assert.match(carryBodySource, /<th>有寿件<\/th><th>起落寿命<\/th><th>使用寿命\(h\)<\/th>/);
+  assert.match(carryBodySource, /data-carry-recommended-sort="asc"/);
+  assert.match(carryBodySource, /data-carry-recommended-sort="desc"/);
+  assert.match(carryBodySource, /aria-label="按建议携行数量升序排列"/);
+  assert.match(carryBodySource, /aria-label="按建议携行数量降序排列"/);
+  assert.match(carryBodySource, /aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip"/);
+  assert.match(carryBodySource, /class="carry-life-tooltip" role="tooltip"/);
+  assert.match(carryBodySource, /carryListProductDisplayName\(row, productsById\)/);
+  assert.doesNotMatch(carryBodySource, /row\.spareType/);
+  assert.doesNotMatch(carryBodySource, /<span>有寿件寿命在预防性维修中配置/);
+  assert.match(styleSource, /\.carry-life-help:hover \.carry-life-tooltip/);
+  assert.match(styleSource, /\.carry-life-help:focus-within \.carry-life-tooltip/);
 });
 
 test("downtime analysis exposes four-factor multi-select, linked summaries, and typed event details", async () => {
