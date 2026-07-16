@@ -4628,6 +4628,40 @@ test("visual simulation places Solara refresh inside the iframe frame", async ()
   assert.doesNotMatch(visualSource, /mesa-control-deck|mesa-control-status/);
 });
 
+test("visualization event rendering uses localized copy and Chinese secondary metadata", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const solaraSource = await readFile(
+    new URL("../src/spare_mvp_abm/aircraft_support_v1/solara_app.py", import.meta.url),
+    "utf8"
+  );
+  const eventSource = appSource.slice(
+    appSource.indexOf("function renderVisualizationEventStream"),
+    appSource.indexOf("function mesaTab")
+  );
+  const logSource = appSource.slice(
+    appSource.indexOf("function buildSimulationLogStream"),
+    appSource.indexOf("function isStateFrameEvent")
+  );
+  const metricsSource = solaraSource.slice(
+    solaraSource.indexOf("def _metrics_rows"),
+    solaraSource.indexOf("def _frame")
+  );
+  const parameterSource = solaraSource.slice(
+    solaraSource.indexOf("def _model_parameter_rows"),
+    solaraSource.indexOf("def InformationPanel")
+  );
+
+  assert.match(eventSource, /displayEvent\.log_type/);
+  assert.match(eventSource, /displayEvent\.localized_message/);
+  assert.match(eventSource, /内部信息：采样帧/);
+  assert.doesNotMatch(eventSource, /<span>\$\{htmlEscape\(event\.message\)\}<\/span>/);
+  assert.doesNotMatch(eventSource, /<small>frame .* step .* run /);
+  assert.match(logSource, /localizeVisualizationEvent\(event\)/);
+  assert.match(logSource, /event\.localized_message/);
+  assert.doesNotMatch(metricsSource, /数据来源|后端项目/);
+  assert.doesNotMatch(parameterSource, /项目编号|数据来源|后端项目/);
+});
+
 test("M9.2 visual simulation keeps state stream support behind the simplified replay flow", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");

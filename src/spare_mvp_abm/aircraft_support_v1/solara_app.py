@@ -37,6 +37,54 @@ RESET_BUTTON_LABEL = "重置"
 STEP_BUTTON_LABEL = "单步推进"
 MODEL_PARAMETERS_TITLE = "模型参数"
 INFORMATION_TITLE = "信息"
+EVENT_TYPE_LABELS = {
+    "simulation_stopped": "推演结束",
+    "transport_arrived": "备件到达",
+    "mission_failed_returned": "任务故障返场",
+    "mission_failed_after_return": "任务返场后判定失败",
+    "mission_returned_with_component_failure": "任务返场后维修",
+    "mission_returned": "任务返场",
+    "mission_failed_minimum_aircraft": "任务失败",
+    "personnel_delay": "保障人员不足",
+    "equipment_shortage": "保障设备短缺",
+    "spare_shortage": "备件短缺",
+    "job_started": "保障作业开始",
+    "component_failed": "部件故障",
+    "aircraft_failed": "飞机故障",
+    "preventive_created": "预防性维修创建",
+    "preflight_created": "飞行前保障创建",
+    "mission_launched": "任务启动",
+    "mission_cancelled": "任务取消",
+    "mission_success_point_succeeded": "任务判定成功",
+    "mission_success_point_failed": "任务判定失败",
+    "spare_consumed": "备件消耗",
+    "transport_dispatched": "备件调运",
+    "transport_replenished": "备件补充",
+    "preflight_completed": "飞行前保障完成",
+    "repair_completed": "修复性维修完成",
+    "postflight_completed": "航后保障完成",
+    "preventive_completed": "预防性维修完成",
+}
+JOB_STATE_LABELS = {
+    "waiting": "等待中",
+    "queued": "排队中",
+    "pending": "待执行",
+    "running": "执行中",
+    "active": "执行中",
+    "blocked": "受阻",
+    "delayed": "延误",
+    "completed": "已完成",
+    "succeeded": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+}
+SHORTAGE_REASON_LABELS = {
+    "personnel_capacity": "保障人员数量不足",
+    "equipment_capacity": "保障设备可用数量不足",
+    "in_transit": "所需备件正在调运途中",
+    "spare_shortage": "所需备件库存不足",
+    "equipment_shortage": "所需保障设备不足",
+}
 
 
 def _repo_root() -> Path:
@@ -183,17 +231,7 @@ def _safe_model_inputs(
 def MetricsPanel(model: AircraftSupportV1Model) -> None:
     update_counter.get()
     metrics = model.snapshot()
-    source_context = model.inputs.get("source_context") if isinstance(model.inputs.get("source_context"), dict) else {}
-    source_label = "后端项目" if source_context.get("source") == "backend_project" else "文件回退"
-    rows = [
-        ("仿真分钟", model.minute),
-        ("数据来源", source_label),
-        ("任务成功率", f"{metrics['mission_success_rate']:.1%}"),
-        ("战备完好率", f"{metrics['ready_rate']:.1%}"),
-        ("可用飞机", metrics["available_aircraft"]),
-        ("维修中", metrics["repairing_count"]),
-        ("缺件事件", metrics["shortage_events"]),
-    ]
+    rows = _metrics_rows(model, metrics)
     metric_cards = "".join(
         f'<div class="sim-metric"><span>{html.escape(str(label))}</span><strong>{html.escape(str(value))}</strong></div>'
         for label, value in rows
@@ -202,6 +240,18 @@ def MetricsPanel(model: AircraftSupportV1Model) -> None:
         unsafe_innerHTML=f'<div class="sim-section-title">{METRICS_PANEL_TITLE}</div><div class="sim-metric-grid">{metric_cards}</div>',
         classes=["sim-html"],
     )
+
+
+def _metrics_rows(model: AircraftSupportV1Model, metrics: dict[str, Any] | None = None) -> list[tuple[str, Any]]:
+    values = metrics or model.snapshot()
+    return [
+        ("仿真分钟", model.minute),
+        ("任务成功率", f"{values['mission_success_rate']:.1%}"),
+        ("战备完好率", f"{values['ready_rate']:.1%}"),
+        ("可用飞机", values["available_aircraft"]),
+        ("维修中", values["repairing_count"]),
+        ("缺件事件", values["shortage_events"]),
+    ]
 
 
 def _frame(model: AircraftSupportV1Model) -> dict[str, Any]:
@@ -222,7 +272,7 @@ def _state_label(state: Any) -> str:
         "unavailable": "维修/不可用",
         "failed": "维修/不可用",
     }
-    return labels.get(str(state or "").lower(), str(state or "未知"))
+    return labels.get(str(state or "").lower(), "未知状态")
 
 
 def _state_class(state: Any) -> str:
@@ -248,7 +298,127 @@ def _status_label(status: Any) -> str:
         "cancelled": "已取消",
         "delayed": "延误",
     }
-    return labels.get(str(status or "").lower(), str(status or "未知"))
+    return labels.get(str(status or "").lower(), "未知状态")
+
+
+def _job_state_label(state: Any) -> str:
+    return JOB_STATE_LABELS.get(str(state or "").strip().lower(), "未知状态")
+
+
+def _shortage_reason_label(reason: Any, spare_type: Any = "") -> str:
+    normalized = str(reason or "").strip()
+    if not normalized:
+        return "保障资源暂不可用"
+    if normalized.startswith("spare:"):
+        spare = normalized.removeprefix("spare:") or str(spare_type or "")
+        return f"{_display_entity(spare, '备件')}库存不足"
+    return SHORTAGE_REASON_LABELS.get(normalized.lower(), "保障资源暂不可用")
+
+
+def _display_entity(value: Any, fallback: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    if any(ord(character) > 127 for character in text):
+        return text
+    return f"{fallback}（内部标识：{text}）"
+
+
+def _event_type_label(event_type: Any) -> str:
+    normalized = str(event_type or "").strip().lower()
+    if normalized in EVENT_TYPE_LABELS:
+        return EVENT_TYPE_LABELS[normalized]
+    if "shortage" in normalized:
+        return "保障资源短缺"
+    if "fail" in normalized:
+        return "故障事件"
+    if "mission" in normalized:
+        return "任务事件"
+    if "repair" in normalized:
+        return "维修事件"
+    if "support" in normalized or "job" in normalized:
+        return "保障作业"
+    if "transport" in normalized or "spare" in normalized:
+        return "备件保障"
+    return "仿真事件"
+
+
+def _event_display(event: dict[str, Any]) -> tuple[str, str, str]:
+    event_type = str(event.get("event") or event.get("type") or "")
+    details = event.get("details") if isinstance(event.get("details"), dict) else {}
+    raw_message = str(event.get("message") or "")
+    tokens = raw_message.split()
+    first = tokens[0] if tokens else ""
+    last = tokens[-1] if tokens else ""
+    number = next((token for token in tokens if re.fullmatch(r"\d+(?:\.\d+)?", token)), "")
+    job_id = str(details.get("job_id") or (first if "job" in first.lower() else ""))
+    mission_id = str(details.get("mission_id") or (first if event_type.startswith("mission_") else ""))
+    aircraft_id = str(details.get("tail_number") or (first if event_type in {
+        "mission_failed_returned", "mission_failed_after_return", "mission_returned_with_component_failure",
+        "mission_returned", "component_failed", "aircraft_failed", "preventive_created", "preflight_completed",
+        "repair_completed", "postflight_completed", "preventive_completed",
+    } else ""))
+    internal_id = job_id or mission_id or aircraft_id
+    label = _event_type_label(event_type)
+    resource = _display_entity(details.get("resource_name") or details.get("resource_id") or (last if " at " in raw_message else ""), "保障节点")
+    spare = _display_entity(details.get("spare_name") or details.get("spare_type") or "", "备件")
+    quantity = str(details.get("quantity") or details.get("required_quantity") or number or "所需")
+
+    if event_type == "simulation_stopped":
+        message = "推演达到终止条件，已停止推进。"
+    elif event_type == "spare_shortage":
+        message = f"{spare}库存不足，保障作业等待备件补给；保障节点：{resource}。"
+    elif event_type == "equipment_shortage":
+        message = f"保障设备可用数量不足，保障作业等待设备；保障节点：{resource}。"
+    elif event_type == "personnel_delay":
+        message = f"保障人员数量不足，保障作业等待人员；保障节点：{resource}。"
+    elif event_type == "job_started":
+        message = "保障作业已开始。"
+    elif event_type == "spare_consumed":
+        message = f"保障作业已消耗 {quantity} 件{spare}。"
+    elif event_type == "transport_dispatched":
+        message = f"{quantity} 件{spare}已发起调运。"
+    elif event_type == "transport_arrived":
+        message = f"{quantity} 件{spare}已到达{resource}。"
+    elif event_type == "transport_replenished":
+        message = f"{quantity} 件{spare}已完成库存补充。"
+    elif event_type == "component_failed":
+        message = f"飞机发生部件故障：{_display_entity(last, '故障部件')}。"
+    elif event_type == "aircraft_failed":
+        message = "飞机故障已影响整机可用状态。"
+    elif event_type == "mission_failed_returned":
+        message = "飞机因故障提前返场并转入维修。"
+    elif event_type == "mission_failed_after_return":
+        message = "飞机返场后判定任务失败并转入维修。"
+    elif event_type == "mission_returned_with_component_failure":
+        message = "飞机返场后发现部件故障，已转入维修。"
+    elif event_type == "mission_returned":
+        message = "飞机已完成返场并进入航后保障。"
+    elif event_type == "mission_failed_minimum_aircraft":
+        message = "可用飞机数量低于最低要求，任务判定失败。"
+    elif event_type == "mission_launched":
+        message = f"任务已启动{f'，投入 {number} 架飞机' if number else ''}。"
+    elif event_type == "mission_cancelled":
+        message = "就绪飞机数量不足，任务已取消。"
+    elif event_type == "mission_success_point_succeeded":
+        message = "任务在成功判定点达到要求，判定成功。"
+    elif event_type == "mission_success_point_failed":
+        message = "任务在成功判定点未达到要求，判定失败。"
+    elif event_type == "preflight_created":
+        message = "已创建飞行前保障作业。"
+    elif event_type == "preflight_completed":
+        message = "飞机已完成飞行前保障。"
+    elif event_type == "postflight_completed":
+        message = "飞机已完成航后保障。"
+    elif event_type == "preventive_created":
+        message = "飞机已进入预防性维修。"
+    elif event_type == "preventive_completed":
+        message = "飞机已完成预防性维修并恢复可用。"
+    elif event_type == "repair_completed":
+        message = "飞机已完成修复性维修并恢复可用。"
+    else:
+        message = f"已记录{label}。"
+    return label, message, internal_id
 
 
 def _time_label(minutes: Any) -> str:
@@ -304,17 +474,22 @@ def AircraftPanel(model: AircraftSupportV1Model) -> None:
 def EventPanel(model: AircraftSupportV1Model) -> None:
     update_counter.get()
     events = list(model.event_log[-12:])
-    event_rows = "".join(
-        "<div class=\"sim-event\">"
-        f"<span>T+{html.escape(str(item.get('time', 0)))}</span>"
-        f"<strong>{html.escape(str(item.get('event') or item.get('type') or '事件'))}</strong>"
-        f"<p>{html.escape(str(item.get('message') or ''))}</p>"
-        "</div>"
-        for item in events
-    ) or '<div class="sim-empty">等待模型推进后显示事件。</div>'
+    event_rows = "".join(_event_row_html(item) for item in events) or '<div class="sim-empty">等待模型推进后显示事件。</div>'
     solara.HTML(
         unsafe_innerHTML=f'<div class="sim-detail-title">事件流</div><div class="sim-event-list">{event_rows}</div>',
         classes=["sim-html"],
+    )
+
+
+def _event_row_html(event: dict[str, Any]) -> str:
+    label, message, internal_id = _event_display(event)
+    secondary = f"<small>内部标识：{html.escape(internal_id)}</small>" if internal_id else ""
+    return (
+        '<div class="sim-event">'
+        f"<span>T+{html.escape(str(event.get('time', 0)))}</span>"
+        f"<strong>{html.escape(label)}</strong>"
+        f"<p>{html.escape(message)}</p>{secondary}"
+        "</div>"
     )
 
 
@@ -394,15 +569,16 @@ def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: d
 
 @solara.component
 def ModelParametersPanel(inputs: dict[str, Any]) -> None:
+    rows = _model_parameter_rows(inputs)
+    solara.Markdown("\n".join(f"- {label}：{value}" for label, value in rows))
+
+
+def _model_parameter_rows(inputs: dict[str, Any]) -> list[tuple[str, Any]]:
     time_config = inputs.get("time") if isinstance(inputs.get("time"), dict) else {}
-    source_context = inputs.get("source_context") if isinstance(inputs.get("source_context"), dict) else {}
-    rows = [
-        ("项目编号", source_context.get("project_id") or "-"),
-        ("数据来源", "后端项目" if source_context.get("source") == "backend_project" else "文件回退"),
+    return [
         ("仿真时长", f"{time_config.get('duration_minutes', '-')} 分钟"),
         ("随机种子", inputs.get("seed", "-")),
     ]
-    solara.Markdown("\n".join(f"- {label}：{value}" for label, value in rows))
 
 
 @solara.component
@@ -574,16 +750,21 @@ def MissionDetailPanel(model: AircraftSupportV1Model) -> None:
 def SupportDetailPanel(model: AircraftSupportV1Model) -> None:
     update_counter.get()
     jobs = _frame(model).get("jobs", [])
-    cards = "".join(
-        "<div class=\"sim-detail-row\">"
-        f"<span>{html.escape(str(item.get('tail_number') or '保障作业'))}</span>"
-        f"<strong>{html.escape(str(item.get('task') or item.get('kind') or '作业'))}</strong>"
-        f"<small>{html.escape(str(item.get('state') or 'waiting'))} / 剩余 {html.escape(str(item.get('remaining', 0)))} min</small>"
-        "</div>"
-        for item in jobs
-    ) or '<div class="sim-empty">当前没有等待或执行中的保障作业。</div>'
+    cards = "".join(_support_job_row_html(item) for item in jobs) or '<div class="sim-empty">当前没有等待或执行中的保障作业。</div>'
     solara.HTML(unsafe_innerHTML=f'<div class="sim-detail-title">保障作业</div><div class="sim-detail-list">{cards}</div>', classes=["sim-html"])
     EventPanel(model)
+
+
+def _support_job_row_html(item: dict[str, Any]) -> str:
+    reason = f" / 原因：{_shortage_reason_label(item.get('shortage_reason'))}" if item.get("shortage_reason") else ""
+    return (
+        "<div class=\"sim-detail-row\">"
+        f"<span>{html.escape(str(item.get('tail_number') or '保障作业'))}</span>"
+        f"<strong>{html.escape(_display_entity(item.get('task') or item.get('kind'), '保障作业'))}</strong>"
+        f"<small>{html.escape(_job_state_label(item.get('state')))}{html.escape(reason)}"
+        f" / 剩余 {html.escape(str(item.get('remaining', 0)))} 分钟</small>"
+        "</div>"
+    )
 
 
 @solara.component

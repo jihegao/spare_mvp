@@ -39,7 +39,12 @@ import {
 import { buildRunIntent, submitRunIntent } from "./run-intent.mjs";
 import {
   buildSolaraVisualizationUrl,
-  resolveSolaraVisualizationBaseUrl
+  localizeVisualizationEvent,
+  resolveSolaraVisualizationBaseUrl,
+  visualizationEventTypeLabel,
+  visualizationJobStateLabel,
+  visualizationMissionStatusLabel,
+  visualizationShortageReasonLabel
 } from "./solara-visualization.mjs";
 import {
   cloneScenario,
@@ -14249,16 +14254,18 @@ function renderVisualizationEventStream(events, activeFrameIndex) {
         <details class="simulation-log-collapse">
           <summary><strong>全部保障事件</strong><span>${events.length} 条，点击展开</span></summary>
           <div class="stack-list">
-            ${events.map((event) => `
+            ${events.map((event) => {
+              const displayEvent = simulationLogDisplayEvent(event);
+              return `
               <button type="button" class="event simulation-log-event ${event.frame_index === activeFrameIndex ? "success" : htmlEscape(event.severity || "info")}" data-mesa-event-jump="${htmlEscape(event.frame_index)}">
                 <span class="simulation-log-head">
                   <strong>${htmlEscape(simulationDayMinuteLabel(event.simulation_time))}</strong>
-                  <em>${htmlEscape(event.log_type || simulationLogTypeLabel(event.event_type || event.event))}</em>
+                  <em>${htmlEscape(displayEvent.log_type)}</em>
                 </span>
-                <span>${htmlEscape(event.message)}</span>
-                <small>frame ${htmlEscape(Number(event.frame_index) + 1)} / step ${htmlEscape(event.step)} / run ${htmlEscape(event.run_id || "-")}</small>
+                <span>${htmlEscape(displayEvent.localized_message)}</span>
+                <small>内部信息：采样帧 ${htmlEscape(Number(event.frame_index) + 1)} / 推演步 ${htmlEscape(event.step)}${displayEvent.internal_id ? ` / 标识 ${htmlEscape(displayEvent.internal_id)}` : ""}</small>
               </button>
-            `).join("")}
+            `;}).join("")}
           </div>
         </details>
       ` : `<div class="event warning">暂无任务分配、保障作业、任务启动/结束、故障或维修日志。</div>`}
@@ -14433,15 +14440,26 @@ function buildSimulationLogStream(series = {}) {
   const frames = Array.isArray(series?.frames) ? series.frames : [];
   const directLogs = buildVisualizationEventStream(series)
     .filter((event) => !isStateFrameEvent(event))
-    .map((event) => ({
+    .map((event) => simulationLogDisplayEvent({
       ...event,
-      log_type: simulationLogTypeLabel(event.event_type || event.event),
       severity: simulationLogSeverity(event.event_type || event.event)
     }));
   const derivedLogs = deriveSimulationLogEvents(frames, series?.run_id || "");
   return dedupeSimulationLogs([...directLogs, ...derivedLogs])
     .sort((a, b) => Number(a.simulation_time || 0) - Number(b.simulation_time || 0) || Number(a.frame_index || 0) - Number(b.frame_index || 0))
     .slice(-240);
+}
+
+function simulationLogDisplayEvent(event = {}) {
+  const localized = localizeVisualizationEvent(event);
+  const hasChineseMessage = /[^\x00-\x7F]/.test(String(event.message || ""));
+  return {
+    ...event,
+    event_label: localized.event_label,
+    log_type: event.log_type || localized.event_label,
+    localized_message: event.localized_message || (hasChineseMessage ? String(event.message) : localized.localized_message),
+    internal_id: event.internal_id || localized.internal_id
+  };
 }
 
 function isStateFrameEvent(event = {}) {
@@ -14470,19 +14488,20 @@ function deriveMissionLogs(logs, previousState, state, frame, frameIndex, runId)
     const assigned = Array.isArray(mission.assignedTailNumbers) ? mission.assignedTailNumbers : [];
     const previousAssigned = Array.isArray(previous.assignedTailNumbers) ? previous.assignedTailNumbers : [];
     if (assigned.length && assigned.join("|") !== previousAssigned.join("|")) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_assigned", "任务成员分配", `任务 ${missionId} 分配 ${assigned.join(" / ")}`, "info", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_assigned", "任务成员分配", `已完成任务成员分配；执行飞机：${assigned.join(" / ")}；任务标识：${missionId}`, "info", missionId);
     }
     if (["launched", "flying"].includes(String(mission.status)) && !["launched", "flying"].includes(String(previous.status))) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_started", "任务启动", `任务 ${missionId} 启动，执行飞机 ${assigned.join(" / ") || "-"}`, "success", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_started", "任务启动", `任务已启动；执行飞机：${assigned.join(" / ") || "-"}；任务标识：${missionId}`, "success", missionId);
     }
     if (["completed", "succeeded", "failed", "cancelled"].includes(String(mission.status)) && String(mission.status) !== String(previous.status)) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_finished", "任务结束", `任务 ${missionId} ${missionStatusLabel(mission.status)}，执行飞机 ${assigned.join(" / ") || "-"}`, mission.status === "completed" || mission.status === "succeeded" ? "success" : "warning", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_finished", "任务结束", `任务状态：${missionStatusLabel(mission.status)}；执行飞机：${assigned.join(" / ") || "-"}；任务标识：${missionId}`, mission.status === "completed" || mission.status === "succeeded" ? "success" : "warning", missionId);
     }
   }
 }
 
 function deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, runId) {
   const previousJobs = new Map((previousState?.jobs || []).map((job) => [String(job.id), job]));
+  const rawJobs = new Map((Array.isArray(frame?.jobs) ? frame.jobs : []).map((job) => [String(job.job_id || ""), job]));
   for (const job of state.jobs || []) {
     const jobId = String(job.id || `${job.tailNumber}-${job.kind}-${job.task}`);
     const previous = previousJobs.get(jobId) || {};
@@ -14490,7 +14509,14 @@ function deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, run
       continue;
     }
     const label = job.kind === "repair" ? "维修" : "飞机保障作业";
-    const message = `${job.tailNumber || "-"} ${job.task || supportJobKindLabel(job.kind)} / ${supportJobStateLabel(job.state)} / 剩余 ${Number(job.remaining || 0)}min`;
+    const shortageReason = rawJobs.get(jobId)?.shortage_reason;
+    const reasonText = shortageReason
+      ? `；原因：${visualizationShortageReasonLabel(shortageReason)}`
+      : "";
+    const rawTask = String(job.task || supportJobKindLabel(job.kind));
+    const taskLabel = /[^\x00-\x7F]/.test(rawTask) ? rawTask : `保障作业（内部标识：${rawTask}）`;
+    const aircraftSuffix = job.tailNumber ? `；飞机编号：${job.tailNumber}` : "";
+    const message = `${taskLabel} / ${supportJobStateLabel(job.state)}${reasonText} / 剩余 ${Number(job.remaining || 0)} 分钟${aircraftSuffix}`;
     pushSimulationLog(logs, frame, frameIndex, runId, `support_job_${job.kind || "job"}`, label, message, job.kind === "repair" ? "warning" : "info", jobId);
   }
 }
@@ -14500,13 +14526,13 @@ function deriveAircraftStatusLogs(logs, previousState, state, frame, frameIndex,
   for (const aircraft of state.aircraft || []) {
     const previous = previousAircraft.get(String(aircraft.id)) || {};
     if (aircraft.failedLru && aircraft.failedLru !== previous.failedLru) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "aircraft_failure", "飞机故障", `${aircraft.label} 故障 LRU ${aircraft.failedLru}`, "warning", aircraft.id);
+      pushSimulationLog(logs, frame, frameIndex, runId, "aircraft_failure", "飞机故障", `飞机发生可更换单元故障：${aircraft.failedLru}；飞机编号：${aircraft.label}`, "warning", aircraft.id);
     }
     if (previousState && isMaintenanceAircraftState(previous.state) && !isMaintenanceAircraftState(aircraft.state) && !aircraft.failedLru) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "repair_finished", "维修", `${aircraft.label} 维修结束，状态 ${visualAircraftStateLabel(aircraft.state)}`, "success", aircraft.id);
+      pushSimulationLog(logs, frame, frameIndex, runId, "repair_finished", "维修", `维修结束，当前状态：${visualAircraftStateLabel(aircraft.state)}；飞机编号：${aircraft.label}`, "success", aircraft.id);
     }
     if (previousState && !isSupportAircraftState(previous.state) && isSupportAircraftState(aircraft.state)) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "support_started", "飞机保障作业", `${aircraft.label} 进入${visualAircraftStateLabel(aircraft.state)}`, "info", aircraft.id);
+      pushSimulationLog(logs, frame, frameIndex, runId, "support_started", "飞机保障作业", `飞机进入${visualAircraftStateLabel(aircraft.state)}；飞机编号：${aircraft.label}`, "info", aircraft.id);
     }
   }
 }
@@ -14540,15 +14566,7 @@ function dedupeSimulationLogs(logs) {
 }
 
 function simulationLogTypeLabel(eventType) {
-  const type = String(eventType || "").toLowerCase();
-  if (type.includes("launch") || type.includes("started")) return "任务启动";
-  if (type.includes("assigned")) return "任务成员分配";
-  if (type.includes("mission_return") || type.includes("mission_failed") || type.includes("mission_cancel") || type.includes("mission_finished") || type.includes("completed")) return "任务结束";
-  if (type.includes("preflight") || type.includes("postflight") || type.includes("job") || type.includes("support")) return "飞机保障作业";
-  if (type.includes("repair")) return "维修";
-  if (type.includes("fail")) return "飞机故障";
-  if (type.includes("transport") || type.includes("spare")) return "备件转运";
-  return "仿真日志";
+  return visualizationEventTypeLabel(eventType);
 }
 
 function simulationLogSeverity(eventType) {
@@ -14569,13 +14587,7 @@ function supportJobKindLabel(kind) {
 }
 
 function supportJobStateLabel(state) {
-  const labels = {
-    waiting: "等待",
-    running: "执行中",
-    completed: "已完成",
-    blocked: "受阻"
-  };
-  return labels[state] || state || "-";
+  return visualizationJobStateLabel(state);
 }
 
 function renderMesaStage(activeView, state) {
@@ -15557,17 +15569,7 @@ function missionStatusClass(status) {
 }
 
 function missionStatusLabel(status) {
-  const labels = {
-    completed: "已完成",
-    succeeded: "成功",
-    launched: "执行中",
-    flying: "执行中",
-    scheduled: "计划中",
-    delayed: "延误",
-    cancelled: "已取消",
-    failed: "失败"
-  };
-  return labels[status] || status || "-";
+  return visualizationMissionStatusLabel(status);
 }
 
 function visualAircraftStateLabel(state) {

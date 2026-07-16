@@ -1,3 +1,5 @@
+import { localizeVisualizationEvent } from "./solara-visualization.mjs";
+
 const STATE_SERIES_SCHEMA_VERSION = "visualization-state-series-v0";
 const STATE_STREAM_FRAME_SCHEMA_VERSION = "visualization-state-frame-v0";
 const MODEL_FAMILY = "aircraft_support_v1";
@@ -90,7 +92,7 @@ export function buildVisualizationEventStream(series = {}) {
   const frames = Array.isArray(series?.frames) ? series.frames : [];
   return frames.flatMap((frame, frameIndex) => {
     const events = Array.isArray(frame.events) ? frame.events : [];
-    return events.map((event) => ({
+    return events.map((event) => localizeVisualizationEvent({
       event_id: event.event_id,
       run_id: event.run_id,
       step: frame.step,
@@ -100,6 +102,7 @@ export function buildVisualizationEventStream(series = {}) {
       event_type: event.event_type || event.event,
       message: event.message,
       metric_refs: Array.isArray(event.metric_refs) ? event.metric_refs : [],
+      details: event.details && typeof event.details === "object" ? { ...event.details } : {},
       summary: { ...frame.event_summary }
     }));
   });

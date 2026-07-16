@@ -120,6 +120,10 @@ test("normalizeVisualizationStateSeriesPayload requires run identity and frame s
     event_type: "mission_launch",
     message: "AC-01 launched",
     metric_refs: ["mission_success_rate"],
+    details: {},
+    event_label: "任务启动",
+    localized_message: "任务已启动。 飞机编号：AC-01",
+    internal_id: `${runId}-step-1-mission_launch`,
     summary: { shortage_events: 0 }
   });
 });
@@ -267,6 +271,10 @@ test("buildVisualizationEventStream returns flattened events with frame indexes"
   assert.deepEqual(buildVisualizationEventStream(normalized).map((event) => [event.event_id, event.frame_index, event.step]), [
     [`${runId}-step-0-run_started`, 0, 0],
     [`${runId}-step-1-mission_launch`, 1, 1]
+  ]);
+  assert.deepEqual(buildVisualizationEventStream(normalized).map((event) => [event.event_label, event.localized_message]), [
+    ["推演开始", "推演已开始。"],
+    ["任务启动", "任务已启动。 飞机编号：AC-01"]
   ]);
 });
 

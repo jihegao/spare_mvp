@@ -4,8 +4,13 @@ import test from "node:test";
 import {
   buildSolaraVisualizationUrl,
   DEFAULT_SOLARA_VISUALIZATION_URL,
+  localizeVisualizationEvent,
   resolveSolaraVisualizationBaseUrl,
-  SOLARA_VISUALIZATION_URL_STORAGE_KEY
+  SOLARA_VISUALIZATION_URL_STORAGE_KEY,
+  visualizationEventTypeLabel,
+  visualizationJobStateLabel,
+  visualizationMissionStatusLabel,
+  visualizationShortageReasonLabel
 } from "../front/solara-visualization.mjs";
 
 test("Solara visualization URL defaults to the managed sidecar", () => {
@@ -53,4 +58,35 @@ test("Solara iframe URL carries visual simulation context without using legacy s
   assert.match(url, /plan_seed=88/);
   assert.match(url, /reload=2/);
   assert.doesNotMatch(url, /8521|independent-mesa|mesa-visualization-runs/);
+});
+
+test("visualization event, mission, job, and shortage vocabulary is user-facing Chinese", () => {
+  assert.equal(visualizationEventTypeLabel("spare_shortage"), "备件短缺");
+  assert.equal(visualizationEventTypeLabel("mission_launched"), "任务启动");
+  assert.equal(visualizationJobStateLabel("blocked"), "受阻");
+  assert.equal(visualizationMissionStatusLabel("cancelled"), "已取消");
+  assert.equal(visualizationShortageReasonLabel("personnel_capacity"), "保障人员数量不足");
+  assert.equal(visualizationShortageReasonLabel("spare:hyd-pump"), "备件（内部标识：hyd-pump）库存不足");
+  assert.equal(visualizationJobStateLabel("future_state"), "未知状态");
+});
+
+test("visualization shortage messages lead with Chinese context and demote internal IDs", () => {
+  const localized = localizeVisualizationEvent({
+    event_id: "event-0006",
+    event_type: "spare_shortage",
+    message: "job-0006 blocked by hyd-pump shortage at carrier-deck",
+    details: {
+      job_id: "job-0006",
+      spare_type: "航电模块",
+      resource_id: "基层"
+    }
+  });
+
+  assert.equal(localized.event_type, "spare_shortage", "the internal event contract remains unchanged");
+  assert.equal(localized.event_label, "备件短缺");
+  assert.match(localized.localized_message, /^航电模块库存不足，保障作业等待备件补给/);
+  assert.match(localized.localized_message, /保障节点：基层/);
+  assert.match(localized.localized_message, /作业标识：job-0006$/);
+  assert.doesNotMatch(localized.localized_message, /blocked by|shortage at/);
+  assert.equal(localized.internal_id, "job-0006");
 });
