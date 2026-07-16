@@ -834,6 +834,31 @@ test("independent Mesa wrapper pages keep formal projection UI isolated", async 
   assert.doesNotMatch(mesaSource, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
 });
 
+test("spare shortfall page keeps loading in the result section and sorts product rows from column headers", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const pageSource = appSource.slice(
+    appSource.indexOf("function renderSpareShortfallAnalysisPage"),
+    appSource.indexOf("function renderCarryListAnalysisPage")
+  );
+  const sessionSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisSessionBody"),
+    appSource.indexOf('if (definition.analysisType === "carry_list")', appSource.indexOf("function renderLiteMesaAnalysisSessionBody"))
+  );
+
+  assert.match(pageSource, /analysis-result-loader/);
+  assert.match(pageSource, /renderExperimentPlanContextDropdown\(page\)/);
+  assert.match(pageSource, /data-lite-mesa-analysis-action="run">加载运行结果<\/button>/);
+  assert.doesNotMatch(pageSource, /lite-mesa-hero|lite-mesa-analysis-settings|renderLiteMesaAnalysisSettings/);
+  assert.match(sessionSource, /data-spare-aircraft-filter/);
+  assert.match(sessionSource, /renderSpareShortfallSortHeading\("需求数量", "demand"\)/);
+  assert.match(sessionSource, /renderSpareShortfallSortHeading\("满足率", "fillRate"\)/);
+  assert.match(sessionSource, /analysisProductDisplayName\(row, productsById\)/);
+  assert.doesNotMatch(sessionSource, /row\.spareType/);
+  assert.doesNotMatch(appSource, /data-spare-demand-sort|需求数量排序|恢复默认/);
+  assert.match(styleSource, /\.analysis-sort-controls button\[aria-pressed="true"\]/);
+});
+
 test("M6.2 formal result boundary unlocks only compiler-provenanced analysis artifacts", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const formalBoundarySource = appSource.slice(

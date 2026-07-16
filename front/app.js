@@ -785,7 +785,7 @@ let equipmentSearchQuery = "";
 let equipmentProductEditorComponentId = "";
 let equipmentProductQuery = "";
 let equipmentProductDraft = { name: "", model: "", kind: "LRU" };
-let spareDemandSort = "default";
+let spareShortfallSort = { field: "", direction: "" };
 let spareAircraftFilter = "";
 let carryHideZeroDemand = true;
 let carryRecommendedSort = "default";
@@ -2088,9 +2088,12 @@ function bindEvents() {
       return;
     }
 
-    const spareSortButton = event.target.closest("[data-spare-demand-sort]");
+    const spareSortButton = event.target.closest("[data-spare-shortfall-sort]");
     if (spareSortButton) {
-      spareDemandSort = spareSortButton.dataset.spareDemandSort || "default";
+      spareShortfallSort = {
+        field: spareSortButton.dataset.spareShortfallSort || "",
+        direction: spareSortButton.dataset.sortDirection || ""
+      };
       render();
       return;
     }
@@ -17073,15 +17076,22 @@ function renderFormalProjectionBody(formalProjection) {
   }
   if (formalProjection.analysisType === "spare_shortfall") {
     const sourceRows = formalProjection.rows || [];
-    const rows = spareDemandSort === "asc" ? [...sourceRows].sort((a, b) => a.demand - b.demand) : spareDemandSort === "desc" ? [...sourceRows].sort((a, b) => b.demand - a.demand) : sourceRows;
+    const productsById = analysisProductsById();
+    const aircraftModels = [...new Set(sourceRows
+      .map((row) => String(row.aircraftModel || "").trim())
+      .filter((model) => model && !["全部机型", "未指定机型"].includes(model)))].sort();
+    const filteredRows = spareAircraftFilter
+      ? sourceRows.filter((row) => row.aircraftModel === spareAircraftFilter)
+      : sourceRows;
+    const rows = sortSpareShortfallRows(filteredRows);
     const maxShortage = rows.reduce((maxValue, row) => Math.max(maxValue, row.shortage || row.shortageProbability || 0), 1);
     return `
-      <div class="toolbar-row"><span>需求数量排序</span><button type="button" data-spare-demand-sort="asc">升序</button><button type="button" data-spare-demand-sort="desc">降序</button><button type="button" data-spare-demand-sort="default">恢复默认</button></div><div class="table-wrap">
+      <div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap">
         <table>
-          <thead><tr><th>机型</th><th>备件</th><th>需求数量</th><th>备件满足率</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
+          <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
+              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
               <td><span class="status-badge ${row.level === "严重" ? "danger" : row.level === "短缺" ? "warn" : ""}">${htmlEscape(row.level)}</span></td>
               <td class="bar-cell">${renderBar(row.shortage || row.shortageProbability, maxShortage, "red")}</td>
             </tr>
@@ -17507,6 +17517,9 @@ function renderLiteMesaAnalysisPage(page) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const settings = liteMesaAnalysisEffectiveSettings(definition);
   const result = liteMesaAnalysisResults[definition.analysisType] || null;
+  if (definition.analysisType === "spare_shortfall") {
+    return renderSpareShortfallAnalysisPage(page, definition, result);
+  }
   if (definition.analysisType === "carry_list") {
     return renderCarryListAnalysisPage(page, definition, result);
   }
@@ -17542,6 +17555,25 @@ function renderLiteMesaAnalysisPage(page) {
         </div>
       </section>
       <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
+        <div class="section-head">
+          <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
+          <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
+        </div>
+        ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderLiteMesaAnalysisSessionBody(definition, result)}
+      </section>
+    </div>
+  `;
+}
+
+function renderSpareShortfallAnalysisPage(page, definition, result) {
+  return `
+    <div class="lite-mesa-workbench lite-mesa-analysis-page spare-shortfall-analysis-page">
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
+        <div class="toolbar-row analysis-result-loader">
+          ${renderExperimentPlanContextDropdown(page)}
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">加载运行结果</button>
+        </div>
         <div class="section-head">
           <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
@@ -17822,24 +17854,19 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     : (result.rows || []);
   if (definition.analysisType === "spare_shortfall") {
     const concreteRows = rows.filter((row) => row.aircraftModel && !["全部机型", "未指定机型"].includes(row.aircraftModel));
+    const productsById = analysisProductsById();
     const aircraftModels = [...new Set(concreteRows.map((row) => row.aircraftModel))].sort();
     const filteredRows = spareAircraftFilter
       ? concreteRows.filter((row) => row.aircraftModel === spareAircraftFilter)
       : concreteRows;
-    const sortedRows = spareDemandSort === "asc"
-      ? [...filteredRows].sort((left, right) => Number(left.demand || 0) - Number(right.demand || 0))
-      : spareDemandSort === "desc"
-        ? [...filteredRows].sort((left, right) => Number(right.demand || 0) - Number(left.demand || 0))
-        : filteredRows;
-    return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label><span>需求数量排序</span><button type="button" data-spare-demand-sort="asc" aria-pressed="${spareDemandSort === "asc"}">升序</button><button type="button" data-spare-demand-sort="desc" aria-pressed="${spareDemandSort === "desc"}">降序</button><button type="button" data-spare-demand-sort="default" aria-pressed="${spareDemandSort === "default"}">恢复默认</button></div><div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>机型</th><th>备件类别</th><th>需求数量</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>满足率</th><th>风险</th></tr></thead>
-      <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
+    const sortedRows = sortSpareShortfallRows(filteredRows);
+    return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>风险</th></tr></thead>
+      <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
     </table></div>`;
   }
   if (definition.analysisType === "carry_list") {
-    const productsById = new Map((selectedExperimentPlanProjectJson().products || [])
-      .map((product) => [String(product?.id || "").trim(), product])
-      .filter(([productId]) => productId));
+    const productsById = analysisProductsById();
     const aircraftModels = [...new Set(rows.map((row) => String(row.aircraftModel || "").trim()).filter(Boolean))].sort();
     const activeAircraftFilter = aircraftModels.includes(carryAircraftFilter) ? carryAircraftFilter : "";
     const filteredRows = rows.filter((row) => (
@@ -17896,10 +17923,38 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   `;
 }
 
-function carryListProductDisplayName(row, productsById) {
+function analysisProductsById() {
+  return new Map((selectedExperimentPlanProjectJson().products || [])
+    .map((product) => [String(product?.id || "").trim(), product])
+    .filter(([productId]) => productId));
+}
+
+function analysisProductDisplayName(row, productsById) {
   const productId = String(row?.productId || "").trim();
   const product = productsById.get(productId);
   return product ? productDisplayName(product) : (productId || "未关联产品");
+}
+
+function carryListProductDisplayName(row, productsById) {
+  return analysisProductDisplayName(row, productsById);
+}
+
+function sortSpareShortfallRows(rows) {
+  const { field, direction } = spareShortfallSort;
+  if (!field || !["asc", "desc"].includes(direction)) return rows;
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftValue = Number(field === "fillRate" ? (left.row.fillRate ?? left.row.satisfy ?? 0) : (left.row.demand ?? 0));
+      const rightValue = Number(field === "fillRate" ? (right.row.fillRate ?? right.row.satisfy ?? 0) : (right.row.demand ?? 0));
+      const difference = leftValue - rightValue;
+      return (direction === "asc" ? difference : -difference) || left.index - right.index;
+    })
+    .map(({ row }) => row);
+}
+
+function renderSpareShortfallSortHeading(label, field) {
+  return `<span class="analysis-sort-heading">${htmlEscape(label)}<span class="analysis-sort-controls" aria-label="${htmlEscape(label)}排序"><button type="button" data-spare-shortfall-sort="${field}" data-sort-direction="asc" aria-label="按${htmlEscape(label)}升序排列" aria-pressed="${spareShortfallSort.field === field && spareShortfallSort.direction === "asc"}">↑</button><button type="button" data-spare-shortfall-sort="${field}" data-sort-direction="desc" aria-label="按${htmlEscape(label)}降序排列" aria-pressed="${spareShortfallSort.field === field && spareShortfallSort.direction === "desc"}">↓</button></span></span>`;
 }
 
 function renderLiteMesaDowntimeFactorAnalysis(result) {

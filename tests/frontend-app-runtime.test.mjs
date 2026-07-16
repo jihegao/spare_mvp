@@ -1024,9 +1024,8 @@ test("visual iframe host page does not expose support organization selector rows
   }
 });
 
-test("four result analysis pages omit Mesa from visible copy", async () => {
+test("configurable result analysis pages omit Mesa from visible copy", async () => {
   const featureIds = [
-    "spare-planning-spare-shortfall-analysis",
     "mission-reliability-task-reliability",
     "mission-reliability-downtime-factor-analysis"
   ];
@@ -1169,27 +1168,30 @@ test("aircraft mission reliability page auto-calculates retained summaries and e
   }
 });
 
-test("spare shortfall analysis uses the shared read-only analysis setting line", async () => {
+test("spare shortfall analysis removes hero and settings while preserving result loading", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-spare-shortfall-analysis",
     projectJson: createRuntimeProjectJson()
   });
 
   try {
-    const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-    assert.match(runtime.appNode.innerHTML, /class="lite-mesa-settings lite-mesa-analysis-settings"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">|<section class="lite-mesa-settings lite-mesa-analysis-settings">/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<h3>备件短板分析<\/h3>|<h3>分析设定<\/h3>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /运行状态|样本量|随机种子|分析结果已生成|>运行分析<\/button>/);
+    assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">加载运行结果<\/button>/);
     assert.match(runtime.appNode.innerHTML, /class="lite-mesa-stat-section lite-mesa-analysis-detail"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /full-settings/);
-    assert.match(settingsPanel, /样本量[\s\S]*<strong>27<\/strong>/);
-    assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
-    assert.doesNotMatch(settingsPanel, /当前项目建模数据|短缺事件统计/);
-    assert.doesNotMatch(settingsPanel, /<span>项目<\/span>|<span>当前项目<\/span>|<span>分析对象<\/span>|<span>结果内容<\/span>/);
-    assert.doesNotMatch(settingsPanel, /<input|<select|type="number"/);
-    assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
-    assert.doesNotMatch(settingsPanel, /project_baseline_at_current_granularity/);
-    assert.doesNotMatch(settingsPanel, /用户参数|无可调参数/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid|<span>输出边界<\/span>|<span>持久化<\/span>/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-hero-meter/);
+    assert.match(runtime.appNode.innerHTML, /分析结果明细/);
+
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const analysisRun = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(analysisRun.analysis_type, "spare_shortfall");
+    assert.equal(analysisRun.settings.samples, 27);
+    assert.equal(analysisRun.settings.seed, 20260621);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">|<section class="lite-mesa-settings lite-mesa-analysis-settings">|分析结果已生成/);
   } finally {
     runtime.restore();
   }
@@ -1217,22 +1219,31 @@ test("spare shortfall analysis renders average delay hours and hides session chr
   }
 });
 
-test("spare shortfall result keeps aircraft-spare pairs and sorts demand quantity in both directions", async () => {
+test("spare shortfall result filters products and stably sorts demand quantity or fill rate", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-spare-shortfall-analysis",
-    projectJson: createRuntimeProjectJson(),
+    projectJson: createRuntimeProjectJson({
+      products: [
+        { id: "product-engine", name: "发动机控制模块", model: "EC-15", kind: "LRU" },
+        { id: "product-radar", name: "雷达组件", model: "RD-35", kind: "LRU" },
+        { id: "product-hydraulic", name: "液压组件", model: "HY-15", kind: "LRU" },
+        { id: "product-backup", name: "备用组件", model: "BK-15", kind: "LRU" },
+        { id: "product-generic", name: "泛化组件", model: "ALL", kind: "LRU" }
+      ]
+    }),
     liteMesaAnalysisResponseOverrides: {
       metrics: [
-        ["发生缺件备件", "3"],
+        ["发生缺件备件", "4"],
         ["平均备件延误时间(h)", "1.50"],
-        ["最高缺件备件", "发动机备件、雷达备件"],
+        ["最高缺件备件", "发动机控制模块、雷达组件"],
         ["因维修延误导致的任务取消次数", "2"]
       ],
       rows: [
-        { aircraftModel: "J-15", spareType: "发动机备件", demand: 8, filled: 3, meanTransportDelayHours: 1.5, fillRate: 0.38, riskLevel: "高" },
-        { aircraftModel: "J-35", spareType: "雷达备件", demand: 2, filled: 0, meanTransportDelayHours: 1.5, fillRate: 0, riskLevel: "高" },
-        { aircraftModel: "J-15", spareType: "液压备件", demand: 5, filled: 4, meanTransportDelayHours: 0, fillRate: 0.8, riskLevel: "中" },
-        { aircraftModel: "全部机型", spareType: "泛化备件", demand: 99, filled: 0, meanTransportDelayHours: 0, fillRate: 0, riskLevel: "高" }
+        { aircraftModel: "J-15", productId: "product-engine", spareType: "不得显示的旧发动机备件", demand: 8, filled: 3, meanTransportDelayHours: 1.5, fillRate: 0.38, riskLevel: "高" },
+        { aircraftModel: "J-35", productId: "product-radar", spareType: "不得显示的旧雷达备件", demand: 2, filled: 1, meanTransportDelayHours: 1.5, fillRate: 0.6, riskLevel: "中" },
+        { aircraftModel: "J-15", productId: "product-hydraulic", spareType: "不得显示的旧液压备件", demand: 5, filled: 4, meanTransportDelayHours: 0, fillRate: 0.8, riskLevel: "低" },
+        { aircraftModel: "J-15", productId: "product-backup", spareType: "不得显示的旧备用备件", demand: 5, filled: 4, meanTransportDelayHours: 0, fillRate: 0.8, riskLevel: "低" },
+        { aircraftModel: "全部机型", productId: "product-generic", spareType: "不得显示的旧泛化备件", demand: 99, filled: 0, meanTransportDelayHours: 0, fillRate: 0, riskLevel: "高" }
       ]
     }
   });
@@ -1240,30 +1251,36 @@ test("spare shortfall result keeps aircraft-spare pairs and sorts demand quantit
   try {
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
-    assert.match(runtime.appNode.innerHTML, /<th>机型<\/th><th>备件类别<\/th><th>需求数量<\/th>/);
-    assert.match(runtime.appNode.innerHTML, /J-15[\s\S]*发动机备件/);
-    assert.match(runtime.appNode.innerHTML, /J-35[\s\S]*雷达备件/);
-    assert.match(runtime.appNode.innerHTML, /最高缺件备件[\s\S]*发动机备件、雷达备件/);
+    assert.match(runtime.appNode.innerHTML, /<th>机型<\/th><th>产品<\/th>/);
+    assert.match(runtime.appNode.innerHTML, /发动机控制模块 \/ EC-15/);
+    assert.match(runtime.appNode.innerHTML, /雷达组件 \/ RD-35/);
+    assert.match(runtime.appNode.innerHTML, /data-spare-shortfall-sort="demand" data-sort-direction="asc"/);
+    assert.match(runtime.appNode.innerHTML, /data-spare-shortfall-sort="fillRate" data-sort-direction="desc"/);
     assert.match(runtime.appNode.innerHTML, /data-spare-aircraft-filter/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /泛化备件|<td>全部机型<\/td>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /不得显示的旧|泛化组件|<td>全部机型<\/td>|<span>需求数量排序<\/span>|恢复默认/);
 
-    await runtime.change("[data-spare-aircraft-filter]", {}, { value: "J-35" });
-    const j35Rows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
-    assert.match(j35Rows, /J-35[\s\S]*雷达备件/);
-    assert.doesNotMatch(j35Rows, /J-15|发动机备件|液压备件/);
+    await runtime.change("[data-spare-aircraft-filter]", {}, { value: "J-15" });
+    await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "asc" });
+    let tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal demand rows preserve source order");
+    assert.ok(tableRows.indexOf("备用组件 / BK-15") < tableRows.indexOf("发动机控制模块 / EC-15"));
+    assert.doesNotMatch(tableRows, /J-35|雷达组件/);
+    assert.match(runtime.appNode.innerHTML, /data-spare-shortfall-sort="demand" data-sort-direction="asc"[^>]*aria-pressed="true"/);
 
-    await runtime.change("[data-spare-aircraft-filter]", {}, { value: "" });
-    await runtime.click("[data-spare-demand-sort]", { spareDemandSort: "asc" });
-    const ascending = runtime.appNode.innerHTML;
-    const ascendingRows = ascending.slice(ascending.indexOf('<table class="lite-mesa-stat-table">'));
-    assert.ok(ascendingRows.indexOf("雷达备件") < ascendingRows.indexOf("液压备件"));
-    assert.ok(ascendingRows.indexOf("液压备件") < ascendingRows.indexOf("发动机备件"));
+    await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "desc" });
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.ok(tableRows.indexOf("发动机控制模块 / EC-15") < tableRows.indexOf("液压组件 / HY-15"));
+    assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal demand rows remain stable descending");
 
-    await runtime.click("[data-spare-demand-sort]", { spareDemandSort: "desc" });
-    const descending = runtime.appNode.innerHTML;
-    const descendingRows = descending.slice(descending.indexOf('<table class="lite-mesa-stat-table">'));
-    assert.ok(descendingRows.indexOf("发动机备件") < descendingRows.indexOf("液压备件"));
-    assert.ok(descendingRows.indexOf("液压备件") < descendingRows.indexOf("雷达备件"));
+    await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "fillRate", sortDirection: "asc" });
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.ok(tableRows.indexOf("发动机控制模块 / EC-15") < tableRows.indexOf("液压组件 / HY-15"));
+
+    await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "fillRate", sortDirection: "desc" });
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal fill-rate rows preserve source order");
+    assert.ok(tableRows.indexOf("备用组件 / BK-15") < tableRows.indexOf("发动机控制模块 / EC-15"));
+    assert.match(runtime.appNode.innerHTML, /data-spare-shortfall-sort="fillRate" data-sort-direction="desc"[^>]*aria-pressed="true"/);
   } finally {
     runtime.restore();
   }
@@ -1593,7 +1610,7 @@ test("experiment and analysis pages render when Project draft has no root experi
   const featureExpectations = [
     ["spare-planning-experiment-plan-management", /方案列表/],
     ["spare-planning-monte-carlo-experiment-detail", /蒙特卡洛分析/],
-    ["spare-planning-spare-shortfall-analysis", /分析设定/]
+    ["spare-planning-spare-shortfall-analysis", /分析结果明细/]
   ];
 
   for (const [featureId, expectedCopy] of featureExpectations) {
@@ -3590,11 +3607,11 @@ test("run context defaults to current Project and excludes unsaved or invalid ex
 
     await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
 
-    const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-    assert.match(hero, /运行上下文/);
-    assert.match(hero, /当前项目：运行来源项目/);
-    assert.match(hero, /0 个已保存方案/);
-    assert.doesNotMatch(hero, /当前草稿|尚未保存的内存分支|无持久化标识方案|已保存实验方案/);
+    const resultSection = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.match(resultSection, /运行上下文/);
+    assert.match(resultSection, /当前项目：运行来源项目/);
+    assert.match(resultSection, /0 个已保存方案/);
+    assert.doesNotMatch(resultSection, /当前草稿|尚未保存的内存分支|无持久化标识方案|已保存实验方案/);
 
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
@@ -3650,9 +3667,9 @@ test("experiment plan list selection editing and saving do not change the run co
     await runtime.click("[data-save-plan]");
     await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
 
-    const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-    assert.match(hero, /当前项目：Runtime 项目/);
-    assert.doesNotMatch(hero, /<option value="plan-management" selected/);
+    const resultSection = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.match(resultSection, /当前项目：Runtime 项目/);
+    assert.doesNotMatch(resultSection, /<option value="plan-management" selected/);
 
     await runtime.click("[data-lite-mesa-analysis-action='run']");
     const analysisBody = runtime.requests

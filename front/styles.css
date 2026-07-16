@@ -2843,31 +2843,38 @@ select[multiple].table-edit-select {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.carry-list-result-loader {
+.carry-list-result-loader,
+.analysis-result-loader {
   justify-content: space-between;
 }
 
-.carry-list-result-loader .experiment-plan-context-select {
+.carry-list-result-loader .experiment-plan-context-select,
+.analysis-result-loader .experiment-plan-context-select {
   min-width: min(360px, 100%);
 }
 
 .carry-sort-heading,
 .carry-life-heading,
-.carry-sort-controls {
+.carry-sort-controls,
+.analysis-sort-heading,
+.analysis-sort-controls {
   display: inline-flex;
   align-items: center;
 }
 
 .carry-sort-heading,
-.carry-life-heading {
+.carry-life-heading,
+.analysis-sort-heading {
   gap: 6px;
 }
 
-.carry-sort-controls {
+.carry-sort-controls,
+.analysis-sort-controls {
   gap: 2px;
 }
 
 .carry-sort-controls button,
+.analysis-sort-controls button,
 .carry-life-help .inline-help {
   width: 22px;
   height: 22px;
@@ -2881,7 +2888,8 @@ select[multiple].table-edit-select {
   line-height: 20px;
 }
 
-.carry-sort-controls button[aria-pressed="true"] {
+.carry-sort-controls button[aria-pressed="true"],
+.analysis-sort-controls button[aria-pressed="true"] {
   border-color: var(--primary);
   background: var(--primary-soft);
   color: var(--primary);
