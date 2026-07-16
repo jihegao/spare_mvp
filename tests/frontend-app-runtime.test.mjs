@@ -1068,7 +1068,7 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
   }
 });
 
-test("aircraft mission reliability page computes, saves, reloads, and exports an RBD snapshot without Mesa", async () => {
+test("aircraft mission reliability page derives clean Project components, saves, reloads, and exports an RBD snapshot without Mesa", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-aircraft-mission-reliability",
     projectJson: createRuntimeProjectJson({
@@ -1081,15 +1081,7 @@ test("aircraft mission reliability page computes, saves, reloads, and exports an
       components: [
         { id: "a1", name: "产品 A1", aircraftModel: "J-15", quantity: 1, failureRate: 0.01 },
         { id: "a2", name: "产品 A2", aircraftModel: "J-15", quantity: 1, failureRate: 0.02 }
-      ],
-      reliabilityBlockDiagram: {
-        nodes: [
-          { id: "aircraft", name: "J-15 整机", type: "aircraft", relation: "series" },
-          { id: "a1", name: "产品 A1", type: "product", parentId: "aircraft" },
-          { id: "a2", name: "产品 A2", type: "product", parentId: "aircraft" }
-        ],
-        edges: []
-      }
+      ]
     })
   });
 
@@ -1104,6 +1096,10 @@ test("aircraft mission reliability page computes, saves, reloads, and exports an
     assert.match(runtime.appNode.innerHTML, /整机任务可靠度/);
     assert.match(runtime.appNode.innerHTML, /产品 A1/);
     assert.match(runtime.appNode.innerHTML, /串联/);
+    assert.match(runtime.appNode.innerHTML, /<strong>0\.861<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /<em>86\.071%<\/em>/);
+    assert.match(runtime.appNode.innerHTML, /产品 A1[\s\S]*0\.951[\s\S]*0\.049/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /0\.86070798|86\.0708%/);
     assert.equal(runtime.requests.some((request) => request.url === "/api/mesa-analysis-runs"), false);
 
     await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "save" });
@@ -1118,6 +1114,7 @@ test("aircraft mission reliability page computes, saves, reloads, and exports an
     assert.equal(saveBody.durationHours, 5);
     assert.equal(saveBody.snapshot.rbdSnapshot.nodes.length, 3);
     assert.match(runtime.appNode.innerHTML, /analysis-runtime-1/);
+    assert.match(runtime.appNode.innerHTML, /2026-07-16T00:00:00Z[\s\S]*0\.861/);
 
     await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "export" });
     assert.equal(runtime.downloads.length, 1);

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   aircraftMissionReliabilityOptions,
+  aircraftMissionReliabilityProject,
   aircraftMissionReliabilityRowsToCsv,
   evaluateAircraftMissionReliability
 } from "../front/aircraft-mission-reliability.mjs";
@@ -82,6 +83,59 @@ test("issue #202 example evaluates A series, B parallel, then aircraft series fo
   assert.notEqual(result.rbdSnapshot.nodes, issueProject().reliabilityBlockDiagram.nodes);
 });
 
+test("clean Project components derive a single-root RBD and include internal component reliability", () => {
+  const project = {
+    equipment: { model: "AC-202", wholeMachineModels: ["AC-202"] },
+    basicMissions: [{ id: "mission-5h", name: "五小时任务", equipmentType: "AC-202", taskDurationMinutes: 300 }],
+    components: [
+      { id: "aircraft-root", name: "整机", parentId: null },
+      {
+        id: "system-a",
+        name: "A 系统",
+        parentId: "aircraft-root",
+        aircraftModel: "AC-202",
+        failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.01" },
+        kOutOfN: { enabled: true, k: 1, n: 2 }
+      },
+      {
+        id: "product-a1",
+        name: "A1 产品",
+        parentId: "system-a",
+        aircraftModel: "AC-202",
+        productType: "LRU",
+        failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.02" },
+        kOutOfN: { enabled: false, k: 1, n: 1 }
+      },
+      {
+        id: "other-model",
+        name: "其他机型产品",
+        parentId: "aircraft-root",
+        aircraftModel: "AC-303",
+        failureDistribution: { distributionType: "指数分布", parameters: "lambda=1" }
+      }
+    ]
+  };
+
+  const effective = aircraftMissionReliabilityProject(project, "AC-202");
+  assert.equal(project.reliabilityBlockDiagram, undefined);
+  assert.equal(effective.reliabilityBlockDiagram.source, "components");
+  assert.deepEqual(effective.reliabilityBlockDiagram.nodes.map((node) => node.id), [
+    "aircraft-root",
+    "system-a",
+    "product-a1"
+  ]);
+  assert.equal(effective.reliabilityBlockDiagram.edges.length, 2);
+
+  const result = evaluateAircraftMissionReliability(project, selection);
+  const systemBase = Math.exp(-0.01 * 5);
+  const systemRedundant = 1 - (1 - systemBase) ** 2;
+  const productReliability = Math.exp(-0.02 * 5);
+  assert.equal(result.status, "ready");
+  assert.equal(result.rbdSnapshot.rootId, "aircraft-root");
+  assert.ok(Math.abs(result.aircraftReliability - systemRedundant * productReliability) < 1e-12);
+  assert.match(result.rows.find((row) => row.nodeId === "system-a").parameterLabel, /自身.*2 中取 1/);
+});
+
 test("missionProfile fallback and phase-sum duration are supported", () => {
   const project = issueProject();
   delete project.basicMissions;
@@ -144,7 +198,7 @@ test("selection, duration, diagram and graph prerequisites return blocking statu
   assert.equal(evaluateAircraftMissionReliability(project, {}).code, "AIRCRAFT_REQUIRED");
   assert.equal(evaluateAircraftMissionReliability(project, { aircraftModel: "AC-202" }).code, "MISSION_REQUIRED");
   assert.equal(evaluateAircraftMissionReliability(project, { ...selection, durationHours: 0 }).code, "INVALID_DURATION");
-  assert.equal(evaluateAircraftMissionReliability({ ...project, reliabilityBlockDiagram: undefined }, selection).code, "NO_RBD");
+  assert.equal(evaluateAircraftMissionReliability({ ...project, components: [], reliabilityBlockDiagram: undefined }, selection).code, "NO_RBD");
 
   const invalid = issueProject();
   invalid.reliabilityBlockDiagram.nodes.push({ id: "a1", name: "重复节点" });

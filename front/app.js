@@ -57,6 +57,7 @@ import {
 } from "./rbd-evaluator.mjs?v=20260628-rbd-child-selection-view";
 import {
   aircraftMissionReliabilityOptions,
+  aircraftMissionReliabilityProject,
   evaluateAircraftMissionReliability
 } from "./aircraft-mission-reliability.mjs";
 import {
@@ -16808,7 +16809,8 @@ function renderAircraftMissionReliabilityAnalysis() {
   const options = normalizedAircraftMissionReliabilityOptions(projectJson);
   const missions = ensureAircraftMissionReliabilitySelection(options);
   const result = aircraftMissionReliabilityState.result;
-  const rbd = projectJson.reliabilityBlockDiagram || {};
+  const reliabilityProject = aircraftMissionReliabilityProject(projectJson, aircraftMissionReliabilityState.aircraftModel);
+  const rbd = reliabilityProject.reliabilityBlockDiagram || {};
   ensureAircraftMissionReliabilityHistoryLoaded();
   return `
     <div class="lite-mesa-workbench aircraft-mission-reliability-page">
@@ -16851,13 +16853,13 @@ function renderAircraftMissionReliabilityResult(result) {
     <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
       <div class="section-head"><h3>分析结果明细</h3><span>${htmlEscape(result.aircraftModel || "整机")} / ${htmlEscape(result.missionProfile?.name || result.missionProfileName || "任务剖面")}</span></div>
       <div class="mc-formal-metrics">
-        <div class="metric-card"><span>整机任务可靠度</span><strong>${reliability.toFixed(8)}</strong><em>${(reliability * 100).toFixed(4)}%</em></div>
-        <div class="metric-card"><span>整机失效概率</span><strong>${failureProbability.toFixed(8)}</strong><em>${(failureProbability * 100).toFixed(4)}%</em></div>
+        <div class="metric-card"><span>整机任务可靠度</span><strong>${reliability.toFixed(3)}</strong><em>${(reliability * 100).toFixed(3)}%</em></div>
+        <div class="metric-card"><span>整机失效概率</span><strong>${failureProbability.toFixed(3)}</strong><em>${(failureProbability * 100).toFixed(3)}%</em></div>
         <div class="metric-card"><span>任务时长</span><strong>${htmlEscape(result.durationHours)} h</strong><em>任务剖面</em></div>
         <div class="metric-card"><span>计算节点</span><strong>${Array.isArray(result.rows) ? result.rows.length : 0}</strong><em>整机 / 系统 / 分系统 / 产品</em></div>
       </div>
       <div class="table-wrap"><table><thead><tr><th>节点名称</th><th>节点类型</th><th>串并联关系</th><th>产品可靠性参数</th><th>任务时长</th><th>节点可靠度</th><th>节点失效概率</th></tr></thead><tbody>
-        ${(result.rows || []).map((row) => `<tr><td>${"&nbsp;&nbsp;".repeat(Number(row.depth || 0))}${htmlEscape(row.name || row.nodeName || "")}</td><td>${htmlEscape(row.nodeType || row.type || "")}</td><td>${htmlEscape(row.relationLabel || row.connectionLabel || row.relation || "")}</td><td>${htmlEscape(row.parameterLabel || row.reliabilityParameter || "-")}</td><td>${htmlEscape(row.durationHours ?? result.durationHours)} h</td><td>${Number(row.reliability || 0).toFixed(8)}</td><td>${Number(row.failureProbability ?? (1 - Number(row.reliability || 0))).toFixed(8)}</td></tr>`).join("")}
+        ${(result.rows || []).map((row) => `<tr><td>${"&nbsp;&nbsp;".repeat(Number(row.depth || 0))}${htmlEscape(row.name || row.nodeName || "")}</td><td>${htmlEscape(row.nodeType || row.type || "")}</td><td>${htmlEscape(row.relationLabel || row.connectionLabel || row.relation || "")}</td><td>${htmlEscape(row.parameterLabel || row.reliabilityParameter || "-")}</td><td>${htmlEscape(row.durationHours ?? result.durationHours)} h</td><td>${Number(row.reliability || 0).toFixed(3)}</td><td>${Number(row.failureProbability ?? (1 - Number(row.reliability || 0))).toFixed(3)}</td></tr>`).join("")}
       </tbody></table></div>
       <div class="toolbar-row compact-actions">
         <button type="button" class="btn-primary" data-aircraft-reliability-action="save">保存分析结果</button>
@@ -16875,7 +16877,7 @@ function renderAircraftMissionReliabilityHistory() {
       <div class="section-head"><h3>历史分析记录</h3><span>保存时固化飞机、任务剖面、任务时长和可靠性框图快照</span></div>
       ${aircraftMissionReliabilityState.historyLoading ? `<div class="empty-state"><strong>正在读取历史记录</strong></div>` : history.length ? `
         <div class="table-wrap"><table><thead><tr><th>保存时间</th><th>飞机型号</th><th>任务剖面</th><th>任务时长</th><th>整机可靠度</th><th>记录查看</th></tr></thead><tbody>
-          ${history.map((record) => `<tr><td>${htmlEscape(record.created_at || record.createdAt || "")}</td><td>${htmlEscape(record.aircraft_model || record.aircraftModel || "")}</td><td>${htmlEscape(record.mission_profile_name || record.missionProfileName || "")}</td><td>${htmlEscape(record.duration_hours || record.durationHours || "")} h</td><td>${Number(record.aircraft_reliability ?? record.aircraftReliability ?? 0).toFixed(8)}</td><td><button type="button" data-aircraft-reliability-action="view-history" data-analysis-id="${htmlEscape(record.analysis_id || record.analysisId || "")}">查看</button></td></tr>`).join("")}
+          ${history.map((record) => `<tr><td>${htmlEscape(record.created_at || record.createdAt || "")}</td><td>${htmlEscape(record.aircraft_model || record.aircraftModel || "")}</td><td>${htmlEscape(record.mission_profile_name || record.missionProfileName || "")}</td><td>${htmlEscape(record.duration_hours || record.durationHours || "")} h</td><td>${Number(record.aircraft_reliability ?? record.aircraftReliability ?? 0).toFixed(3)}</td><td><button type="button" data-aircraft-reliability-action="view-history" data-analysis-id="${htmlEscape(record.analysis_id || record.analysisId || "")}">查看</button></td></tr>`).join("")}
         </tbody></table></div>` : `<div class="empty-state"><strong>暂无已保存的历史分析</strong><p>运行分析后可将完整输入快照和计算明细保存到当前项目。</p></div>`}
     </section>
   `;

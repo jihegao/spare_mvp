@@ -51,6 +51,101 @@ export function aircraftMissionReliabilityOptions(project = {}) {
 }
 
 /**
+ * Return a compute-ready project for one aircraft model. Explicit RBD input is
+ * authoritative. Older clean Projects can omit it, so derive a complete,
+ * single-root series tree from components without mutating the Project JSON.
+ */
+export function aircraftMissionReliabilityProject(project = {}, aircraftModel = "") {
+  const explicit = project.reliabilityBlockDiagram;
+  if (explicit && Array.isArray(explicit.nodes) && explicit.nodes.length) return project;
+
+  const allComponents = validObjectRows(project.components).filter((component) => cleanText(component.id));
+  const model = cleanText(aircraftModel);
+  const modelComponents = model
+    ? allComponents.filter((component) => cleanText(component.aircraftModel) === model)
+    : allComponents;
+  const directlySelected = modelComponents.length
+    ? modelComponents
+    : allComponents.filter((component) => !cleanText(component.aircraftModel));
+  if (!directlySelected.length) return project;
+
+  const byId = new Map(allComponents.map((component) => [cleanText(component.id), component]));
+  const includedIds = new Set(directlySelected.map((component) => cleanText(component.id)));
+  for (const component of directlySelected) {
+    let parentId = cleanText(component.parentId);
+    const visited = new Set();
+    while (parentId && byId.has(parentId) && !visited.has(parentId)) {
+      visited.add(parentId);
+      includedIds.add(parentId);
+      parentId = cleanText(byId.get(parentId)?.parentId);
+    }
+  }
+  let addedGenericDescendant = true;
+  while (addedGenericDescendant) {
+    addedGenericDescendant = false;
+    for (const component of allComponents) {
+      const id = cleanText(component.id);
+      const parentId = cleanText(component.parentId);
+      if (!includedIds.has(id) && !cleanText(component.aircraftModel) && includedIds.has(parentId)) {
+        includedIds.add(id);
+        addedGenericDescendant = true;
+      }
+    }
+  }
+
+  const components = allComponents.filter((component) => includedIds.has(cleanText(component.id)));
+  const roots = components.filter((component) => {
+    const parentId = cleanText(component.parentId);
+    return !parentId || !includedIds.has(parentId);
+  });
+  const syntheticRootId = uniqueDerivedRootId(includedIds, model);
+  const needsSyntheticRoot = roots.length !== 1;
+  const rootId = needsSyntheticRoot ? syntheticRootId : cleanText(roots[0].id);
+  const nodes = components.map((component) => {
+    const id = cleanText(component.id);
+    const parentId = cleanText(component.parentId);
+    const isRoot = !needsSyntheticRoot && id === rootId;
+    return {
+      id,
+      componentId: id,
+      name: isRoot && model ? model : (cleanText(component.name) || id),
+      type: component.productType || (isRoot ? "system" : "component"),
+      aircraftModel: cleanText(component.aircraftModel),
+      parentId: needsSyntheticRoot && roots.includes(component)
+        ? syntheticRootId
+        : (parentId && includedIds.has(parentId) ? parentId : null),
+      relation: "series",
+      derivedFromComponents: true,
+      structuralRoot: isRoot && !hasReliabilityParameters(component)
+    };
+  });
+  if (needsSyntheticRoot) {
+    nodes.unshift({
+      id: syntheticRootId,
+      name: model || project.equipment?.model || "整机",
+      type: "system",
+      parentId: null,
+      relation: "series",
+      derivedFromComponents: true,
+      structuralRoot: true
+    });
+  }
+  const edges = nodes
+    .filter((node) => cleanText(node.parentId))
+    .map((node) => ({ from: cleanText(node.parentId), to: node.id, relation: "series" }));
+
+  return {
+    ...project,
+    reliabilityBlockDiagram: {
+      source: "components",
+      rootId,
+      nodes,
+      edges
+    }
+  };
+}
+
+/**
  * Evaluate an aircraft reliability block diagram for one mission duration.
  * Validation failures are values (`status: "blocked"`), not thrown exceptions.
  */
@@ -82,7 +177,8 @@ export function evaluateAircraftMissionReliability(project = {}, selection = {})
     });
   }
 
-  const diagram = project.reliabilityBlockDiagram;
+  const effectiveProject = aircraftMissionReliabilityProject(project, aircraftModel);
+  const diagram = effectiveProject.reliabilityBlockDiagram;
   if (!diagram || !Array.isArray(diagram.nodes) || diagram.nodes.length === 0) {
     return blockedResult("NO_RBD", "当前项目没有可计算的可靠性框图节点。", {
       ...selection,
@@ -93,7 +189,7 @@ export function evaluateAircraftMissionReliability(project = {}, selection = {})
   const graph = normalizeGraph(diagram, aircraftModel);
   if (!graph.ok) return blockedResult(graph.code, graph.message, { ...selection, durationHours }, graph.details);
 
-  const components = validObjectRows(project.components).filter((component) => {
+  const components = validObjectRows(effectiveProject.components).filter((component) => {
     const model = cleanText(component.aircraftModel);
     return !model || model === aircraftModel;
   });
@@ -122,19 +218,31 @@ export function evaluateAircraftMissionReliability(project = {}, selection = {})
         if (failedChild) {
           value = failedChild;
         } else {
+          const intrinsic = evaluateDerivedIntrinsicReliability(node, component, durationHours);
+          if (!intrinsic.ok) {
+            value = { error: validationError(intrinsic.code, intrinsic.message, nodeId) };
+            evaluating.delete(nodeId);
+            evaluated.set(nodeId, value);
+            return value;
+          }
           const childReliabilities = children.map((child) => child.reliability);
-          const combined = combineReliabilities(relationResult.relation, childReliabilities, relationResult.k);
+          const reliabilityInputs = intrinsic.enabled
+            ? [intrinsic.reliability, ...childReliabilities]
+            : childReliabilities;
           value = {
             node,
             depth,
             type: nodeType(node, true),
             relation: relationResult.relation,
             relationLabel: relationLabel(relationResult.relation, relationResult.k, childIds.length),
-            parameter: relationParameter(relationResult.relation, relationResult.k, childIds.length),
+            parameter: intrinsic.enabled
+              ? `自身 ${intrinsic.parameter}；${relationParameter(relationResult.relation, relationResult.k, childIds.length)}`
+              : relationParameter(relationResult.relation, relationResult.k, childIds.length),
             parameters: relationResult.relation === "k_out_of_n"
               ? { k: relationResult.k, n: childIds.length }
-              : {},
-            reliability: boundedProbability(combined),
+              : (intrinsic.enabled ? { intrinsic: intrinsic.parameters } : {}),
+            baseReliability: intrinsic.enabled ? intrinsic.reliability : undefined,
+            reliability: boundedProbability(combineReliabilities(relationResult.relation, reliabilityInputs, relationResult.k)),
             children
           };
         }
@@ -478,6 +586,29 @@ function resolveLeafRedundancy(node, component) {
   return { ok: true, enabled: true, k: config.k, n: config.n };
 }
 
+function evaluateDerivedIntrinsicReliability(node, component, durationHours) {
+  if (!node.derivedFromComponents || node.structuralRoot) return { ok: true, enabled: false };
+  const leaf = evaluateLeaf(node, component, durationHours);
+  if (!leaf.ok) return leaf;
+  const redundancy = resolveLeafRedundancy(node, component);
+  if (!redundancy.ok) return redundancy;
+  const reliability = redundancy.enabled
+    ? kOutOfNReliability(redundancy.k, Array(redundancy.n).fill(leaf.reliability))
+    : leaf.reliability;
+  return {
+    ok: true,
+    enabled: true,
+    reliability: boundedProbability(reliability),
+    parameter: redundancy.enabled
+      ? `${leaf.parameter}；${redundancy.n} 中取 ${redundancy.k}`
+      : leaf.parameter,
+    parameters: {
+      ...leaf.parameters,
+      ...(redundancy.enabled ? { k: redundancy.k, n: redundancy.n } : {})
+    }
+  };
+}
+
 function kOutOfNConfig(node, component, fallbackN) {
   const source = node.kOutOfN ?? component?.kOutOfN ?? {};
   const n = Number(source.n ?? node.n ?? component?.quantity ?? fallbackN);
@@ -710,6 +841,25 @@ function positiveFinite(value) {
 
 function firstPresent(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== "");
+}
+
+function hasReliabilityParameters(component) {
+  return Boolean(
+    component?.failureDistribution
+    || component?.failureRate !== undefined
+    || component?.mtbfHours !== undefined
+    || component?.mtbf !== undefined
+    || component?.reliability !== undefined
+  );
+}
+
+function uniqueDerivedRootId(componentIds, aircraftModel) {
+  const suffix = cleanText(aircraftModel).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "aircraft";
+  const base = `aircraft-reliability-root-${suffix}`;
+  if (!componentIds.has(base)) return base;
+  let index = 2;
+  while (componentIds.has(`${base}-${index}`)) index += 1;
+  return `${base}-${index}`;
 }
 
 function uniqueStrings(values) {
