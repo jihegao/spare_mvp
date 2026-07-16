@@ -4208,6 +4208,7 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /data-personnel-specialty-dictionary/);
   assert.match(appSource, /data-product-catalog-management/);
   assert.match(appSource, /产品列表/);
+  assert.equal(appSource.includes("仅保留保障人员专业字典与 ${timeUnitFieldCount} 个带时间单位的表单字段配置。"), false);
   assert.match(styleSource, /\.system-config-workbench/);
   assert.match(styleSource, /\.modeling-config-grid/);
   assert.match(styleSource, /\.modeling-form-config-grid/);

@@ -875,6 +875,7 @@ test("modeling form management only renders personnel dictionary and time unit f
   try {
     await runtime.flush();
 
+    assert.doesNotMatch(runtime.appNode.innerHTML, /仅保留保障人员专业字典与 12 个带时间单位的表单字段配置。/);
     assert.match(runtime.appNode.innerHTML, /保障人员专业字典/);
     assert.match(runtime.appNode.innerHTML, /data-personnel-specialty-dictionary/);
     assert.match(runtime.appNode.innerHTML, /带时间单位的表单字段/);

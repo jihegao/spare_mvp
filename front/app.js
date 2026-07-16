@@ -5000,7 +5000,6 @@ function renderModelingFormManagementConfig() {
   const timeUnitFieldCount = timeUnitSheets.reduce((sum, sheet) => sum + sheet.fields.length, 0);
   const specialties = configuredPersonnelSpecialties();
   return `
-    <p class="inline-status">仅保留保障人员专业字典与 ${timeUnitFieldCount} 个带时间单位的表单字段配置。</p>
     <div class="modeling-field-config modeling-form-config-grid" data-modeling-form-management>
       <section class="modeling-config-card" data-personnel-specialty-dictionary>
         <div class="section-head">
