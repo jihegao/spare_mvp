@@ -1069,7 +1069,7 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
   }
 });
 
-test("aircraft mission reliability page derives clean Project components, saves, reloads, and exports an RBD snapshot without Mesa", async () => {
+test("aircraft mission reliability page auto-calculates retained summaries and exports XLSX without node details", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-aircraft-mission-reliability",
     projectJson: createRuntimeProjectJson({
@@ -1083,7 +1083,25 @@ test("aircraft mission reliability page derives clean Project components, saves,
         { id: "a1", name: "产品 A1", aircraftModel: "J-15", quantity: 1, failureRate: 0.01 },
         { id: "a2", name: "产品 A2", aircraftModel: "J-15", quantity: 1, failureRate: 0.02 }
       ]
-    })
+    }),
+    experimentPlans: [{
+      experiment_plan_id: "plan-reliability-j16",
+      status: "draft",
+      config: {
+        name: "J-16 可靠性方案",
+        projectJson: createRuntimeProjectJson({
+          project_id: "project-runtime-j16",
+          equipment: { model: "J-16", wholeMachineModels: ["J-16"] },
+          basicMissions: [{
+            id: "mission-j16-2h",
+            name: "J-16 两小时任务",
+            equipmentType: "J-16",
+            taskDurationMinutes: 120
+          }],
+          components: [{ id: "j16-root", name: "J-16 整机", aircraftModel: "J-16", failureRate: 0.05 }]
+        })
+      }
+    }]
   });
 
   try {
@@ -1091,35 +1109,52 @@ test("aircraft mission reliability page derives clean Project components, saves,
     assert.match(runtime.appNode.innerHTML, /aria-label="飞机型号"/);
     assert.match(runtime.appNode.innerHTML, /五小时任务剖面/);
     assert.match(runtime.appNode.innerHTML, /value="5"/);
-
-    await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "run" });
-
+    assert.match(runtime.appNode.innerHTML, /class="page-head-current-context experiment-plan-context-select"/);
+    assert.match(runtime.appNode.innerHTML, /飞机任务可靠性评估[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /整机任务可靠度/);
-    assert.match(runtime.appNode.innerHTML, /产品 A1/);
-    assert.match(runtime.appNode.innerHTML, /串联/);
     assert.match(runtime.appNode.innerHTML, /<strong>0\.861<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<em>86\.071%<\/em>/);
-    assert.match(runtime.appNode.innerHTML, /产品 A1[\s\S]*0\.951[\s\S]*0\.049/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /0\.86070798|86\.0708%/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /依据任务时长和装备可靠性框图|可靠性框图与产品参数自动读取/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /可靠性框图<\/span>[\s\S]*个节点|运行分析|保存分析结果|导出计算明细 CSV/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /节点名称|节点类型|串并联关系|产品可靠性参数|节点失效概率/);
+    assert.match(runtime.appNode.innerHTML, /data-aircraft-reliability-action="export">导出<\/button>/);
     assert.equal(runtime.requests.some((request) => request.url === "/api/mesa-analysis-runs"), false);
 
-    await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "save" });
+    await runtime.change("[data-aircraft-reliability-field]", { aircraftReliabilityField: "durationHours" }, {
+      value: "10",
+      type: "number"
+    });
+    assert.match(runtime.appNode.innerHTML, /value="10"/);
+    assert.match(runtime.appNode.innerHTML, /<strong>0\.741<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /<em>74\.082%<\/em>/);
 
     const saveRequest = runtime.requests.find((request) => (
       request.url === "/api/projects/project-runtime/aircraft-mission-reliability-analyses"
       && (request.options.method || "GET") === "POST"
     ));
-    assert.ok(saveRequest);
-    const saveBody = JSON.parse(saveRequest.options.body || "{}");
-    assert.equal(saveBody.aircraftModel, "J-15");
-    assert.equal(saveBody.durationHours, 5);
-    assert.equal(saveBody.snapshot.rbdSnapshot.nodes.length, 3);
-    assert.match(runtime.appNode.innerHTML, /analysis-runtime-1/);
-    assert.match(runtime.appNode.innerHTML, /2026-07-16T00:00:00Z[\s\S]*0\.861/);
+    assert.equal(saveRequest, undefined);
 
     await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "export" });
     assert.equal(runtime.downloads.length, 1);
-    assert.match(runtime.downloads[0].download, /^aircraft-mission-reliability-J-15\.csv$/);
+    assert.match(runtime.downloads[0].download, /^aircraft-mission-reliability-J-15\.xlsx$/);
+    assert.equal(runtime.downloads[0].blob.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    const workbookEntries = storedZipEntries(new Uint8Array(await runtime.downloads[0].blob.arrayBuffer()));
+    const worksheet = workbookEntries.get("xl/worksheets/sheet1.xml");
+    assert.match(worksheet, /任务时长（小时）[\s\S]*<v>10<\/v>/);
+    assert.match(worksheet, /整机任务可靠度[\s\S]*<v>0\.7408182206817178<\/v>/);
+    assert.doesNotMatch(worksheet, /产品 A1|节点名称|串并联关系/);
+
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-reliability-j16" }
+    );
+    assert.match(runtime.appNode.innerHTML, /J-16 可靠性方案/);
+    assert.match(runtime.appNode.innerHTML, /<option value="J-16" selected>J-16<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /J-16 两小时任务/);
+    assert.match(runtime.appNode.innerHTML, /value="2"/);
+    assert.match(runtime.appNode.innerHTML, /<strong>0\.905<\/strong>/);
   } finally {
     runtime.restore();
   }
@@ -4263,6 +4298,25 @@ function eventTarget(selector, dataset = {}, props = {}) {
       return candidate === selector ? this : null;
     }
   };
+}
+
+function storedZipEntries(bytes) {
+  const entries = new Map();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder();
+  let offset = 0;
+  while (offset + 30 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
+    assert.equal(view.getUint16(offset + 8, true), 0, "test parser expects stored ZIP entries");
+    const compressedSize = view.getUint32(offset + 18, true);
+    const nameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + nameLength + extraLength;
+    const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength));
+    entries.set(name, decoder.decode(bytes.subarray(dataStart, dataStart + compressedSize)));
+    offset = dataStart + compressedSize;
+  }
+  return entries;
 }
 
 function htmlSectionByClass(html, className) {

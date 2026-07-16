@@ -322,21 +322,191 @@ export function evaluateAircraftMissionReliability(project = {}, selection = {})
   };
 }
 
-export function aircraftMissionReliabilityRowsToCsv(rows = []) {
-  const columns = [
-    ["层级", "level"],
-    ["节点ID", "nodeId"],
-    ["名称", "name"],
-    ["类型", "type"],
-    ["关系", "relationLabel"],
-    ["参数", "parameter"],
-    ["可靠度", "reliability"],
-    ["失效概率", "failureProbability"]
+/**
+ * Build a small, standards-compliant XLSX workbook containing exactly the
+ * summary values that remain visible on the aircraft reliability page.
+ *
+ * The workbook uses inline strings and uncompressed ZIP entries so it remains
+ * dependency-free in the static frontend while still opening in Excel and
+ * other OOXML spreadsheet applications.
+ */
+export function aircraftMissionReliabilityResultToXlsx(result = {}) {
+  if (!result?.ok) throw new TypeError("A completed aircraft reliability result is required.");
+  const reliability = finiteNumber(result.aircraftReliability ?? result.reliability);
+  const failureProbability = finiteNumber(result.failureProbability ?? (1 - reliability));
+  const summaryRows = [
+    ["飞机型号", result.aircraftModel || ""],
+    ["任务剖面", result.missionProfile?.name || result.missionProfileName || result.missionProfileId || ""],
+    ["任务时长（小时）", finiteNumber(result.durationHours)],
+    ["整机任务可靠度", reliability],
+    ["整机失效概率", failureProbability],
+    ["计算节点", Array.isArray(result.rows) ? result.rows.length : 0]
   ];
-  return [
-    columns.map(([label]) => csvCell(label)).join(","),
-    ...rows.map((row) => columns.map(([, key]) => csvCell(row?.[key] ?? "")).join(","))
-  ].join("\n");
+  const worksheetRows = [
+    ["飞机任务可靠性评估", ""],
+    ...summaryRows
+  ];
+  const worksheetXml = xmlDocument(`
+    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+      <cols><col min="1" max="1" width="22" customWidth="1"/><col min="2" max="2" width="30" customWidth="1"/></cols>
+      <sheetData>${worksheetRows.map((row, index) => xlsxRow(index + 1, row)).join("")}</sheetData>
+    </worksheet>
+  `);
+  const files = [
+    ["[Content_Types].xml", xmlDocument(`
+      <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+        <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+        <Default Extension="xml" ContentType="application/xml"/>
+        <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+        <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+        <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+        <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+      </Types>
+    `)],
+    ["_rels/.rels", xmlDocument(`
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+        <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+        <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+      </Relationships>
+    `)],
+    ["docProps/core.xml", xmlDocument(`
+      <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <dc:title>飞机任务可靠性评估</dc:title><dc:creator>spare_mvp</dc:creator>
+      </cp:coreProperties>
+    `)],
+    ["docProps/app.xml", xmlDocument(`
+      <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+        <Application>spare_mvp</Application>
+      </Properties>
+    `)],
+    ["xl/workbook.xml", xmlDocument(`
+      <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <sheets><sheet name="可靠性汇总" sheetId="1" r:id="rId1"/></sheets>
+      </workbook>
+    `)],
+    ["xl/_rels/workbook.xml.rels", xmlDocument(`
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+      </Relationships>
+    `)],
+    ["xl/worksheets/sheet1.xml", worksheetXml]
+  ];
+  return createStoredZip(files);
+}
+
+function xlsxRow(rowNumber, values) {
+  return `<row r="${rowNumber}">${values.map((value, columnIndex) => {
+    const reference = `${xlsxColumnName(columnIndex + 1)}${rowNumber}`;
+    if (typeof value === "number") return `<c r="${reference}"><v>${value}</v></c>`;
+    return `<c r="${reference}" t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>`;
+  }).join("")}</row>`;
+}
+
+function xlsxColumnName(index) {
+  let value = index;
+  let name = "";
+  while (value > 0) {
+    value -= 1;
+    name = String.fromCharCode(65 + (value % 26)) + name;
+    value = Math.floor(value / 26);
+  }
+  return name;
+}
+
+function xmlDocument(body) {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${body.replace(/>\s+</g, "><").trim()}`;
+}
+
+function xmlEscape(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function finiteNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new TypeError("XLSX summary values must be finite numbers.");
+  return number;
+}
+
+function createStoredZip(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let localOffset = 0;
+  for (const [name, contents] of files) {
+    const nameBytes = encoder.encode(name);
+    const data = encoder.encode(contents);
+    const checksum = crc32(data);
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, 0, true);
+    localView.setUint16(12, 0x0021, true);
+    localView.setUint32(14, checksum, true);
+    localView.setUint32(18, data.length, true);
+    localView.setUint32(22, data.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    localHeader.set(nameBytes, 30);
+    localParts.push(localHeader, data);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, 0, true);
+    centralView.setUint16(14, 0x0021, true);
+    centralView.setUint32(16, checksum, true);
+    centralView.setUint32(20, data.length, true);
+    centralView.setUint32(24, data.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint32(42, localOffset, true);
+    centralHeader.set(nameBytes, 46);
+    centralParts.push(centralHeader);
+    localOffset += localHeader.length + data.length;
+  }
+  const centralOffset = localOffset;
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, files.length, true);
+  endView.setUint16(10, files.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, centralOffset, true);
+  return concatBytes([...localParts, ...centralParts, end]);
+}
+
+function concatBytes(parts) {
+  const output = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  return output;
+}
+
+const CRC32_TABLE = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+  return value >>> 0;
+});
+
+function crc32(bytes) {
+  let value = 0xffffffff;
+  for (const byte of bytes) value = CRC32_TABLE[(value ^ byte) & 0xff] ^ (value >>> 8);
+  return (value ^ 0xffffffff) >>> 0;
 }
 
 function normalizeGraph(diagram, aircraftModel) {
@@ -880,11 +1050,6 @@ function invalidGraph(code, message, details = {}) {
 
 function validationError(code, message, nodeId) {
   return { code, message, ...(nodeId ? { nodeId } : {}) };
-}
-
-function csvCell(value) {
-  const text = String(value ?? "");
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 function cloneJsonValue(value) {
