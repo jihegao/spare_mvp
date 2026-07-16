@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import hashlib
 import io
 import json
 import math
+import multiprocessing
 from pathlib import Path
 import sqlite3
 import threading
@@ -15,6 +17,7 @@ from uuid import uuid4
 
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
+from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_parallel_cores
 from src.spare_mvp_backend.project_payload import (
     materialize_scenario_composition,
     normalize_project_basic_mission_support_activity_names,
@@ -700,7 +703,10 @@ class BackendApi:
         status: str = "draft",
     ) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
-        plan_config = _normalize_experiment_plan_config(config)
+        try:
+            plan_config = _normalize_experiment_plan_config(config)
+        except RunServiceError as exc:
+            raise self._run_service_error_to_backend_error(exc) from exc
         requested_snapshot_id = str(plan_config.pop("modeling_snapshot_id", "") or "").strip()
         snapshot = (
             self.repository.get_modeling_snapshot(requested_snapshot_id)
@@ -795,7 +801,10 @@ class BackendApi:
     ) -> dict[str, Any]:
         """Run a current-project Mesa analysis in memory without formal run persistence."""
         normalized_analysis_type = _normalize_analysis_type(analysis_type)
-        normalized_settings = _normalize_lite_mesa_analysis_settings(settings or {})
+        try:
+            normalized_settings = _normalize_lite_mesa_analysis_settings(settings or {})
+        except RunServiceError as exc:
+            raise self._run_service_error_to_backend_error(exc) from exc
         if model_family != ACTIVE_FORMAL_MODEL_FAMILY:
             raise BackendApiError(
                 "unsupported_lite_mesa_analysis_model_family",
@@ -833,27 +842,11 @@ class BackendApi:
         run_id = _lite_mesa_analysis_run_id(project, scenario, normalized_analysis_type, normalized_settings)
         inputs = copy.deepcopy(scenario["simulation_inputs"])
         base_seed = normalized_settings["seed"] if normalized_settings["seed"] is not None else int(inputs.get("seed", 0))
-        samples: list[dict[str, Any]] = []
-        failed_samples: list[dict[str, Any]] = []
-        for sample_index in range(normalized_settings["samples"]):
-            seed = base_seed + sample_index
-            try:
-                samples.append(
-                    _run_aircraft_support_v1_analysis_sample(
-                        inputs,
-                        seed=seed,
-                        sample_index=sample_index,
-                        write_event_snapshots=normalized_settings["write_event_snapshots"],
-                    )
-                )
-            except Exception as exc:  # pragma: no cover - defensive fail-closed path.
-                failed_samples.append(
-                    {
-                        "sample_index": sample_index,
-                        "seed": seed,
-                        "error": {"code": "sample_failed", "message": str(exc), "details": {}},
-                    }
-                )
+        samples, failed_samples, worker_count = _run_lite_mesa_analysis_samples(
+            inputs,
+            base_seed=base_seed,
+            settings=normalized_settings,
+        )
 
         if not samples:
             return _blocked_lite_mesa_analysis_payload(
@@ -911,6 +904,8 @@ class BackendApi:
             "experiment_id": page_result["experiment_id"],
             "sample_count": len(samples),
             "seed_list": [sample["seed"] for sample in samples],
+            "parallel_cores": normalized_settings["parallelCores"],
+            "worker_count": worker_count,
             "aggregate_metrics": aggregate,
             "projection": projections[normalized_analysis_type],
             "metrics": page_result["metrics"],
@@ -1581,18 +1576,20 @@ def _normalize_experiment_plan_config(config: dict[str, Any]) -> dict[str, Any]:
     plan_config = copy.deepcopy(config)
     branch_project = plan_config.get("projectJson") or plan_config.get("project_json")
     if not isinstance(branch_project, dict):
+        plan_config["parallelCores"] = normalize_monte_carlo_parallel_cores(plan_config.get("parallelCores"))
         return plan_config
 
     experiment = branch_project.get("experiment") if isinstance(branch_project.get("experiment"), dict) else {}
     if "name" not in plan_config and experiment.get("name"):
         plan_config["name"] = experiment["name"]
-    for key in ("steps", "samples", "seed"):
+    for key in ("steps", "samples", "seed", "parallelCores"):
         if key not in plan_config and key in experiment:
             plan_config[key] = copy.deepcopy(experiment[key])
     if "monteCarlo" not in plan_config and isinstance(branch_project.get("monteCarlo"), dict):
         plan_config["monteCarlo"] = copy.deepcopy(branch_project["monteCarlo"])
     if "analysisRequests" not in plan_config and isinstance(branch_project.get("analysisRequests"), dict):
         plan_config["analysisRequests"] = copy.deepcopy(branch_project["analysisRequests"])
+    plan_config["parallelCores"] = normalize_monte_carlo_parallel_cores(plan_config.get("parallelCores"))
 
     clean_project = strip_project_sweep(materialize_scenario_composition(branch_project))
     if "projectJson" in plan_config:
@@ -1613,14 +1610,69 @@ def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str
     )
     max_time_window = _bounded_int(settings.get("maxTimeWindow"), default=0, minimum=0, maximum=10000)
     top_n = _bounded_int(settings.get("topN"), default=4, minimum=1, maximum=20)
+    parallel_cores = normalize_monte_carlo_parallel_cores(
+        settings.get("parallelCores"),
+        field_path="settings.parallelCores",
+    )
     return {
         "samples": samples,
         "seed": seed,
         "missionConfidenceTarget": confidence_target,
         "maxTimeWindow": max_time_window,
         "topN": top_n,
+        "parallelCores": parallel_cores,
         "write_event_snapshots": bool(settings.get("write_event_snapshots")),
     }
+
+
+def _run_lite_mesa_analysis_samples(
+    inputs: dict[str, Any],
+    *,
+    base_seed: int,
+    settings: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    sample_count = settings["samples"]
+    worker_count = min(settings["parallelCores"], sample_count)
+    tasks = [
+        (inputs, base_seed + sample_index, sample_index, settings["write_event_snapshots"])
+        for sample_index in range(sample_count)
+    ]
+    outcomes = []
+    if worker_count == 1:
+        outcomes = [_run_lite_mesa_analysis_sample_worker(task) for task in tasks]
+    else:
+        with ProcessPoolExecutor(
+            max_workers=worker_count,
+            mp_context=multiprocessing.get_context("spawn"),
+        ) as executor:
+            futures = [executor.submit(_run_lite_mesa_analysis_sample_worker, task) for task in tasks]
+            outcomes = [future.result() for future in as_completed(futures)]
+    outcomes.sort(key=lambda outcome: outcome["sample_index"])
+    samples = [outcome["sample"] for outcome in outcomes if outcome["status"] == "ok"]
+    failed_samples = [outcome["failure"] for outcome in outcomes if outcome["status"] == "failed"]
+    return samples, failed_samples, worker_count
+
+
+def _run_lite_mesa_analysis_sample_worker(task: tuple[dict[str, Any], int, int, bool]) -> dict[str, Any]:
+    inputs, seed, sample_index, write_event_snapshots = task
+    try:
+        sample = _run_aircraft_support_v1_analysis_sample(
+            inputs,
+            seed=seed,
+            sample_index=sample_index,
+            write_event_snapshots=write_event_snapshots,
+        )
+        return {"status": "ok", "sample_index": sample_index, "sample": sample}
+    except Exception as exc:  # pragma: no cover - defensive fail-closed path.
+        return {
+            "status": "failed",
+            "sample_index": sample_index,
+            "failure": {
+                "sample_index": sample_index,
+                "seed": seed,
+                "error": {"code": "sample_failed", "message": str(exc), "details": {}},
+            },
+        }
 
 
 def _run_aircraft_support_v1_analysis_sample(

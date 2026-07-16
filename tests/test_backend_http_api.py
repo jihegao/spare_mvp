@@ -1259,7 +1259,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {
                         "project": project,
                         "analysis_type": "mission_reliability",
-                        "settings": {"samples": 2, "seed": 20260704},
+                        "settings": {"samples": 2, "seed": 20260704, "parallelCores": 2},
                         "model_family": "aircraft_support_v1",
                     },
                     auth_token=auth_token,
@@ -1275,6 +1275,8 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(payload["project_id"], "project-http-lite-mesa-analysis")
                 self.assertEqual(payload["sample_count"], 2)
                 self.assertEqual(payload["seed_list"], [20260704, 20260705])
+                self.assertEqual(payload["parallel_cores"], 2)
+                self.assertEqual(payload["worker_count"], 2)
                 self.assertTrue(payload["rows"])
                 self.assertEqual(payload["rows"], payload["wave_rows"])
                 self.assertNotIn("seed", payload["rows"][0])

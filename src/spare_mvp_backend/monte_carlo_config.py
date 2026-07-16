@@ -10,6 +10,7 @@ from src.spare_mvp_backend.errors import RunServiceError
 
 
 MAX_MONTE_CARLO_SAMPLES = 1000
+MAX_MONTE_CARLO_PARALLEL_CORES = 32
 MAX_SUPPORT_CAPACITY = 1_000_000
 _FORBIDDEN_REQUEST_CONFIG_FIELDS = (
     "sample_count",
@@ -20,6 +21,8 @@ _FORBIDDEN_REQUEST_CONFIG_FIELDS = (
     "monteCarlo",
     "analysisRequests",
     "largeSample",
+    "parallelCores",
+    "parallel_cores",
 )
 
 
@@ -28,6 +31,7 @@ class MonteCarloRunConfig:
     """Normalized config consumed by the simulation adapter."""
 
     sample_count: int
+    parallel_cores: int
     sweep: dict[str, list[float] | list[int]]
     mc_experiment_id: str | None = None
     analysis_type: str = ""
@@ -37,6 +41,7 @@ class MonteCarloRunConfig:
     def to_adapter_payload(self) -> dict[str, Any]:
         payload = {
             "sample_count": self.sample_count,
+            "parallel_cores": self.parallel_cores,
             "sweep": {
                 "failureRates": list(self.sweep["failureRates"]),
                 "spareMultipliers": list(self.sweep["spareMultipliers"]),
@@ -86,6 +91,7 @@ def normalize_monte_carlo_run_config(
         field_path="analysisRequests.largeSample.samples",
         max_value=MAX_MONTE_CARLO_SAMPLES,
     )
+    parallel_cores = normalize_monte_carlo_parallel_cores(plan_config.get("parallelCores"))
     sweep = _require_dict(large_sample.get("sweep"), "analysisRequests.largeSample.sweep")
     normalized_analysis_type = str(analysis_type or "").strip()
     scenario_overrides, carry_list_config = _carry_list_current_result_config(
@@ -94,6 +100,7 @@ def normalize_monte_carlo_run_config(
     )
     return MonteCarloRunConfig(
         sample_count=sample_count,
+        parallel_cores=parallel_cores,
         sweep={
             "failureRates": _positive_numbers(
                 sweep.get("failureRates"),
@@ -112,6 +119,21 @@ def normalize_monte_carlo_run_config(
         analysis_type=normalized_analysis_type,
         scenario_overrides=scenario_overrides,
         carry_list_config=carry_list_config,
+    )
+
+
+def normalize_monte_carlo_parallel_cores(
+    value: Any,
+    *,
+    field_path: str = "parallelCores",
+    default: int = 1,
+) -> int:
+    """Normalize the shared frontend/formal/lite Monte Carlo worker limit."""
+    candidate = default if value is None or value == "" else value
+    return _positive_int(
+        candidate,
+        field_path=field_path,
+        max_value=MAX_MONTE_CARLO_PARALLEL_CORES,
     )
 
 

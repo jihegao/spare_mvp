@@ -854,6 +854,7 @@ class SimulationAdapterTest(unittest.TestCase):
         )
         config = {
             "sample_count": 4,
+            "parallel_cores": 1,
             "sweep": {
                 "failureRates": [0.01, 0.02],
                 "spareMultipliers": [1.0],
@@ -869,11 +870,13 @@ class SimulationAdapterTest(unittest.TestCase):
                 run_id="run-aircraft-v1-mc",
                 monte_carlo_config=copy.deepcopy(config),
             )
+            parallel_config = copy.deepcopy(config)
+            parallel_config["parallel_cores"] = 2
             second = self.adapter.run_monte_carlo_scenario(
                 copy.deepcopy(scenario),
                 output_dir=Path(second_tmp),
                 run_id="run-aircraft-v1-mc",
-                monte_carlo_config=copy.deepcopy(config),
+                monte_carlo_config=parallel_config,
             )
             run = first["run"]
             result = first["result"]
@@ -919,6 +922,11 @@ class SimulationAdapterTest(unittest.TestCase):
             result["metrics"]["mission_success_rate"],
         )
         self.assertEqual(base_payload["aggregate_metrics"], second_base_payload["aggregate_metrics"])
+        self.assertEqual(base_payload["samples"], second_base_payload["samples"])
+        self.assertEqual([sample["sample_index"] for sample in second_base_payload["samples"]], [0, 1, 2, 3])
+        self.assertEqual(base_payload["logs_summary"]["worker_count"], 1)
+        self.assertEqual(second_base_payload["logs_summary"]["worker_count"], 2)
+        self.assertEqual(second_base_payload["logs_summary"]["executor"], "process_pool_aircraft_support_v1")
         self.assertEqual(
             kinds & {"sample_results", "aggregate_result", "monte_carlo_base", "visualization_state_series"},
             {"sample_results", "aggregate_result", "monte_carlo_base", "visualization_state_series"},

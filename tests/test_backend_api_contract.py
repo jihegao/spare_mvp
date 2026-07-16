@@ -2103,6 +2103,7 @@ class BackendApiContractTest(unittest.TestCase):
             {
                 "name": "adapter normalized mc config",
                 "steps": 3,
+                "parallelCores": 3,
                 "projectJson": copy.deepcopy(project),
                 "analysisRequests": {
                     "largeSample": {
@@ -2131,10 +2132,58 @@ class BackendApiContractTest(unittest.TestCase):
         adapter_config = self.adapter.monte_carlo_run_calls[-1]["kwargs"].get("monte_carlo_config")
         self.assertIsNotNone(adapter_config)
         self.assertEqual(adapter_config["sample_count"], 6)
+        self.assertEqual(adapter_config["parallel_cores"], 3)
         self.assertEqual(adapter_config["mc_experiment_id"], "mc-adapter-normalized")
         self.assertEqual(adapter_config["sweep"]["failureRates"], [0.05])
         self.assertEqual(adapter_config["sweep"]["spareMultipliers"], [1.0, 1.2])
         self.assertEqual(adapter_config["sweep"]["supportCapacities"], [2])
+
+    def test_experiment_plan_rejects_invalid_parallel_cores_before_save(self) -> None:
+        project = small_aircraft_support_project("project-invalid-parallel-cores")
+        saved = self.api.save_project(project)
+        before_plans = self.api.list_experiment_plans(saved["project_id"])["experiment_plans"]
+
+        for value in (0, 1.5, 33, "bad"):
+            with self.subTest(value=value), self.assertRaises(BackendApiError) as ctx:
+                self.api.create_experiment_plan(
+                    saved["project_id"],
+                    {"name": "invalid parallel", "parallelCores": value},
+                )
+            self.assertEqual(ctx.exception.code, "bad_run_request")
+            self.assertEqual(ctx.exception.details["field"], "parallelCores")
+
+        self.assertEqual(self.api.list_experiment_plans(saved["project_id"])["experiment_plans"], before_plans)
+
+    def test_lite_mesa_parallel_workers_preserve_seeded_sample_order_and_statistics(self) -> None:
+        project = small_aircraft_support_project("project-lite-parallel-reproducible")
+        serial = self.api.run_lite_mesa_analysis(
+            project,
+            analysis_type="mission_reliability",
+            settings={"samples": 3, "seed": 20260717, "parallelCores": 1},
+        )
+        parallel = self.api.run_lite_mesa_analysis(
+            project,
+            analysis_type="mission_reliability",
+            settings={"samples": 3, "seed": 20260717, "parallelCores": 3},
+        )
+
+        self.assertEqual(serial["worker_count"], 1)
+        self.assertEqual(parallel["worker_count"], 3)
+        self.assertEqual(serial["seed_list"], [20260717, 20260718, 20260719])
+        self.assertEqual(parallel["seed_list"], serial["seed_list"])
+        self.assertEqual(parallel["aggregate_metrics"], serial["aggregate_metrics"])
+
+    def test_lite_mesa_rejects_invalid_parallel_cores_before_run(self) -> None:
+        project = small_aircraft_support_project("project-lite-invalid-parallel")
+        for value in (0, 1.5, 33, "bad"):
+            with self.subTest(value=value), self.assertRaises(BackendApiError) as ctx:
+                self.api.run_lite_mesa_analysis(
+                    project,
+                    analysis_type="mission_reliability",
+                    settings={"samples": 2, "seed": 20260717, "parallelCores": value},
+                )
+            self.assertEqual(ctx.exception.code, "bad_run_request")
+            self.assertEqual(ctx.exception.details["field"], "settings.parallelCores")
 
     def test_monte_carlo_run_rejects_request_level_samples_and_sweep(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")

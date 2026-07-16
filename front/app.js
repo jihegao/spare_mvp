@@ -13,6 +13,8 @@ import {
   buildPreviewResultState,
   buildFrontendResultState,
   createBackendApiClient,
+  MAX_MONTE_CARLO_PARALLEL_CORES,
+  normalizeMonteCarloParallelCores,
   normalizeProjectJsonBasicMissions,
   normalizeProjectJsonForClientDraft
 } from "./api-client.mjs";
@@ -666,7 +668,8 @@ let currentAnalysisResultLoadInFlight = {};
 let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
 let liteMesaMonteCarloSettings = {
   samples: Number(scenario.experiment?.samples || 4),
-  seed: Number(scenario.experiment?.seed || 20260621)
+  seed: Number(scenario.experiment?.seed || 20260621),
+  parallelCores: normalizeMonteCarloParallelCores(scenario.experiment?.parallelCores)
 };
 let liteMesaMonteCarloResult = null;
 let liteMesaMonteCarloStatus = "等待运行分析。";
@@ -10830,9 +10833,18 @@ function selectedExperimentPlanRunSettings() {
     : {};
   const samples = positiveExperimentNumber(config.samples, positiveExperimentNumber(experiment.samples, 0));
   const seed = positiveExperimentNumber(config.seed, positiveExperimentNumber(experiment.seed, 0));
+  const configuredParallelCores = config.parallelCores ?? experiment.parallelCores ?? 1;
+  let parallelCoresError = "";
+  try {
+    normalizeMonteCarloParallelCores(configuredParallelCores);
+  } catch (err) {
+    parallelCoresError = err.message;
+  }
   return {
     ...(samples > 0 ? { samples: Math.max(1, Math.min(1000, Math.trunc(samples))) } : {}),
-    ...(seed > 0 ? { seed: Math.trunc(seed) } : {})
+    ...(seed > 0 ? { seed: Math.trunc(seed) } : {}),
+    parallelCores: configuredParallelCores,
+    parallelCoresError
   };
 }
 
@@ -10847,7 +10859,8 @@ function resetRunContextToCurrentProject() {
   const seed = positiveExperimentNumber(experiment.seed, 0);
   liteMesaMonteCarloSettings = {
     samples: samples > 0 ? Math.max(1, Math.min(1000, Math.trunc(samples))) : 4,
-    seed: seed > 0 ? Math.trunc(seed) : 20260621
+    seed: seed > 0 ? Math.trunc(seed) : 20260621,
+    parallelCores: experiment.parallelCores ?? 1
   };
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
@@ -10880,8 +10893,12 @@ function selectCurrentExperimentPlan(planKey) {
   const planRunSettings = selectedExperimentPlanRunSettings();
   liteMesaMonteCarloSettings = {
     samples: Number(planRunSettings.samples) > 0 ? Number(planRunSettings.samples) : 4,
-    seed: Number(planRunSettings.seed) > 0 ? Number(planRunSettings.seed) : 20260621
+    seed: Number(planRunSettings.seed) > 0 ? Number(planRunSettings.seed) : 20260621,
+    parallelCores: planRunSettings.parallelCores
   };
+  if (planRunSettings.parallelCoresError) {
+    liteMesaMonteCarloStatus = `无法运行：${planRunSettings.parallelCoresError}`;
+  }
 }
 
 function toggleExperimentPlanSelection(planKey, checked) {
@@ -10955,17 +10972,19 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
 function renderExperimentPlanEditor(page) {
   const seedPolicy = experimentPlanSeedPolicy();
   const stopPolicy = experimentPlanStopPolicy();
+  const parallelCoresError = experimentPlanParallelCoresError();
   return `
     <div class="section-head">
       <h3>方案编辑</h3>
-      <span>基本信息、运行配置与分析配置</span>
+      <span>基本信息与运行配置</span>
     </div>
     <div class="section-head sub-section-head"><h3>基本信息</h3><span>方案标识与说明</span></div>
     <div class="form-table-grid">
       ${experimentPlanField("实验名称", "experiment.name")}
       ${experimentPlanField("样本数", "experiment.samples", "number")}
-      ${experimentPlanField("并行核心数", "experiment.parallelCores", "number")}
+      ${experimentPlanField("并行核心数", "experiment.parallelCores", "number", `min="1" max="${MAX_MONTE_CARLO_PARALLEL_CORES}" step="1" ${parallelCoresError ? 'aria-invalid="true"' : ""}`)}
     </div>
+    ${parallelCoresError ? `<p class="inline-status error">${htmlEscape(parallelCoresError)}</p>` : ""}
     <div class="section-head sub-section-head">
       <h3>运行配置</h3>
       <span>${seedPolicy.mode === "random" ? "生成方案时固化随机 base seed" : "固定 base seed 可复现"}</span>
@@ -10980,16 +10999,9 @@ function renderExperimentPlanEditor(page) {
       <label>Base seed<input data-experiment-seed-base type="number" step="1" value="${htmlEscape(seedPolicy.baseSeed)}"></label>
     </div>
     ${renderExperimentStopPolicyControls(stopPolicy)}
-    <div class="section-head sub-section-head">
-      <h3>分析配置</h3>
-      <span>分析项沿用实验方案的独立配置，不写回 Project JSON</span>
-    </div>
-    <div class="alert info">
-      任务可靠性、备件规划、停机因素等分析项在运行后按结果页配置展示。
-    </div>
     <div class="plan-editor-actions">
-      <button type="button" data-plan-list-link>返回方案列表</button>
-      <button type="button" class="btn-primary" data-save-plan>保存方案</button>
+      <button type="button" data-plan-list-link>返回</button>
+      <button type="button" class="btn-primary" data-save-plan ${parallelCoresError ? "disabled" : ""}>保存</button>
     </div>
   `;
 }
@@ -11023,7 +11035,7 @@ function renderExperimentStopPolicyControls(stopPolicy) {
           <input class="experiment-stop-condition-checkbox" id="experiment-stop-condition-specified-time" data-experiment-stop-condition="specifiedTime" type="checkbox" aria-label="达到指定时间" ${conditions.has("specifiedTime") ? "checked" : ""}>
           <label class="experiment-stop-condition-field" for="experiment-stop-condition-specified-time">达到指定时间</label>
         </div>
-        <label class="experiment-stop-minute-field">停止分钟<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}" ${conditions.has("specifiedTime") ? "" : "disabled"}></label>
+        <label class="experiment-stop-minute-field">停止分钟（min）<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}" ${conditions.has("specifiedTime") ? "" : "disabled"}></label>
       </div>
     </div>
   `;
@@ -11398,8 +11410,8 @@ function collectScenarioOverrideParameterOptions(value, path, options) {
   }
 }
 
-function experimentPlanField(label, path, type = "text") {
-  return `<label>${label}<input data-experiment-plan-path="${path}" type="${type}" value="${htmlEscape(getPath(experimentPlanDraft, path))}"></label>`;
+function experimentPlanField(label, path, type = "text", attrs = "") {
+  return `<label>${label}<input data-experiment-plan-path="${path}" type="${type}" value="${htmlEscape(getPath(experimentPlanDraft, path))}" ${attrs}></label>`;
 }
 
 async function handleLogin() {
@@ -12088,6 +12100,11 @@ function projectDraftSaveFailureText(err) {
 }
 
 async function saveCurrentExperimentPlanThroughApi() {
+  const parallelCoresError = experimentPlanParallelCoresError();
+  if (parallelCoresError) {
+    backendApiStatus = `实验方案保存失败：${parallelCoresError}`;
+    return;
+  }
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   const planProjectJson = cloneScenario(experimentPlanDraft);
   ensureExperimentPlanLargeSampleRequest(planProjectJson);
@@ -16307,7 +16324,8 @@ function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
   if (!experiment) return;
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(experiment.samples) || liteMesaMonteCarloSettings.samples || 1)));
   const seed = Math.trunc(Number(experiment.seed) || liteMesaMonteCarloSettings.seed || 1);
-  liteMesaMonteCarloSettings = { samples, seed };
+  const parallelCores = experiment.parallelCores ?? 1;
+  liteMesaMonteCarloSettings = { samples, seed, parallelCores };
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = "已载入蒙特卡洛实验设置，等待运行 Mesa 分析。";
 }
@@ -16332,7 +16350,15 @@ function updateLiteMesaMonteCarloSetting(field, value) {
 async function runLiteMesaMonteCarloAnalysis() {
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(liteMesaMonteCarloSettings.samples) || 1)));
   const seed = Math.trunc(Number(liteMesaMonteCarloSettings.seed) || 1);
-  liteMesaMonteCarloSettings = { samples, seed };
+  let parallelCores;
+  try {
+    parallelCores = normalizeMonteCarloParallelCores(liteMesaMonteCarloSettings.parallelCores);
+  } catch (err) {
+    liteMesaMonteCarloResult = null;
+    liteMesaMonteCarloStatus = `Mesa 分析失败：${err.message}`;
+    return;
+  }
+  liteMesaMonteCarloSettings = { samples, seed, parallelCores };
   liteMesaMonteCarloStatus = "正在运行 Mesa 分析";
   try {
     const selectedProjectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
@@ -16346,7 +16372,8 @@ async function runLiteMesaMonteCarloAnalysis() {
     };
     const response = await backendApi.runLiteMesaAnalysis(projectJson, "mission_reliability", {
       samples,
-      seed
+      seed,
+      parallelCores
     });
     liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response);
     const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
@@ -18218,6 +18245,9 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
   projectJson.experiment.name ||= `${projectName} 仿真实验方案`;
   projectJson.experiment.steps = positiveExperimentNumber(projectJson.experiment.steps, defaults.steps || 24);
   projectJson.experiment.samples = positiveExperimentNumber(projectJson.experiment.samples, defaults.samples || 4);
+  if (projectJson.experiment.parallelCores === undefined || projectJson.experiment.parallelCores === null || projectJson.experiment.parallelCores === "") {
+    projectJson.experiment.parallelCores = normalizeMonteCarloParallelCores(defaults.parallelCores);
+  }
   const seed = Number(projectJson.experiment.seed);
   projectJson.experiment.seed = Number.isFinite(seed) ? seed : Number(defaults.seed || 20260621);
   if (!projectJson.seedPolicy || typeof projectJson.seedPolicy !== "object" || Array.isArray(projectJson.seedPolicy)) {
@@ -18239,6 +18269,15 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
     projectJson.scenarioComposition.overrides = [];
   }
   return projectJson;
+}
+
+function experimentPlanParallelCoresError(projectJson = experimentPlanDraft) {
+  try {
+    normalizeMonteCarloParallelCores(projectJson?.experiment?.parallelCores);
+    return "";
+  } catch (err) {
+    return err.message;
+  }
 }
 
 function positiveExperimentNumber(value, fallback) {

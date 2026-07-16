@@ -2156,7 +2156,10 @@ test("editable modeling lists expose page suggestion action entries", async () =
   );
   assert.match(experimentPlanEditorSource, /基本信息/);
   assert.match(experimentPlanEditorSource, /运行配置/);
-  assert.match(experimentPlanEditorSource, /分析配置/);
+  assert.doesNotMatch(experimentPlanEditorSource, /分析配置/);
+  assert.match(experimentPlanEditorSource, /停止分钟（min）/);
+  assert.match(experimentPlanEditorSource, /data-plan-list-link>返回</);
+  assert.match(experimentPlanEditorSource, /data-save-plan[^>]*>保存</);
   assert.doesNotMatch(experimentPlanEditorSource, /scenario-composition-workspace/);
   assert.match(appSource, /data-scenario-modeling-path/);
   assert.match(appSource, /data-scenario-selected-override-value/);
@@ -2916,7 +2919,9 @@ test("experiment plan editor exposes one runtime configuration and removes Scena
   assert.match(editorSource, /data-experiment-stop-condition="specifiedTime"[\s\S]*data-experiment-stop-time-minute/);
   assert.match(editorSource, /基本信息/);
   assert.match(editorSource, /运行配置/);
-  assert.match(editorSource, /分析配置/);
+  assert.doesNotMatch(editorSource, /分析配置/);
+  assert.match(editorSource, /停止分钟（min）/);
+  assert.match(editorSource, /MAX_MONTE_CARLO_PARALLEL_CORES/);
   assert.doesNotMatch(editorSource, /data-scenario-override-add/);
   assert.match(experimentPlanChangeSource, /experimentPlanStopPolicy/);
   assert.match(experimentPlanChangeSource, /experimentPlanDraft/);
@@ -2937,7 +2942,7 @@ test("monte carlo launch uses Lite Mesa from the selected experiment plan", asyn
   assert.match(handlerSource, /runLiteMesaMonteCarloAnalysis\(\)/);
   assert.match(launchSource, /resolveSelectedExperimentPlanProjectJsonForRun\(\)/);
   assert.match(launchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
-  assert.match(launchSource, /samples,\s*seed/s);
+  assert.match(launchSource, /samples,\s*seed,\s*parallelCores/s);
   assert.doesNotMatch(handlerSource + launchSource, /startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
   assert.doesNotMatch(launchSource, /run_type: "single"|runType|modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun|backendApi\.startMonteCarloRun/);

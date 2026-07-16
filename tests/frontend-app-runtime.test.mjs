@@ -3001,7 +3001,7 @@ test("experiment plan stop minute edit does not enable specified time unless che
   }
 });
 
-test("experiment plan editor separates basic runtime and analysis configuration without Scenario editing", async () => {
+test("experiment plan editor keeps runtime configuration and removes analysis configuration", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-management",
     projectJson: createRuntimeProjectJson({
@@ -3026,7 +3026,10 @@ test("experiment plan editor separates basic runtime and analysis configuration 
 
     assert.match(runtime.appNode.innerHTML, /基本信息/);
     assert.match(runtime.appNode.innerHTML, /运行配置/);
-    assert.match(runtime.appNode.innerHTML, /分析配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /分析配置/);
+    assert.match(runtime.appNode.innerHTML, /停止分钟（min）/);
+    assert.match(runtime.appNode.innerHTML, /data-plan-list-link>返回</);
+    assert.match(runtime.appNode.innerHTML, /data-save-plan[^>]*>保存</);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Scenario 拼接/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /scenario-composition-workspace/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-scenario-selected-override-value/);
@@ -3080,6 +3083,7 @@ test("experiment plan edit preserves saved seed policy scenario composition and 
         steps: 36,
         samples: 7,
         seed: 777,
+        parallelCores: 6,
         seedPolicy: { mode: "random", baseSeed: 777 },
         scenarioComposition: {
           schemaVersion: "scenario-composition-v0",
@@ -3129,6 +3133,7 @@ test("experiment plan edit preserves saved seed policy scenario composition and 
     assert.equal(body.config.steps, 36);
     assert.equal(body.config.samples, 7);
     assert.equal(body.config.seed, 777);
+    assert.equal(body.config.parallelCores, 6);
     assert.deepEqual(body.config.seedPolicy, { mode: "random", baseSeed: 777 });
     assert.equal(body.config.scenarioComposition.overrides[0].path, "supportResources.0.quantity");
     assert.equal(body.config.scenarioComposition.overrides[0].value, 14);
@@ -3136,6 +3141,62 @@ test("experiment plan edit preserves saved seed policy scenario composition and 
     assert.equal(body.config.analysisRequests.largeSample.samples, 7);
     assert.equal("scenarioComposition" in body.config.projectJson, false);
     assert.equal("seedPolicy" in body.config.projectJson, false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("experiment plan editor blocks invalid parallel cores before save", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.parallelCores" },
+      { value: "0", type: "number" }
+    );
+    assert.match(runtime.appNode.innerHTML, /并行核心数必须是 1-32 之间的正整数/);
+    assert.match(runtime.appNode.innerHTML, /data-save-plan disabled/);
+    await runtime.click("[data-save-plan]");
+    assert.equal(
+      runtime.requests.some((request) => request.url.includes("/experiment-plans") && (request.options.method || "GET") !== "GET"),
+      false
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("Monte Carlo launch blocks an invalid saved parallel core value", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [{
+      experiment_plan_id: "plan-invalid-parallel",
+      status: "draft",
+      config: {
+        name: "旧版非法并行方案",
+        samples: 2,
+        seed: 77,
+        parallelCores: 0,
+        projectJson: createRuntimeProjectJson({ project_id: "project-invalid-parallel" })
+      }
+    }]
+  });
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-invalid-parallel" }
+    );
+    await runtime.click("[data-lite-mesa-action='run']");
+    assert.equal(runtime.requests.some((request) => request.url === "/api/mesa-analysis-runs"), false);
+    assert.match(runtime.appNode.innerHTML, /并行核心数必须是 1-32 之间的正整数/);
   } finally {
     runtime.restore();
   }
@@ -3336,6 +3397,7 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
         name: "方案A",
         samples: 4,
         seed: 404,
+        parallelCores: 3,
         projectJson: planProjectJson
       }
     }]
@@ -3367,6 +3429,7 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
     assert.equal(monteCarloBody.project.project_id, "project-runtime-plan-a");
     assert.equal(monteCarloBody.settings.samples, 4);
     assert.equal(monteCarloBody.settings.seed, 404);
+    assert.equal(monteCarloBody.settings.parallelCores, 3);
     assert.match(runtime.appNode.innerHTML, /出动架次率/);
     assert.match(runtime.appNode.innerHTML, />0\.84</);
     assert.doesNotMatch(runtime.appNode.innerHTML, />84%<\/strong>|>84%<\/td>|>75%<\/strong>|>75%<\/td>/);

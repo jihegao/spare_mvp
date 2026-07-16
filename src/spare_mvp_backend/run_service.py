@@ -864,6 +864,7 @@ def _compile_runtime_config(plan: dict[str, Any], mc_config: Any | None = None, 
     if mc_config is not None:
         adapter_payload = mc_config.to_adapter_payload()
         runtime_config["sample_count"] = adapter_payload.get("sample_count")
+        runtime_config["parallel_cores"] = adapter_payload.get("parallel_cores")
         runtime_config["sweep"] = copy.deepcopy(adapter_payload.get("sweep") or {})
         if adapter_payload.get("mc_experiment_id"):
             runtime_config["mc_experiment_id"] = adapter_payload["mc_experiment_id"]
