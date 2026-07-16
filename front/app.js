@@ -139,10 +139,11 @@ const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
   supportCapacities: [1]
 });
 const LITE_MESA_MONTE_CARLO_METRICS = Object.freeze([
-  { key: "mission_success_rate", label: "任务成功率", format: "ratio" },
+  { key: "mission_success_rate", label: "任务可靠度", format: "ratio" },
+  { key: "spare_fill_rate", label: "备件满足率", format: "ratio" },
+  { key: "spare_utilization", label: "备件利用率", format: "ratio" },
   { key: "ready_rate", label: "战备完好率", format: "ratio" },
   { key: "sortie_rate", label: "出动架次率", format: "ratio" },
-  { key: "spare_fill_rate", label: "备件满足率", format: "ratio" },
   { key: "mean_transport_delay", label: "平均备件延误时间", format: "number" },
   { key: "repair_backlog", label: "维修积压", format: "number" }
 ]);
@@ -668,7 +669,7 @@ let liteMesaMonteCarloSettings = {
   seed: Number(scenario.experiment?.seed || 20260621)
 };
 let liteMesaMonteCarloResult = null;
-let liteMesaMonteCarloStatus = "设置样本量和随机种子后运行分析。";
+let liteMesaMonteCarloStatus = "等待运行分析。";
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
 let liteMesaAnalysisResults = {};
 let aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
@@ -16224,8 +16225,7 @@ function m7RunArtifactRows() {
 function renderLiteMesaMonteCarloAnalysis(page) {
   const result = liteMesaMonteCarloResult;
   const runCount = result?.sampleCount || result?.runs?.length || 0;
-  const groupCount = result?.groups?.length || 0;
-  const metricRows = liteMesaMetricStatisticRows(result);
+  const metricRows = liteMesaBusinessMetricRows(result);
   const topMetrics = metricRows.slice(0, 4);
   const projectName = currentProject?.name || "当前项目";
   const experimentPlanName = selectedExperimentPlanName();
@@ -16244,15 +16244,6 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         <section class="lite-mesa-settings">
           <div class="section-head">
             <h3>实验设置</h3>
-            <span>样本量 / 随机种子</span>
-          </div>
-          <div class="lite-mesa-setting-grid">
-            <label>样本量
-              <input data-lite-mesa-field="samples" type="number" min="1" max="1000" step="1" value="${htmlEscape(liteMesaMonteCarloSettings.samples)}">
-            </label>
-            <label>随机种子
-              <input data-lite-mesa-field="seed" type="number" step="1" value="${htmlEscape(liteMesaMonteCarloSettings.seed)}">
-            </label>
           </div>
           <button type="button" class="btn-primary" data-lite-mesa-action="run">运行分析</button>
           <p class="inline-status">${htmlEscape(liteMesaMonteCarloStatus)}</p>
@@ -16260,22 +16251,19 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         <section class="lite-mesa-results">
           <div class="section-head">
             <h3>实验运行结果</h3>
-            <span>${runCount ? `${runCount} 样本 / ${groupCount} 参数组` : "等待运行"}</span>
           </div>
           ${runCount ? `
             <div class="lite-mesa-metric-cards">
               ${topMetrics.map((row) => `
                 <div class="metric-card">
                   <span>${htmlEscape(row.label)}</span>
-                  <strong>${htmlEscape(row.meanLabel)}</strong>
-                  <em>均值 / n=${row.count}</em>
+                  <strong>${htmlEscape(row.resultLabel)}</strong>
                 </div>
               `).join("")}
             </div>
           ` : `
             <div class="empty-state">
               <strong>尚未运行分析</strong>
-              <p>设置样本量和随机种子后运行。</p>
             </div>
           `}
         </section>
@@ -16283,22 +16271,16 @@ function renderLiteMesaMonteCarloAnalysis(page) {
       <section class="lite-mesa-stat-section">
         <div class="section-head">
           <h3>主要输出指标统计值</h3>
-          <span>均值 / 最小值 / 最大值 / 标准差</span>
         </div>
         <div class="table-wrap">
           <table class="lite-mesa-stat-table">
-            <thead><tr><th>指标</th><th>metric</th><th>样本数</th><th>均值</th><th>最小值</th><th>最大值</th><th>标准差</th></tr></thead>
+            <thead><tr><th>业务指标</th><th>最终结果</th></tr></thead>
             <tbody>${runCount ? metricRows.map((row) => `
               <tr>
                 <td>${htmlEscape(row.label)}</td>
-                <td>${htmlEscape(row.key)}</td>
-                <td>${row.count}</td>
-                <td>${htmlEscape(row.meanLabel)}</td>
-                <td>${htmlEscape(row.minLabel)}</td>
-                <td>${htmlEscape(row.maxLabel)}</td>
-                <td>${htmlEscape(row.stdDevLabel)}</td>
+                <td>${htmlEscape(row.resultLabel)}</td>
               </tr>
-            `).join("") : `<tr><td colspan="7">当前没有可展示的统计值。</td></tr>`}</tbody>
+            `).join("") : `<tr><td colspan="2">当前没有可展示的业务结果。</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -16354,7 +16336,7 @@ async function runLiteMesaMonteCarloAnalysis() {
     liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response);
     const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
     liteMesaMonteCarloStatus = runCount
-      ? `Mesa 分析完成：${runCount} 个样本，seed ${seed}。`
+      ? "Mesa 分析完成。"
       : "当前建模数据不足：请补充装备数量、任务要求、任务周期、部件和保障节点。";
   } catch (err) {
     liteMesaMonteCarloResult = null;
@@ -16386,41 +16368,23 @@ function normalizeLiteMesaMonteCarloResult(payload) {
   };
 }
 
-function liteMesaMetricStatisticRows(result) {
+function liteMesaBusinessMetricRows(result) {
   const runs = Array.isArray(result?.runs) ? result.runs : [];
   return LITE_MESA_MONTE_CARLO_METRICS.map((metric) => {
     const values = runs
       .map((run) => Number(run.final?.[metric.key]))
       .filter((value) => Number.isFinite(value));
     const aggregateValue = Number(result?.aggregateMetrics?.[metric.key]);
-    const stats = values.length
-      ? summarizeLiteMesaValues(values)
-      : Number.isFinite(aggregateValue)
-        ? { mean: aggregateValue, min: aggregateValue, max: aggregateValue, stdDev: 0 }
-        : summarizeLiteMesaValues([]);
+    const finalValue = Number.isFinite(aggregateValue)
+      ? aggregateValue
+      : values.length
+        ? values.reduce((sum, value) => sum + value, 0) / values.length
+        : 0;
     return {
       ...metric,
-      count: values.length || Number(result?.sampleCount || 0),
-      meanLabel: formatLiteMesaMetric(stats.mean, metric.format),
-      minLabel: formatLiteMesaMetric(stats.min, metric.format),
-      maxLabel: formatLiteMesaMetric(stats.max, metric.format),
-      stdDevLabel: formatLiteMesaMetric(stats.stdDev, metric.format)
+      resultLabel: formatLiteMesaMetric(finalValue, metric.format)
     };
   });
-}
-
-function summarizeLiteMesaValues(values) {
-  if (!values.length) {
-    return { mean: 0, min: 0, max: 0, stdDev: 0 };
-  }
-  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
-  return {
-    mean,
-    min: Math.min(...values),
-    max: Math.max(...values),
-    stdDev: Math.sqrt(variance)
-  };
 }
 
 function formatLiteMesaMetric(value, format) {

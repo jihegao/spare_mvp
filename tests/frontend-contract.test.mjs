@@ -2484,9 +2484,13 @@ test("frontend tables do not use generic operation column headers", async () => 
 
 test("monte carlo settings submit lightweight Mesa analysis instead of formal run", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function syncLiteMesaSettingsFromMonteCarloExperiment")
+  );
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
   assert.match(appSource, /let \{ previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult \} = buildPreviewResultState\(scenario\)/);
-  assert.match(appSource, /data-lite-mesa-field="samples"/);
+  assert.doesNotMatch(renderSource, /data-lite-mesa-field="samples"|data-lite-mesa-field="seed"/);
   const runSource = appSource.slice(
     appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
     appSource.indexOf("function normalizeLiteMesaMonteCarloResult")
@@ -2518,7 +2522,7 @@ test("monte carlo experiment detail labels backend Mesa execution without formal
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
-    appSource.indexOf("function liteMesaMetricStatisticRows")
+    appSource.indexOf("function liteMesaBusinessMetricRows")
   );
 
   assert.match(renderSource, /蒙特卡洛分析/);
@@ -2626,14 +2630,13 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   assert.match(appSource, /let liteMesaMonteCarloResult =/);
   assert.doesNotMatch(renderSource, /前端建模 \+ 仿真分析/);
   assert.match(renderSource, /正在运行 Mesa 分析/);
-  assert.match(renderSource, /data-lite-mesa-field="samples"/);
-  assert.match(renderSource, /data-lite-mesa-field="seed"/);
+  assert.doesNotMatch(renderSource, /data-lite-mesa-field="samples"|data-lite-mesa-field="seed"/);
   assert.match(renderSource, /主要输出指标统计值/);
-  assert.match(renderSource, /均值/);
-  assert.match(renderSource, /最小值/);
-  assert.match(renderSource, /最大值/);
-  assert.match(renderSource, /标准差/);
-  assert.match(appSource, /mission_success_rate/);
+  assert.match(renderSource, /<th>业务指标<\/th><th>最终结果<\/th>/);
+  assert.doesNotMatch(renderSource, /样本量|随机种子|样本数|均值|最小值|最大值|标准差|均值\s*\/\s*n=|参数组/);
+  assert.match(appSource, /key: "mission_success_rate", label: "任务可靠度"/);
+  assert.match(appSource, /key: "spare_fill_rate", label: "备件满足率"/);
+  assert.match(appSource, /key: "spare_utilization", label: "备件利用率"/);
   assert.match(appSource, /ready_rate/);
   assert.match(appSource, /key: "mean_transport_delay", label: "平均备件延误时间"/);
   assert.doesNotMatch(appSource.slice(
@@ -2644,7 +2647,7 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   assert.doesNotMatch(renderSource, /非正式|预览|本地预览|正式后端结果/);
   const runSource = appSource.slice(
     appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
-    appSource.indexOf("function liteMesaMetricStatisticRows")
+    appSource.indexOf("function liteMesaBusinessMetricRows")
   );
   assert.match(runSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
   assert.doesNotMatch(runSource, /startMonteCarloRunThroughApi/);
@@ -4011,7 +4014,7 @@ test("lite Mesa Monte Carlo detail uses decimal ratios and hides metadata chrome
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
-    appSource.indexOf("function liteMesaMetricStatisticRows")
+    appSource.indexOf("function liteMesaBusinessMetricRows")
   );
   const metricSource = appSource.slice(
     appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),

@@ -3332,6 +3332,8 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
       { currentExperimentPlan: "" },
       { value: "plan-a" }
     );
+    const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+    assert.doesNotMatch(settingsPanel, /样本量|随机种子|data-lite-mesa-field/);
     await runtime.click("[data-lite-mesa-action='run']");
 
     const monteCarloRequest = runtime.requests
@@ -3342,11 +3344,13 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
     const monteCarloBody = monteCarloRequest;
     assert.equal(monteCarloBody.analysis_type, "mission_reliability");
     assert.equal(monteCarloBody.project.project_id, "project-runtime-plan-a");
+    assert.equal(monteCarloBody.settings.samples, 4);
+    assert.equal(monteCarloBody.settings.seed, 404);
     assert.match(runtime.appNode.innerHTML, /出动架次率/);
     assert.match(runtime.appNode.innerHTML, />0\.84</);
     assert.doesNotMatch(runtime.appNode.innerHTML, />84%<\/strong>|>84%<\/td>|>75%<\/strong>|>75%<\/td>/);
     assert.match(runtime.appNode.innerHTML, /平均备件延误时间/);
-    assert.match(runtime.appNode.innerHTML, /mean_transport_delay/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /mean_transport_delay/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /短缺事件/);
 
     await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
@@ -3535,16 +3539,22 @@ test("switching from a saved plan to a Project without experiment resets Monte C
       { currentExperimentPlan: "" },
       { value: "plan-settings" }
     );
-    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="19"/);
-    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="seed"[^>]*value="1919"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
+    await runtime.click("[data-lite-mesa-action='run']");
+    const planAnalysisBody = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(planAnalysisBody.project.project_id, "project-settings-plan");
+    assert.equal(planAnalysisBody.settings.samples, 19);
+    assert.equal(planAnalysisBody.settings.seed, 1919);
 
     await runtime.change(
       "[data-current-experiment-plan]",
       { currentExperimentPlan: "" },
       { value: "current-project:project-runtime" }
     );
-    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
-    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="seed"[^>]*value="20260621"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
 
     await runtime.click("[data-lite-mesa-action='run']");
     const analysisBody = runtime.requests
@@ -3584,7 +3594,7 @@ test("refreshing away the selected saved plan resets the run context and Monte C
       { currentExperimentPlan: "" },
       { value: "plan-disappearing" }
     );
-    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="23"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
 
     experimentPlans.splice(0);
     await runtime.setHash("feature=spare-planning-experiment-plan-management");
@@ -3593,8 +3603,7 @@ test("refreshing away the selected saved plan resets the run context and Monte C
     await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
 
     assert.match(runtime.appNode.innerHTML, /当前项目：Runtime 项目/);
-    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
-    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="seed"[^>]*value="20260621"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /即将失效的方案/);
 
     await runtime.click("[data-lite-mesa-action='run']");
@@ -3725,7 +3734,7 @@ test("mission reliability and downtime analysis keep current Project as default 
   }
 });
 
-test("Monte Carlo setting changes do not rerender before lightweight Mesa run click", async () => {
+test("Monte Carlo detail hides statistical chrome and renders three normalized business results", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
     projectJson: createRuntimeProjectJson({
@@ -3737,17 +3746,32 @@ test("Monte Carlo setting changes do not rerender before lightweight Mesa run cl
         nodes: [{ id: "avionics", name: "航电模块", type: "component", failureRate: 0.03 }],
         edges: []
       }
-    })
+    }),
+    liteMesaAnalysisResponseOverrides: {
+      aggregate_metrics: {
+        mission_success_rate: 0.73,
+        spare_fill_rate: 0.64,
+        spare_utilization: 0.29,
+        ready_rate: 0.61,
+        sortie_rate: 0.82,
+        mean_transport_delay: 7.5,
+        repair_backlog: 1.25
+      },
+      samples: [{
+        sample_id: "sample-render-fallback-check",
+        final: {
+          mission_success_rate: 0.11,
+          spare_fill_rate: 0.22,
+          spare_utilization: 0.33
+        }
+      }]
+    }
   });
 
   try {
     assert.match(runtime.appNode.innerHTML, /蒙特卡洛分析/);
-    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"/);
-
-    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "3", type: "number" });
-
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /设置已更新，等待重新运行 Mesa 分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
 
     await runtime.click("[data-lite-mesa-action='run']");
 
@@ -3758,7 +3782,8 @@ test("Monte Carlo setting changes do not rerender before lightweight Mesa run cl
     assert.ok(analysisRequest, "Monte Carlo detail should submit a lightweight Mesa analysis request");
     const body = analysisRequest;
     assert.equal(body.analysis_type, "mission_reliability");
-    assert.equal(body.settings.samples, 3);
+    assert.equal(body.settings.samples, 4);
+    assert.equal(body.settings.seed, 20260621);
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),
       false,
@@ -3772,7 +3797,22 @@ test("Monte Carlo setting changes do not rerender before lightweight Mesa run cl
       false,
       "current Project Monte Carlo must not auto-create an ExperimentPlan"
     );
-    assert.match(runtime.appNode.innerHTML, /Mesa 分析完成|分析完成/);
+    const resultCards = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-results");
+    const metricTable = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-stat-section");
+    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
+    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64<\/strong>/);
+    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29<\/strong>/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>/);
+    assert.match(metricTable, /<td>备件满足率<\/td>\s*<td>0\.64<\/td>/);
+    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>/);
+    for (const label of ["任务可靠度", "备件满足率", "备件利用率"]) {
+      assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
+    }
+    assert.doesNotMatch(
+      runtime.appNode.innerHTML,
+      /样本量|随机种子|样本数|均值|最小值|最大值|标准差|均值\s*\/\s*n=|\d+\s*样本\s*\/|\d+\s*参数组|mean_transport_delay|mission_success_rate|spare_fill_rate|spare_utilization/
+    );
+    assert.match(runtime.appNode.innerHTML, /Mesa 分析完成。/);
   } finally {
     runtime.restore();
   }
@@ -4137,6 +4177,7 @@ async function setupRuntimeApp({
 		        ready_rate: 0.46,
 		        sortie_rate: 0.84,
 		        spare_fill_rate: 0.55,
+		        spare_utilization: 0.35,
 		        mean_transport_delay: 18.25,
 		        repair_backlog: 2.15
 		      };
