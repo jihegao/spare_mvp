@@ -17281,14 +17281,16 @@ function renderLiteMesaAnalysisPage(page) {
         : "等待运行";
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page">
-      <section class="lite-mesa-hero">
-        <div>
-          <h3>${htmlEscape(definition.title)}</h3>
-        </div>
-        <div class="lite-mesa-hero-actions">
-          ${renderExperimentPlanContextDropdown(page)}
-        </div>
-      </section>
+      ${definition.analysisType === "mission_reliability" ? "" : `
+        <section class="lite-mesa-hero">
+          <div>
+            <h3>${htmlEscape(definition.title)}</h3>
+          </div>
+          <div class="lite-mesa-hero-actions">
+            ${renderExperimentPlanContextDropdown(page)}
+          </div>
+        </section>
+      `}
       <section class="lite-mesa-settings lite-mesa-analysis-settings">
         <div class="section-head">
           <h3>分析设定</h3>
@@ -17541,6 +17543,7 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 function liteMesaAnalysisVisibleMetrics(definition, metrics) {
   const hiddenLabels = {
     carry_list: new Set(["备件满足率下限", "置信度目标", "样本数"]),
+    mission_reliability: new Set(["任务成功率", "战备完好率"]),
     downtime_factors: new Set(["样本数"])
   }[definition.analysisType] || new Set();
   return (metrics || []).filter(([label]) => !hiddenLabels.has(String(label)));
