@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
+import {
+  calculateRmsAllocation,
+  createDefaultRmsAllocationPlan,
+  createRmsAllocationProjectForScenario
+} from "../front/rms-allocation-engine.mjs";
 import { defaultScenario } from "../front/sim-engine.mjs";
 
 test("frontend app module initializes without Monte Carlo TDZ errors", async () => {
@@ -1830,10 +1835,15 @@ test("equipment aircraft rename keeps aircraftTypes catalog in saved Project dra
 });
 
 test("RMS method selection updates method-specific parameters at runtime", async () => {
-  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createRmsRuntimeProjectJson()
+  });
 
   try {
     assert.match(runtime.appNode.innerHTML, /装备 RMS 指标分配/);
+    assert.match(runtime.appNode.innerHTML, /请先选择飞机型号/);
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
     assert.doesNotMatch(runtime.appNode.innerHTML, /基准机型/);
 
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "similar" });
@@ -1847,9 +1857,15 @@ test("RMS method selection updates method-specific parameters at runtime", async
 });
 
 test("RMS method changes retain results until the calculation overlay completes", async () => {
-  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createRmsRuntimeProjectJson()
+  });
 
   try {
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    await new Promise((resolve) => setTimeout(resolve, 2050));
     const initialResultPanel = htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel");
     assert.match(initialResultPanel, /25%/);
 
@@ -1873,9 +1889,13 @@ test("RMS method changes retain results until the calculation overlay completes"
 });
 
 test("RMS calculation shows a blocking two-second progress state before completing", async () => {
-  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createRmsRuntimeProjectJson()
+  });
 
   try {
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
     await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
     assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
     assert.match(runtime.appNode.innerHTML, /data-rms-action="calculate" disabled>计算中/);
@@ -1889,47 +1909,92 @@ test("RMS calculation shows a blocking two-second progress state before completi
   }
 });
 
-test("RMS imported aircraft models filter the tree and remain available as similar references", async () => {
-  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+test("RMS aircraft selector filters the project equipment tree and similar references", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createRmsRuntimeProjectJson()
+  });
 
   try {
-    const file = {
-      name: "rms-models.csv",
-      async text() {
-        return [
-          "id,name,parentId,level,quantity,runningRatio,similarProductModel",
-          "f15-root,F15,,装备,1,1,",
-          "f15-engine,F15 发动机,f15-root,系统,2,1,",
-          "f16-root,F16,,装备,1,1,",
-          "f16-engine,F16 发动机,f16-root,系统,1,1,F15",
-          "f18-root,F18,,装备,1,1,",
-          "f18-engine,F18 发动机,f18-root,系统,2,1,"
-        ].join("\n");
-      }
-    };
+    assert.match(runtime.appNode.innerHTML, /<option value="J-15" >J-15<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="J-20" >J-20<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /J-15 发动机|J-20 雷达/);
 
-    await runtime.change("[data-rms-equipment-import-file]", {}, { files: [file], value: "rms-models.csv" });
-    assert.match(runtime.appNode.innerHTML, /已导入 rms-models\.csv/);
-    assert.match(runtime.appNode.innerHTML, /F15 发动机/);
-
-    await runtime.click("[data-rms-equipment-root]", { rmsEquipmentRoot: "f16-root" });
-    assert.match(runtime.appNode.innerHTML, /F16 发动机/);
-    assert.match(runtime.appNode.innerHTML, /tree-node-label selected" data-rms-equipment-root="f16-root"/);
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
+    assert.match(runtime.appNode.innerHTML, /J-15 发动机/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /J-20 雷达/);
 
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "similar" });
-    assert.match(runtime.appNode.innerHTML, /基准机型/);
-    assert.match(runtime.appNode.innerHTML, /<option value="F15" selected>F15<\/option>/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="F16"[^>]*>F16<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="F18"\s*>F18<\/option>/);
+    const methodPanel = htmlSectionByClass(runtime.appNode.innerHTML, "rms-method-panel");
+    assert.match(methodPanel, /基准机型/);
+    assert.match(methodPanel, /<option value="J-20" selected>J-20<\/option>/);
+    assert.doesNotMatch(methodPanel, /<option value="J-15"[^>]*>J-15<\/option>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("RMS calculation is blocked without an aircraft or with invalid required inputs", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createRmsRuntimeProjectJson()
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /请先选择飞机型号。/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /organization-layout equipment-layout rms-layout/);
+    assert.match(runtime.appNode.innerHTML, /data-rms-action="calculate" disabled>计算/);
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
+    await runtime.change("[data-rms-path]", { rmsPath: "inputs.missionReliability" }, { value: "", type: "number" });
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    assert.match(runtime.appNode.innerHTML, /任务可靠度不能为空/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("RMS per-aircraft inputs, tree selection and saved results hydrate without cross-model reuse", async () => {
+  const projectJson = createPersistedRmsRuntimeProjectJson();
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /<option value="J-15" selected>J-15<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /data-rms-path="inputs\.missionReliability"[^>]*value="0\.91"/);
+    assert.match(runtime.appNode.innerHTML, /tree-node-label selected" data-rms-equipment-node="rms:J-15:j15-engine"/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-20" });
+    assert.match(runtime.appNode.innerHTML, /data-rms-path="inputs\.missionReliability"[^>]*value="0\.88"/);
+    assert.match(runtime.appNode.innerHTML, /J-20 雷达/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /J-15 发动机/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
+
+    await runtime.change("[data-rms-path]", { rmsPath: "inputs.mttrHours" }, { value: "3.5", type: "number" });
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    const saved = projectSaveBodies(runtime).at(-1);
+    assert.equal(saved.rmsAllocationPlan.selectedAircraftModel, "J-20");
+    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-15"].plan.inputs.missionReliability, 0.91);
+    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs.mttrHours, 3.5);
+    assert.equal(saved.rmsAllocationResult.byAircraftModel["J-15"].aircraftModel, "J-15");
+    assert.equal(saved.rmsAllocationResult.byAircraftModel["J-20"], undefined);
   } finally {
     runtime.restore();
   }
 });
 
 test("RMS installation table filters to a selected subtree and persists editable node fields", async () => {
-  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createRmsRuntimeProjectJson()
+  });
 
   try {
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
     const file = {
       name: "rms-nested-tree.csv",
       async text() {
@@ -1983,8 +2048,12 @@ test("RMS installation table filters to a selected subtree and persists editable
 });
 
 test("RMS runtime shows an explicit failure when proportional weights sum to zero", async () => {
-  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createRmsRuntimeProjectJson()
+  });
   try {
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
     const file = {
       name: "zero-running-ratio.csv",
       async text() {
@@ -4472,6 +4541,63 @@ function createRuntimeProjectJson(overrides = {}) {
     basicMissions: overrides.basicMissions || project.basicMissions,
     equipment: { ...project.equipment, ...(overrides.equipment || {}) }
   };
+}
+
+function createRmsRuntimeProjectJson(overrides = {}) {
+  return createRuntimeProjectJson({
+    ...overrides,
+    equipment: {
+      model: "J-15",
+      wholeMachineModels: ["J-15", "J-20"],
+      aircraftTypes: [
+        { id: "aircraft-type-j15", model: "J-15", name: "J-15" },
+        { id: "aircraft-type-j20", model: "J-20", name: "J-20" }
+      ],
+      ...(overrides.equipment || {})
+    },
+    components: overrides.components || [
+      { id: "j15-engine", aircraftModel: "J-15", name: "J-15 发动机", model: "WS-10", level: "系统", parentId: "aircraft-root", quantity: 2, runningRatio: 1, importance: 1, complexity: 1 },
+      { id: "j15-radar", aircraftModel: "J-15", name: "J-15 雷达", model: "RADAR-15", level: "系统", parentId: "aircraft-root", quantity: 1, runningRatio: 1, importance: 1, complexity: 1 },
+      { id: "j15-hydraulic", aircraftModel: "J-15", name: "J-15 液压", model: "HYD-15", level: "系统", parentId: "aircraft-root", quantity: 1, runningRatio: 1, importance: 1, complexity: 1 },
+      { id: "j15-computer", aircraftModel: "J-15", name: "J-15 任务计算机", model: "MC-15", level: "系统", parentId: "aircraft-root", quantity: 1, runningRatio: 1, importance: 1, complexity: 1 },
+      { id: "j20-engine", aircraftModel: "J-20", name: "J-20 发动机", model: "WS-15", level: "系统", parentId: "aircraft-root", quantity: 2, runningRatio: 0.8, importance: 1, complexity: 1 },
+      { id: "j20-radar", aircraftModel: "J-20", name: "J-20 雷达", model: "RADAR-20", level: "系统", parentId: "aircraft-root", quantity: 1, runningRatio: 1, importance: 1, complexity: 1 }
+    ]
+  });
+}
+
+function createPersistedRmsRuntimeProjectJson() {
+  const project = createRmsRuntimeProjectJson();
+  const j15Project = createRmsAllocationProjectForScenario(project, "J-15");
+  const j20Project = createRmsAllocationProjectForScenario(project, "J-20");
+  const j15Plan = createDefaultRmsAllocationPlan(j15Project);
+  const j20Plan = createDefaultRmsAllocationPlan(j20Project);
+  j15Plan.inputs.missionReliability = 0.91;
+  j15Plan.methods.allocation = "proportional";
+  j20Plan.inputs.missionReliability = 0.88;
+  project.rmsAllocationPlan = {
+    schemaVersion: "rms-allocation-workbench-v1",
+    selectedAircraftModel: "J-15",
+    aircraftStates: {
+      "J-15": {
+        plan: j15Plan,
+        selectedEquipmentNodeId: "rms:J-15:j15-engine",
+        equipmentNodes: j15Project.equipmentNodes
+      },
+      "J-20": {
+        plan: j20Plan,
+        selectedEquipmentNodeId: j20Project.rootId,
+        equipmentNodes: j20Project.equipmentNodes
+      }
+    }
+  };
+  project.rmsAllocationResult = {
+    schemaVersion: "rms-allocation-result-set-v1",
+    byAircraftModel: {
+      "J-15": calculateRmsAllocation(j15Plan, j15Project)
+    }
+  };
+  return project;
 }
 
 function appendRuntimeSupportActivityJob(projectJson, activityIndex, job) {

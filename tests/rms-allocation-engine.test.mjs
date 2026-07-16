@@ -6,9 +6,11 @@ import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
   createDemoRmsAllocationProject,
+  createRmsAllocationProjectForScenario,
   createRmsAllocationFailureResult,
   createRmsEquipmentImportFixture,
   normalizeRmsEquipmentImportRows,
+  rmsAllocationInputErrors,
   rmsEquipmentRoots,
   rmsEquipmentSubtree,
   selectRmsAllocationEquipmentRoot
@@ -20,9 +22,11 @@ test("equal allocation returns a normalized forward allocation contract", () => 
   const plan = createDefaultRmsAllocationPlan(project);
   const result = calculateRmsAllocation(plan, project);
 
-  assert.equal(plan.schemaVersion, "rms-allocation-plan-v2");
+  assert.equal(plan.schemaVersion, "rms-allocation-plan-v3");
   assert.equal(result.method, "equal");
   assert.equal(result.status, "calculated");
+  assert.equal(result.aircraftModel, "F16");
+  assert.deepEqual(result.inputSnapshot, plan.inputs);
   assert.equal(result.nodeResults.length, 4);
   assert.ok(Math.abs(result.totals.allocationShare - 1) < 1e-12);
   assert.ok(result.nodeResults.every((row) => row.allocationShare === 0.25));
@@ -34,6 +38,53 @@ test("equal allocation returns a normalized forward allocation contract", () => 
       "nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "allocationShare", "status"
     ]);
   }
+});
+
+test("RMS inputs fail closed for required and range violations", () => {
+  const project = createDemoRmsAllocationProject();
+  const plan = createDefaultRmsAllocationPlan(project);
+  for (const [field, value, label] of [
+    ["missionReliability", "", "任务可靠度不能为空"],
+    ["missionReliability", 0, "任务可靠度必须大于 0"],
+    ["missionReliability", 1.01, "任务可靠度必须小于等于 1"],
+    ["missionHours", 0, "任务时长必须大于 0 h"],
+    ["criticalFailureRatio", -0.01, "关键故障占比必须大于等于 0"],
+    ["criticalFailureRatio", 1.01, "关键故障占比必须小于等于 1"],
+    ["mttrHours", -0.01, "MTTR必须大于等于 0 h"]
+  ]) {
+    plan.inputs = { ...plan.inputs, [field]: value };
+    assert.ok(rmsAllocationInputErrors(plan.inputs).includes(label));
+    assert.throws(() => calculateRmsAllocation(plan, project), /RMS_INPUT_INVALID/);
+    plan.inputs = { ...createDefaultRmsAllocationPlan(project).inputs };
+  }
+});
+
+test("project equipment modeling is projected into isolated aircraft RMS roots", () => {
+  const scenario = {
+    project_id: "project-rms-aircraft",
+    projectInfo: { name: "双机型项目" },
+    equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-20"] },
+    missionProfile: { name: "任务", durationHours: 2 },
+    components: [
+      { id: "engine-j15", aircraftModel: "J-15", name: "J-15 发动机", quantity: 2, runningRatio: 0.8 },
+      { id: "radar-j20", aircraftModel: "J-20", name: "J-20 雷达", quantity: 1, runningRatio: 1 },
+      { id: "shared-radio", name: "通用电台", quantity: 1, runningRatio: 0.5 }
+    ]
+  };
+  const j15 = createRmsAllocationProjectForScenario(scenario, "J-15");
+  const j20 = createRmsAllocationProjectForScenario(scenario, "J-20");
+
+  assert.equal(j15.equipmentNodes.find((node) => node.id === j15.rootId)?.name, "J-15");
+  assert.deepEqual(
+    j15.equipmentNodes.filter((node) => node.parentId === j15.rootId).map((node) => node.name),
+    ["J-15 发动机", "通用电台"]
+  );
+  assert.deepEqual(
+    j20.equipmentNodes.filter((node) => node.parentId === j20.rootId).map((node) => node.name),
+    ["J-20 雷达", "通用电台"]
+  );
+  assert.notEqual(j15.rootId, j20.rootId);
+  assert.equal(calculateRmsAllocation(createDefaultRmsAllocationPlan(j15), j15).aircraftModel, "J-15");
 });
 
 test("proportional allocation uses imported installation count and running ratio", () => {

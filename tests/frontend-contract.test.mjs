@@ -4045,10 +4045,14 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(appSource, /data-rms-equipment-root/);
   assert.match(appSource, /data-rms-equipment-node/);
   assert.match(appSource, /data-rms-equipment-field/);
+  assert.match(appSource, /data-rms-aircraft-model/);
   assert.match(appSource, /function updateRmsEquipmentField/);
+  assert.match(appSource, /function persistRmsAllocationDraftToScenario/);
+  assert.match(appSource, /rms-allocation-workbench-v1/);
+  assert.match(appSource, /rms-allocation-result-set-v1/);
   assert.match(appSource, /normalizeRmsEquipmentImportRows/);
   assert.match(appSource, /selectRmsAllocationEquipmentRoot/);
-  assert.match(appSource, /calculateRmsAllocation\(rmsAllocationPlan, rmsAllocationProject\)/);
+  assert.match(appSource, /calculateRmsAllocation\(state\.plan, state\.project\)/);
   assert.doesNotMatch(appSource, /publishRmsAllocation\(rmsAllocationProject, rmsAllocationResult\)/);
   assert.doesNotMatch(appSource, /function renderTopbarContext\(page\)/);
   assert.match(appSource, /<p>\$\{htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)\}<\/p>/);
@@ -4068,6 +4072,14 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /导入 15/);
   assert.match(workbenchSource, /导入安装数/);
   assert.match(workbenchSource, /装备结构树/);
+  assert.match(workbenchSource, /飞机型号与 RMS 输入/);
+  assert.match(workbenchSource, /data-rms-aircraft-model/);
+  assert.match(workbenchSource, /inputs\.missionReliability/);
+  assert.match(workbenchSource, /inputs\.missionHours/);
+  assert.match(workbenchSource, /inputs\.criticalFailureRatio/);
+  assert.match(workbenchSource, /inputs\.mttrHours/);
+  assert.match(workbenchSource, /请先选择飞机型号/);
+  assert.match(workbenchSource, /当前项目暂无飞机型号，请先完成装备系统建模/);
   assert.match(workbenchSource, /organization-layout equipment-layout rms-layout/);
   assert.match(workbenchSource, /tree-node-label root/);
   assert.match(workbenchSource, /<th>系统名称<\/th><th>型号<\/th><th>安装数<\/th><th>运行比<\/th>/);
@@ -4083,7 +4095,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /比例修正系数|相似修正系数/);
   assert.match(workbenchSource, /plan\.methods\.allocation === "similar"/);
   assert.match(workbenchSource, /基准机型/);
-  assert.match(workbenchSource, /data-rms-action="calculate"\$\{isCalculating \? " disabled" : ""\}/);
+  assert.match(workbenchSource, /data-rms-action="calculate"\$\{calculateDisabled \? " disabled" : ""\}/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="save-draft"/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="publish"/);
   assert.doesNotMatch(workbenchSource, /AGREE 分配法/);
@@ -4119,6 +4131,8 @@ test("RMS allocation workbench renders parameters for only the selected method",
       plan,
       result: calculateRmsAllocation(plan, project),
       importStatus: "",
+      aircraftModels: ["F16", "F15", "F18"],
+      selectedAircraftModel: "F16",
       htmlEscape: (value) => String(value ?? "")
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
@@ -4153,6 +4167,8 @@ test("RMS allocation workbench renders parameters for only the selected method",
     plan,
     result: calculateRmsAllocation(plan, project),
     importStatus: "",
+    aircraftModels: ["F16", "F15", "F18"],
+    selectedAircraftModel: "F16",
     isCalculating: true,
     htmlEscape: (value) => String(value ?? ""),
     fixed: (value, digits = 2) => Number(value || 0).toFixed(digits),

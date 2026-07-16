@@ -1,4 +1,100 @@
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-3.0.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-3.1.0";
+
+export const DEFAULT_RMS_ALLOCATION_INPUTS = Object.freeze({
+  missionReliability: 0.95,
+  missionHours: 3,
+  criticalFailureRatio: 0.2,
+  mttrHours: 2
+});
+
+export function createRmsAllocationProjectForScenario(scenario, selectedAircraftModel = "") {
+  const aircraftModels = scenarioAircraftModels(scenario);
+  const selectedModel = aircraftModels.includes(String(selectedAircraftModel || ""))
+    ? String(selectedAircraftModel)
+    : "";
+  const equipmentNodes = [];
+  const reliabilityGroups = [];
+
+  for (const aircraftModel of aircraftModels) {
+    const rootId = rmsScenarioNodeId(aircraftModel, "aircraft-root");
+    const components = (scenario?.components || []).filter((component) => (
+      !component?.aircraftModel || String(component.aircraftModel) === aircraftModel
+    ));
+    const componentIds = new Set(components.map((component) => String(component?.id || "")).filter(Boolean));
+    equipmentNodes.push({
+      id: rootId,
+      sourceNodeId: "aircraft-root",
+      aircraftModel,
+      name: aircraftModel,
+      level: "装备",
+      parentId: null,
+      quantity: 1,
+      structure: "series",
+      rms: { target: {}, prediction: {}, actual: {} }
+    });
+    for (const [index, component] of components.entries()) {
+      const sourceNodeId = String(component?.id || `component-${index + 1}`);
+      const sourceParentId = String(component?.parentId || "aircraft-root");
+      const parentId = sourceParentId !== "aircraft-root" && componentIds.has(sourceParentId)
+        ? rmsScenarioNodeId(aircraftModel, sourceParentId)
+        : rootId;
+      equipmentNodes.push({
+        ...structuredClone(component),
+        id: rmsScenarioNodeId(aircraftModel, sourceNodeId),
+        sourceNodeId,
+        aircraftModel,
+        parentId,
+        name: component?.name || sourceNodeId,
+        level: component?.level || component?.systemLevel || "系统",
+        quantity: Number(component?.quantity || 1),
+        structure: component?.structure || component?.connectionType || "series",
+        missionUse: {
+          ...(component?.missionUse || {}),
+          runningRatio: component?.missionUse?.runningRatio
+            ?? component?.missionUse?.dutyCycle
+            ?? component?.runningRatio
+            ?? 1
+        }
+      });
+    }
+    reliabilityGroups.push({
+      id: `${rootId}-series-group`,
+      parentNodeId: rootId,
+      type: "series",
+      children: equipmentNodes.filter((node) => node.parentId === rootId).map((node) => node.id)
+    });
+  }
+
+  return {
+    projectId: scenario?.project_id || scenario?.scenarioId || "rms-project",
+    rootId: selectedModel ? rmsScenarioNodeId(selectedModel, "aircraft-root") : "",
+    name: scenario?.projectInfo?.name || scenario?.experiment?.name || "装备 RMS 指标分配",
+    missionProfile: structuredClone(scenario?.missionProfile || {}),
+    missionPhases: structuredClone(scenario?.missionPhases || []),
+    reliabilityGroups,
+    equipmentNodes
+  };
+}
+
+export function rmsAllocationInputErrors(inputs = {}) {
+  const errors = [];
+  validateRequiredRange(errors, inputs.missionReliability, "任务可靠度", { min: 0, max: 1, minExclusive: true });
+  validateRequiredRange(errors, inputs.missionHours, "任务时长", { min: 0, minExclusive: true, unit: "h" });
+  validateRequiredRange(errors, inputs.criticalFailureRatio, "关键故障占比", { min: 0, max: 1 });
+  validateRequiredRange(errors, inputs.mttrHours, "MTTR", { min: 0, unit: "h" });
+  return errors;
+}
+
+export function validateRmsAllocationInputs(inputs = {}) {
+  const errors = rmsAllocationInputErrors(inputs);
+  if (errors.length) throw new Error(`RMS_INPUT_INVALID: ${errors.join("；")}`);
+  return {
+    missionReliability: Number(inputs.missionReliability),
+    missionHours: Number(inputs.missionHours),
+    criticalFailureRatio: Number(inputs.criticalFailureRatio),
+    mttrHours: Number(inputs.mttrHours)
+  };
+}
 
 export function createDemoRmsAllocationProject() {
   return {
@@ -588,13 +684,14 @@ export function normalizeRmsEquipmentImportRows(input, { baseProject = createDem
 
 export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocationProject()) {
   return {
-    schemaVersion: "rms-allocation-plan-v2",
+    schemaVersion: "rms-allocation-plan-v3",
     planId: "RMS-PLAN-001",
     planVersion: 1,
     name: "近海巡逻任务RMS分配方案",
     status: "draft",
     projectId: project.projectId,
     algorithmVersion: RMS_ALLOCATION_ALGORITHM_VERSION,
+    inputs: { ...DEFAULT_RMS_ALLOCATION_INPUTS },
     methods: {
       allocation: "equal",
       similarProduct: {
@@ -610,6 +707,7 @@ export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocation
 }
 
 export function calculateRmsAllocation(plan, project) {
+  const inputSnapshot = validateRmsAllocationInputs(plan.inputs);
   const childNodes = project.equipmentNodes.filter((node) => node.parentId === project.rootId);
   if (!childNodes.length) {
     throw new Error("RMS_ALLOCATION_EMPTY: 当前装备没有可分配的直接子系统");
@@ -630,6 +728,7 @@ export function calculateRmsAllocation(plan, project) {
     };
   });
   const warnings = methodWarnings(plan, project);
+  const selectedRoot = project.equipmentNodes.find((node) => node.id === project.rootId);
 
   return {
     ok: true,
@@ -638,6 +737,8 @@ export function calculateRmsAllocation(plan, project) {
     planStatus: "calculated",
     status: "calculated",
     algorithmVersion: RMS_ALLOCATION_ALGORITHM_VERSION,
+    aircraftModel: selectedRoot?.aircraftModel || selectedRoot?.name || "",
+    inputSnapshot,
     method: plan.methods.allocation,
     similarProduct: plan.methods.similarProduct || null,
     nodeResults,
@@ -657,6 +758,13 @@ export function createRmsAllocationFailureResult(plan, error) {
     planVersion: plan.planVersion,
     status: "method_not_applicable",
     algorithmVersion: plan.algorithmVersion || RMS_ALLOCATION_ALGORITHM_VERSION,
+    aircraftModel: plan.methods?.similarProduct?.targetModel || "",
+    inputSnapshot: {
+      missionReliability: Number(plan.inputs?.missionReliability) || 0,
+      missionHours: Number(plan.inputs?.missionHours) || 0,
+      criticalFailureRatio: Number(plan.inputs?.criticalFailureRatio) || 0,
+      mttrHours: Number(plan.inputs?.mttrHours) || 0
+    },
     method: plan.methods.allocation,
     similarProduct: plan.methods.similarProduct || null,
     nodeResults: [],
@@ -783,6 +891,40 @@ function runningRatioForNode(node) {
 function validateAllocationNode(node) {
   normalizedInstallationCount(node.quantity);
   runningRatioForNode(node);
+}
+
+function scenarioAircraftModels(scenario) {
+  const equipment = scenario?.equipment || {};
+  const aircraftTypes = Array.isArray(equipment.aircraftTypes)
+    ? equipment.aircraftTypes.map((item) => typeof item === "string" ? item : (item?.model || item?.name || item?.id || ""))
+    : [];
+  return Array.from(new Set([
+    ...aircraftTypes,
+    ...(Array.isArray(equipment.wholeMachineModels) ? equipment.wholeMachineModels : []),
+    equipment.model
+  ].map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+function rmsScenarioNodeId(aircraftModel, sourceNodeId) {
+  return `rms:${encodeURIComponent(aircraftModel)}:${encodeURIComponent(sourceNodeId)}`;
+}
+
+function validateRequiredRange(errors, value, label, { min, max, minExclusive = false, unit = "" } = {}) {
+  if (value === "" || value === null || value === undefined) {
+    errors.push(`${label}不能为空`);
+    return;
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    errors.push(`${label}必须为有限数值`);
+    return;
+  }
+  if (min !== undefined && (minExclusive ? number <= min : number < min)) {
+    errors.push(`${label}必须${minExclusive ? "大于" : "大于等于"} ${min}${unit ? ` ${unit}` : ""}`);
+  }
+  if (max !== undefined && number > max) {
+    errors.push(`${label}必须小于等于 ${max}${unit ? ` ${unit}` : ""}`);
+  }
 }
 
 function normalizeRmsImportedProject(project, baseProject) {

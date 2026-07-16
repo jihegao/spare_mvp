@@ -2346,6 +2346,39 @@ select[multiple].table-edit-select {
   background: #fbfcfd;
 }
 
+.rms-aircraft-input-panel {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.rms-aircraft-input-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.rms-aircraft-input-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rms-aircraft-input-grid input,
+.rms-aircraft-input-grid select {
+  min-width: 0;
+}
+
+.rms-input-message {
+  min-height: 18px;
+  margin-top: 8px;
+  color: #b45309;
+  font-size: 12px;
+}
+
 .rms-installation-panel {
   min-width: 0;
 }
@@ -5048,6 +5081,7 @@ tr.clickable-table-row.selected-table-row td {
   .preventive-rule-row,
   .kpi-strip,
   .scenario-grid,
+  .rms-aircraft-input-grid,
   .rms-method-grid,
   .lite-mesa-setting-grid,
   .lite-mesa-source-grid,

@@ -3,15 +3,26 @@
   "$id": "https://spare-mvp.local/contracts/rms_allocation_plan.schema.json",
   "title": "RMS Allocation Plan",
   "type": "object",
-  "required": ["schemaVersion", "planId", "planVersion", "name", "status", "projectId", "methods", "algorithmVersion", "assumptions"],
+  "required": ["schemaVersion", "planId", "planVersion", "name", "status", "projectId", "inputs", "methods", "algorithmVersion", "assumptions"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": "rms-allocation-plan-v2" },
+    "schemaVersion": { "const": "rms-allocation-plan-v3" },
     "planId": { "type": "string", "minLength": 1 },
     "planVersion": { "type": "integer", "minimum": 1 },
     "name": { "type": "string", "minLength": 1 },
     "status": { "enum": ["draft", "calculated", "superseded"] },
     "projectId": { "type": "string", "minLength": 1 },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missionReliability", "missionHours", "criticalFailureRatio", "mttrHours"],
+      "properties": {
+        "missionReliability": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "missionHours": { "type": "number", "exclusiveMinimum": 0 },
+        "criticalFailureRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "mttrHours": { "type": "number", "minimum": 0 }
+      }
+    },
     "methods": {
       "type": "object",
       "additionalProperties": false,
