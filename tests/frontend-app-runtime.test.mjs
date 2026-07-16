@@ -1877,7 +1877,7 @@ test("RMS method selection updates method-specific parameters at runtime", async
   }
 });
 
-test("RMS method changes retain results until the calculation overlay completes", async () => {
+test("RMS method changes invalidate the current aircraft result until recalculation completes", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=system-management-equipment-rms-allocation",
     projectJson: createRmsRuntimeProjectJson()
@@ -1893,12 +1893,15 @@ test("RMS method changes retain results until the calculation overlay completes"
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
 
     assert.match(runtime.appNode.innerHTML, /<option value="proportional" selected>比例分配法<\/option>/);
-    assert.equal(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), initialResultPanel);
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /data-rms-action="export-excel" disabled/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
 
     await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
     assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
-    assert.equal(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), initialResultPanel);
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="calculating"[^>]*>计算进行中/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
 
     await new Promise((resolve) => setTimeout(resolve, 2050));
 
@@ -1917,13 +1920,21 @@ test("RMS calculation shows a blocking two-second progress state before completi
 
   try {
     await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /data-rms-action="export-excel" disabled/);
     await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
     assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
-    assert.match(runtime.appNode.innerHTML, /data-rms-action="calculate" disabled>计算中/);
+    assert.match(runtime.appNode.innerHTML, /data-rms-action="calculate" disabled>计算进行中/);
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="calculating"[^>]*>计算进行中/);
+
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    assert.match(runtime.appNode.innerHTML, /data-rms-action="calculate" disabled>计算进行中/);
 
     await new Promise((resolve) => setTimeout(resolve, 2050));
 
     assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="completed"[^>]*>计算完成/);
     assert.match(runtime.appNode.innerHTML, /计算完成。/);
   } finally {
     runtime.restore();
@@ -1985,11 +1996,13 @@ test("RMS per-aircraft inputs, tree selection and saved results hydrate without 
   });
   try {
     assert.match(runtime.appNode.innerHTML, /<option value="J-15" selected>J-15<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="completed"[^>]*>计算完成/);
     assert.match(runtime.appNode.innerHTML, /data-rms-path="inputs\.missionReliability"[^>]*value="0\.91"/);
     assert.match(runtime.appNode.innerHTML, /tree-node-label selected" data-rms-equipment-node="rms:J-15:j15-engine"/);
     assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
 
     await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-20" });
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
     assert.match(runtime.appNode.innerHTML, /data-rms-path="inputs\.missionReliability"[^>]*value="0\.88"/);
     assert.match(runtime.appNode.innerHTML, /J-20 雷达/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /J-15 发动机/);
@@ -2003,6 +2016,53 @@ test("RMS per-aircraft inputs, tree selection and saved results hydrate without 
     assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs.mttrHours, 3.5);
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-15"].aircraftModel, "J-15");
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-20"], undefined);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("RMS input changes clear only the current aircraft result and block empty export", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createPersistedRmsRuntimeProjectJson()
+  });
+  try {
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+    await runtime.change("[data-rms-path]", { rmsPath: "inputs.mttrHours" }, { value: "3.25", type: "number" });
+
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /data-rms-action="export-excel" disabled/);
+
+    const exportRequestsBefore = runtime.requests.filter((request) => request.url === "/api/rms-allocation/export-xlsx").length;
+    await runtime.click("[data-rms-action]", { rmsAction: "export-excel" });
+    assert.equal(runtime.requests.filter((request) => request.url === "/api/rms-allocation/export-xlsx").length, exportRequestsBefore);
+    assert.match(runtime.appNode.innerHTML, /当前飞机型号暂无可导出的计算结果，请先完成计算/);
+
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-20" });
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("RMS equipment node edits invalidate the current aircraft result", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createPersistedRmsRuntimeProjectJson()
+  });
+  try {
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+    await runtime.change("[data-rms-equipment-field]", {
+      rmsEquipmentNodeId: "rms:J-15:j15-engine",
+      rmsEquipmentField: "quantity"
+    }, { value: "3" });
+
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /data-rms-action="export-excel" disabled/);
   } finally {
     runtime.restore();
   }
@@ -2094,8 +2154,12 @@ test("RMS runtime shows an explicit failure when proportional weights sum to zer
     assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
     await new Promise((resolve) => setTimeout(resolve, 2050));
 
-    assert.match(runtime.appNode.innerHTML, /方法不适用/);
+    assert.match(runtime.appNode.innerHTML, /计算失败/);
     assert.match(runtime.appNode.innerHTML, /RMS_ALLOCATION_ZERO_WEIGHT/);
+    assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-rms-calculation-status="completed"/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /data-rms-action="export-excel" disabled/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /节点份额合计为 100%/);
   } finally {
     runtime.restore();

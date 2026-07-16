@@ -13,7 +13,7 @@ export function renderRmsAllocationWorkbench({
   selectedAircraftModel = "",
   selectedEquipmentNodeId = project.rootId,
   validationMessage = "",
-  isCalculating = false,
+  calculationStatus = "",
   htmlEscape,
   fixed,
   pct
@@ -23,6 +23,13 @@ export function renderRmsAllocationWorkbench({
   const hasSelectedAircraft = aircraftModels.includes(selectedAircraftModel);
   const selectedRoot = equipmentRoots.find((node) => node.id === project.rootId);
   const hasEquipmentTree = Boolean(selectedRoot && project.equipmentNodes.some((node) => node.parentId === selectedRoot.id));
+  const hasCompletedResult = result?.status === "calculated" && result.nodeResults?.length > 0;
+  const normalizedCalculationStatus = calculationStatus === "calculating"
+    ? "calculating"
+    : ((calculationStatus === "completed" || !calculationStatus) && hasCompletedResult ? "completed" : "not-calculated");
+  const isCalculating = normalizedCalculationStatus === "calculating";
+  const visibleResult = normalizedCalculationStatus === "completed" ? result : null;
+  const canExport = Boolean(hasSelectedAircraft && normalizedCalculationStatus === "completed" && hasCompletedResult);
   const calculateDisabled = isCalculating || !hasSelectedAircraft;
   return `
     <div class="rms-allocation-workbench" aria-busy="${isCalculating ? "true" : "false"}">
@@ -60,11 +67,11 @@ export function renderRmsAllocationWorkbench({
             <h4>装备结构树</h4>
             <span>当前项目 / ${htmlEscape(selectedAircraftModel)}</span>
           </div>
-          ${renderEquipmentTree(project, result, selectedEquipmentNodeId, htmlEscape)}
+          ${renderEquipmentTree(project, visibleResult, selectedEquipmentNodeId, htmlEscape)}
         </aside>
         <section class="detail-panel equipment-system-table-panel rms-installation-panel">
           <div class="detail-card">
-            <div class="section-head"><h3>导入安装数</h3><span>${result ? statusLabel(result.status) : ""}</span></div>
+            <div class="section-head"><h3>导入安装数</h3><span>${calculationStatusLabel(normalizedCalculationStatus)}</span></div>
           <div class="equipment-import-row rms-installation-import-row">
             <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
             <label class="rms-file-button rms-import-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
@@ -76,7 +83,7 @@ export function renderRmsAllocationWorkbench({
       </section>` : ""}
 
       <section class="rms-method-panel">
-          <div class="section-head"><h3>计算方法</h3><span>选择节点份额分配规则</span></div>
+          <div class="section-head"><h3>计算方法</h3><span class="rms-calculation-status ${normalizedCalculationStatus}" data-rms-calculation-status="${normalizedCalculationStatus}" role="status" aria-live="polite">${calculationStatusLabel(normalizedCalculationStatus)}</span></div>
           <div class="rms-method-grid">
             <label>指标分配方法
               <select data-rms-path="methods.allocation">
@@ -86,21 +93,23 @@ export function renderRmsAllocationWorkbench({
             ${renderMethodParameters(plan, equipmentRoots, project.rootId, htmlEscape)}
           </div>
           <div class="rms-method-actions">
-            <button type="button" class="btn-primary" data-rms-action="calculate"${calculateDisabled ? " disabled" : ""}>${isCalculating ? "计算中" : "计算"}</button>
+            <button type="button" class="btn-primary" data-rms-action="calculate"${calculateDisabled ? " disabled" : ""}>${isCalculating ? "计算进行中" : "计算"}</button>
           </div>
           <div class="rms-warning-list">
-            ${result?.warnings?.length
-              ? result.warnings.map((warning) => `<span>${htmlEscape(warning.code)}：${htmlEscape(warning.message)}</span>`).join("")
-              : (result ? "<span>计算完成。</span>" : "<span>请选择飞机型号并完成输入后计算。</span>")}
+            ${isCalculating
+              ? "<span>计算进行中，请勿重复提交。</span>"
+              : (result?.warnings?.length
+              ? result.warnings.map((warning) => `<span>${result.status === "calculated" ? "" : "计算失败："}${htmlEscape(warning.code)}：${htmlEscape(warning.message)}</span>`).join("")
+              : (normalizedCalculationStatus === "completed" ? "<span>计算完成。</span>" : "<span>尚未执行计算，输入、方法或装备节点变化后需重新计算。</span>"))}
           </div>
       </section>
 
       <section class="analysis-chart-panel rms-result-panel">
-        <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel">导出 Excel</button></div>
+        <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel"${canExport ? "" : " disabled"}>导出 Excel</button></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>层级</th><th>节点</th><th>型号</th><th>安装数</th><th>运行比</th><th>分配份额</th><th>状态</th></tr></thead>
-            <tbody>${result?.nodeResults?.length ? result.nodeResults.map((row) => `
+            <tbody>${visibleResult?.nodeResults?.length ? visibleResult.nodeResults.map((row) => `
               <tr>
                 <td>${htmlEscape(row.level)}</td>
                 <td>${htmlEscape(row.nodeName)}</td>
@@ -114,7 +123,7 @@ export function renderRmsAllocationWorkbench({
           </table>
         </div>
       </section>
-      ${isCalculating ? '<div class="rms-calculation-overlay" role="status" aria-live="assertive"><span>计算中</span></div>' : ""}
+      ${isCalculating ? '<div class="rms-calculation-overlay" role="status" aria-live="assertive"><span>计算进行中</span></div>' : ""}
     </div>
   `;
 }
@@ -238,9 +247,10 @@ function renderMethodParameters(plan, equipmentRoots, currentRootId, htmlEscape)
   return "";
 }
 
-function statusLabel(status) {
-  if (status === "method_not_applicable") return "方法不适用";
-  return status === "calculated" ? "已计算" : "待计算";
+function calculationStatusLabel(status) {
+  if (status === "calculating") return "计算进行中";
+  if (status === "completed") return "计算完成";
+  return "未计算";
 }
 
 function compactNumber(value, digits = 2) {

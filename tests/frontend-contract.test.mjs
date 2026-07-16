@@ -4072,7 +4072,11 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(appSource, /rms-allocation-result-set-v1/);
   assert.match(appSource, /normalizeRmsEquipmentImportRows/);
   assert.match(appSource, /selectRmsAllocationEquipmentRoot/);
-  assert.match(appSource, /calculateRmsAllocation\(state\.plan, state\.project\)/);
+  assert.match(appSource, /calculateRmsAllocation\(planSnapshot, projectSnapshot\)/);
+  assert.match(appSource, /function invalidateCurrentRmsAllocationResult\(\)/);
+  assert.match(appSource, /state\.calculationStatus = "calculating"/);
+  assert.match(appSource, /state\.calculationStatus = completed \? "completed" : "not-calculated"/);
+  assert.match(appSource, /state\.calculationRunId !== calculationRunId/);
   assert.doesNotMatch(appSource, /publishRmsAllocation\(rmsAllocationProject, rmsAllocationResult\)/);
   assert.doesNotMatch(appSource, /function renderTopbarContext\(page\)/);
   assert.match(appSource, /<p>\$\{htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)\}<\/p>/);
@@ -4082,6 +4086,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(styleSource, /\.rms-method-panel/);
   assert.match(styleSource, /\.rms-installation-panel/);
   assert.match(styleSource, /\.rms-import-button\s*\{[^}]*width: 96px;[^}]*height: 34px;/s);
+  assert.match(styleSource, /\.rms-calculation-status/);
 
   const workbenchSource = await readFile(new URL("../front/rms-allocation-workbench.mjs", import.meta.url), "utf8");
   assert.match(workbenchSource, /装备 RMS 指标分配/);
@@ -4130,6 +4135,10 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
   assert.doesNotMatch(workbenchSource, /<th>结构<\/th>/);
   assert.match(workbenchSource, /计算完成。/);
+  assert.match(workbenchSource, /data-rms-calculation-status/);
+  assert.match(workbenchSource, /计算进行中/);
+  assert.match(workbenchSource, /未计算/);
+  assert.match(workbenchSource, /data-rms-action="export-excel"\$\{canExport \? "" : " disabled"\}/);
   assert.match(workbenchSource, /rms-calculation-overlay/);
   assert.match(appSource, /function startRmsAllocationCalculation\(\)/);
   assert.match(appSource, /globalThis\.setTimeout\([\s\S]*?\}, 2000\);/);
@@ -4138,6 +4147,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
     appSource.indexOf('const mcArrayInput = event.target.closest("[data-mc-array-path]")')
   );
   assert.match(rmsInputChangeSource, /setPath\(rmsAllocationPlan/);
+  assert.match(rmsInputChangeSource, /invalidateCurrentRmsAllocationResult\(\)/);
   assert.doesNotMatch(rmsInputChangeSource, /recalculateRmsAllocation\(\)/);
 });
 
@@ -4189,12 +4199,14 @@ test("RMS allocation workbench renders parameters for only the selected method",
     importStatus: "",
     aircraftModels: ["F16", "F15", "F18"],
     selectedAircraftModel: "F16",
-    isCalculating: true,
+    calculationStatus: "calculating",
     htmlEscape: (value) => String(value ?? ""),
     fixed: (value, digits = 2) => Number(value || 0).toFixed(digits),
     pct: (value) => `${Math.round(Number(value || 0) * 100)}%`
   });
-  assert.match(calculatingHtml, /data-rms-action="calculate" disabled>计算中/);
+  assert.match(calculatingHtml, /data-rms-action="calculate" disabled>计算进行中/);
+  assert.match(calculatingHtml, /data-rms-calculation-status="calculating"[^>]*>计算进行中/);
+  assert.match(calculatingHtml, /data-rms-action="export-excel" disabled/);
   assert.match(calculatingHtml, /class="rms-calculation-overlay"/);
 });
 

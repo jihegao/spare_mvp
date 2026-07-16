@@ -2451,6 +2451,31 @@ select[multiple].table-edit-select {
   justify-content: flex-end;
 }
 
+.rms-calculation-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rms-calculation-status.calculating {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.rms-calculation-status.completed {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
 .rms-file-button {
   display: inline-flex;
   align-items: center;

@@ -686,7 +686,7 @@ let rmsValidationMessage = "";
 let rmsAircraftStates = {};
 let rmsStateScenarioSource = null;
 let rmsStateScenarioStructureKey = "";
-const rmsCalculatingAircraftModels = new Set();
+let rmsCalculationRunSequence = 0;
 let modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
 let modelingImportPublishedPackage = null;
 
@@ -2799,6 +2799,7 @@ function bindEvents() {
       const value = rmsInput.type === "number" && rmsInput.value === "" ? "" : parseInput(rmsInput);
       setPath(rmsAllocationPlan, rmsInput.dataset.rmsPath, value);
       rmsValidationMessage = "";
+      invalidateCurrentRmsAllocationResult();
       updateCurrentRmsAircraftState();
       persistRmsAllocationDraftToScenario();
       markRmsAllocationDraftChanged();
@@ -3411,7 +3412,7 @@ function renderMainComponent(page) {
       selectedAircraftModel: rmsSelectedAircraftModel,
       selectedEquipmentNodeId: rmsSelectedEquipmentNodeId,
       validationMessage: rmsValidationMessage,
-      isCalculating: rmsCalculatingAircraftModels.has(rmsSelectedAircraftModel),
+      calculationStatus: rmsAircraftStates[rmsSelectedAircraftModel]?.calculationStatus || "not-calculated",
       htmlEscape,
       fixed,
       pct
@@ -12956,6 +12957,7 @@ function ensureRmsAllocationStateForScenario() {
   const structureKey = rmsScenarioStructureKey();
   if (rmsStateScenarioSource === scenario && rmsStateScenarioStructureKey === structureKey) return;
   const aircraftModels = wholeMachineModels();
+  const previousAircraftStates = rmsStateScenarioStructureKey === structureKey ? rmsAircraftStates : {};
   const savedPlanEnvelope = scenario?.rmsAllocationPlan?.schemaVersion === "rms-allocation-workbench-v1"
     ? scenario.rmsAllocationPlan
     : {};
@@ -12964,6 +12966,10 @@ function ensureRmsAllocationStateForScenario() {
     : {};
   rmsAircraftStates = {};
   for (const aircraftModel of aircraftModels) {
+    if (previousAircraftStates[aircraftModel]?.calculationStatus === "calculating") {
+      rmsAircraftStates[aircraftModel] = previousAircraftStates[aircraftModel];
+      continue;
+    }
     const baseProject = createRmsAllocationProjectForScenario(scenario, aircraftModel);
     const savedState = savedPlanEnvelope.aircraftStates?.[aircraftModel] || {};
     const savedNodesById = new Map((savedState.equipmentNodes || []).map((node) => [node.id, node]));
@@ -12998,11 +13004,15 @@ function ensureRmsAllocationStateForScenario() {
     const selectedEquipmentNodeId = baseProject.equipmentNodes.some((node) => node.id === savedState.selectedEquipmentNodeId)
       ? savedState.selectedEquipmentNodeId
       : baseProject.rootId;
+    const savedResult = savedResultEnvelope.byAircraftModel?.[aircraftModel];
+    const completedResult = rmsResultMatchesCurrentState(savedResult, plan, baseProject) ? savedResult : null;
     rmsAircraftStates[aircraftModel] = {
       project: baseProject,
       plan,
-      result: savedResultEnvelope.byAircraftModel?.[aircraftModel] || null,
-      selectedEquipmentNodeId
+      result: completedResult,
+      selectedEquipmentNodeId,
+      calculationStatus: completedResult ? "completed" : "not-calculated",
+      calculationRunId: 0
     };
   }
   const savedAircraftModel = String(savedPlanEnvelope.selectedAircraftModel || "");
@@ -13027,6 +13037,27 @@ function rmsScenarioStructureKey() {
       component?.missionUse?.runningRatio,
       component?.missionUse?.dutyCycle
     ])
+  });
+}
+
+function rmsResultMatchesCurrentState(result, plan, project) {
+  if (result?.status !== "calculated" || !Array.isArray(result.nodeResults) || result.nodeResults.length === 0) return false;
+  const selectedRoot = project.equipmentNodes.find((node) => node.id === project.rootId);
+  const aircraftModel = selectedRoot?.aircraftModel || selectedRoot?.name || "";
+  if (result.aircraftModel !== aircraftModel || result.method !== plan.methods.allocation) return false;
+  const inputKeys = ["missionReliability", "missionHours", "criticalFailureRatio", "mttrHours"];
+  if (inputKeys.some((key) => Number(result.inputSnapshot?.[key]) !== Number(plan.inputs?.[key]))) return false;
+  const expectedNodes = project.equipmentNodes.filter((node) => node.parentId === project.rootId);
+  if (expectedNodes.length !== result.nodeResults.length) return false;
+  const resultByNodeId = new Map(result.nodeResults.map((row) => [row.nodeId, row]));
+  return expectedNodes.every((node) => {
+    const row = resultByNodeId.get(node.id);
+    const runningRatio = node.missionUse?.runningRatio ?? node.missionUse?.dutyCycle ?? node.runningRatio ?? 1;
+    return row
+      && row.nodeName === node.name
+      && String(row.model || "") === String(node.model || node.partNumber || "")
+      && Number(row.installationCount) === Number(node.quantity)
+      && Number(row.runningRatio) === Number(runningRatio);
   });
 }
 
@@ -13064,6 +13095,15 @@ function updateCurrentRmsAircraftState() {
   state.selectedEquipmentNodeId = rmsSelectedEquipmentNodeId;
 }
 
+function invalidateCurrentRmsAllocationResult() {
+  const state = rmsAircraftStates[rmsSelectedAircraftModel];
+  if (!state) return;
+  state.calculationRunId = ++rmsCalculationRunSequence;
+  state.calculationStatus = "not-calculated";
+  state.result = null;
+  rmsAllocationResult = null;
+}
+
 function persistRmsAllocationDraftToScenario() {
   updateCurrentRmsAircraftState();
   scenario.rmsAllocationPlan = {
@@ -13078,7 +13118,7 @@ function persistRmsAllocationDraftToScenario() {
   scenario.rmsAllocationResult = {
     schemaVersion: "rms-allocation-result-set-v1",
     byAircraftModel: Object.fromEntries(Object.entries(rmsAircraftStates)
-      .filter(([, state]) => state.result)
+      .filter(([, state]) => state.calculationStatus === "completed" && rmsResultMatchesCurrentState(state.result, state.plan, state.project))
       .map(([aircraftModel, state]) => [aircraftModel, structuredClone(state.result)]))
   };
 }
@@ -13096,6 +13136,7 @@ function startRmsAllocationCalculation() {
     rmsValidationMessage = "请先选择飞机型号。";
     return;
   }
+  if (state.calculationStatus === "calculating") return;
   if (!state.project.equipmentNodes.some((node) => node.parentId === state.project.rootId)) {
     rmsValidationMessage = "当前机型未加载到可分配的装备结构，请先完成装备系统建模。";
     return;
@@ -13105,16 +13146,27 @@ function startRmsAllocationCalculation() {
     rmsValidationMessage = inputErrors.join("；");
     return;
   }
-  if (rmsCalculatingAircraftModels.has(aircraftModel)) return;
   rmsValidationMessage = "";
-  rmsCalculatingAircraftModels.add(aircraftModel);
+  const calculationRunId = ++rmsCalculationRunSequence;
+  const planSnapshot = structuredClone(state.plan);
+  const projectSnapshot = structuredClone(state.project);
+  state.calculationRunId = calculationRunId;
+  state.calculationStatus = "calculating";
+  state.result = null;
+  rmsAllocationResult = null;
+  persistRmsAllocationDraftToScenario();
+  markRmsAllocationDraftChanged();
   globalThis.setTimeout(() => {
+    let nextResult;
     try {
-      state.result = calculateRmsAllocation(state.plan, state.project);
+      nextResult = calculateRmsAllocation(planSnapshot, projectSnapshot);
     } catch (err) {
-      state.result = createRmsAllocationFailureResult(state.plan, err);
+      nextResult = createRmsAllocationFailureResult(planSnapshot, err);
     }
-    rmsCalculatingAircraftModels.delete(aircraftModel);
+    if (state.calculationRunId !== calculationRunId || state.calculationStatus !== "calculating") return;
+    const completed = rmsResultMatchesCurrentState(nextResult, state.plan, state.project);
+    state.result = nextResult;
+    state.calculationStatus = completed ? "completed" : "not-calculated";
     if (rmsSelectedAircraftModel === aircraftModel) rmsAllocationResult = state.result;
     persistRmsAllocationDraftToScenario();
     markRmsAllocationDraftChanged();
@@ -13159,7 +13211,7 @@ function applyRmsEquipmentImport(rowsOrProject, statusText) {
     }
   };
   rmsEquipmentImportStatus = `${statusText}，仅更新 RMS 指标分配装备树。`;
-  rmsAllocationResult = null;
+  invalidateCurrentRmsAllocationResult();
   updateCurrentRmsAircraftState();
   persistRmsAllocationDraftToScenario();
   markRmsAllocationDraftChanged();
@@ -13195,6 +13247,7 @@ function updateRmsEquipmentField(nodeId, field, rawValue) {
     return;
   }
   rmsEquipmentImportStatus = "已更新 RMS 指标分配装备树独立数据。";
+  invalidateCurrentRmsAllocationResult();
   updateCurrentRmsAircraftState();
   persistRmsAllocationDraftToScenario();
   markRmsAllocationDraftChanged();
@@ -13220,12 +13273,17 @@ function downloadRmsEquipmentTemplate() {
 }
 
 async function exportRmsAllocationExcel() {
-  const rows = rmsAllocationResult.nodeResults || [];
+  const state = rmsAircraftStates[rmsSelectedAircraftModel];
+  if (!state || state.calculationStatus !== "completed" || !rmsResultMatchesCurrentState(state.result, state.plan, state.project)) {
+    rmsEquipmentImportStatus = "当前飞机型号暂无可导出的计算结果，请先完成计算。";
+    return;
+  }
+  const rows = state.result.nodeResults;
   rmsEquipmentImportStatus = "正在生成 XLSX 结果";
   try {
     const blob = await backendApi.exportRmsAllocationXlsx({
       project_name: rmsAllocationProject.name,
-      method: rmsAllocationResult.method,
+      method: state.result.method,
       generated_at: new Date().toISOString(),
       rows
     });
