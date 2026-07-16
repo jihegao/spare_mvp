@@ -2844,13 +2844,22 @@ select[multiple].table-edit-select {
 }
 
 .carry-list-result-loader,
+.downtime-factor-result-loader,
 .analysis-result-loader {
   justify-content: space-between;
 }
 
 .carry-list-result-loader .experiment-plan-context-select,
+.downtime-factor-result-loader .experiment-plan-context-select,
 .analysis-result-loader .experiment-plan-context-select {
   min-width: min(360px, 100%);
+}
+
+.downtime-topn-note {
+  flex: 1 1 420px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .carry-sort-heading,

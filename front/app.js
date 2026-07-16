@@ -17523,6 +17523,9 @@ function renderLiteMesaAnalysisPage(page) {
   if (definition.analysisType === "carry_list") {
     return renderCarryListAnalysisPage(page, definition, result);
   }
+  if (definition.analysisType === "downtime_factors") {
+    return renderDowntimeFactorAnalysisPage(page, definition, settings, result);
+  }
   const runCount = result?.sampleCount || 0;
   const statusText = result?.status === "session_complete"
     ? `分析结果已生成：${runCount} 个样本`
@@ -17592,6 +17595,42 @@ function renderCarryListAnalysisPage(page, definition, result) {
         <div class="toolbar-row carry-list-result-loader">
           ${renderExperimentPlanContextDropdown(page)}
           <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">加载运行结果</button>
+        </div>
+        <div class="section-head">
+          <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
+          <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
+        </div>
+        ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderLiteMesaAnalysisSessionBody(definition, result)}
+      </section>
+    </div>
+  `;
+}
+
+function renderDowntimeFactorAnalysisPage(page, definition, settings, result) {
+  const runCount = result?.sampleCount || 0;
+  const statusText = result?.status === "session_complete"
+    ? `分析结果已生成：${runCount} 个样本`
+    : result?.status === "blocked"
+      ? result.message
+      : result?.status === "running"
+        ? "分析运行中"
+        : "等待加载运行结果";
+  return `
+    <div class="lite-mesa-workbench lite-mesa-analysis-page downtime-factor-analysis-page">
+      <section class="lite-mesa-settings lite-mesa-analysis-settings downtime-factor-analysis-settings">
+        <div class="section-head">
+          <h3>分析设定</h3>
+        </div>
+        ${renderLiteMesaAnalysisSettings(definition, settings, result)}
+      </section>
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
+        <div class="toolbar-row downtime-factor-result-loader">
+          ${renderExperimentPlanContextDropdown(page)}
+          <div class="lite-mesa-analysis-action-line">
+            <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">加载运行结果</button>
+            <p class="inline-status">${htmlEscape(statusText)}</p>
+          </div>
         </div>
         <div class="section-head">
           <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
@@ -17690,6 +17729,7 @@ function renderLiteMesaAnalysisEditableSettings(definition, settings) {
         <span>排序范围</span>
         <input data-lite-mesa-analysis-field="topN" type="number" min="1" max="20" step="1" value="${htmlEscape(settings.topN ?? 4)}">
       </label>
+      <span class="downtime-topn-note">后端按累计停机时长生成排行；排序范围随请求提交，并限制返回的停机事件快照明细数量。页面筛选仅作用于已加载结果。</span>
     `;
   }
   return "";
@@ -17992,17 +18032,17 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
   const primaryFactor = rows.find((row) => row.downtimeHours > 0)?.label || "--";
   const tableRows = rows.map((row, index) => {
     const contribution = totalHours > 0 ? row.downtimeHours / totalHours : 0;
-    return `<tr><td>${index + 1}</td><td>${htmlEscape(row.label)}</td><td>${row.eventCount}</td><td>${fixed(row.downtimeHours, 2)}</td><td>${pct(contribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), contribution >= 0.35 ? "red" : "blue")}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td>${htmlEscape(row.label)}</td><td>${row.eventCount}</td><td>${fixed(row.downtimeHours, 2)} 小时</td><td>${pct(contribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), contribution >= 0.35 ? "red" : "blue")}</td></tr>`;
   }).join("");
   return `
     <div class="toolbar-row downtime-factor-filter" aria-label="停机因素筛选"><strong>停机因素</strong>${filterControls}</div>
     <div class="kpi-strip downtime-factor-kpis">
       <div class="kpi-card"><span>停机事件次数</span><strong>${totalEvents}</strong></div>
-      <div class="kpi-card"><span>累计停机时长</span><strong>${fixed(totalHours, 2)} h</strong></div>
+      <div class="kpi-card"><span>累计停机时长</span><strong>${fixed(totalHours, 2)} 小时</strong></div>
       <div class="kpi-card"><span>首要停机因素</span><strong>${htmlEscape(primaryFactor)}</strong></div>
     </div>
     <div class="table-wrap"><table class="lite-mesa-stat-table downtime-factor-summary-table">
-      <thead><tr><th>排序</th><th>停机因素</th><th>事件次数</th><th>累计停机时长(h)</th><th>当前范围时长占比</th><th>图示</th></tr></thead>
+      <thead><tr><th>排序</th><th>停机因素</th><th>事件次数</th><th>累计停机时长（小时）</th><th>当前范围时长占比</th><th>图示</th></tr></thead>
       <tbody>${tableRows}</tbody>
     </table></div>
     ${renderLiteMesaDowntimeEventDetails(selectedEvents)}
@@ -18028,7 +18068,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
   return `
     <div class="section-head downtime-event-detail-head"><h3>停机事件明细</h3><span>${events.length} 条</span></div>
     <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table">
-      <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长(h)</th><th>事件说明</th><th>分类信息</th></tr></thead>
+      <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长（小时）</th><th>事件说明</th><th>分类信息</th></tr></thead>
       <tbody>${events.map((event) => `<tr>
         <td>${htmlEscape(downtimeFactorLabel(downtimeEventFactor(event)))}</td>
         <td>${htmlEscape(downtimeDisplayValue(event.equipment_name || event.aircraft_type || event.tail_number))}</td>
@@ -18036,7 +18076,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
         <td>${htmlEscape(downtimeDisplayValue(event.support_node_name || event.support_node_id))}</td>
         <td>${htmlEscape(downtimeTimeLabel(event.start_minute ?? event.start_time))}</td>
         <td>${htmlEscape(downtimeTimeLabel(event.end_minute ?? event.end_time))}</td>
-        <td>${fixed(downtimeEventDurationHours(event), 2)}</td>
+        <td>${fixed(downtimeEventDurationHours(event), 2)} 小时</td>
         <td>${htmlEscape(downtimeDisplayValue(event.description || event.message))}</td>
         <td>${renderDowntimeFactorSpecificDetails(event)}</td>
       </tr>`).join("")}</tbody>
@@ -18055,13 +18095,22 @@ function downtimeDisplayValue(value) {
 function downtimeTimeLabel(value) {
   if (value === null || value === undefined || value === "") return "--";
   const minute = Number(value);
-  return Number.isFinite(minute) ? `${fixed(minute, 0)} min` : "--";
+  return Number.isFinite(minute) ? `${fixed(minute, 0)} 分钟` : "--";
 }
 
 function downtimeTaskLabel(event) {
-  const mission = downtimeDisplayValue(event.mission_name || event.mission_id);
-  const phase = downtimeDisplayValue(event.mission_phase);
-  return mission === "--" && phase === "--" ? "--" : `${mission}${phase === "--" ? "" : ` / ${phase}`}`;
+  const mission = String(event?.mission_name || "").trim() || "未配置任务";
+  const phase = downtimeMissionPhaseLabel(event?.mission_phase);
+  return phase ? `${mission}；阶段：${phase}` : mission;
+}
+
+function downtimeMissionPhaseLabel(value) {
+  const phase = String(value || "").trim();
+  return {
+    repair: "修复性维修",
+    corrective: "修复性维修",
+    preventive: "预防性维修"
+  }[phase] || phase;
 }
 
 function renderDowntimeFactorSpecificDetails(event) {
@@ -18073,7 +18122,7 @@ function renderDowntimeFactorSpecificDetails(event) {
   } else if (factor === "failure") {
     rows = [["故障部件", details.component_name || details.component_id], ["故障模式", details.failure_mode], ["故障发生", downtimeTimeLabel(details.failure_minute)], ["修复完成", downtimeTimeLabel(details.repair_completed_minute)]];
   } else if (factor === "equipment_shortage") {
-    rows = [["保障设备", details.equipment_name || details.equipment_model], ["需求", details.required_quantity], ["可用", details.available_quantity], ["短缺", details.shortage_quantity], ["等待时长", details.wait_minutes === null || details.wait_minutes === undefined ? "--" : `${details.wait_minutes} min`]];
+    rows = [["保障设备", details.equipment_name || details.equipment_model], ["需求", details.required_quantity], ["可用", details.available_quantity], ["短缺", details.shortage_quantity], ["等待时长", details.wait_minutes === null || details.wait_minutes === undefined ? "--" : `${details.wait_minutes} 分钟`]];
   } else if (factor === "preventive") {
     rows = [["维修项目", details.maintenance_item || details.maintenance_type], ["触发条件", details.trigger_condition], ["计划开始", downtimeTimeLabel(details.planned_start_minute)], ["实际完成", downtimeTimeLabel(details.completed_minute)]];
   }
@@ -18131,7 +18180,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
     <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
       <summary>
         <strong>${htmlEscape(snapshot.event_label || snapshot.event_type || "停机事件")}</strong>
-        <span>seed ${htmlEscape(snapshot.seed ?? "-")} / t=${htmlEscape(snapshot.simulation_time ?? "-")} / ${htmlEscape(snapshot.result || "downtime_anomaly_recorded")}</span>
+        <span>随机种子 ${htmlEscape(snapshot.seed ?? "-")} / 仿真时刻 ${htmlEscape(downtimeTimeLabel(snapshot.simulation_time))} / ${htmlEscape(downtimeSnapshotResultLabel(snapshot.result))}</span>
       </summary>
       <div class="downtime-snapshot-grid">
         <section>
@@ -18141,7 +18190,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
             <tr><th>故障飞机</th><td>${htmlEscape(aircraftSummary.failed_count ?? "-")}</td></tr>
             <tr><th>维修中</th><td>${htmlEscape(aircraftSummary.repairing_count ?? "-")}</td></tr>
           </tbody></table>
-          <div class="snapshot-chip-row">${aircraft.slice(0, 8).map((item) => `<span>${htmlEscape(item.tail_number || item.name || "aircraft")}：${htmlEscape(item.state || "-")}</span>`).join("") || "<span>无飞机明细</span>"}</div>
+          <div class="snapshot-chip-row">${aircraft.slice(0, 8).map((item) => `<span>${htmlEscape(item.tail_number || item.name || "未命名飞机")}：${htmlEscape(downtimeAircraftStateLabel(item.state))}</span>`).join("") || "<span>无飞机明细</span>"}</div>
         </section>
         <section>
           <h4>保障资源占用</h4>
@@ -18168,6 +18217,28 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
       </div>
     </details>
   `;
+}
+
+function downtimeSnapshotResultLabel(value) {
+  const result = String(value || "");
+  return {
+    mission_delayed_by_spare_shortage: "任务因备件短缺延误",
+    mission_delayed_by_equipment_shortage: "任务因保障设备短缺延误",
+    aircraft_unavailable_for_preventive_maintenance: "飞机因预防性维修不可用",
+    aircraft_unavailable_after_failure: "飞机故障后不可用",
+    downtime_anomaly_recorded: "已记录停机异常"
+  }[result] || "已记录停机事件";
+}
+
+function downtimeAircraftStateLabel(value) {
+  const state = String(value || "");
+  return {
+    available: "可用",
+    maintenance: "维修中",
+    repairing: "修复中",
+    failed: "故障",
+    waiting: "等待中"
+  }[state] || (state || "未知状态");
 }
 
 function formatSnapshotInventory(inventory) {

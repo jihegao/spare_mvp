@@ -4042,7 +4042,13 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
   assert.match(changeSource, /selectedDowntimeFactorTypes\.delete/);
   assert.match(renderSource, /请选择至少一种停机因素/);
   assert.match(renderSource, /暂无该类型停机事件/);
-  assert.match(renderSource, /累计停机时长\(h\)/);
+  assert.match(renderSource, /累计停机时长（小时）/);
+  assert.match(renderSource, /持续时长（小时）/);
+  assert.match(renderSource, /分钟/);
+  assert.match(renderSource, /repair: "修复性维修"/);
+  assert.match(renderSource, /preventive: "预防性维修"/);
+  assert.match(renderSource, /未配置任务/);
+  assert.doesNotMatch(renderSource, /`\$\{fixed\(minute, 0\)\} min`|持续时长\(h\)|累计停机时长\(h\)/);
   assert.match(renderSource, /当前范围时长占比/);
   assert.match(renderSource, /\.sort\(\(left, right\) => right\.downtimeHours - left\.downtimeHours\)/);
   assert.match(renderSource, /停机事件明细/);

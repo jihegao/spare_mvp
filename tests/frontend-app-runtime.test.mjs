@@ -1038,13 +1038,20 @@ test("configurable result analysis pages omit Mesa from visible copy", async () 
     try {
       assert.match(runtime.appNode.innerHTML, /分析设定/);
       assert.match(runtime.appNode.innerHTML, /分析结果明细/);
-      assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
+      const isDowntime = featureId === "mission-reliability-downtime-factor-analysis";
+      assert.match(
+        runtime.appNode.innerHTML,
+        isDowntime
+          ? /data-lite-mesa-analysis-action="run">加载运行结果<\/button>/
+          : /data-lite-mesa-analysis-action="run">运行分析<\/button>/
+      );
       assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
       assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid/);
       assert.doesNotMatch(runtime.appNode.innerHTML, /输出边界|持久化/);
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-      assert.match(settingsPanel, /样本量 \/ 随机种子只读/);
-      const expectedSamples = featureId === "mission-reliability-downtime-factor-analysis" ? "1" : "27";
+      if (isDowntime) assert.doesNotMatch(settingsPanel, /样本量 \/ 随机种子只读/);
+      else assert.match(settingsPanel, /样本量 \/ 随机种子只读/);
+      const expectedSamples = isDowntime ? "1" : "27";
       assert.match(settingsPanel, new RegExp(`样本量[\\s\\S]*<strong>${expectedSamples}<\\/strong>`));
       assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
       assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
@@ -1055,9 +1062,10 @@ test("configurable result analysis pages omit Mesa from visible copy", async () 
         assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
         assert.doesNotMatch(runtime.appNode.innerHTML, /data-current-experiment-plan|运行上下文/);
       } else {
-        const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-        assert.match(hero, /运行上下文/);
-        assert.match(hero, /data-current-experiment-plan/);
+        const contextPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+        assert.match(contextPanel, /运行上下文/);
+        assert.match(contextPanel, /data-current-experiment-plan/);
+        assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
       }
       assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
       for (const removedCopy of [
@@ -1456,7 +1464,7 @@ test("task reliability analysis renders mission wave average mission success lin
   }
 });
 
-test("downtime factors analysis omits snapshot capability setting", async () => {
+test("downtime factors analysis keeps topN with scope guidance and moves loading controls into results", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-downtime-factor-analysis",
     projectJson: createRuntimeProjectJson()
@@ -1465,9 +1473,13 @@ test("downtime factors analysis omits snapshot capability setting", async () => 
   try {
     const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
     assert.match(settingsPanel, /排序范围[\s\S]*data-lite-mesa-analysis-field="topN"[\s\S]*value="4"/);
+    assert.match(settingsPanel, /后端按累计停机时长生成排行[\s\S]*限制返回的停机事件快照明细数量/);
     assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
     assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
     assert.doesNotMatch(settingsPanel, /快照能力|会话内只读解释/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">|样本量 \/ 随机种子只读/);
+    const resultPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.match(resultPanel, /运行上下文[\s\S]*data-lite-mesa-analysis-action="run">加载运行结果<\/button>/);
   } finally {
     runtime.restore();
   }
@@ -1506,6 +1518,11 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
   });
 
   try {
+    await runtime.change(
+      "[data-lite-mesa-analysis-field]",
+      { liteMesaAnalysisField: "topN" },
+      { value: "7", type: "number" }
+    );
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
     const analysisRequest = runtime.requests
@@ -1515,7 +1532,7 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
     assert.ok(analysisRequest, "downtime analysis should submit a lightweight Mesa analysis request");
     assert.equal(analysisRequest.model_family, "aircraft_support_v1");
     assert.equal(analysisRequest.settings.samples, 1);
-    assert.equal(analysisRequest.settings.topN, 4);
+    assert.equal(analysisRequest.settings.topN, 7);
     assert.match(runtime.appNode.innerHTML, /分析结果已生成|分析完成/);
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.doesNotMatch(detailPanel, /样本数/);
@@ -1523,21 +1540,22 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
     assert.match(runtime.appNode.innerHTML, /停机事件一览/);
     assert.match(runtime.appNode.innerHTML, /备件短缺/);
     assert.match(runtime.appNode.innerHTML, /repair-J15-101/);
-    assert.match(runtime.appNode.innerHTML, /mission_delayed_by_spare_shortage/);
+    assert.match(runtime.appNode.innerHTML, /任务因备件短缺延误/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /mission_delayed_by_spare_shortage|seed |t=/);
     assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>/);
   } finally {
     runtime.restore();
   }
 });
 
-test("downtime factor filters update summaries, ranking, and complete event details without rerunning", async () => {
-  const event = (factor, durationHours, description, details = {}) => ({
+test("downtime factor filters keep localized summaries, ranking, and complete event details without rerunning", async () => {
+  const event = (factor, durationHours, description, details = {}, phase = "") => ({
     event_id: `event-${factor}`,
     factor,
     tail_number: `AC-${factor}`,
     aircraft_type: "J-15",
     mission_id: "mission-01",
-    mission_phase: "任务准备",
+    mission_phase: phase,
     support_node_name: "前线保障点",
     start_minute: 60,
     end_minute: 60 + durationHours * 60,
@@ -1558,9 +1576,9 @@ test("downtime factor filters update summaries, ranking, and complete event deta
       ],
       event_details: [
         event("spare_shortage", 2, "液压泵等待到货", { spare_name: "液压泵", required_quantity: 2, available_quantity: 0, shortage_quantity: 2, arrival_minute: 180 }),
-        event("failure", 4, "发动机控制器故障", { component_name: "发动机控制器", failure_mode: "随机故障", failure_minute: 60, repair_completed_minute: 300 }),
+        event("failure", 4, "发动机控制器故障", { component_name: "发动机控制器", failure_mode: "随机故障", failure_minute: 60, repair_completed_minute: 300 }, "repair"),
         event("equipment_shortage", 1, "检测仪被占用", { equipment_name: "综合检测仪", required_quantity: 1, available_quantity: 0, shortage_quantity: 1, wait_minutes: 60 }),
-        event("preventive", 3, "定寿维修", { maintenance_item: "发动机定寿检查", trigger_condition: "使用寿命达到 240 h", planned_start_minute: 60, completed_minute: null })
+        event("preventive", 3, "定寿维修", { maintenance_item: "发动机定寿检查", trigger_condition: "使用寿命达到 240 小时", planned_start_minute: 60, completed_minute: null }, "preventive")
       ]
     }
   });
@@ -1571,7 +1589,14 @@ test("downtime factor filters update summaries, ranking, and complete event deta
     const initial = runtime.appNode.innerHTML;
     assert.equal((initial.match(/data-downtime-factor-filter checked/g) || []).length, 4);
     assert.match(initial, /停机事件次数[\s\S]*<strong>4<\/strong>/);
-    assert.match(initial, /累计停机时长[\s\S]*<strong>10\.00 h<\/strong>/);
+    assert.match(initial, /累计停机时长[\s\S]*<strong>10\.00 小时<\/strong>/);
+    assert.match(initial, /累计停机时长（小时）/);
+    assert.match(initial, /持续时长（小时）/);
+    assert.match(initial, /60 分钟[\s\S]*300 分钟/);
+    assert.match(initial, /未配置任务/);
+    assert.match(initial, /阶段：修复性维修/);
+    assert.match(initial, /阶段：预防性维修/);
+    assert.doesNotMatch(initial, /<td>repair<\/td>|<td>preventive<\/td>|>\d+(?:\.\d+)? min<|持续时长\(h\)|累计停机时长\(h\)/);
     assert.ok(initial.indexOf("装备故障</td>") < initial.indexOf("预防性维修</td>"));
     assert.ok(initial.indexOf("预防性维修</td>") < initial.indexOf("备件短缺</td>"));
     assert.match(initial, /液压泵等待到货/);
@@ -1585,14 +1610,14 @@ test("downtime factor filters update summaries, ranking, and complete event deta
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "preventive", checked: false });
     const failureOnly = runtime.appNode.innerHTML;
     assert.match(failureOnly, /停机事件次数[\s\S]*<strong>1<\/strong>/);
-    assert.match(failureOnly, /累计停机时长[\s\S]*<strong>4\.00 h<\/strong>/);
+    assert.match(failureOnly, /累计停机时长[\s\S]*<strong>4\.00 小时<\/strong>/);
     assert.match(failureOnly, /发动机控制器故障/);
     assert.doesNotMatch(failureOnly, /液压泵等待到货|检测仪被占用|定寿维修/);
 
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: true });
     const combined = runtime.appNode.innerHTML;
     assert.match(combined, /停机事件次数[\s\S]*<strong>2<\/strong>/);
-    assert.match(combined, /累计停机时长[\s\S]*<strong>6\.00 h<\/strong>/);
+    assert.match(combined, /累计停机时长[\s\S]*<strong>6\.00 小时<\/strong>/);
     assert.match(combined, /液压泵等待到货/);
     assert.match(combined, /发动机控制器故障/);
 
@@ -3881,10 +3906,12 @@ test("mission reliability and downtime analysis keep current Project as default 
         assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
         assert.doesNotMatch(runtime.appNode.innerHTML, /data-current-experiment-plan|运行上下文|当前项目：Runtime 项目/);
       } else {
-        const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-        assert.match(hero, /运行上下文/);
-        assert.match(hero, /当前项目：Runtime 项目/);
-        assert.match(hero, /data-current-experiment-plan/);
+        const contextPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+        assert.match(contextPanel, /运行上下文/);
+        assert.match(contextPanel, /当前项目：Runtime 项目/);
+        assert.match(contextPanel, /data-current-experiment-plan/);
+        assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
+        assert.match(contextPanel, /加载运行结果/);
       }
       assert.doesNotMatch(settingsPanel, /<span>当前项目<\/span>/);
       assert.match(settingsPanel, new RegExp(`样本量[\\s\\S]*<strong>${defaultSamples}<\\/strong>`));
