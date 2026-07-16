@@ -287,6 +287,8 @@ test("system support project management removes standalone modeling import route
   assert.equal(FEATURE_PAGES.some((page) => page.name === "建模表单管理"), true);
   assert.match(appSource, /function renderModelingFormManagementConfig/);
   assert.match(appSource, /data-modeling-form-management/);
+  assert.match(appSource, /data-product-catalog-management/);
+  assert.match(appSource, /products\[\]\.id/);
 });
 
 test("page revision report is archived under reports with its screenshot evidence", async () => {
@@ -1500,6 +1502,8 @@ test("equipment system table exposes composition, MTBF and MTTR distribution fie
   assert.match(equipmentSource, /\{ value: "SRU", label: "SRU" \}/);
   assert.doesNotMatch(equipmentSource, /是否为LRU/);
   assert.doesNotMatch(equipmentSource, /field\("备件类型", `components\.\$\{selectedIndex\}\.spareType`\)/);
+  assert.match(equipmentSource, /data-equipment-product-edit/);
+  assert.match(equipmentSource, /编辑\/搜索/);
   assert.match(equipmentSource, /equipmentKOutOfNInput\(selectedIndex\)/);
   assert.match(equipmentSource, /可用数量要求k（n中取k）/);
   assert.match(equipmentSource, /components\.\$\{index\}\.mtbfHours/);
@@ -2950,6 +2954,9 @@ test("lite Mesa run context separates the current Project from persisted Experim
   assert.match(contextSource, /kind:\s*"experiment-plan"/);
   assert.match(contextSource, /backendExperimentPlans\.filter\(\(plan\) => String\(plan\?\.experiment_plan_id/);
   assert.match(appSource, /let selectedRunContextKey = ""/);
+  assert.match(appSource, /RUN_CONTEXT_STORAGE_KEY/);
+  assert.match(appSource, /function readStoredRunContextKey/);
+  assert.match(appSource, /function persistSelectedRunContextKey/);
   assert.match(contextSource, /validKeys\.has\(selectedRunContextKey\)/);
   assert.doesNotMatch(contextSource, /for \(const key of selectedExperimentPlanKeys\)/);
   assert.doesNotMatch(contextSource, /currentPlanKey/);
@@ -2963,6 +2970,7 @@ test("lite Mesa run context separates the current Project from persisted Experim
     appSource.indexOf("function toggleExperimentPlanSelection")
   );
   assert.match(runContextSelectionSource, /selectedRunContextKey = selected\.key/);
+  assert.match(runContextSelectionSource, /persistSelectedRunContextKey\(\)/);
   assert.doesNotMatch(runContextSelectionSource, /selectedExperimentPlanKeys|experimentPlan =/);
 });
 
@@ -4198,6 +4206,8 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /data-modeling-form-management/);
   assert.match(appSource, /data-modeling-form-unit/);
   assert.match(appSource, /data-personnel-specialty-dictionary/);
+  assert.match(appSource, /data-product-catalog-management/);
+  assert.match(appSource, /产品列表/);
   assert.match(styleSource, /\.system-config-workbench/);
   assert.match(styleSource, /\.modeling-config-grid/);
   assert.match(styleSource, /\.modeling-form-config-grid/);

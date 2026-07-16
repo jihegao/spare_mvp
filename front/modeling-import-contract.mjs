@@ -2,6 +2,7 @@ import {
   normalizeEquipmentComponentKOutOfN,
   validateEquipmentComponentKOutOfN
 } from "./equipment-tree-model.mjs";
+import { normalizeProjectProducts } from "./product-catalog.mjs";
 
 export const MODELING_IMPORT_PAGE_MAP = {
   missionProfiles: "任务剖面参数",
@@ -92,6 +93,7 @@ export function validateModelingImportPackage(importPackage) {
 
 export function projectToModelingImportPackage(projectJson, basePackage = {}) {
   const project = cloneJson(projectJson || {});
+  normalizeProjectProducts(project);
   const base = cloneJson(basePackage || {});
   const sourceImportId = String(project.missionProfile?.sourceImportId || "").trim();
   const importId = sourceImportId || String(base.importId || "").trim() || importIdForProject(project);
@@ -100,6 +102,7 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
   const supportResources = projectSupportResources(project);
   const objects = {
     ...preservedObjectSurfaces(base.objects),
+    products: normalizeObjectRows(project.products),
     missionProfiles: [missionProfile],
     equipmentAssets: normalizeEquipmentAssetRows(project.components),
     supportResources,
@@ -333,8 +336,7 @@ function projectTransportPolicies(project = {}) {
       ...policy,
       id: policy.id || `${node.id || `support-node-${nodeIndex}`}-transport-${policyIndex}`,
       fromSupportNodeName: policy.fromSupportNodeName || nameById.get(String(policy.from || "")) || policy.from || "",
-      toSupportNodeName: policy.toSupportNodeName || nameById.get(String(policy.to || "")) || policy.to || "",
-      spareName: policy.spareName || policy.spareType || policy.spare_type || ""
+      toSupportNodeName: policy.toSupportNodeName || nameById.get(String(policy.to || "")) || policy.to || ""
     }));
   });
   return [
@@ -353,7 +355,7 @@ function legacyTransportPoliciesFromSupportActivities(project = {}, nameByRef = 
         id: policy.id || `${activity.id || `support-activity-${activityIndex}`}-transport-${policyIndex}`,
         fromSupportNodeName: policy.fromSupportNodeName || nameByRef.get(String(fromRef)) || fromRef,
         toSupportNodeName: policy.toSupportNodeName || nameByRef.get(String(toRef)) || toRef,
-        spareName: policy.spareName || policy.spareType || policy.spare_type || "",
+        productId: policy.productId || "",
         transportMode: policy.transportMode || policy.direction || ""
       };
     });

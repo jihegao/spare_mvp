@@ -11,6 +11,7 @@ const OBJECT_LABELS = {
   missionPhases: "任务阶段",
   combatUnit: "基本作战单元",
   equipment: "装备",
+  products: "产品",
   components: "组件",
   supportNodes: "保障节点",
   spares: "备件",

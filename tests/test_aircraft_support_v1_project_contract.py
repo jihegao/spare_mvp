@@ -54,10 +54,14 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                     }
                 ]
             },
+            "products": [
+                {"id": "product-whole-aircraft", "name": "whole aircraft", "model": "whole aircraft", "kind": "whole"}
+            ],
             "components": [
                 {
                     "id": "whole-aircraft",
                     "name": "whole aircraft",
+                    "productId": "product-whole-aircraft",
                     "aircraftModel": "J-15",
                     "productType": "whole",
                     "quantity": 1,
@@ -88,7 +92,7 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                     "id": "tp-1",
                     "fromSupportNodeName": "node A",
                     "toSupportNodeName": "node A",
-                    "spareName": "aircraft_support_v1_spares",
+                    "productId": "product-whole-aircraft",
                     "capacity": 1,
                 }
             ],
@@ -262,6 +266,27 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
 
         project = self._clean_project()
         project["components"][0]["spareType"] = "发动机备件"
+        self.assertTrue(self._schema_errors(project))
+
+    def test_schema_requires_product_references_on_components_and_spare_resources(self) -> None:
+        project = self._clean_project()
+        project["components"][0].pop("productId")
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["supportResources"].append(
+            {
+                "id": "node-a-spare",
+                "supportNodeName": "node A",
+                "type": "spare",
+                "name": "whole aircraft",
+                "quantity": 1,
+            }
+        )
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["transportPolicies"][0].pop("productId")
         self.assertEqual(self._schema_errors(project), [])
 
         for field in ("repairRatio", "replacementRatio"):

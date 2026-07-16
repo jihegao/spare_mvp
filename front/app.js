@@ -98,12 +98,20 @@ import {
   resolveEquipmentSelectionModel,
   wholeMachineModelsForScenario
 } from "./equipment-tree-model.mjs";
+import {
+  createProjectProduct,
+  ensureProductForComponent,
+  normalizeProjectProducts,
+  productDisplayName,
+  projectProductById
+} from "./product-catalog.mjs";
 
 const app = document.querySelector("#app");
 const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModelingImportId";
+const RUN_CONTEXT_STORAGE_KEY = "spare-mvp:selectedRunContextByProject";
 const SYSTEM_RUNTIME_CONFIG_KEY = "system-runtime-support";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
 let backendAuthToken = readStoredBackendAuthToken();
@@ -285,12 +293,24 @@ const MODELING_DATA_MODULES = [
     description: "覆盖装备组成、故障和可靠性框图的建模输入。",
     sheets: [
       {
+        key: "product-catalog",
+        label: "产品列表",
+        sourcePage: "建模表单管理",
+        fields: [
+          fieldDef("productId", "产品ID", "products[].id"),
+          fieldDef("productName", "产品名称", "products[].name"),
+          fieldDef("productModel", "产品型号", "products[].model"),
+          fieldDef("kind", "产品类型", "products[].kind")
+        ]
+      },
+      {
         key: "equipment-system",
         label: "装备系统表",
         sourcePage: "装备系统建模",
         fields: [
           fieldDef("equipmentId", "装备ID", "components[].id"),
           fieldDef("componentName", "组件名称", "components[].name"),
+          fieldDef("productId", "产品", "components[].productId"),
           fieldDef("parentId", "父节点", "components[].parentId"),
           fieldDef("quantity", "数量n", "components[].quantity"),
           fieldDef("componentAttribute", "组件属性", "components[].productType"),
@@ -398,6 +418,7 @@ const MODELING_DATA_MODULES = [
         sourcePage: "备件建模",
         fields: [
           fieldDef("spareId", "备件ID", "supportResources[].id"),
+          fieldDef("productId", "产品ID", "supportResources[].productId"),
           fieldDef("spareName", "备件名称", "supportResources[].name"),
           fieldDef("equipmentId", "适用装备", "supportResources[].equipment"),
           fieldDef("stockQty", "库存量", "supportResources[].quantity"),
@@ -519,6 +540,8 @@ let systemRuntimeConfigStatus = "系统配置尚未同步";
 let systemUserSearchText = "";
 let modelingFormFieldUnits = createDefaultModelingFormFieldUnits();
 let personnelSpecialtyDraft = "";
+let productCatalogQuery = "";
+let productCatalogEditor = null;
 
 const SYSTEM_PERMISSION_ROWS = [
   { feature: "项目管理", admin: "编辑", data: "编辑", user: "只读" },
@@ -593,6 +616,28 @@ function persistLastPublishedModelingImportId(importId) {
   const normalized = String(importId || "").trim();
   if (!normalized) return;
   localStorage.setItem(LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY, normalized);
+}
+
+function storedRunContextMap() {
+  try {
+    const value = JSON.parse(localStorage.getItem(RUN_CONTEXT_STORAGE_KEY) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function readStoredRunContextKey(projectId = currentBackendProjectId()) {
+  return String(storedRunContextMap()[String(projectId || "").trim()] || "").trim();
+}
+
+function persistSelectedRunContextKey(projectId = currentBackendProjectId()) {
+  const normalizedProjectId = String(projectId || "").trim();
+  if (!normalizedProjectId) return;
+  const values = storedRunContextMap();
+  if (selectedRunContextKey) values[normalizedProjectId] = selectedRunContextKey;
+  else delete values[normalizedProjectId];
+  localStorage.setItem(RUN_CONTEXT_STORAGE_KEY, JSON.stringify(values));
 }
 
 
@@ -720,6 +765,9 @@ let periodicProfileRenameState = null;
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let equipmentSearchQuery = "";
+let equipmentProductEditorComponentId = "";
+let equipmentProductQuery = "";
+let equipmentProductDraft = { name: "", model: "", kind: "LRU" };
 let spareDemandSort = "default";
 let spareAircraftFilter = "";
 let carryHideZeroDemand = true;
@@ -956,6 +1004,36 @@ function bindEvents() {
     if (equipmentDeleteNodeButton) {
       deleteSelectedEquipmentNode();
       markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const equipmentProductEditButton = event.target.closest("[data-equipment-product-edit]");
+    if (equipmentProductEditButton) {
+      equipmentProductEditorComponentId = equipmentProductEditButton.dataset.equipmentProductEdit || "";
+      equipmentProductQuery = "";
+      equipmentProductDraft = { name: "", model: "", kind: "LRU" };
+      render();
+      return;
+    }
+
+    const equipmentProductCloseButton = event.target.closest("[data-equipment-product-close]");
+    if (equipmentProductCloseButton) {
+      equipmentProductEditorComponentId = "";
+      render();
+      return;
+    }
+
+    const equipmentProductSelectButton = event.target.closest("[data-equipment-product-select]");
+    if (equipmentProductSelectButton) {
+      bindEquipmentComponentProduct(equipmentProductEditorComponentId, equipmentProductSelectButton.dataset.equipmentProductSelect);
+      render();
+      return;
+    }
+
+    const equipmentProductCreateButton = event.target.closest("[data-equipment-product-create]");
+    if (equipmentProductCreateButton) {
+      createAndBindEquipmentProduct(equipmentProductEditorComponentId);
       render();
       return;
     }
@@ -1689,6 +1767,41 @@ function bindEvents() {
     const personnelSpecialtyDeleteButton = event.target.closest("[data-personnel-specialty-delete]");
     if (personnelSpecialtyDeleteButton) {
       deletePersonnelSpecialty(personnelSpecialtyDeleteButton.dataset.personnelSpecialtyDelete);
+      render();
+      return;
+    }
+
+    const productCatalogAddButton = event.target.closest("[data-product-catalog-add]");
+    if (productCatalogAddButton) {
+      productCatalogEditor = { mode: "add", originalId: "", product: { id: "", name: "", model: "", kind: "LRU" } };
+      render();
+      return;
+    }
+
+    const productCatalogEditButton = event.target.closest("[data-product-catalog-edit]");
+    if (productCatalogEditButton) {
+      openProductCatalogEditor(productCatalogEditButton.dataset.productCatalogEdit);
+      render();
+      return;
+    }
+
+    const productCatalogDeleteButton = event.target.closest("[data-product-catalog-delete]");
+    if (productCatalogDeleteButton) {
+      deleteProductCatalogItem(productCatalogDeleteButton.dataset.productCatalogDelete);
+      render();
+      return;
+    }
+
+    const productCatalogSaveButton = event.target.closest("[data-product-catalog-save]");
+    if (productCatalogSaveButton) {
+      saveProductCatalogEditor();
+      render();
+      return;
+    }
+
+    const productCatalogCancelButton = event.target.closest("[data-product-catalog-cancel]");
+    if (productCatalogCancelButton) {
+      productCatalogEditor = null;
       render();
       return;
     }
@@ -2717,6 +2830,22 @@ function bindEvents() {
       return;
     }
 
+    const equipmentProductQueryInput = event.target.closest("[data-equipment-product-query]");
+    if (equipmentProductQueryInput) {
+      equipmentProductQuery = equipmentProductQueryInput.value;
+      render();
+      return;
+    }
+
+    const equipmentProductDraftInput = event.target.closest("[data-equipment-product-draft]");
+    if (equipmentProductDraftInput) {
+      equipmentProductDraft = {
+        ...equipmentProductDraft,
+        [equipmentProductDraftInput.dataset.equipmentProductDraft]: equipmentProductDraftInput.value
+      };
+      return;
+    }
+
     const liveEquipmentKOutOfNInput = event.target.closest("[data-equipment-k-out-of-n-index]");
     if (liveEquipmentKOutOfNInput) {
       updateEquipmentKOutOfNInput(liveEquipmentKOutOfNInput);
@@ -2774,6 +2903,25 @@ function bindEvents() {
     const personnelSpecialtyDraftInput = event.target.closest("[data-personnel-specialty-draft]");
     if (personnelSpecialtyDraftInput) {
       personnelSpecialtyDraft = personnelSpecialtyDraftInput.value;
+      return;
+    }
+
+    const productCatalogQueryInput = event.target.closest("[data-product-catalog-query]");
+    if (productCatalogQueryInput) {
+      productCatalogQuery = productCatalogQueryInput.value;
+      render();
+      return;
+    }
+
+    const productCatalogFieldInput = event.target.closest("[data-product-catalog-field]");
+    if (productCatalogFieldInput && productCatalogEditor) {
+      productCatalogEditor = {
+        ...productCatalogEditor,
+        product: {
+          ...productCatalogEditor.product,
+          [productCatalogFieldInput.dataset.productCatalogField]: productCatalogFieldInput.value
+        }
+      };
       return;
     }
 
@@ -4847,6 +4995,7 @@ function renderPermissionConfigEditor() {
 }
 
 function renderModelingFormManagementConfig() {
+  normalizeProjectProducts(scenario);
   const timeUnitSheets = modelingFormTimeUnitSheetRows();
   const timeUnitFieldCount = timeUnitSheets.reduce((sum, sheet) => sum + sheet.fields.length, 0);
   const specialties = configuredPersonnelSpecialties();
@@ -4874,6 +5023,7 @@ function renderModelingFormManagementConfig() {
           `).join("")}
         </div>
       </section>
+      ${renderProductCatalogManagement()}
       <section class="modeling-config-card">
         <div class="section-head">
           <div>
@@ -4913,6 +5063,58 @@ function renderModelingFormManagementConfig() {
           `).join("")}
         </div>
       </section>
+    </div>
+  `;
+}
+
+function renderProductCatalogManagement() {
+  const query = productCatalogQuery.trim().toLocaleLowerCase();
+  const products = (scenario.products || []).filter((product) => !query || [product.id, product.name, product.model, product.kind]
+    .some((value) => String(value || "").toLocaleLowerCase().includes(query)));
+  return `
+    <section class="modeling-config-card" data-product-catalog-management>
+      <div class="section-head">
+        <div>
+          <h4>产品列表</h4>
+          <p>Project 顶级 products[]。装备组成、保障备件和保障活动通过 productId 引用。</p>
+        </div>
+        <span class="status-badge">${scenario.products.length} 项</span>
+      </div>
+      <div class="toolbar-row">
+        <input value="${htmlEscape(productCatalogQuery)}" placeholder="搜索产品 ID、名称或型号" data-product-catalog-query>
+        <button type="button" data-product-catalog-add>新增产品</button>
+      </div>
+      ${productCatalogEditor ? renderProductCatalogEditor() : ""}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>产品 ID</th><th>名称</th><th>型号</th><th>类型</th><th>产品维护</th></tr></thead>
+          <tbody>${products.map((product) => `
+            <tr>
+              <td>${htmlEscape(product.id)}</td>
+              <td>${htmlEscape(product.name)}</td>
+              <td>${htmlEscape(product.model || "-")}</td>
+              <td>${htmlEscape(product.kind || "-")}</td>
+              <td><button type="button" class="inline-action" data-product-catalog-edit="${htmlEscape(product.id)}">编辑</button><button type="button" class="btn-danger" data-product-catalog-delete="${htmlEscape(product.id)}">删除</button></td>
+            </tr>
+          `).join("") || '<tr><td colspan="5" class="muted">暂无匹配产品</td></tr>'}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderProductCatalogEditor() {
+  const product = productCatalogEditor.product;
+  return `
+    <div class="detail-card">
+      <div class="section-head"><h4>${productCatalogEditor.mode === "add" ? "新增产品" : "编辑产品"}</h4><span>产品 ID 保存后不可修改</span></div>
+      <div class="form-table-grid">
+        <label>产品 ID<input data-product-catalog-field="id" value="${htmlEscape(product.id || "")}" ${productCatalogEditor.mode === "edit" ? "disabled" : ""}></label>
+        <label>名称<input data-product-catalog-field="name" value="${htmlEscape(product.name || "")}"></label>
+        <label>型号<input data-product-catalog-field="model" value="${htmlEscape(product.model || "")}"></label>
+        <label>类型<select data-product-catalog-field="kind">${["非LRU", "LRU", "SRU"].map((value) => `<option value="${value}" ${product.kind === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+      </div>
+      <div class="toolbar-row"><button type="button" class="btn-primary" data-product-catalog-save>保存产品</button><button type="button" data-product-catalog-cancel>取消</button></div>
     </div>
   `;
 }
@@ -5988,6 +6190,7 @@ function diffTimeMinutes(start, end) {
 }
 
 function renderEquipmentModeling(page) {
+  normalizeProjectProducts(scenario);
   const selectedState = resolveSelectedEquipmentNode();
   const components = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
   const aircraftModels = wholeMachineModels();
@@ -6022,6 +6225,7 @@ function renderEquipmentModeling(page) {
             <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
           ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState) : importedDataEmptyState(page.name || "装备系统建模")}
+          ${equipmentProductEditorComponentId ? renderEquipmentProductEditor() : ""}
         </div>
       </section>
     </div>
@@ -6098,6 +6302,38 @@ function addEquipmentNodeForSelection() {
     selectedEquipmentComponentIndex = mutation.selectedEquipmentComponentIndex;
   }
   selectedEquipmentNodeKey = mutation.selectedEquipmentNodeKey || selectedEquipmentNodeKey;
+  updatePreviewResultsThroughApiClient();
+}
+
+function bindEquipmentComponentProduct(componentId, productId) {
+  normalizeProjectProducts(scenario);
+  const component = (scenario.components || []).find((item) => String(item.id || "") === String(componentId || ""));
+  const product = projectProductById(scenario, productId);
+  if (!component || !product) return;
+  component.productId = product.id;
+  equipmentProductEditorComponentId = "";
+  markProjectDraftChanged();
+  updatePreviewResultsThroughApiClient();
+}
+
+function createAndBindEquipmentProduct(componentId) {
+  const component = (scenario.components || []).find((item) => String(item.id || "") === String(componentId || ""));
+  const name = String(equipmentProductDraft.name || "").trim();
+  if (!component || !name) {
+    equipmentImportStatus = "请输入新产品名称";
+    return;
+  }
+  const product = createProjectProduct(scenario, {
+    ...equipmentProductDraft,
+    name,
+    model: String(equipmentProductDraft.model || component.id || "").trim(),
+    aircraftModel: component.aircraftModel
+  });
+  component.productId = product.id;
+  equipmentProductEditorComponentId = "";
+  equipmentProductDraft = { name: "", model: "", kind: "LRU" };
+  equipmentImportStatus = `已添加并匹配产品：${product.name}`;
+  markProjectDraftChanged();
   updatePreviewResultsThroughApiClient();
 }
 
@@ -6478,6 +6714,7 @@ function renderEquipmentSystemTable(selectedState) {
             <th>父节点</th>
             <th>数量n</th>
             <th>组件属性</th>
+            <th>产品</th>
             <th>可用数量要求k（n中取k） <button type="button" class="inline-help" title="表示当前节点在数量 n 个同类部件中，至少需要 k 个可用，才认为该节点可用。默认取全部，即 k = n。例如 n=1,k=1 单件必须可用；n=2,k=1 二取一冗余；n=3,k=2 三取二。k 必须为整数，且满足 1 ≤ k ≤ n。" aria-label="可用数量要求k说明">?</button></th>
             <th>MTBF-分布类型</th>
             <th>MTBF参数</th>
@@ -6526,12 +6763,45 @@ function renderEquipmentSystemTableRow(component, index, selectedState) {
       <td>${equipmentParentNodeSelect(component, index)}</td>
       <td>${equipmentTableInput("数量n", `components.${index}.quantity`, "number", { min: "1", step: "1" })}</td>
       <td>${equipmentComponentAttributeSelect(index)}</td>
+      <td>${equipmentProductCell(component)}</td>
       <td>${equipmentKOutOfNInput(index)}</td>
       <td>${equipmentDistributionSelect(`components.${index}.failureDistribution.distributionType`, mtbfDistributionType, "MTBF-分布类型")}</td>
       <td>${renderEquipmentDistributionParameters(index, "mtbf", mtbfDistributionType)}</td>
       <td>${equipmentDistributionSelect(`components.${index}.repairDistribution.distributionType`, mttrDistributionType, "MTTR-分布类型")}</td>
       <td>${renderEquipmentDistributionParameters(index, "mttr", mttrDistributionType)}</td>
     </tr>
+  `;
+}
+
+function equipmentProductCell(component) {
+  const product = projectProductById(scenario, component.productId) || ensureProductForComponent(scenario, component);
+  return `<button type="button" class="inline-action" data-equipment-product-edit="${htmlEscape(component.id)}">编辑/搜索：${htmlEscape(productDisplayName(product))}</button>`;
+}
+
+function renderEquipmentProductEditor() {
+  normalizeProjectProducts(scenario);
+  const component = (scenario.components || []).find((item) => String(item.id || "") === String(equipmentProductEditorComponentId || ""));
+  if (!component) return "";
+  const query = equipmentProductQuery.trim().toLocaleLowerCase();
+  const products = (scenario.products || []).filter((product) => !query || [product.id, product.name, product.model]
+    .some((value) => String(value || "").toLocaleLowerCase().includes(query)));
+  return `
+    <div class="detail-card" data-equipment-product-editor>
+      <div class="section-head"><h4>编辑/搜索产品：${htmlEscape(component.name || component.id)}</h4><button type="button" data-equipment-product-close>关闭</button></div>
+      <div class="toolbar-row"><input value="${htmlEscape(equipmentProductQuery)}" placeholder="搜索已有产品" data-equipment-product-query></div>
+      <div class="table-wrap compact-table">
+        <table><thead><tr><th>产品 ID</th><th>名称</th><th>型号</th><th>匹配</th></tr></thead><tbody>
+          ${products.map((product) => `<tr><td>${htmlEscape(product.id)}</td><td>${htmlEscape(product.name)}</td><td>${htmlEscape(product.model || "-")}</td><td><button type="button" class="inline-action" data-equipment-product-select="${htmlEscape(product.id)}">${component.productId === product.id ? "已匹配" : "匹配"}</button></td></tr>`).join("") || '<tr><td colspan="4" class="muted">没有匹配产品，可在下方添加</td></tr>'}
+        </tbody></table>
+      </div>
+      <h5>添加新产品并匹配</h5>
+      <div class="form-table-grid">
+        <label>名称<input data-equipment-product-draft="name" value="${htmlEscape(equipmentProductDraft.name)}"></label>
+        <label>型号<input data-equipment-product-draft="model" value="${htmlEscape(equipmentProductDraft.model)}"></label>
+        <label>类型<select data-equipment-product-draft="kind">${["非LRU", "LRU", "SRU"].map((value) => `<option value="${value}" ${equipmentProductDraft.kind === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+      </div>
+      <button type="button" class="btn-primary" data-equipment-product-create>添加并匹配</button>
+    </div>
   `;
 }
 
@@ -6932,6 +7202,7 @@ function supportResourceRow(resource, orgNode, orgIndex, resourceIndex) {
     name: resource.name || (type === "保障人员" ? "保障人员" : ""),
     model: type === "保障人员" ? normalizePersonnelSpecialtyName(resource.model) : (resource.model || ""),
     quantity: Number(resource.quantity || 0),
+    productId: resource.productId || "",
     equipment: resource.equipment || resource.equipmentId || "",
     lockIdentity: true
   };
@@ -6953,17 +7224,20 @@ function supportResourceTypeValue(label) {
 }
 
 function lruSpareRows() {
+  normalizeProjectProducts(scenario);
   const seen = new Set();
   return (scenario.components || [])
     .filter((component) => component && typeof component === "object" && !Array.isArray(component))
-    .filter((component) => component.productType === "LRU" || component.spareType === "LRU"
-      || String(component.productType || "").trim().toUpperCase() === "LRU"
-      || String(component.spareType || "").trim().toUpperCase() === "LRU")
-    .map((component, index) => ({
-      name: String(component.name || component.id || `未命名LRU${index + 1}`).trim(),
-      model: String(component.model || component.partNo || component.id || component.name || "LRU").trim(),
-      aircraft: String(component.aircraftModel || component.equipment || component.equipmentType || "").trim()
-    }))
+    .filter((component) => String(component.productType || "").trim().toUpperCase() === "LRU")
+    .map((component, index) => {
+      const product = projectProductById(scenario, component.productId) || ensureProductForComponent(scenario, component);
+      return {
+        productId: product.id,
+        name: String(product.name || component.name || component.id || `未命名LRU${index + 1}`).trim(),
+        model: String(product.model || component.model || component.id || component.name || "LRU").trim(),
+        aircraft: String(component.aircraftModel || component.equipment || component.equipmentType || "").trim()
+      };
+    })
     .filter((spare) => {
       const key = supportSpareResourceIdentityKey("", spare.name, spare.model, spare.aircraft);
       if (seen.has(key)) return false;
@@ -7001,6 +7275,7 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
         id: String(existing?.id || `support-resource-${orgIndex + 1}-spare-${spareIndex + 1}`),
         supportNodeName: nodeName,
         type: "spare",
+        productId: spare.productId,
         name: spare.name,
         model: spare.model,
         equipment: spare.aircraft || "",
@@ -7134,6 +7409,7 @@ function supportResourceDataColumns(activeResourceType) {
   }
   if (activeResourceType === "备件") {
     return [
+      { label: "产品 ID", field: "productId", type: "text", lockIdentity: true },
       { label: "名称", field: "name", type: "text", lockIdentity: true },
       { label: "型号", field: "model", type: "text", lockIdentity: true },
       { label: "所属装备", field: "equipment", type: "select", options: supportEquipmentOwnerOptions },
@@ -8770,6 +9046,7 @@ function basicActivityMaterialCatalogRows(resourceKind, resourceType) {
     .filter((resource) => resource?.type === resourceKind || resource?.type === resourceType)
     .map((resource, index) => ({
       key: String(resource.id || resource.key || `${resourceKind}:${index}:${resource.name || resource.model || ""}`),
+      productId: resource.productId || "",
       resourceKind,
       type: resourceType,
       name: resource.name || resource.model || "",
@@ -8815,6 +9092,7 @@ function basicActivityLegacyResourceRows(resourceType) {
           scope: basicActivityScopeLabel(activity),
           name: resourceKind === "personnel" ? (item.professional || item.model || "") : (item.name || item.model || ""),
           model: resourceKind === "personnel" ? (item.professional || item.model || "") : (item.model || item.name || ""),
+          productId: resourceKind === "spare" ? (item.productId || "") : "",
           quantity: Math.max(1, Number(item.quantity) || 1)
         }))
     )
@@ -9376,6 +9654,7 @@ function createBasicActivityResourceRequirementFromRow(resourceKind, source, qua
   }
   return normalizeBasicActivityResourceDialogRequirement(resourceKind, {
     key: source?.key || "",
+    productId: resourceKind === "spare" ? (source?.productId || "") : "",
     name: source?.name || source?.model || "",
     model: source?.model || source?.name || "",
     quantity
@@ -9392,6 +9671,7 @@ function normalizeBasicActivityResourceDialogRequirement(resourceKind, item, ind
   }
   return {
     key: item.key || item.resourceKey || "",
+    ...(resourceKind === "spare" ? { productId: item.productId || "" } : {}),
     name: item.name || "",
     model: item.model || "",
     quantity: Math.max(1, Number(item.quantity ?? 1) || 1)
@@ -10449,7 +10729,8 @@ function selectedExperimentPlanRunSettings() {
 }
 
 function resetRunContextToCurrentProject() {
-  selectedRunContextKey = "";
+  selectedRunContextKey = experimentPlanContextOptions().find((option) => option.kind === "current-project")?.key || "";
+  persistSelectedRunContextKey();
   const projectJson = currentProjectJsonForExperimentContext();
   const experiment = projectJson?.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
     ? projectJson.experiment
@@ -10478,6 +10759,7 @@ function selectCurrentExperimentPlan(planKey) {
   const selected = options.find((option) => option.key === planKey) || options[0];
   if (!selected) return;
   selectedRunContextKey = selected.key;
+  persistSelectedRunContextKey();
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = selected.kind === "experiment-plan"
     ? `已绑定实验方案：${selected.name}`
@@ -11054,6 +11336,7 @@ async function restoreStoredBackendSessionOnBoot() {
     await hydrateProjectCatalogFromBackend();
     if (selectedRoute === "workbench" && currentProject) {
       await hydrateCurrentProjectDraftFromApi();
+      selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
     }
   } catch (err) {
     backendAuthToken = "";
@@ -11086,7 +11369,7 @@ async function handleEnterWorkbench(projectId) {
   backendExperimentPlansLoadInFlight = false;
   experimentPlanListStatus = "仿真实验方案列表尚未加载";
   selectedExperimentPlanKeys = new Set();
-  selectedRunContextKey = "";
+  selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
@@ -11095,7 +11378,8 @@ async function handleEnterWorkbench(projectId) {
   location.hash = `feature=${selectedFeatureId}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
-  resetRunContextToCurrentProject();
+  selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
+  if (!selectedRunContextKey) resetRunContextToCurrentProject();
 }
 
 async function createProjectFromSelectedProjectTemplate() {
@@ -13230,6 +13514,63 @@ function deletePersonnelSpecialty(value) {
   const target = String(value || "").trim();
   setConfiguredPersonnelSpecialties(configuredPersonnelSpecialties().filter((item) => item !== target));
   systemRuntimeConfigStatus = "保障人员专业字典已更新，待保存";
+}
+
+function openProductCatalogEditor(productId) {
+  normalizeProjectProducts(scenario);
+  const product = projectProductById(scenario, productId);
+  if (!product) return;
+  productCatalogEditor = { mode: "edit", originalId: product.id, product: { ...product } };
+}
+
+function saveProductCatalogEditor() {
+  if (!productCatalogEditor) return;
+  normalizeProjectProducts(scenario);
+  const draft = productCatalogEditor.product || {};
+  const name = String(draft.name || "").trim();
+  if (!name) {
+    systemRuntimeConfigStatus = "产品名称不能为空";
+    return;
+  }
+  if (productCatalogEditor.mode === "add") {
+    const created = createProjectProduct(scenario, { ...draft, name });
+    systemRuntimeConfigStatus = `已新增产品 ${created.name}，项目待保存`;
+  } else {
+    const product = projectProductById(scenario, productCatalogEditor.originalId);
+    if (!product) return;
+    Object.assign(product, {
+      name,
+      model: String(draft.model || "").trim(),
+      kind: String(draft.kind || "LRU").trim()
+    });
+    systemRuntimeConfigStatus = `已更新产品 ${product.name}，项目待保存`;
+  }
+  productCatalogEditor = null;
+  markProductCatalogChanged();
+}
+
+function deleteProductCatalogItem(productId) {
+  normalizeProjectProducts(scenario);
+  const references = [
+    ...(scenario.components || []).filter((component) => component.productId === productId),
+    ...(scenario.supportResources || []).filter((resource) => resource.productId === productId),
+    ...(scenario.supportActivityJobs || []).flatMap((job) => (job.spare || []).filter((requirement) => requirement.productId === productId)),
+    ...(scenario.transportPolicies || []).filter((policy) => policy.productId === productId),
+    ...(scenario.supportNodes || []).flatMap((node) => (node.transportPolicies || []).filter((policy) => policy.productId === productId))
+  ];
+  if (references.length) {
+    systemRuntimeConfigStatus = `产品 ${productId} 仍被 ${references.length} 条数据引用，不能删除`;
+    return;
+  }
+  scenario.products = scenario.products.filter((product) => product.id !== productId);
+  systemRuntimeConfigStatus = `已删除产品 ${productId}，项目待保存`;
+  markProductCatalogChanged();
+}
+
+function markProductCatalogChanged() {
+  projectDraftSaveStatus = "有未保存修改";
+  updatePreviewResultsThroughApiClient();
+  if (currentProject) scheduleProjectDraftAutosave();
 }
 
 function permissionRoleLabel(roleKey) {

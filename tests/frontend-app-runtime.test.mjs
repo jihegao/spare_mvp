@@ -3247,6 +3247,37 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
   }
 });
 
+test("saved run context survives a cold workbench restore", async () => {
+  const projectJson = createRuntimeProjectJson({ project_id: "project-runtime" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-carry-list-analysis",
+    projectJson,
+    experimentPlans: [{
+      experiment_plan_id: "plan-restored",
+      status: "draft",
+      config: {
+        name: "恢复方案",
+        samples: 13,
+        seed: 1313,
+        projectJson: createRuntimeProjectJson({ project_id: "project-runtime" })
+      }
+    }],
+    storageEntries: [[
+      "spare-mvp:selectedRunContextByProject",
+      JSON.stringify({ "project-runtime": "plan-restored" })
+    ]]
+  });
+
+  try {
+    await runtime.flush();
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-restored" selected>恢复方案<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /样本量[\s\S]*<strong>13<\/strong>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("run context defaults to current Project and excludes unsaved or invalid experiment plans", async () => {
   const sourceProjectJson = createRuntimeProjectJson({
     project_id: "project-runtime",
@@ -3630,6 +3661,7 @@ async function setupRuntimeApp({
   importFile = null,
   experimentPlans = [],
   sessionUser = { username: "data", role: "数据管理员" },
+  storageEntries = [],
   liteMesaAnalysisResponseOverrides = {},
   backendProjects = [{
     project_id: "project-runtime",
@@ -3651,7 +3683,8 @@ async function setupRuntimeApp({
   const aircraftReliabilityHistory = [];
   let createProjectFromImportCount = 0;
   const storage = new Map([
-    ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })]
+    ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })],
+    ...storageEntries
   ]);
   const appNode = {
     innerHTML: "",

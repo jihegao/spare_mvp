@@ -13,13 +13,15 @@
           "basicMissions",
           "basicMissions[].missionPhases",
           "airports",
+          "products[]",
+          "components[].productId",
           "components[].aircraftModel",
-          "components[].spareType",
           "components[].failureDistribution",
           "components[].kOutOfN",
           "components[].specialRepairProfile",
           "supportResources[].quantity",
           "supportResources[].type",
+          "supportResources[].productId",
           "supportResources[].supportNodeName",
           "transportPolicies[]",
           "supportActivityJobs[]",
@@ -154,10 +156,11 @@
             },
             "name": "舰载机",
             "parent_id": null,
+            "product_id": "product-aircraft-root",
+            "product_name": "舰载机",
             "product_type": null,
             "quantity": 6,
             "repair_distribution": {},
-            "spare_type": null,
             "special_repair_profile": {}
           },
           {
@@ -175,10 +178,11 @@
             },
             "name": "发动机",
             "parent_id": "aircraft-root",
+            "product_id": "product-j15-engine",
+            "product_name": "发动机",
             "product_type": "LRU",
             "quantity": 2,
             "repair_distribution": {},
-            "spare_type": "发动机备件",
             "special_repair_profile": {
               "repairTimeMinutes": 220
             }
@@ -198,10 +202,11 @@
             },
             "name": "发动机控制模块",
             "parent_id": "j15-engine",
+            "product_id": "product-j15-engine-control",
+            "product_name": "发动机控制模块",
             "product_type": "SRU",
             "quantity": 1,
             "repair_distribution": {},
-            "spare_type": "发动机备件",
             "special_repair_profile": {
               "repairTimeMinutes": 160
             }
@@ -221,10 +226,11 @@
             },
             "name": "航电系统",
             "parent_id": "aircraft-root",
+            "product_id": "product-j15-avionics",
+            "product_name": "航电系统",
             "product_type": "LRU",
             "quantity": 2,
             "repair_distribution": {},
-            "spare_type": "航电模块",
             "special_repair_profile": {
               "repairTimeMinutes": 150
             }
@@ -244,10 +250,11 @@
             },
             "name": "雷达 LRU",
             "parent_id": "j15-avionics",
+            "product_id": "product-j15-radar",
+            "product_name": "雷达 LRU",
             "product_type": "SRU",
             "quantity": 1,
             "repair_distribution": {},
-            "spare_type": "航电模块",
             "special_repair_profile": {
               "repairTimeMinutes": 145
             }
@@ -267,10 +274,11 @@
             },
             "name": "液压系统",
             "parent_id": "aircraft-root",
+            "product_id": "product-j15-hydraulic",
+            "product_name": "液压系统",
             "product_type": "LRU",
             "quantity": 1,
             "repair_distribution": {},
-            "spare_type": "液压备件",
             "special_repair_profile": {
               "repairTimeMinutes": 135
             }
@@ -290,10 +298,11 @@
             },
             "name": "发动机",
             "parent_id": "aircraft-root",
+            "product_id": "product-j35-engine",
+            "product_name": "发动机",
             "product_type": "LRU",
             "quantity": 2,
             "repair_distribution": {},
-            "spare_type": "发动机备件",
             "special_repair_profile": {
               "repairTimeMinutes": 210
             }
@@ -313,10 +322,11 @@
             },
             "name": "航电系统",
             "parent_id": "aircraft-root",
+            "product_id": "product-j35-avionics",
+            "product_name": "航电系统",
             "product_type": "LRU",
             "quantity": 2,
             "repair_distribution": {},
-            "spare_type": "航电模块",
             "special_repair_profile": {
               "repairTimeMinutes": 150
             }
@@ -336,10 +346,11 @@
             },
             "name": "任务计算机模块",
             "parent_id": "j35-avionics",
+            "product_id": "product-j35-mission-computer",
+            "product_name": "任务计算机模块",
             "product_type": "SRU",
             "quantity": 2,
             "repair_distribution": {},
-            "spare_type": "航电模块",
             "special_repair_profile": {
               "repairTimeMinutes": 125
             }
@@ -359,10 +370,11 @@
             },
             "name": "液压系统",
             "parent_id": "aircraft-root",
+            "product_id": "product-j35-hydraulic",
+            "product_name": "液压系统",
             "product_type": "LRU",
             "quantity": 1,
             "repair_distribution": {},
-            "spare_type": "液压备件",
             "special_repair_profile": {
               "repairTimeMinutes": 130
             }
@@ -791,6 +803,7 @@
                   {
                     "model": "LRU",
                     "name": "航电模块",
+                    "productId": "product-support-resource-spare-3c7d67e069",
                     "quantity": 1
                   }
                 ],
@@ -875,6 +888,7 @@
                   {
                     "model": "SRU",
                     "name": "液压备件",
+                    "productId": "product-support-resource-spare-17fde32d23",
                     "quantity": 1
                   }
                 ],
@@ -995,9 +1009,9 @@
             "equipment_capacity": 3,
             "id": "基地",
             "inventory": {
-              "发动机备件": 4,
-              "液压备件": 5,
-              "航电模块": 6
+              "product-support-resource-spare-17fde32d23": 5,
+              "product-support-resource-spare-3c7d67e069": 6,
+              "product-support-resource-spare-f9224feeb0": 4
             },
             "lateral_support_nodes": [],
             "name": "基地",
@@ -1005,13 +1019,28 @@
             "organization_strategy": null,
             "personnel_capacity": 5,
             "policy": null,
+            "product_names": {
+              "product-aircraft-root": "舰载机",
+              "product-j15-avionics": "航电系统",
+              "product-j15-engine": "发动机",
+              "product-j15-engine-control": "发动机控制模块",
+              "product-j15-hydraulic": "液压系统",
+              "product-j15-radar": "雷达 LRU",
+              "product-j35-avionics": "航电系统",
+              "product-j35-engine": "发动机",
+              "product-j35-hydraulic": "液压系统",
+              "product-j35-mission-computer": "任务计算机模块",
+              "product-support-resource-spare-17fde32d23": "液压备件",
+              "product-support-resource-spare-3c7d67e069": "航电模块",
+              "product-support-resource-spare-f9224feeb0": "发动机备件"
+            },
             "support_level": null,
             "transport_policies": [
               {
                 "capacity": 4,
                 "from": "基层1",
                 "priority": 1,
-                "spareType": "",
+                "product_id": "",
                 "to": "基地",
                 "transportTimeHours": 1.0
               },
@@ -1019,7 +1048,7 @@
                 "capacity": 1,
                 "from": "基层1",
                 "priority": 1,
-                "spareType": "发动机备件",
+                "product_id": "",
                 "to": "基地",
                 "transportTimeHours": 1.0
               }
@@ -1031,9 +1060,9 @@
             "equipment_capacity": 2,
             "id": "中继",
             "inventory": {
-              "发动机备件": 2,
-              "液压备件": 2,
-              "航电模块": 3
+              "product-support-resource-spare-17fde32d23": 2,
+              "product-support-resource-spare-3c7d67e069": 3,
+              "product-support-resource-spare-f9224feeb0": 2
             },
             "lateral_support_nodes": [],
             "name": "中继",
@@ -1041,13 +1070,28 @@
             "organization_strategy": null,
             "personnel_capacity": 4,
             "policy": null,
+            "product_names": {
+              "product-aircraft-root": "舰载机",
+              "product-j15-avionics": "航电系统",
+              "product-j15-engine": "发动机",
+              "product-j15-engine-control": "发动机控制模块",
+              "product-j15-hydraulic": "液压系统",
+              "product-j15-radar": "雷达 LRU",
+              "product-j35-avionics": "航电系统",
+              "product-j35-engine": "发动机",
+              "product-j35-hydraulic": "液压系统",
+              "product-j35-mission-computer": "任务计算机模块",
+              "product-support-resource-spare-17fde32d23": "液压备件",
+              "product-support-resource-spare-3c7d67e069": "航电模块",
+              "product-support-resource-spare-f9224feeb0": "发动机备件"
+            },
             "support_level": null,
             "transport_policies": [
               {
                 "capacity": 2,
                 "from": "基地",
                 "priority": 1,
-                "spareType": "",
+                "product_id": "",
                 "to": "中继",
                 "transportTimeHours": 2.0
               },
@@ -1055,7 +1099,7 @@
                 "capacity": 1,
                 "from": "基地",
                 "priority": 1,
-                "spareType": "航电模块",
+                "product_id": "",
                 "to": "中继",
                 "transportTimeHours": 2.0
               }
@@ -1067,9 +1111,9 @@
             "equipment_capacity": 2,
             "id": "基层1",
             "inventory": {
-              "发动机备件": 6,
-              "液压备件": 6,
-              "航电模块": 8
+              "product-support-resource-spare-17fde32d23": 6,
+              "product-support-resource-spare-3c7d67e069": 8,
+              "product-support-resource-spare-f9224feeb0": 6
             },
             "lateral_support_nodes": [],
             "name": "基层1",
@@ -1077,13 +1121,28 @@
             "organization_strategy": null,
             "personnel_capacity": 3,
             "policy": null,
+            "product_names": {
+              "product-aircraft-root": "舰载机",
+              "product-j15-avionics": "航电系统",
+              "product-j15-engine": "发动机",
+              "product-j15-engine-control": "发动机控制模块",
+              "product-j15-hydraulic": "液压系统",
+              "product-j15-radar": "雷达 LRU",
+              "product-j35-avionics": "航电系统",
+              "product-j35-engine": "发动机",
+              "product-j35-hydraulic": "液压系统",
+              "product-j35-mission-computer": "任务计算机模块",
+              "product-support-resource-spare-17fde32d23": "液压备件",
+              "product-support-resource-spare-3c7d67e069": "航电模块",
+              "product-support-resource-spare-f9224feeb0": "发动机备件"
+            },
             "support_level": null,
             "transport_policies": [
               {
                 "capacity": 3,
                 "from": "基地",
                 "priority": 2,
-                "spareType": "",
+                "product_id": "",
                 "to": "基层1",
                 "transportTimeHours": 3.0
               }
@@ -1315,6 +1374,7 @@
               "n": 6
             },
             "name": "舰载机",
+            "productId": "product-aircraft-root",
             "quantity": 6
           },
           {
@@ -1331,9 +1391,9 @@
             },
             "name": "发动机",
             "parentId": "aircraft-root",
+            "productId": "product-j15-engine",
             "productType": "LRU",
             "quantity": 2,
-            "spareType": "发动机备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 220
             }
@@ -1352,9 +1412,9 @@
             },
             "name": "发动机控制模块",
             "parentId": "j15-engine",
+            "productId": "product-j15-engine-control",
             "productType": "SRU",
             "quantity": 1,
-            "spareType": "发动机备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 160
             }
@@ -1373,9 +1433,9 @@
             },
             "name": "航电系统",
             "parentId": "aircraft-root",
+            "productId": "product-j15-avionics",
             "productType": "LRU",
             "quantity": 2,
-            "spareType": "航电模块",
             "specialRepairProfile": {
               "repairTimeMinutes": 150
             }
@@ -1394,9 +1454,9 @@
             },
             "name": "雷达 LRU",
             "parentId": "j15-avionics",
+            "productId": "product-j15-radar",
             "productType": "SRU",
             "quantity": 1,
-            "spareType": "航电模块",
             "specialRepairProfile": {
               "repairTimeMinutes": 145
             }
@@ -1415,9 +1475,9 @@
             },
             "name": "液压系统",
             "parentId": "aircraft-root",
+            "productId": "product-j15-hydraulic",
             "productType": "LRU",
             "quantity": 1,
-            "spareType": "液压备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 135
             }
@@ -1436,9 +1496,9 @@
             },
             "name": "发动机",
             "parentId": "aircraft-root",
+            "productId": "product-j35-engine",
             "productType": "LRU",
             "quantity": 2,
-            "spareType": "发动机备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 210
             }
@@ -1457,9 +1517,9 @@
             },
             "name": "航电系统",
             "parentId": "aircraft-root",
+            "productId": "product-j35-avionics",
             "productType": "LRU",
             "quantity": 2,
-            "spareType": "航电模块",
             "specialRepairProfile": {
               "repairTimeMinutes": 150
             }
@@ -1478,9 +1538,9 @@
             },
             "name": "任务计算机模块",
             "parentId": "j35-avionics",
+            "productId": "product-j35-mission-computer",
             "productType": "SRU",
             "quantity": 2,
-            "spareType": "航电模块",
             "specialRepairProfile": {
               "repairTimeMinutes": 125
             }
@@ -1499,9 +1559,9 @@
             },
             "name": "液压系统",
             "parentId": "aircraft-root",
+            "productId": "product-j35-hydraulic",
             "productType": "LRU",
             "quantity": 1,
-            "spareType": "液压备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 130
             }
@@ -1591,6 +1651,85 @@
           },
           "warnings": []
         },
+        "products": [
+          {
+            "id": "product-aircraft-root",
+            "model": "舰载机",
+            "name": "舰载机"
+          },
+          {
+            "id": "product-j15-engine",
+            "kind": "LRU",
+            "model": "发动机",
+            "name": "发动机"
+          },
+          {
+            "id": "product-j15-engine-control",
+            "kind": "SRU",
+            "model": "发动机控制模块",
+            "name": "发动机控制模块"
+          },
+          {
+            "id": "product-j15-avionics",
+            "kind": "LRU",
+            "model": "航电系统",
+            "name": "航电系统"
+          },
+          {
+            "id": "product-j15-radar",
+            "kind": "SRU",
+            "model": "雷达 LRU",
+            "name": "雷达 LRU"
+          },
+          {
+            "id": "product-j15-hydraulic",
+            "kind": "LRU",
+            "model": "液压系统",
+            "name": "液压系统"
+          },
+          {
+            "id": "product-j35-engine",
+            "kind": "LRU",
+            "model": "发动机",
+            "name": "发动机"
+          },
+          {
+            "id": "product-j35-avionics",
+            "kind": "LRU",
+            "model": "航电系统",
+            "name": "航电系统"
+          },
+          {
+            "id": "product-j35-mission-computer",
+            "kind": "SRU",
+            "model": "任务计算机模块",
+            "name": "任务计算机模块"
+          },
+          {
+            "id": "product-j35-hydraulic",
+            "kind": "LRU",
+            "model": "液压系统",
+            "name": "液压系统"
+          },
+          {
+            "id": "product-support-resource-spare-f9224feeb0",
+            "kind": "spare",
+            "model": "发动机备件",
+            "name": "发动机备件"
+          },
+          {
+            "id": "product-support-resource-spare-17fde32d23",
+            "kind": "spare",
+            "model": "液压备件",
+            "name": "液压备件"
+          },
+          {
+            "id": "product-support-resource-spare-3c7d67e069",
+            "kind": "spare",
+            "model": "航电模块",
+            "name": "航电模块"
+          }
+        ],
         "projectInfo": {
           "baseCode": "IMPORTED-001",
           "name": "导入示例项目",
@@ -1893,6 +2032,7 @@
               {
                 "model": "LRU",
                 "name": "航电模块",
+                "productId": "product-support-resource-spare-3c7d67e069",
                 "quantity": 1
               }
             ],
@@ -1955,6 +2095,7 @@
               {
                 "model": "SRU",
                 "name": "液压备件",
+                "productId": "product-support-resource-spare-17fde32d23",
                 "quantity": 1
               }
             ],
@@ -2063,6 +2204,7 @@
             "id": "support-resource-spare-f9224feeb0",
             "model": "发动机备件",
             "name": "发动机备件",
+            "productId": "product-support-resource-spare-f9224feeb0",
             "quantity": 4,
             "supportNodeName": "基地",
             "type": "spare"
@@ -2071,6 +2213,7 @@
             "id": "support-resource-spare-17fde32d23",
             "model": "液压备件",
             "name": "液压备件",
+            "productId": "product-support-resource-spare-17fde32d23",
             "quantity": 5,
             "supportNodeName": "基地",
             "type": "spare"
@@ -2079,6 +2222,7 @@
             "id": "support-resource-spare-3c7d67e069",
             "model": "航电模块",
             "name": "航电模块",
+            "productId": "product-support-resource-spare-3c7d67e069",
             "quantity": 6,
             "supportNodeName": "基地",
             "type": "spare"
@@ -2103,6 +2247,7 @@
             "id": "support-resource-spare-23e10ec846",
             "model": "发动机备件",
             "name": "发动机备件",
+            "productId": "product-support-resource-spare-f9224feeb0",
             "quantity": 2,
             "supportNodeName": "中继",
             "type": "spare"
@@ -2111,6 +2256,7 @@
             "id": "support-resource-spare-18b536c487",
             "model": "液压备件",
             "name": "液压备件",
+            "productId": "product-support-resource-spare-17fde32d23",
             "quantity": 2,
             "supportNodeName": "中继",
             "type": "spare"
@@ -2119,6 +2265,7 @@
             "id": "support-resource-spare-5ec05a2507",
             "model": "航电模块",
             "name": "航电模块",
+            "productId": "product-support-resource-spare-3c7d67e069",
             "quantity": 3,
             "supportNodeName": "中继",
             "type": "spare"
@@ -2143,6 +2290,7 @@
             "id": "support-resource-spare-9d11b8cda2",
             "model": "发动机备件",
             "name": "发动机备件",
+            "productId": "product-support-resource-spare-f9224feeb0",
             "quantity": 6,
             "supportNodeName": "基层1",
             "type": "spare"
@@ -2151,6 +2299,7 @@
             "id": "support-resource-spare-1e6d61dc33",
             "model": "液压备件",
             "name": "液压备件",
+            "productId": "product-support-resource-spare-17fde32d23",
             "quantity": 6,
             "supportNodeName": "基层1",
             "type": "spare"
@@ -2159,6 +2308,7 @@
             "id": "support-resource-spare-e4529c562d",
             "model": "航电模块",
             "name": "航电模块",
+            "productId": "product-support-resource-spare-3c7d67e069",
             "quantity": 8,
             "supportNodeName": "基层1",
             "type": "spare"
@@ -2203,7 +2353,7 @@
             "id": "logistics-support-transport-1",
             "name": "1",
             "priority": 1,
-            "spareName": "发动机备件",
+            "spareName": "",
             "toSupportNodeName": "基地",
             "transportMode": "纵向运输",
             "transportTimeHours": 1.0,
@@ -2216,7 +2366,7 @@
             "id": "logistics-support-transport-2",
             "name": "2",
             "priority": 1,
-            "spareName": "航电模块",
+            "spareName": "",
             "toSupportNodeName": "中继",
             "transferCycleHours": 24,
             "transportMode": "横向运输",
@@ -2424,6 +2574,7 @@
             "n": 6
           },
           "name": "舰载机",
+          "productId": "product-aircraft-root",
           "quantity": 6
         },
         {
@@ -2440,9 +2591,9 @@
           },
           "name": "发动机",
           "parentId": "aircraft-root",
+          "productId": "product-j15-engine",
           "productType": "LRU",
           "quantity": 2,
-          "spareType": "发动机备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 220
           }
@@ -2461,9 +2612,9 @@
           },
           "name": "发动机控制模块",
           "parentId": "j15-engine",
+          "productId": "product-j15-engine-control",
           "productType": "SRU",
           "quantity": 1,
-          "spareType": "发动机备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 160
           }
@@ -2482,9 +2633,9 @@
           },
           "name": "航电系统",
           "parentId": "aircraft-root",
+          "productId": "product-j15-avionics",
           "productType": "LRU",
           "quantity": 2,
-          "spareType": "航电模块",
           "specialRepairProfile": {
             "repairTimeMinutes": 150
           }
@@ -2503,9 +2654,9 @@
           },
           "name": "雷达 LRU",
           "parentId": "j15-avionics",
+          "productId": "product-j15-radar",
           "productType": "SRU",
           "quantity": 1,
-          "spareType": "航电模块",
           "specialRepairProfile": {
             "repairTimeMinutes": 145
           }
@@ -2524,9 +2675,9 @@
           },
           "name": "液压系统",
           "parentId": "aircraft-root",
+          "productId": "product-j15-hydraulic",
           "productType": "LRU",
           "quantity": 1,
-          "spareType": "液压备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 135
           }
@@ -2545,9 +2696,9 @@
           },
           "name": "发动机",
           "parentId": "aircraft-root",
+          "productId": "product-j35-engine",
           "productType": "LRU",
           "quantity": 2,
-          "spareType": "发动机备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 210
           }
@@ -2566,9 +2717,9 @@
           },
           "name": "航电系统",
           "parentId": "aircraft-root",
+          "productId": "product-j35-avionics",
           "productType": "LRU",
           "quantity": 2,
-          "spareType": "航电模块",
           "specialRepairProfile": {
             "repairTimeMinutes": 150
           }
@@ -2587,9 +2738,9 @@
           },
           "name": "任务计算机模块",
           "parentId": "j35-avionics",
+          "productId": "product-j35-mission-computer",
           "productType": "SRU",
           "quantity": 2,
-          "spareType": "航电模块",
           "specialRepairProfile": {
             "repairTimeMinutes": 125
           }
@@ -2608,9 +2759,9 @@
           },
           "name": "液压系统",
           "parentId": "aircraft-root",
+          "productId": "product-j35-hydraulic",
           "productType": "LRU",
           "quantity": 1,
-          "spareType": "液压备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 130
           }
@@ -2700,6 +2851,85 @@
         },
         "warnings": []
       },
+      "products": [
+        {
+          "id": "product-aircraft-root",
+          "model": "舰载机",
+          "name": "舰载机"
+        },
+        {
+          "id": "product-j15-engine",
+          "kind": "LRU",
+          "model": "发动机",
+          "name": "发动机"
+        },
+        {
+          "id": "product-j15-engine-control",
+          "kind": "SRU",
+          "model": "发动机控制模块",
+          "name": "发动机控制模块"
+        },
+        {
+          "id": "product-j15-avionics",
+          "kind": "LRU",
+          "model": "航电系统",
+          "name": "航电系统"
+        },
+        {
+          "id": "product-j15-radar",
+          "kind": "SRU",
+          "model": "雷达 LRU",
+          "name": "雷达 LRU"
+        },
+        {
+          "id": "product-j15-hydraulic",
+          "kind": "LRU",
+          "model": "液压系统",
+          "name": "液压系统"
+        },
+        {
+          "id": "product-j35-engine",
+          "kind": "LRU",
+          "model": "发动机",
+          "name": "发动机"
+        },
+        {
+          "id": "product-j35-avionics",
+          "kind": "LRU",
+          "model": "航电系统",
+          "name": "航电系统"
+        },
+        {
+          "id": "product-j35-mission-computer",
+          "kind": "SRU",
+          "model": "任务计算机模块",
+          "name": "任务计算机模块"
+        },
+        {
+          "id": "product-j35-hydraulic",
+          "kind": "LRU",
+          "model": "液压系统",
+          "name": "液压系统"
+        },
+        {
+          "id": "product-support-resource-spare-f9224feeb0",
+          "kind": "spare",
+          "model": "发动机备件",
+          "name": "发动机备件"
+        },
+        {
+          "id": "product-support-resource-spare-17fde32d23",
+          "kind": "spare",
+          "model": "液压备件",
+          "name": "液压备件"
+        },
+        {
+          "id": "product-support-resource-spare-3c7d67e069",
+          "kind": "spare",
+          "model": "航电模块",
+          "name": "航电模块"
+        }
+      ],
       "projectInfo": {
         "baseCode": "IMPORTED-001",
         "name": "导入示例项目",
@@ -3002,6 +3232,7 @@
             {
               "model": "LRU",
               "name": "航电模块",
+              "productId": "product-support-resource-spare-3c7d67e069",
               "quantity": 1
             }
           ],
@@ -3064,6 +3295,7 @@
             {
               "model": "SRU",
               "name": "液压备件",
+              "productId": "product-support-resource-spare-17fde32d23",
               "quantity": 1
             }
           ],
@@ -3172,6 +3404,7 @@
           "id": "support-resource-spare-f9224feeb0",
           "model": "发动机备件",
           "name": "发动机备件",
+          "productId": "product-support-resource-spare-f9224feeb0",
           "quantity": 4,
           "supportNodeName": "基地",
           "type": "spare"
@@ -3180,6 +3413,7 @@
           "id": "support-resource-spare-17fde32d23",
           "model": "液压备件",
           "name": "液压备件",
+          "productId": "product-support-resource-spare-17fde32d23",
           "quantity": 5,
           "supportNodeName": "基地",
           "type": "spare"
@@ -3188,6 +3422,7 @@
           "id": "support-resource-spare-3c7d67e069",
           "model": "航电模块",
           "name": "航电模块",
+          "productId": "product-support-resource-spare-3c7d67e069",
           "quantity": 6,
           "supportNodeName": "基地",
           "type": "spare"
@@ -3212,6 +3447,7 @@
           "id": "support-resource-spare-23e10ec846",
           "model": "发动机备件",
           "name": "发动机备件",
+          "productId": "product-support-resource-spare-f9224feeb0",
           "quantity": 2,
           "supportNodeName": "中继",
           "type": "spare"
@@ -3220,6 +3456,7 @@
           "id": "support-resource-spare-18b536c487",
           "model": "液压备件",
           "name": "液压备件",
+          "productId": "product-support-resource-spare-17fde32d23",
           "quantity": 2,
           "supportNodeName": "中继",
           "type": "spare"
@@ -3228,6 +3465,7 @@
           "id": "support-resource-spare-5ec05a2507",
           "model": "航电模块",
           "name": "航电模块",
+          "productId": "product-support-resource-spare-3c7d67e069",
           "quantity": 3,
           "supportNodeName": "中继",
           "type": "spare"
@@ -3252,6 +3490,7 @@
           "id": "support-resource-spare-9d11b8cda2",
           "model": "发动机备件",
           "name": "发动机备件",
+          "productId": "product-support-resource-spare-f9224feeb0",
           "quantity": 6,
           "supportNodeName": "基层1",
           "type": "spare"
@@ -3260,6 +3499,7 @@
           "id": "support-resource-spare-1e6d61dc33",
           "model": "液压备件",
           "name": "液压备件",
+          "productId": "product-support-resource-spare-17fde32d23",
           "quantity": 6,
           "supportNodeName": "基层1",
           "type": "spare"
@@ -3268,6 +3508,7 @@
           "id": "support-resource-spare-e4529c562d",
           "model": "航电模块",
           "name": "航电模块",
+          "productId": "product-support-resource-spare-3c7d67e069",
           "quantity": 8,
           "supportNodeName": "基层1",
           "type": "spare"
@@ -3312,7 +3553,7 @@
           "id": "logistics-support-transport-1",
           "name": "1",
           "priority": 1,
-          "spareName": "发动机备件",
+          "spareName": "",
           "toSupportNodeName": "基地",
           "transportMode": "纵向运输",
           "transportTimeHours": 1.0,
@@ -3325,7 +3566,7 @@
           "id": "logistics-support-transport-2",
           "name": "2",
           "priority": 1,
-          "spareName": "航电模块",
+          "spareName": "",
           "toSupportNodeName": "中继",
           "transferCycleHours": 24,
           "transportMode": "横向运输",
@@ -3546,6 +3787,7 @@
           "n": 6
         },
         "name": "舰载机",
+        "productId": "product-aircraft-root",
         "quantity": 6
       },
       {
@@ -3562,9 +3804,9 @@
         },
         "name": "发动机",
         "parentId": "aircraft-root",
+        "productId": "product-j15-engine",
         "productType": "LRU",
         "quantity": 2,
-        "spareType": "发动机备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 220
         }
@@ -3583,9 +3825,9 @@
         },
         "name": "发动机控制模块",
         "parentId": "j15-engine",
+        "productId": "product-j15-engine-control",
         "productType": "SRU",
         "quantity": 1,
-        "spareType": "发动机备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 160
         }
@@ -3604,9 +3846,9 @@
         },
         "name": "航电系统",
         "parentId": "aircraft-root",
+        "productId": "product-j15-avionics",
         "productType": "LRU",
         "quantity": 2,
-        "spareType": "航电模块",
         "specialRepairProfile": {
           "repairTimeMinutes": 150
         }
@@ -3625,9 +3867,9 @@
         },
         "name": "雷达 LRU",
         "parentId": "j15-avionics",
+        "productId": "product-j15-radar",
         "productType": "SRU",
         "quantity": 1,
-        "spareType": "航电模块",
         "specialRepairProfile": {
           "repairTimeMinutes": 145
         }
@@ -3646,9 +3888,9 @@
         },
         "name": "液压系统",
         "parentId": "aircraft-root",
+        "productId": "product-j15-hydraulic",
         "productType": "LRU",
         "quantity": 1,
-        "spareType": "液压备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 135
         }
@@ -3667,9 +3909,9 @@
         },
         "name": "发动机",
         "parentId": "aircraft-root",
+        "productId": "product-j35-engine",
         "productType": "LRU",
         "quantity": 2,
-        "spareType": "发动机备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 210
         }
@@ -3688,9 +3930,9 @@
         },
         "name": "航电系统",
         "parentId": "aircraft-root",
+        "productId": "product-j35-avionics",
         "productType": "LRU",
         "quantity": 2,
-        "spareType": "航电模块",
         "specialRepairProfile": {
           "repairTimeMinutes": 150
         }
@@ -3709,9 +3951,9 @@
         },
         "name": "任务计算机模块",
         "parentId": "j35-avionics",
+        "productId": "product-j35-mission-computer",
         "productType": "SRU",
         "quantity": 2,
-        "spareType": "航电模块",
         "specialRepairProfile": {
           "repairTimeMinutes": 125
         }
@@ -3730,9 +3972,9 @@
         },
         "name": "液压系统",
         "parentId": "aircraft-root",
+        "productId": "product-j35-hydraulic",
         "productType": "LRU",
         "quantity": 1,
-        "spareType": "液压备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 130
         }
@@ -3822,6 +4064,85 @@
       },
       "warnings": []
     },
+    "products": [
+      {
+        "id": "product-aircraft-root",
+        "model": "舰载机",
+        "name": "舰载机"
+      },
+      {
+        "id": "product-j15-engine",
+        "kind": "LRU",
+        "model": "发动机",
+        "name": "发动机"
+      },
+      {
+        "id": "product-j15-engine-control",
+        "kind": "SRU",
+        "model": "发动机控制模块",
+        "name": "发动机控制模块"
+      },
+      {
+        "id": "product-j15-avionics",
+        "kind": "LRU",
+        "model": "航电系统",
+        "name": "航电系统"
+      },
+      {
+        "id": "product-j15-radar",
+        "kind": "SRU",
+        "model": "雷达 LRU",
+        "name": "雷达 LRU"
+      },
+      {
+        "id": "product-j15-hydraulic",
+        "kind": "LRU",
+        "model": "液压系统",
+        "name": "液压系统"
+      },
+      {
+        "id": "product-j35-engine",
+        "kind": "LRU",
+        "model": "发动机",
+        "name": "发动机"
+      },
+      {
+        "id": "product-j35-avionics",
+        "kind": "LRU",
+        "model": "航电系统",
+        "name": "航电系统"
+      },
+      {
+        "id": "product-j35-mission-computer",
+        "kind": "SRU",
+        "model": "任务计算机模块",
+        "name": "任务计算机模块"
+      },
+      {
+        "id": "product-j35-hydraulic",
+        "kind": "LRU",
+        "model": "液压系统",
+        "name": "液压系统"
+      },
+      {
+        "id": "product-support-resource-spare-f9224feeb0",
+        "kind": "spare",
+        "model": "发动机备件",
+        "name": "发动机备件"
+      },
+      {
+        "id": "product-support-resource-spare-17fde32d23",
+        "kind": "spare",
+        "model": "液压备件",
+        "name": "液压备件"
+      },
+      {
+        "id": "product-support-resource-spare-3c7d67e069",
+        "kind": "spare",
+        "model": "航电模块",
+        "name": "航电模块"
+      }
+    ],
     "projectInfo": {
       "baseCode": "IMPORTED-001",
       "name": "导入示例项目",
@@ -4124,6 +4445,7 @@
           {
             "model": "LRU",
             "name": "航电模块",
+            "productId": "product-support-resource-spare-3c7d67e069",
             "quantity": 1
           }
         ],
@@ -4186,6 +4508,7 @@
           {
             "model": "SRU",
             "name": "液压备件",
+            "productId": "product-support-resource-spare-17fde32d23",
             "quantity": 1
           }
         ],
@@ -4294,6 +4617,7 @@
         "id": "support-resource-spare-f9224feeb0",
         "model": "发动机备件",
         "name": "发动机备件",
+        "productId": "product-support-resource-spare-f9224feeb0",
         "quantity": 4,
         "supportNodeName": "基地",
         "type": "spare"
@@ -4302,6 +4626,7 @@
         "id": "support-resource-spare-17fde32d23",
         "model": "液压备件",
         "name": "液压备件",
+        "productId": "product-support-resource-spare-17fde32d23",
         "quantity": 5,
         "supportNodeName": "基地",
         "type": "spare"
@@ -4310,6 +4635,7 @@
         "id": "support-resource-spare-3c7d67e069",
         "model": "航电模块",
         "name": "航电模块",
+        "productId": "product-support-resource-spare-3c7d67e069",
         "quantity": 6,
         "supportNodeName": "基地",
         "type": "spare"
@@ -4334,6 +4660,7 @@
         "id": "support-resource-spare-23e10ec846",
         "model": "发动机备件",
         "name": "发动机备件",
+        "productId": "product-support-resource-spare-f9224feeb0",
         "quantity": 2,
         "supportNodeName": "中继",
         "type": "spare"
@@ -4342,6 +4669,7 @@
         "id": "support-resource-spare-18b536c487",
         "model": "液压备件",
         "name": "液压备件",
+        "productId": "product-support-resource-spare-17fde32d23",
         "quantity": 2,
         "supportNodeName": "中继",
         "type": "spare"
@@ -4350,6 +4678,7 @@
         "id": "support-resource-spare-5ec05a2507",
         "model": "航电模块",
         "name": "航电模块",
+        "productId": "product-support-resource-spare-3c7d67e069",
         "quantity": 3,
         "supportNodeName": "中继",
         "type": "spare"
@@ -4374,6 +4703,7 @@
         "id": "support-resource-spare-9d11b8cda2",
         "model": "发动机备件",
         "name": "发动机备件",
+        "productId": "product-support-resource-spare-f9224feeb0",
         "quantity": 6,
         "supportNodeName": "基层1",
         "type": "spare"
@@ -4382,6 +4712,7 @@
         "id": "support-resource-spare-1e6d61dc33",
         "model": "液压备件",
         "name": "液压备件",
+        "productId": "product-support-resource-spare-17fde32d23",
         "quantity": 6,
         "supportNodeName": "基层1",
         "type": "spare"
@@ -4390,6 +4721,7 @@
         "id": "support-resource-spare-e4529c562d",
         "model": "航电模块",
         "name": "航电模块",
+        "productId": "product-support-resource-spare-3c7d67e069",
         "quantity": 8,
         "supportNodeName": "基层1",
         "type": "spare"
@@ -4434,7 +4766,7 @@
         "id": "logistics-support-transport-1",
         "name": "1",
         "priority": 1,
-        "spareName": "发动机备件",
+        "spareName": "",
         "toSupportNodeName": "基地",
         "transportMode": "纵向运输",
         "transportTimeHours": 1.0,
@@ -4447,7 +4779,7 @@
         "id": "logistics-support-transport-2",
         "name": "2",
         "priority": 1,
-        "spareName": "航电模块",
+        "spareName": "",
         "toSupportNodeName": "中继",
         "transferCycleHours": 24,
         "transportMode": "横向运输",

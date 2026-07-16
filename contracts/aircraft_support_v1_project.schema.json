@@ -12,6 +12,7 @@
     "missionProfile",
     "basicMissions",
     "combatUnit",
+    "products",
     "components",
     "supportNodes",
     "supportActivities"
@@ -36,6 +37,7 @@
     "missionProfile": { "$ref": "#/$defs/missionProfile" },
     "basicMissions": { "type": "array", "items": { "$ref": "#/$defs/basicMission" } },
     "combatUnit": { "$ref": "#/$defs/combatUnit" },
+    "products": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/product" } },
     "components": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/component" } },
     "reliabilityBlockDiagram": { "$ref": "#/$defs/reliabilityBlockDiagram" },
     "supportNodes": { "type": "array", "items": { "$ref": "#/$defs/supportNode" } },
@@ -192,17 +194,28 @@
         }
       }
     },
-    "component": {
+    "product": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "quantity"],
+      "required": ["id", "name"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
+        "model": { "type": "string" },
+        "kind": { "type": "string" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "productId", "quantity"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "productId": { "type": "string", "minLength": 1 },
         "parentId": { "type": ["string", "null"] },
         "aircraftModel": { "type": "string" },
         "productType": { "type": "string" },
-        "spareType": { "type": "string" },
         "quantity": { "type": "integer", "minimum": 0 },
         "failureDistribution": { "$ref": "#/$defs/dictionary" },
         "repairDistribution": { "$ref": "#/$defs/dictionary" },
@@ -304,9 +317,14 @@
         "model": { "type": "string" },
         "quantity": { "type": "integer", "minimum": 0 },
         "capacity": { "type": "integer", "minimum": 0 },
-        "spareName": { "type": "string" },
-        "spareType": { "type": "string" }
-      }
+        "productId": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "spare" } }, "required": ["type"] },
+          "then": { "required": ["productId"] }
+        }
+      ]
     },
     "transportPolicy": {
       "type": "object",
@@ -318,9 +336,7 @@
         "from": { "type": "string" },
         "toSupportNodeName": { "type": "string" },
         "to": { "type": "string" },
-        "spareName": { "type": "string" },
-        "spareType": { "type": "string" },
-        "spare_type": { "type": "string" },
+        "productId": { "type": "string", "minLength": 1 },
         "direction": { "type": "string" },
         "triggerMode": { "type": "string" },
         "criticalInventory": { "type": "integer", "minimum": 0 },
@@ -375,7 +391,7 @@
         "durationProfile": { "$ref": "#/$defs/dictionary" },
         "personnel": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
         "equipment": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
-        "spare": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
+        "spare": { "type": "array", "items": { "$ref": "#/$defs/spareRequirement" } },
         "ammunition": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
         "facility": { "type": "string" }
       },
@@ -391,6 +407,17 @@
           { "required": ["repairDistributionType"] },
           { "required": ["repairTypes"] }
         ]
+      }
+    },
+    "spareRequirement": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["productId"],
+      "properties": {
+        "productId": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "model": { "type": "string" },
+        "quantity": { "type": "number", "minimum": 0 }
       }
     },
     "supportOrganization": {

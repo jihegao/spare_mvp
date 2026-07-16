@@ -110,7 +110,8 @@ test("page revision #11-13 support resource lists add/edit and derive spares fro
   assert.match(source, /data-support-resource-add/);
   assert.match(source, /function addSupportResource\(activeResourceType\)/);
   assert.match(source, /function lruSpareRows\(\)/);
-  assert.match(source, /component\.productType === "LRU" \|\| component\.spareType === "LRU"/);
+  assert.match(source, /String\(component\.productType \|\| ""\)\.trim\(\)\.toUpperCase\(\) === "LRU"/);
+  assert.doesNotMatch(source, /component\.spareType === "LRU"/);
 });
 
 test("page revision #15-17 support activity job-list edit buttons open dialog editors", async () => {

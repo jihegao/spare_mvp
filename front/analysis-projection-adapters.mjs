@@ -86,6 +86,7 @@ function normalizeSpareShortfall(payload) {
       const reportedShortage = numberOrZero(row.shortage_count);
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
+        productId: stringValue(row.product_id, ""),
         name: stringValue(row.spare_type, "unknown_spare"),
         demand,
         satisfy: fillRate,
@@ -165,6 +166,7 @@ function normalizeCarryList(payload) {
       const priority = priorityLabel(row.risk_level);
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
+        productId: stringValue(row.product_id, ""),
         name: stringValue(row.spare_type, "unknown_spare"),
         multiplier,
         satisfy: Math.min(1, multiplier / Math.max(multiplier, 1)),

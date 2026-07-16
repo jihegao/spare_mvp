@@ -44,10 +44,19 @@ def minimal_clean_project() -> dict[str, Any]:
                 }
             ]
         },
+        "products": [
+            {
+                "id": "product-whole-aircraft",
+                "name": "whole aircraft",
+                "model": "whole-aircraft",
+                "kind": "whole",
+            }
+        ],
         "components": [
             {
                 "id": "whole-aircraft",
                 "name": "whole aircraft",
+                "productId": "product-whole-aircraft",
                 "aircraftModel": "J-15",
                 "productType": "whole",
                 "quantity": 1,
@@ -61,7 +70,7 @@ def minimal_clean_project() -> dict[str, Any]:
                 "name": "node A",
                 "personnelCapacity": 1,
                 "equipmentCapacity": 1,
-                "inventory": {"aircraft_support_v1_spares": 2},
+                "inventory": {"product-whole-aircraft": 2},
             }
         ],
         "supportResources": [
@@ -78,7 +87,7 @@ def minimal_clean_project() -> dict[str, Any]:
                 "id": "tp-1",
                 "fromSupportNodeName": "node A",
                 "toSupportNodeName": "node A",
-                "spareName": "aircraft_support_v1_spares",
+                "productId": "product-whole-aircraft",
                 "capacity": 1,
             }
         ],

@@ -8,7 +8,7 @@ from math import isfinite
 import re
 from typing import Any
 
-from src.spare_mvp_backend.project_payload import strip_project_sweep
+from src.spare_mvp_backend.project_payload import normalize_project_products, strip_project_sweep
 
 
 MODELING_IMPORT_PAGE_MAP = {
@@ -133,7 +133,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
     mission_profile = _mission_profile_to_project(mission, import_package["importId"])
     _sync_composite_task_basic_mission_refs(mission_profile, basic_missions)
 
-    return strip_project_sweep({
+    return normalize_project_products(strip_project_sweep({
         "schema_version": "project-v0",
         "project_id": str(import_package["projectId"]),
         "project_version": f"import-v{version}",
@@ -144,6 +144,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "missionProfile": mission_profile,
         "basicMissions": basic_missions,
         "combatUnit": combat_unit,
+        "products": [row for row in objects.get("products", []) if isinstance(row, dict)],
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
         "supportNodes": _support_nodes_from_resources(resources),
         "supportResources": _support_resources_from_import_resources(resources),
@@ -165,7 +166,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
             "warnings": deepcopy(validation["warnings"]),
             "disabledDomains": _disabled_domains(validation["usedTables"]),
         },
-    })
+    }))
 
 
 def _validate_retired_validation_level(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
@@ -909,6 +910,7 @@ def _normalized_support_resource(row: dict[str, Any], index: int) -> dict[str, A
         "type": resource_type,
         "name": str(row.get("name") or row.get("model") or resource_type),
         "model": str(row.get("model") or ""),
+        **({"productId": str(row["productId"])} if row.get("productId") not in (None, "") else {}),
         "quantity": _safe_non_negative_int(row.get("quantity"), _safe_non_negative_int(row.get("capacity"), 0)),
     }
 
@@ -920,12 +922,17 @@ def _normalized_transport_policy(policy: dict[str, Any], name_by_id: dict[str, s
         "id": str(policy.get("id") or _stable_uid("transport-policy", from_value, to_value, index)),
         "fromSupportNodeName": name_by_id.get(from_value, from_value),
         "toSupportNodeName": name_by_id.get(to_value, to_value),
-        "spareName": str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or ""),
         "capacity": _safe_positive_int(policy.get("capacity"), 1),
         "priority": _safe_positive_int(policy.get("priority"), 1),
         "transportMode": str(policy.get("transportMode") or policy.get("transport_mode") or policy.get("direction") or ""),
         "transportTimeHours": _safe_positive_float(policy.get("transportTimeHours") or policy.get("transport_time_hours"), 0),
     }
+    if policy.get("productId") not in (None, ""):
+        normalized["productId"] = str(policy["productId"])
+    else:
+        legacy_label = str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or "")
+        if legacy_label:
+            normalized["spareName"] = legacy_label
     for field in ("name", "direction", "triggerMode", "criticalInventory", "transferCycleHours"):
         if field in policy:
             normalized[field] = policy[field]

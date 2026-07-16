@@ -27,6 +27,7 @@ TABLE_PATHS = {
     "basicMissions.missionPhases": ("basicMissions", "*", "missionPhases"),
     "missionProfile.compositeTasks": ("missionProfile", "compositeTasks"),
     "missionProfile.periodicTasks": ("missionProfile", "periodicTasks"),
+    "products": ("products",),
     "components": ("components",),
     "combatUnit.members": ("combatUnit", "members"),
     "supportNodes": ("supportNodes",),
@@ -219,7 +220,8 @@ def compile_project_json_to_aircraft_support_inputs(
     sample_every = _positive_int(runtime.get("sample_every_minutes"), 30)
     seed = _positive_int(runtime.get("seed"), 0)
     aircraft_summary = _aircraft_summary(project)
-    support_nodes = _support_nodes(project)
+    products_by_id = _products_by_id(project)
+    support_nodes = _support_nodes(project, products_by_id)
     support_aliases = _support_node_aliases(project)
     job_definitions = _support_activity_job_definitions(project)
     basic_missions = _list(project.get("basicMissions"))
@@ -253,7 +255,7 @@ def compile_project_json_to_aircraft_support_inputs(
         },
         "equipment_tree": {
             "root_component_id": _root_component_id(project.get("components")),
-            "components": [_component(component) for component in _list(project.get("components"))],
+            "components": [_component(component, products_by_id) for component in _list(project.get("components"))],
         },
         "support_network": {"nodes": support_nodes},
         "support_activities": {"activities": activities},
@@ -402,6 +404,16 @@ def _explain_tasks(project: dict[str, Any], memory: dict[str, Any]) -> dict[str,
 
 def _explain_equipment(project: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:
     rows = []
+    for product in _list(project.get("products")):
+        rows.append(
+            {
+                "kind": "product",
+                "id": product.get("id"),
+                "name": product.get("name"),
+                "model": product.get("model"),
+                "product_kind": product.get("kind"),
+            }
+        )
     for member in _list(_dict(project.get("combatUnit")).get("members")):
         rows.append({"kind": "aircraft", "id": member.get("aircraftNo"), "model": member.get("model"), "status": member.get("status")})
     for component in _list(project.get("components")):
@@ -411,11 +423,12 @@ def _explain_equipment(project: dict[str, Any], memory: dict[str, Any]) -> dict[
                 "id": component.get("id"),
                 "name": component.get("name"),
                 "parent_id": component.get("parentId"),
+                "product_id": component.get("productId"),
                 "aircraft_model": component.get("aircraftModel"),
                 "failure_distribution": component.get("failureDistribution"),
             }
         )
-    return {"row_count": len(rows), "tables": _memory_tables(memory, ("combatUnit.members", "components")), "rows": rows}
+    return {"row_count": len(rows), "tables": _memory_tables(memory, ("combatUnit.members", "products", "components")), "rows": rows}
 
 
 def _explain_support_organization(project: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:
@@ -439,6 +452,7 @@ def _explain_support_organization(project: dict[str, Any], memory: dict[str, Any
                 "name": resource.get("name"),
                 "node": resource.get("supportNodeName") or resource.get("supportNodeId"),
                 "type": resource.get("type"),
+                "product_id": resource.get("productId"),
                 "quantity": resource.get("quantity"),
             }
         )
@@ -514,8 +528,21 @@ def _aircraft_summary(project: dict[str, Any]) -> dict[str, Any]:
     return {"fleet_count": fleet_count, "initial_ready": min(initial_ready, fleet_count), "models": models, "assets": assets}
 
 
-def _support_nodes(project: dict[str, Any]) -> list[dict[str, Any]]:
+def _support_nodes(
+    project: dict[str, Any],
+    products_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
     aliases = _support_node_aliases(project)
+    product_names = {
+        product_id: str(product.get("name") or product_id)
+        for product_id, product in products_by_id.items()
+    }
+    product_ids_by_label = {
+        str(label).strip(): product_id
+        for product_id, product in products_by_id.items()
+        for label in (product_id, product.get("name"), product.get("model"))
+        if str(label or "").strip()
+    }
     nodes_by_name: dict[str, dict[str, Any]] = {}
     for raw in _list(project.get("supportNodes")):
         name = _support_node_name(raw)
@@ -524,14 +551,18 @@ def _support_nodes(project: dict[str, Any]) -> list[dict[str, Any]]:
             "name": name,
             "personnel_capacity": _positive_int(raw.get("personnelCapacity"), _positive_int(raw.get("capacity"), 1)),
             "equipment_capacity": _positive_int(raw.get("equipmentCapacity"), _positive_int(raw.get("capacity"), 1)),
-            "inventory": copy.deepcopy(_dict(raw.get("inventory"))),
+            "inventory": {
+                product_ids_by_label.get(str(key).strip(), str(key)): copy.deepcopy(quantity)
+                for key, quantity in _dict(raw.get("inventory")).items()
+            },
+            "product_names": copy.deepcopy(product_names),
             "transport_policies": [],
         }
     for resource in _list(project.get("supportResources")):
         node_name = aliases.get(str(resource.get("supportNodeName") or resource.get("supportNodeId") or ""), "")
         if not node_name:
             continue
-        node = nodes_by_name.setdefault(node_name, {"id": node_name, "name": node_name, "personnel_capacity": 0, "equipment_capacity": 0, "inventory": {}, "transport_policies": []})
+        node = nodes_by_name.setdefault(node_name, {"id": node_name, "name": node_name, "personnel_capacity": 0, "equipment_capacity": 0, "inventory": {}, "product_names": copy.deepcopy(product_names), "transport_policies": []})
         quantity = _non_negative_int(resource.get("quantity"), 0)
         resource_type = str(resource.get("type") or "").lower()
         if resource_type == "personnel":
@@ -539,9 +570,10 @@ def _support_nodes(project: dict[str, Any]) -> list[dict[str, Any]]:
         elif resource_type == "equipment":
             node["equipment_capacity"] += quantity
         elif resource_type == "spare":
-            spare_name = str(resource.get("name") or resource.get("spareName") or resource.get("spareType") or "")
-            if spare_name:
-                node["inventory"][spare_name] = node["inventory"].get(spare_name, 0) + quantity
+            product_id = str(resource.get("productId") or "").strip()
+            if product_id:
+                node["inventory"][product_id] = node["inventory"].get(product_id, 0) + quantity
+                node["product_names"][product_id] = product_names.get(product_id, str(resource.get("name") or product_id))
     for policy in _list(project.get("transportPolicies")):
         normalized = _transport_policy(policy, aliases)
         destination = str(normalized.get("to") or "")
@@ -553,7 +585,7 @@ def _support_nodes(project: dict[str, Any]) -> list[dict[str, Any]]:
             normalized = _transport_policy(policy, aliases, default_node=node_name)
             if node_name in nodes_by_name:
                 nodes_by_name[node_name]["transport_policies"].append(normalized)
-    return list(nodes_by_name.values()) or [{"id": "support-node", "name": "support node", "personnel_capacity": 1, "equipment_capacity": 1, "inventory": {}, "transport_policies": []}]
+    return list(nodes_by_name.values()) or [{"id": "support-node", "name": "support node", "personnel_capacity": 1, "equipment_capacity": 1, "inventory": {}, "product_names": copy.deepcopy(product_names), "transport_policies": []}]
 
 
 def _support_node_aliases(project: dict[str, Any]) -> dict[str, str]:
@@ -581,7 +613,7 @@ def _transport_policy(policy: dict[str, Any], aliases: dict[str, str], default_n
     return {
         "from": aliases.get(from_value, from_value),
         "to": aliases.get(to_value, to_value),
-        "spareType": str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or ""),
+        "productId": str(policy.get("productId") or ""),
         "capacity": _positive_int(policy.get("capacity"), 1),
         "priority": _positive_int(policy.get("priority"), 1),
         "transportTimeHours": _non_negative_float(policy.get("transportTimeHours"), _non_negative_float(policy.get("transport_time_hours"), 0.0)),
@@ -665,13 +697,28 @@ def _support_job(job: dict[str, Any], activity: dict[str, Any]) -> dict[str, Any
     }
 
 
-def _component(component: dict[str, Any]) -> dict[str, Any]:
+def _products_by_id(project: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(product.get("id")): copy.deepcopy(product)
+        for product in _list(project.get("products"))
+        if product.get("id") not in (None, "")
+    }
+
+
+def _component(
+    component: dict[str, Any],
+    products_by_id: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     failure_distribution = copy.deepcopy(_dict(component.get("failureDistribution")))
+    product_id = str(component.get("productId") or "")
+    product = products_by_id.get(product_id, {})
     return {
         "id": str(component.get("id") or "component"),
         "name": str(component.get("name") or component.get("id") or "component"),
         "parent_id": _optional_string(component.get("parentId")),
         "aircraft_model": _optional_string(component.get("aircraftModel")),
+        "product_id": product_id,
+        "product_name": str(product.get("name") or component.get("name") or product_id),
         "product_type": _optional_string(component.get("productType")),
         "quantity": _positive_int(component.get("quantity"), 1),
         "failure_rate": _component_failure_rate(failure_distribution),

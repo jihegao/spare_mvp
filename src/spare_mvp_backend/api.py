@@ -1913,6 +1913,7 @@ def _lite_mesa_spare_shortfall_result(
         rows.append(
             {
                 "aircraftModel": aircraft_model,
+                "productId": str(item.get("product_id") or item.get("productId") or ""),
                 "spareType": spare_type,
                 "demand": demand,
                 "filled": filled,
@@ -1959,6 +1960,7 @@ def _lite_mesa_carry_list_result(
         rows.append(
             {
                 "aircraftModel": str(item.get("aircraft_model") or item.get("aircraftModel") or "全部机型"),
+                "productId": str(item.get("product_id") or item.get("productId") or ""),
                 "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
                 "recommended": max(
                     0,
@@ -1982,6 +1984,7 @@ def _lite_mesa_carry_list_result(
         rows.append(
             {
                 "aircraftModel": "全部机型",
+                "productId": "aircraft-support-v1-spares",
                 "spareType": "aircraft_support_v1_spares",
                 "recommended": base_quantity,
                 "demand": planned,

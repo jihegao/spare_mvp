@@ -11,6 +11,7 @@
     "missionProfile",
     "basicMissions",
     "combatUnit",
+    "products",
     "components",
     "supportNodes",
     "supportActivities"
@@ -27,6 +28,7 @@
     "missionPhases": { "type": "array", "items": { "type": "object" } },
     "combatUnit": { "type": "object" },
     "equipment": { "type": "object" },
+    "products": { "type": "array", "items": { "type": "object" } },
     "components": { "type": "array", "items": { "type": "object" } },
     "reliabilityBlockDiagram": { "type": "object" },
     "supportNodes": { "type": "array", "items": { "type": "object" } },

@@ -535,11 +535,22 @@ test("projectToModelingImportPackage backfills import draft from current Project
     false
   );
   assert.deepEqual(draft.objects.equipmentAssets, [
-    { ...projectJson.components[0], kOutOfN: { enabled: true, n: 3, k: 3 } },
-    { ...projectJson.components[1], kOutOfN: { enabled: false, n: 1, k: 1 } }
+    { ...projectJson.components[0], productId: "product-aircraft-root", kOutOfN: { enabled: true, n: 3, k: 3 } },
+    { ...projectJson.components[1], productId: "product-radar", kOutOfN: { enabled: false, n: 1, k: 1 } }
+  ]);
+  assert.deepEqual(draft.objects.products.map((product) => product.id), [
+    "product-aircraft-root",
+    "product-radar",
+    "product-雷达备件"
   ]);
   assert.deepEqual(draft.objects.supportResources, projectJson.supportResources);
-  assert.deepEqual(draft.objects.transportPolicies, projectJson.transportPolicies);
+  assert.deepEqual(draft.objects.transportPolicies, [{
+    id: "transport-deck",
+    fromSupportNodeName: "库房",
+    toSupportNodeName: "甲板",
+    productId: "product-雷达备件",
+    capacity: 1
+  }]);
   assert.deepEqual(draft.objects.supportActivities, [{
     ...projectJson.supportActivities[0],
     resourceId: "甲板"
@@ -599,7 +610,6 @@ test("current project backfill migrates legacy activity transport strategies to 
   assert.deepEqual(draft.objects.transportPolicies, [{
     name: "旧调运策略",
     direction: "横向运输",
-    spareType: "航电模块",
     triggerMode: "周期性调运",
     transferCycleHours: 6,
     from: "base",
@@ -608,7 +618,7 @@ test("current project backfill migrates legacy activity transport strategies to 
     id: "logistics-plan-transport-0",
     fromSupportNodeName: "基地",
     toSupportNodeName: "甲板",
-    spareName: "航电模块",
+    productId: "product-航电模块",
     transportMode: "横向运输"
   }]);
   assert.equal("transportStrategies" in draft.objects.supportActivities[0], false);

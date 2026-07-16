@@ -165,6 +165,10 @@
       "type": "object",
       "required": ["missionProfiles", "equipmentAssets"],
       "properties": {
+        "products": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/product" }
+        },
         "missionProfiles": {
           "type": "array",
           "items": { "$ref": "#/$defs/missionProfile" }
@@ -260,6 +264,7 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
+        "productId": { "type": "string" },
         "parentId": { "type": "string" },
         "quantity": { "type": "number", "exclusiveMinimum": 0 },
         "mtbfHours": { "type": "number", "exclusiveMinimum": 0 }
@@ -274,6 +279,7 @@
         "type": { "type": "string", "enum": ["personnel", "equipment", "spare"] },
         "name": { "type": "string" },
         "model": { "type": "string" },
+        "productId": { "type": "string" },
         "quantity": { "type": "number", "minimum": 0 },
         "capacity": { "type": "number", "exclusiveMinimum": 0 },
         "transportPolicies": {
@@ -317,7 +323,21 @@
     },
     "transportPolicy": {
       "type": "object",
-      "additionalProperties": true
+      "additionalProperties": true,
+      "properties": {
+        "productId": { "type": "string" }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "model": { "type": "string" },
+        "kind": { "type": "string" }
+      }
     }
   }
 }

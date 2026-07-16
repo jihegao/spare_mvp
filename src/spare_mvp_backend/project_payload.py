@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -56,6 +57,7 @@ _ROOT_CLEAN_PROJECT_FIELDS = {
     "missionProfile",
     "basicMissions",
     "combatUnit",
+    "products",
     "components",
     "reliabilityBlockDiagram",
     "supportNodes",
@@ -73,6 +75,7 @@ _REQUIRED_CLEAN_PROJECT_FIELDS = {
     "missionProfile",
     "basicMissions",
     "combatUnit",
+    "products",
     "components",
     "supportNodes",
     "supportActivities",
@@ -139,13 +142,14 @@ _COMBAT_UNIT_MEMBER_FIELDS = {
     "airportId",
     "baseAirportId",
 }
+_PRODUCT_FIELDS = {"id", "name", "model", "kind"}
 _COMPONENT_FIELDS = {
     "id",
     "name",
+    "productId",
     "parentId",
     "aircraftModel",
     "productType",
-    "spareType",
     "quantity",
     "failureDistribution",
     "repairDistribution",
@@ -205,8 +209,7 @@ _SUPPORT_RESOURCE_FIELDS = {
     "model",
     "quantity",
     "capacity",
-    "spareName",
-    "spareType",
+    "productId",
 }
 _TRANSPORT_POLICY_FIELDS = {
     "id",
@@ -215,9 +218,7 @@ _TRANSPORT_POLICY_FIELDS = {
     "from",
     "toSupportNodeName",
     "to",
-    "spareName",
-    "spareType",
-    "spare_type",
+    "productId",
     "direction",
     "triggerMode",
     "criticalInventory",
@@ -284,7 +285,7 @@ class ProjectJsonExporter:
             raise ValueError(f"unsupported clean Project JSON target: {target}")
 
     def export(self, project_json: dict[str, Any]) -> dict[str, Any]:
-        project = strip_project_sweep(project_json)
+        project = normalize_project_products(strip_project_sweep(project_json))
         _strip_pollution_keys(project)
         _prune_clean_project(project)
         _drop_none_values(project)
@@ -299,12 +300,14 @@ class ProjectJsonExporter:
             _validate_basic_mission_support_activity_names(project, self.target)
             _validate_basic_mission_phase_ids(project, self.target)
             _validate_clean_support_activity_references(project, self.target)
+            _validate_product_references(project, self.target)
             return
         if not hasattr(jsonschema, "Draft202012Validator"):
             _validate_clean_project_fallback(project, self.target)
             _validate_basic_mission_support_activity_names(project, self.target)
             _validate_basic_mission_phase_ids(project, self.target)
             _validate_clean_support_activity_references(project, self.target)
+            _validate_product_references(project, self.target)
             return
 
         schema_path = self.repo_root / "contracts" / "aircraft_support_v1_project.schema.json"
@@ -319,10 +322,185 @@ class ProjectJsonExporter:
         _validate_basic_mission_support_activity_names(project, self.target)
         _validate_basic_mission_phase_ids(project, self.target)
         _validate_clean_support_activity_references(project, self.target)
+        _validate_product_references(project, self.target)
 
 
 def export_project_json(project_json: dict[str, Any], target: str = ACTIVE_CLEAN_PROJECT_TARGET) -> dict[str, Any]:
     return ProjectJsonExporter(target=target).export(project_json)
+
+
+def normalize_project_products(project_json: dict[str, Any]) -> dict[str, Any]:
+    """Migrate legacy spare labels to deterministic Product references."""
+
+    project = deepcopy(project_json)
+    components = [item for item in project.get("components", []) if isinstance(item, dict)]
+    resources = [item for item in project.get("supportResources", []) if isinstance(item, dict)]
+    policies = [item for item in project.get("transportPolicies", []) if isinstance(item, dict)]
+    for node in project.get("supportNodes", []) if isinstance(project.get("supportNodes"), list) else []:
+        if isinstance(node, dict) and isinstance(node.get("transportPolicies"), list):
+            policies.extend(item for item in node["transportPolicies"] if isinstance(item, dict))
+
+    products = [deepcopy(item) for item in project.get("products", []) if isinstance(item, dict)]
+    products_by_id = {
+        _clean_text(product.get("id")): product
+        for product in products
+        if _clean_text(product.get("id"))
+    }
+    component_by_id = {
+        _clean_text(component.get("id")): component
+        for component in components
+        if _clean_text(component.get("id"))
+    }
+    components_by_identity: dict[str, list[dict[str, Any]]] = {}
+    for component in components:
+        for identity in (_clean_text(component.get("id")), _clean_text(component.get("name"))):
+            if identity:
+                components_by_identity.setdefault(identity.casefold(), []).append(component)
+
+    for component in components:
+        legacy_product_name = _clean_text(component.get("spareType") or component.get("spare_type"))
+        component.pop("spareType", None)
+        component.pop("spare_type", None)
+        product_id = _clean_text(component.get("productId"))
+        if not product_id:
+            seed = _clean_text(component.get("id")) or _clean_text(component.get("name")) or "component"
+            product_id = _unique_migrated_product_id(seed, products_by_id, component)
+            component["productId"] = product_id
+        if product_id not in products_by_id:
+            component_name = _clean_text(component.get("name")) or _clean_text(component.get("id")) or product_id
+            product = {"id": product_id, "name": legacy_product_name or component_name, "model": component_name}
+            kind = _clean_text(component.get("productType"))
+            if kind:
+                product["kind"] = kind
+            products.append(product)
+            products_by_id[product_id] = product
+
+    for resource in resources:
+        if _clean_text(resource.get("type")).casefold() != "spare":
+            continue
+        legacy_labels = _legacy_product_labels(resource)
+        product_id = _clean_text(resource.get("productId"))
+        component = _legacy_resource_component(resource, component_by_id, components_by_identity)
+        if not product_id and component is not None:
+            product_id = _clean_text(component.get("productId"))
+        if not product_id:
+            product_id = _product_id_for_labels(legacy_labels, products_by_id)
+        if not product_id:
+            seed = _clean_text(resource.get("id")) or next(iter(legacy_labels), "spare")
+            product_id = _unique_migrated_product_id(seed, products_by_id, resource)
+        resource["productId"] = product_id
+        if product_id not in products_by_id:
+            name = _clean_text(resource.get("name")) or next(iter(legacy_labels), "") or _clean_text(resource.get("id")) or product_id
+            product = {"id": product_id, "name": name, "kind": "spare"}
+            model = _clean_text(resource.get("model"))
+            if model:
+                product["model"] = model
+            products.append(product)
+            products_by_id[product_id] = product
+        for field in ("spareName", "spareType", "spare_type"):
+            resource.pop(field, None)
+
+    for policy in policies:
+        legacy_labels = [
+            label
+            for field in ("spareName", "spareType", "spare_type")
+            for label in [_clean_text(policy.get(field))]
+            if label
+        ]
+        product_id = _clean_text(policy.get("productId")) or _product_id_for_labels(legacy_labels, products_by_id)
+        if not product_id and legacy_labels:
+            seed = _clean_text(policy.get("id")) or next(iter(legacy_labels), "transport-spare")
+            product_id = _unique_migrated_product_id(seed, products_by_id, policy)
+        if product_id:
+            policy["productId"] = product_id
+        if product_id and product_id not in products_by_id:
+            name = next(iter(legacy_labels), "") or product_id
+            product = {"id": product_id, "name": name, "kind": "spare"}
+            products.append(product)
+            products_by_id[product_id] = product
+        for field in ("spareName", "spareType", "spare_type"):
+            policy.pop(field, None)
+
+    for job in project.get("supportActivityJobs", []) if isinstance(project.get("supportActivityJobs"), list) else []:
+        if not isinstance(job, dict) or not isinstance(job.get("spare"), list):
+            continue
+        for spare_index, requirement in enumerate(job["spare"]):
+            if not isinstance(requirement, dict):
+                continue
+            labels = _legacy_product_labels(requirement)
+            product_id = _clean_text(requirement.get("productId")) or _product_id_for_labels(labels, products_by_id)
+            if not product_id:
+                seed = f"{_clean_text(job.get('activityCode')) or 'job'}-{spare_index + 1}-{next(iter(labels), 'spare')}"
+                product_id = _unique_migrated_product_id(seed, products_by_id, requirement)
+            requirement["productId"] = product_id
+            if product_id not in products_by_id:
+                name = _clean_text(requirement.get("name")) or next(iter(labels), "") or product_id
+                product = {"id": product_id, "name": name, "kind": "spare"}
+                model = _clean_text(requirement.get("model"))
+                if model:
+                    product["model"] = model
+                products.append(product)
+                products_by_id[product_id] = product
+            for field in ("spareName", "spareType", "spare_type"):
+                requirement.pop(field, None)
+
+    project["products"] = products
+    return project
+
+
+def _legacy_product_labels(value: dict[str, Any]) -> list[str]:
+    labels: list[str] = []
+    for field in ("model", "name", "spareName", "spareType", "spare_type"):
+        label = _clean_text(value.get(field))
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _legacy_resource_component(
+    resource: dict[str, Any],
+    component_by_id: dict[str, dict[str, Any]],
+    components_by_identity: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any] | None:
+    model = _clean_text(resource.get("model"))
+    if model and model in component_by_id:
+        return component_by_id[model]
+    for label in _legacy_product_labels(resource):
+        matches = components_by_identity.get(label.casefold(), [])
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+def _product_id_for_labels(labels: list[str], products_by_id: dict[str, dict[str, Any]]) -> str:
+    for label in labels:
+        matches = [
+            product_id
+            for product_id, product in products_by_id.items()
+            if label in {product_id, _clean_text(product.get("name")), _clean_text(product.get("model"))}
+        ]
+        if len(matches) == 1:
+            return matches[0]
+    return ""
+
+
+def _unique_migrated_product_id(
+    seed: str,
+    products_by_id: dict[str, dict[str, Any]],
+    owner: dict[str, Any],
+) -> str:
+    token = re.sub(r"[^\w.-]+", "-", seed.strip().casefold(), flags=re.UNICODE).strip("-._") or "item"
+    candidate = f"product-{token}"
+    if candidate not in products_by_id:
+        return candidate
+    fingerprint = json.dumps(owner, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    suffix = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:8]
+    candidate = f"product-{token}-{suffix}"
+    index = 2
+    while candidate in products_by_id:
+        candidate = f"product-{token}-{suffix}-{index}"
+        index += 1
+    return candidate
 
 
 def normalize_project_basic_mission_support_activity_names(project_json: dict[str, Any]) -> dict[str, Any]:
@@ -484,7 +662,7 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
     _require_clean_non_empty_string(project, "scenarioId", "scenarioId", target)
     if project.get("activeModule") not in {"sparePlanning", "missionReliability"}:
         raise ValueError(f"clean Project JSON failed {target} schema at activeModule: unsupported module")
-    for field in ("airports", "basicMissions", "supportNodes", "supportActivities"):
+    for field in ("airports", "basicMissions", "products", "supportNodes", "supportActivities"):
         _require_clean_list(project, field, target)
     _require_clean_dict(project, "missionProfile", target)
     _validate_clean_airports(project["airports"], target)
@@ -492,6 +670,7 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
     _validate_clean_basic_missions(project["basicMissions"], target)
     _require_clean_dict(project, "combatUnit", target)
     _validate_clean_combat_unit(project["combatUnit"], target)
+    _validate_clean_products(project["products"], target)
     components = _require_clean_list(project, "components", target)
     if not components:
         raise ValueError(f"clean Project JSON failed {target} schema at components: expected at least one component")
@@ -510,6 +689,7 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
     _validate_clean_support_activities(project.get("supportActivities"), target)
     if "modelingImportValidation" in project:
         _validate_clean_modeling_import_validation(project["modelingImportValidation"], target)
+    _validate_product_references(project, target)
 
 
 def _validate_clean_reliability_block_diagram(value: Any, target: str) -> None:
@@ -725,11 +905,12 @@ def _validate_clean_components(components: list[Any], target: str) -> None:
     for index, component in enumerate(components):
         if not isinstance(component, dict):
             raise ValueError(f"clean Project JSON failed {target} schema at components.{index}: expected object")
-        for field in ("id", "name", "quantity"):
+        for field in ("id", "name", "productId", "quantity"):
             if field not in component:
                 raise ValueError(f"clean Project JSON failed {target} schema at components.{index}.{field}: required")
         _require_clean_non_empty_string(component, "id", f"components.{index}.id", target)
         _require_clean_non_empty_string(component, "name", f"components.{index}.name", target)
+        _require_clean_non_empty_string(component, "productId", f"components.{index}.productId", target)
         _require_clean_integer(component, "quantity", f"components.{index}.quantity", target, minimum=0)
         extra = sorted(field for field in component if field not in _COMPONENT_FIELDS)
         if extra:
@@ -754,6 +935,94 @@ def _validate_clean_components(components: list[Any], target: str) -> None:
                 target,
                 minimum=1,
             )
+
+
+def _validate_clean_products(products: list[Any], target: str) -> None:
+    if not products:
+        raise ValueError(f"clean Project JSON failed {target} schema at products: expected at least one product")
+    for index, product in enumerate(products):
+        path = f"products.{index}"
+        if not isinstance(product, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+        extra = sorted(field for field in product if field not in _PRODUCT_FIELDS)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+        for field in ("id", "name"):
+            _require_clean_non_empty_string(product, field, f"{path}.{field}", target)
+        for field in ("model", "kind"):
+            _validate_optional_clean_string(product, field, f"{path}.{field}", target)
+
+
+def _validate_product_references(project: dict[str, Any], target: str) -> None:
+    products = project.get("products") if isinstance(project.get("products"), list) else []
+    product_ids: set[str] = set()
+    for index, product in enumerate(products):
+        if not isinstance(product, dict):
+            continue
+        product_id = _clean_text(product.get("id"))
+        if not product_id:
+            continue
+        if product_id in product_ids:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at products.{index}.id: duplicate product id {product_id}"
+            )
+        product_ids.add(product_id)
+
+    components = project.get("components") if isinstance(project.get("components"), list) else []
+    for index, component in enumerate(components):
+        if not isinstance(component, dict):
+            continue
+        product_id = _clean_text(component.get("productId"))
+        if product_id and product_id not in product_ids:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at components.{index}.productId: "
+                f"unknown product id {product_id}"
+            )
+
+    resources = project.get("supportResources") if isinstance(project.get("supportResources"), list) else []
+    for index, resource in enumerate(resources):
+        if not isinstance(resource, dict):
+            continue
+        product_id = _clean_text(resource.get("productId"))
+        if resource.get("type") == "spare" and not product_id:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportResources.{index}.productId: required for spare resource"
+            )
+        if product_id and product_id not in product_ids:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportResources.{index}.productId: "
+                f"unknown product id {product_id}"
+            )
+
+    policies = [item for item in project.get("transportPolicies", []) if isinstance(item, dict)]
+    for node in project.get("supportNodes", []) if isinstance(project.get("supportNodes"), list) else []:
+        if isinstance(node, dict) and isinstance(node.get("transportPolicies"), list):
+            policies.extend(item for item in node["transportPolicies"] if isinstance(item, dict))
+    for index, policy in enumerate(policies):
+        product_id = _clean_text(policy.get("productId"))
+        if product_id and product_id not in product_ids:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at transportPolicies.{index}.productId: "
+                f"unknown product id {product_id}"
+            )
+
+    jobs = project.get("supportActivityJobs") if isinstance(project.get("supportActivityJobs"), list) else []
+    for job_index, job in enumerate(jobs):
+        if not isinstance(job, dict) or not isinstance(job.get("spare"), list):
+            continue
+        for spare_index, requirement in enumerate(job["spare"]):
+            if not isinstance(requirement, dict):
+                continue
+            product_id = _clean_text(requirement.get("productId"))
+            if not product_id:
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at supportActivityJobs.{job_index}.spare.{spare_index}.productId: required"
+                )
+            if product_id not in product_ids:
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at supportActivityJobs.{job_index}.spare.{spare_index}.productId: "
+                    f"unknown product id {product_id}"
+                )
 
 
 def _validate_clean_support_nodes(nodes: list[Any], target: str) -> None:
@@ -800,10 +1069,19 @@ def _validate_clean_support_resources(resources: Any, target: str) -> None:
         extra = sorted(field for field in resource if field not in _SUPPORT_RESOURCE_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
-        for field in ("id", "supportNodeName", "organizationNodeName", "name", "model", "spareName", "spareType"):
+        for field in (
+            "id",
+            "supportNodeName",
+            "organizationNodeName",
+            "name",
+            "model",
+            "productId",
+        ):
             _validate_optional_clean_string(resource, field, f"{path}.{field}", target)
         if resource.get("type") not in {"personnel", "equipment", "spare"}:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}.type: unsupported resource type")
+        if resource.get("type") == "spare":
+            _require_clean_non_empty_string(resource, "productId", f"{path}.productId", target)
         for field in ("quantity", "capacity"):
             _validate_optional_clean_integer(resource, field, f"{path}.{field}", target, minimum=0)
 
@@ -818,7 +1096,9 @@ def _validate_clean_transport_policies(policies: Any, path: str, target: str) ->
         extra = sorted(field for field in policy if field not in _TRANSPORT_POLICY_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at {policy_path}: unexpected field {extra[0]}")
-        for field in ("id", "name", "fromSupportNodeName", "from", "toSupportNodeName", "to", "spareName", "spareType", "spare_type", "direction", "triggerMode", "transportMode"):
+        if "productId" in policy:
+            _require_clean_non_empty_string(policy, "productId", f"{policy_path}.productId", target)
+        for field in ("id", "name", "fromSupportNodeName", "from", "toSupportNodeName", "to", "productId", "direction", "triggerMode", "transportMode"):
             _validate_optional_clean_string(policy, field, f"{policy_path}.{field}", target)
         for field in ("capacity", "priority", "criticalInventory"):
             _validate_optional_clean_integer(policy, field, f"{policy_path}.{field}", target, minimum=0)
@@ -1313,6 +1593,8 @@ def _strip_component_non_model_fields(value: Any) -> None:
             "lifeLimitHours",
             "mtbfHours",
             "rms",
+            "spareType",
+            "spare_type",
         ):
             component.pop(field, None)
         profile = component.get("specialRepairProfile")
@@ -2210,6 +2492,7 @@ def _prune_clean_project(project: dict[str, Any]) -> None:
     _prune_open_model_list(project.get("basicMissions"))
     if isinstance(project.get("combatUnit"), dict):
         _prune_combat_unit(project["combatUnit"])
+    _prune_typed_list(project.get("products"), _PRODUCT_FIELDS)
     _prune_components(project.get("components"))
     _strip_reliability_block_diagram_non_model_fields(project.get("reliabilityBlockDiagram"))
     _prune_typed_list(project.get("supportNodes"), _SUPPORT_NODE_FIELDS)

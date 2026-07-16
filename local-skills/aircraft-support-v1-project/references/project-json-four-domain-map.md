@@ -26,6 +26,7 @@ Interpretation:
 Sources:
 
 - `combatUnit.members[]`
+- `products[]`
 - `components[]`
 - `equipment.aircraftTypes[]`
 - legacy fallback only: `reliabilityBlockDiagram.nodes[]`, `reliabilityBlockDiagram.edges[]`
@@ -33,9 +34,10 @@ Sources:
 Interpretation:
 
 - Combat-unit members are aircraft assets and initial states.
-- Components are the primary equipment hierarchy and reliability semantics.
+- Products are shared identities maintained independently from their use in an equipment hierarchy or spare inventory.
+- Components are the primary equipment hierarchy and reliability semantics; `components[].productId` binds each row to a product.
 - Clean Project JSON uses `failureDistribution`, `repairDistribution`, `kOutOfN`, and `productType`; legacy scalar failure, life-limit, RMS, spare type, and RBD fields should not be reintroduced to make clean data run.
-- When `spareType` is absent, LRU component names can be used as repair spare names in the independent Mesa compiler.
+- The independent compiler keys component repair requirements by `productId` and uses `products[].name` only as a display label; it does not derive or restore `spareType`.
 
 ## 保障组织
 
@@ -50,8 +52,8 @@ Sources:
 Interpretation:
 
 - Support nodes are resource scopes where work is performed.
-- Support resources add personnel, equipment, and spares to nodes.
-- Top-level and node-scoped transport policies describe replenishment links and delays.
+- Support resources add personnel, equipment, and spares to nodes; spare rows reference catalog entries with `productId`.
+- Top-level and node-scoped transport policies describe replenishment links and delays. An optional `productId` limits a policy to one product; omission means the policy can carry any product.
 - Organization fields should be explained as allocation/governance context.
 
 ## 保障活动
@@ -67,5 +69,5 @@ Sources:
 Interpretation:
 
 - Support activities are plan-reference rows such as use support, repair, preventive maintenance, or logistics support.
-- Top-level `supportActivityJobs[]` contains reusable work steps keyed by `activityCode`; each activity selects steps via `activityCodes`.
+- Top-level `supportActivityJobs[]` contains reusable work steps keyed by `activityCode`; each activity selects steps via `activityCodes`, and each structured spare requirement references `products[]` through `spare[].productId`.
 - `supportActivities[].predecessors` encodes DAG ordering and must be preserved when compiling or explaining.

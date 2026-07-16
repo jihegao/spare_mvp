@@ -2,6 +2,7 @@ import {
   runMonteCarlo,
   runSimulation
 } from "./sim-engine.mjs";
+import { normalizeProjectProducts } from "./product-catalog.mjs";
 
 const DEFAULT_API_BASE = "/api";
 const DEFAULT_TIMEOUT_MS = 10000;
@@ -263,6 +264,7 @@ export function buildBackendProjectJson(scenario, project = {}) {
 
 export function normalizeProjectJsonForClientDraft(projectJson) {
   const normalized = cloneJson(projectJson);
+  normalizeProjectProducts(normalized);
   normalizeProjectJsonBasicMissions(normalized);
   ensureUniqueSupportActivityNames(normalized);
   normalizeMissionTaskFieldOwnership(normalized);
@@ -276,6 +278,7 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   stripLegacySupportNodeResourceFields(normalized);
   stripSupportActivityTypoFields(normalized);
   stripDeprecatedSupportActivityStrategyFields(normalized);
+  normalizeProjectProducts(normalized);
   return normalized;
 }
 

@@ -159,6 +159,8 @@ def _runtime_component(
         "id": component_id,
         "parent_id": parent_id,
         "name": name,
+        "product_id": f"product-{component_id}",
+        "product_name": name,
         "product_type": product_type,
         "failure_distribution": {"distributionType": "指数分布", "parameters": f"lambda={rate}"},
     }
@@ -996,7 +998,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(len(snapshots), 2)
         self.assertNotIn("snapshot", model.event_log[-1])
 
-    def test_lru_repair_uses_component_name_as_auto_spare(self) -> None:
+    def test_lru_repair_uses_product_id_and_preserves_product_display_name(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"]["fleet_count"] = 1
         inputs["aircraft"]["initial_ready"] = 1
@@ -1018,7 +1020,12 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         model._evaluate_failures()
 
         repair_job = next(job for job in model.jobs if job.kind == "repair")
-        self.assertEqual(repair_job.tasks[-1]["spare"], "Radar LRU,1")
+        self.assertEqual(repair_job.tasks[-1]["spare"], "product-radar,1")
+        model.nodes["deck"]["product_names"]["product-radar"] = "Radar LRU"
+        model._start_waiting_jobs()
+        shortage = next(event for event in reversed(model.event_log) if event["event"] == "spare_shortage")
+        self.assertEqual(shortage["details"]["product_id"], "product-radar")
+        self.assertEqual(shortage["details"]["spare_type"], "Radar LRU")
 
     def test_non_lru_repair_does_not_auto_create_spare_requirement(self) -> None:
         inputs = _minimal_inputs()

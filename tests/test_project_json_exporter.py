@@ -190,10 +190,19 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     }
                 ]
             },
+            "products": [
+                {
+                    "id": "product-whole-aircraft",
+                    "name": "whole aircraft",
+                    "model": "whole aircraft",
+                    "kind": "whole",
+                }
+            ],
             "components": [
                 {
                     "id": "whole-aircraft",
                     "name": "whole aircraft",
+                    "productId": "product-whole-aircraft",
                     "aircraftModel": "J-15",
                     "productType": "whole",
                     "quantity": 1,
@@ -266,6 +275,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "type": "spare",
                     "name": "aircraft_support_v1_spares",
                     "model": "aircraft_support_v1_spares",
+                    "productId": "product-whole-aircraft",
                     "quantity": 2,
                     "equipment": "J-15",
                 },
@@ -332,7 +342,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "rms",
         ):
             self.assertNotIn(field, clean["components"][0])
-        self.assertEqual(clean["components"][0]["spareType"], "legacy spare")
+        self.assertNotIn("spareType", clean["components"][0])
+        self.assertEqual(clean["components"][0]["productId"], "product-whole-aircraft")
         self.assertEqual(clean["components"][0]["specialRepairProfile"], {"repairTimeMinutes": 45})
         self.assertNotIn("formState", clean["components"][0])
         self.assertNotIn("draftState", clean["basicMissions"][0])
@@ -340,6 +351,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("uiState", clean["airports"][0])
         self.assertNotIn("missionAreas", clean)
         self.assertNotIn("deploymentLocation", clean["combatUnit"]["members"][0])
+
         self.assertNotIn("profileType", clean["missionProfile"])
         self.assertNotIn("analysisRequests", clean["missionProfile"])
         self.assertNotIn("durationHours", clean["missionProfile"])
@@ -421,6 +433,17 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("predecessors", clean["supportActivityJobs"][0])
         self.assertFalse(_contains_key(clean, "missionAreas"))
         self.assertFalse(_contains_key(clean, "mission_areas"))
+
+    def test_aircraft_support_v1_exporter_normalizes_missing_catalog_rows_and_rejects_duplicates(self) -> None:
+        unknown = self._polluted_project()
+        unknown["components"][0]["productId"] = "missing-product"
+        normalized = ProjectJsonExporter(target="aircraft_support_v1").export(unknown)
+        self.assertIn("missing-product", {product["id"] for product in normalized["products"]})
+
+        duplicate = self._polluted_project()
+        duplicate["products"].append(dict(duplicate["products"][0]))
+        with self.assertRaisesRegex(ValueError, "duplicate product id product-whole-aircraft"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(duplicate)
 
     def test_exporter_materializes_legacy_activity_applicability_on_jobs(self) -> None:
         project = self._polluted_project()

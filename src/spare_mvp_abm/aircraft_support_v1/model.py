@@ -22,13 +22,15 @@ BEHAVIOR_DRIVING_FIELDS = [
     "basicMissions",
     "basicMissions[].missionPhases",
     "airports",
+    "products[]",
+    "components[].productId",
     "components[].aircraftModel",
-    "components[].spareType",
     "components[].failureDistribution",
     "components[].kOutOfN",
     "components[].specialRepairProfile",
     "supportResources[].quantity",
     "supportResources[].type",
+    "supportResources[].productId",
     "supportResources[].supportNodeName",
     "transportPolicies[]",
     "supportActivityJobs[]",
@@ -798,7 +800,9 @@ class AircraftSupportV1Model:
             parent_id = component.get("parent_id")
             component["parent_id"] = "" if parent_id in (None, "") else str(parent_id)
             component["aircraft_model"] = str(component.get("aircraft_model") or "")
-            component["spare_type"] = str(component.get("spare_type") or component.get("spareType") or "")
+            component["product_id"] = str(component.get("product_id") or component.get("spare_type") or "")
+            component["product_name"] = str(component.get("product_name") or component.get("name") or component["product_id"])
+            component["spare_type"] = component["product_id"]
             component["product_type"] = str(component.get("product_type") or "")
             component["quantity"] = max(1, int(component.get("quantity") or 1))
             component["k_out_of_n"] = component.get("k_out_of_n") if isinstance(component.get("k_out_of_n"), dict) else {}
@@ -857,6 +861,10 @@ class AircraftSupportV1Model:
                     for key, value in (item.get("inventory") or {}).items()
                     if isinstance(value, (int, float))
                 },
+                "product_names": {
+                    str(key): str(value or key)
+                    for key, value in (item.get("product_names") or {}).items()
+                },
                 "transport_policies": self._normalized_transport_policies(item.get("transport_policies") or []),
                 "work_count": 0,
             }
@@ -871,6 +879,7 @@ class AircraftSupportV1Model:
                 "personnel_in_use": 0,
                 "equipment_in_use": 0,
                 "inventory": {},
+                "product_names": {},
                 "transport_policies": [],
                 "work_count": 0,
             }
@@ -885,7 +894,7 @@ class AircraftSupportV1Model:
                 {
                     "from": str(item.get("from") or ""),
                     "to": str(item.get("to") or ""),
-                    "spare_type": str(item.get("spareType") or item.get("spare_type") or ""),
+                    "spare_type": str(item.get("productId") or item.get("product_id") or item.get("spare_type") or ""),
                     "capacity": max(1, int(item.get("capacity") or 1)),
                     "priority": max(1, int(item.get("priority") or 1)),
                     "transport_minutes": self._transport_policy_minutes(item),
@@ -1303,14 +1312,16 @@ class AircraftSupportV1Model:
                 reason = "in_transit" if self._has_in_transit_spare(node["id"], spare_type) else f"spare:{spare_type}"
                 job.shortage_reason = reason
                 aircraft = self._aircraft_by_tail(job.tail_number)
+                display_name = self._product_display_name(spare_type)
                 self._event(
                     "spare_shortage",
-                    f"{job.job_id} blocked by {spare_type} shortage at {node['id']}",
+                    f"{job.job_id} blocked by {display_name} shortage at {node['id']}",
                     {
                         "job_id": job.job_id,
                         "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                         "resource_id": node["id"],
-                        "spare_type": spare_type,
+                        "product_id": spare_type,
+                        "spare_type": display_name,
                         "required_quantity": spare_qty,
                         "available_quantity": int(node["inventory"].get(spare_type, 0) or 0),
                         "reason": reason,
@@ -1567,9 +1578,9 @@ class AircraftSupportV1Model:
             if component.get("repair_duration_minutes"):
                 tasks[-1]["durationMinutes"] = max(1, int(component["repair_duration_minutes"]))
             if str(component.get("product_type") or "").strip().upper() == "LRU":
-                spare_name = str(component.get("spare_type") or component.get("name") or "").strip()
-                if spare_name:
-                    tasks[-1]["spare"] = f"{spare_name},1"
+                product_id = str(component.get("product_id") or "").strip()
+                if product_id:
+                    tasks[-1]["spare"] = f"{product_id},1"
         self.jobs.append(
             JobState(
                 job_id=f"job-{self._job_sequence:04d}",
@@ -1621,12 +1632,12 @@ class AircraftSupportV1Model:
             for item in spare:
                 if not isinstance(item, dict):
                     continue
-                spare_type = str(item.get("name") or item.get("model") or "").strip()
+                spare_type = str(item.get("productId") or item.get("product_id") or item.get("name") or item.get("model") or "").strip()
                 if _is_no_spare_value(spare_type):
                     continue
                 quantity = _positive_int(item.get("quantity"), 1)
                 if spare_type and quantity > 0:
-                    return spare_type, quantity
+                    return self._product_id_for_label(spare_type), quantity
         if isinstance(spare, str) and spare and not _is_no_spare_value(spare):
             parts = [part.strip() for part in spare.split(",") if part.strip()]
             if parts:
@@ -1635,8 +1646,26 @@ class AircraftSupportV1Model:
                     if part.isdigit():
                         quantity = max(1, int(part))
                         break
-                return parts[0], quantity
+                return self._product_id_for_label(parts[0]), quantity
         return None, 0
+
+    def _product_id_for_label(self, label: str) -> str:
+        value = str(label or "").strip()
+        if not value:
+            return ""
+        if any(value in node["inventory"] for node in self.nodes.values()):
+            return value
+        for component in self.equipment_tree_components:
+            if value in {
+                str(component.get("product_id") or ""),
+                str(component.get("product_name") or ""),
+            }:
+                return str(component.get("product_id") or value)
+        for node in self.nodes.values():
+            for product_id, name in (node.get("product_names") or {}).items():
+                if value in {str(product_id), str(name)}:
+                    return str(product_id)
+        return value
 
     def _consume_task_spare(self, job: JobState, task: dict[str, Any]) -> None:
         spare_type, spare_quantity = self._task_spare_requirement(job, task)
@@ -1648,14 +1677,16 @@ class AircraftSupportV1Model:
             node["inventory"][spare_type] = current - spare_quantity
             self.spare_consumed_total += spare_quantity
             aircraft = self._aircraft_by_tail(job.tail_number)
+            display_name = self._product_display_name(spare_type)
             self._event(
                 "spare_consumed",
-                f"{job.job_id} consumed {spare_quantity} {spare_type}",
+                f"{job.job_id} consumed {spare_quantity} {display_name}",
                 {
                     "job_id": job.job_id,
                     "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                     "resource_id": node["id"],
-                    "spare_type": spare_type,
+                    "product_id": spare_type,
+                    "spare_type": display_name,
                     "quantity": spare_quantity,
                 },
             )
@@ -1664,6 +1695,7 @@ class AircraftSupportV1Model:
         shortage = max(0, needed - int(node["inventory"].get(spare_type, 0)))
         if shortage <= 0:
             return
+
         for policy in node.get("transport_policies") or []:
             if policy.get("to") and policy["to"] != node["id"]:
                 continue
@@ -1698,6 +1730,17 @@ class AircraftSupportV1Model:
             node["inventory"][spare_type] = int(node["inventory"].get(spare_type, 0)) + moved
             self._event("transport_replenished", f"{moved} {spare_type} moved from {source['id']} to {node['id']}")
             return
+
+    def _product_display_name(self, product_id: str) -> str:
+        key = str(product_id or "")
+        for component in self.equipment_tree_components:
+            if str(component.get("product_id") or "") == key:
+                return str(component.get("product_name") or key)
+        for node in self.nodes.values():
+            name = (node.get("product_names") or {}).get(key)
+            if name:
+                return str(name)
+        return key
 
     def _complete_job_effect(self, job: JobState) -> None:
         aircraft = next((item for item in self.aircraft if item.tail_number == job.tail_number), None)
@@ -1989,10 +2032,12 @@ class AircraftSupportV1Model:
         payload = []
         for node in self.nodes.values():
             for spare_type, quantity in node["inventory"].items():
+                display_name = self._product_display_name(spare_type)
                 payload.append(
                     {
                         "part_id": f"{node['id']}:{spare_type}",
-                        "name": spare_type,
+                        "product_id": spare_type,
+                        "name": display_name,
                         "quantity": quantity,
                         "consumed": self.spare_consumed_total,
                         "pending_quantity": sum(
@@ -2107,6 +2152,7 @@ class AircraftSupportV1Model:
         if spare_type:
             shortages.append(
                 {
+                    "product_id": str(details.get("product_id") or ""),
                     "spare_type": spare_type,
                     "required_quantity": int(details.get("required_quantity", 0) or 0),
                     "available_quantity": int(details.get("available_quantity", 0) or 0),
@@ -2125,7 +2171,8 @@ class AircraftSupportV1Model:
                 continue
             shortages.append(
                 {
-                    "spare_type": job_spare_type,
+                    "product_id": job_spare_type,
+                    "spare_type": self._product_display_name(job_spare_type),
                     "required_quantity": job_spare_qty,
                     "available_quantity": int((node or {}).get("inventory", {}).get(job_spare_type, 0) or 0),
                     "resource_id": job.resource_node_id,

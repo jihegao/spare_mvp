@@ -1,3 +1,5 @@
+import { ensureProductForComponent, normalizeProjectProducts } from "./product-catalog.mjs";
+
 export function wholeMachineModelsForScenario(scenario) {
   const equipment = scenario?.equipment || {};
   const models = [
@@ -170,6 +172,7 @@ export function resolveEquipmentSelectionModel({
 export function addEquipmentNodeForSelectionModel({ scenario, selection }) {
   if (!scenario.equipment) scenario.equipment = {};
   if (!Array.isArray(scenario.components)) scenario.components = [];
+  normalizeProjectProducts(scenario);
   const selectedState = selection || resolveEquipmentSelectionModel({
     scenario,
     selectedEquipmentNodeKey: "aircraft-list",
@@ -191,7 +194,6 @@ export function addEquipmentNodeForSelectionModel({ scenario, selection }) {
     parentId,
     name: selectedState.kind === "aircraft" ? `新增分系统${siblingCount + 1}` : `新增子系统${siblingCount + 1}`,
     productType: selectedState.kind === "aircraft" ? "非LRU" : "LRU",
-    spareType: selectedState.kind === "aircraft" ? "通用备件" : (selectedState.component.spareType || "通用备件"),
     failureModel: "随机",
     failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.03" },
     failureRate: 0.03,
@@ -205,6 +207,7 @@ export function addEquipmentNodeForSelectionModel({ scenario, selection }) {
   };
   normalizeEquipmentComponentKOutOfN(newComponent);
   scenario.components.push(newComponent);
+  ensureProductForComponent(scenario, newComponent);
   return {
     kind: "component",
     selectedEquipmentComponentIndex: scenario.components.length - 1,

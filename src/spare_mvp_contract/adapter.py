@@ -17,6 +17,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from src.spare_mvp_backend.project_payload import normalize_project_products
+
 from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     mission_period_outcome,
     period_completion_summary,
@@ -228,6 +230,8 @@ class SimulationAdapter:
     ) -> dict[str, Any]:
         if model_family in RETIRED_ADAPTER_MODEL_FAMILIES:
             return self._retired_model_family_gate(model_family)
+        if model_family == "aircraft_support_v1":
+            project = normalize_project_products(project)
         validation = self.validate_project(project)
         if not validation["ok"]:
             issues = [
@@ -410,7 +414,8 @@ class SimulationAdapter:
         stop_policy = self._runtime_stop_policy_config(project, runtime_config, duration_minutes)
         fleet_count = aircraft_summary["fleet_count"]
         initial_ready = aircraft_summary["initial_ready"]
-        support_network_nodes = self._aircraft_support_v1_support_nodes(project)
+        products_by_id = self._aircraft_support_v1_products_by_id(project)
+        support_network_nodes = self._aircraft_support_v1_support_nodes(project, products_by_id)
         support_node_aliases = self._support_node_reference_aliases(project)
         basic_missions = copy.deepcopy(self._basic_missions(project))
         composite_tasks = copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks")))
@@ -448,7 +453,10 @@ class SimulationAdapter:
             },
             "equipment_tree": {
                 "root_component_id": self._root_component_id(project.get("components")),
-                "components": [self._aircraft_support_v1_component(component) for component in self._dict_list(project.get("components"))],
+                "components": [
+                    self._aircraft_support_v1_component(component, products_by_id)
+                    for component in self._dict_list(project.get("components"))
+                ],
             },
             "support_network": {
                 "nodes": support_network_nodes,
@@ -626,15 +634,29 @@ class SimulationAdapter:
             return None
         return max(1, hour * 60 + minute)
 
-    def _aircraft_support_v1_component(self, component: dict[str, Any]) -> dict[str, Any]:
+    def _aircraft_support_v1_products_by_id(self, project: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        return {
+            str(product.get("id")): copy.deepcopy(product)
+            for product in self._dict_list(project.get("products"))
+            if product.get("id") not in (None, "")
+        }
+
+    def _aircraft_support_v1_component(
+        self,
+        component: dict[str, Any],
+        products_by_id: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
         failure_distribution = copy.deepcopy(component.get("failureDistribution") if isinstance(component.get("failureDistribution"), dict) else {})
         failure_rate = self._failure_distribution_rate(failure_distribution)
+        product_id = str(component.get("productId") or "")
+        product = products_by_id.get(product_id, {})
         return {
             "id": str(component.get("id") or "component"),
             "name": str(component.get("name") or component.get("id") or "component"),
             "parent_id": self._optional_string(component.get("parentId")),
             "aircraft_model": self._optional_string(component.get("aircraftModel")),
-            "spare_type": self._optional_string(component.get("spareType") or component.get("spare_type")),
+            "product_id": product_id,
+            "product_name": str(product.get("name") or component.get("name") or product_id),
             "product_type": self._optional_string(component.get("productType")),
             "quantity": self._positive_int(component.get("quantity"), 1),
             "failure_rate": 0.0 if failure_rate is None else failure_rate,
@@ -817,14 +839,18 @@ class SimulationAdapter:
             )
         return assets
 
-    def _aircraft_support_v1_support_nodes(self, project: dict[str, Any]) -> list[dict[str, Any]]:
+    def _aircraft_support_v1_support_nodes(
+        self,
+        project: dict[str, Any],
+        products_by_id: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         raw_nodes = self._dict_list(project.get("supportNodes"))
         resources = self._dict_list(project.get("supportResources"))
         aliases = self._support_node_reference_aliases(project)
         nodes_by_name: dict[str, dict[str, Any]] = {}
 
         for raw_node in raw_nodes:
-            node = self._aircraft_support_v1_support_node(raw_node)
+            node = self._aircraft_support_v1_support_node(raw_node, products_by_id)
             node_name = self._support_node_runtime_name(raw_node)
             node["id"] = node_name
             node["name"] = node_name
@@ -847,16 +873,18 @@ class SimulationAdapter:
             elif resource_type == "equipment":
                 node["equipment_capacity"] = max(0, int(node.get("equipment_capacity", 0))) + quantity
             elif resource_type == "spare":
-                spare_name = str(resource.get("name") or resource.get("spareName") or resource.get("spareType") or "").strip()
-                if spare_name:
-                    node["inventory"][spare_name] = int(node["inventory"].get(spare_name, 0)) + quantity
+                product_id = str(resource.get("productId") or "").strip()
+                if product_id:
+                    node["inventory"][product_id] = int(node["inventory"].get(product_id, 0)) + quantity
+                    product = products_by_id.get(product_id, {})
+                    node["product_names"][product_id] = str(product.get("name") or resource.get("name") or product_id)
 
         for node in nodes_by_name.values():
             node["personnel_capacity"] = max(1, int(node.get("personnel_capacity", 0) or 0))
             node["equipment_capacity"] = max(1, int(node.get("equipment_capacity", 0) or 0))
 
         for policy in self._project_transport_policies(project):
-            normalized = self._aircraft_support_v1_transport_policy(policy, aliases)
+            normalized = self._aircraft_support_v1_transport_policy(policy, aliases, products_by_id)
             destination = str(normalized.get("to") or "")
             if not destination or destination not in nodes_by_name:
                 continue
@@ -864,7 +892,26 @@ class SimulationAdapter:
 
         return list(nodes_by_name.values())
 
-    def _aircraft_support_v1_support_node(self, node: dict[str, Any]) -> dict[str, Any]:
+    def _aircraft_support_v1_support_node(
+        self,
+        node: dict[str, Any],
+        products_by_id: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        product_names = {
+            product_id: str(product.get("name") or product_id)
+            for product_id, product in products_by_id.items()
+        }
+        product_ids_by_label = {
+            str(label).strip(): product_id
+            for product_id, product in products_by_id.items()
+            for label in (product_id, product.get("name"), product.get("model"))
+            if str(label or "").strip()
+        }
+        raw_inventory = node.get("inventory") if isinstance(node.get("inventory"), dict) else {}
+        inventory = {
+            product_ids_by_label.get(str(key).strip(), str(key)): copy.deepcopy(quantity)
+            for key, quantity in raw_inventory.items()
+        }
         return {
             "id": self._support_node_runtime_name(node),
             "name": self._support_node_runtime_name(node),
@@ -874,7 +921,8 @@ class SimulationAdapter:
             "support_level": self._optional_string(node.get("supportLevel")),
             "personnel_capacity": self._positive_int(node.get("personnelCapacity"), self._positive_int(node.get("capacity"), 1)),
             "equipment_capacity": self._positive_int(node.get("equipmentCapacity"), self._positive_int(node.get("capacity"), 1)),
-            "inventory": copy.deepcopy(node.get("inventory") if isinstance(node.get("inventory"), dict) else {}),
+            "inventory": inventory,
+            "product_names": product_names,
             "lateral_support_nodes": self._string_list(node.get("lateralSupportNodes")),
             "transport_policies": copy.deepcopy(self._dict_list(node.get("transportPolicies"))),
             "policy": self._optional_string(node.get("policy")),
@@ -892,6 +940,7 @@ class SimulationAdapter:
             "personnel_capacity": 0,
             "equipment_capacity": 0,
             "inventory": {},
+            "product_names": {},
             "lateral_support_nodes": [],
             "transport_policies": [],
             "policy": None,
@@ -929,13 +978,19 @@ class SimulationAdapter:
             policies.extend(copy.deepcopy(self._dict_list(node.get("transportPolicies"))))
         return policies
 
-    def _aircraft_support_v1_transport_policy(self, policy: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
+    def _aircraft_support_v1_transport_policy(
+        self,
+        policy: dict[str, Any],
+        aliases: dict[str, str],
+        products_by_id: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
         from_value = str(policy.get("fromSupportNodeName") or policy.get("from") or "")
         to_value = str(policy.get("toSupportNodeName") or policy.get("to") or "")
+        product_id = str(policy.get("productId") or "")
         return {
             "from": aliases.get(from_value, from_value),
             "to": aliases.get(to_value, to_value),
-            "spareType": str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or ""),
+            "product_id": product_id,
             "capacity": self._positive_int(policy.get("capacity"), 1),
             "priority": self._positive_int(policy.get("priority"), 1),
             "transportTimeHours": self._non_negative_float(policy.get("transportTimeHours"), self._non_negative_float(policy.get("transport_time_hours"), 0.0)),
@@ -1065,13 +1120,15 @@ class SimulationAdapter:
                 "basicMissions",
                 "basicMissions[].missionPhases",
                 "airports",
+                "products[]",
+                "components[].productId",
                 "components[].aircraftModel",
-                "components[].spareType",
                 "components[].failureDistribution",
                 "components[].kOutOfN",
                 "components[].specialRepairProfile",
                 "supportResources[].quantity",
                 "supportResources[].type",
+                "supportResources[].productId",
                 "supportResources[].supportNodeName",
                 "transportPolicies[]",
                 "supportActivityJobs[]",
@@ -1243,7 +1300,9 @@ class SimulationAdapter:
 
     def _aircraft_support_v1_compile_issues(self, project: dict[str, Any]) -> list[dict[str, str]]:
         issues: list[dict[str, str]] = []
+        products = self._dict_list(project.get("products"))
         components = self._dict_list(project.get("components"))
+        support_resources = self._dict_list(project.get("supportResources"))
         support_nodes = self._dict_list(project.get("supportNodes"))
         support_activities = self._dict_list(project.get("supportActivities"))
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
@@ -1257,6 +1316,15 @@ class SimulationAdapter:
                     "components",
                     "装备树不能为空，aircraft_support_v1 需要可审计的装备组成。",
                     "装备系统建模",
+                )
+            )
+        if not products:
+            issues.append(
+                self._compile_issue(
+                    "missing_product_catalog",
+                    "products",
+                    "产品目录不能为空，aircraft_support_v1 需要组件和备件资源引用正式产品。",
+                    "建模表单管理",
                 )
             )
         if not support_nodes and not support_resources_disabled:
@@ -1287,6 +1355,22 @@ class SimulationAdapter:
                 )
             )
 
+        product_ids: set[str] = set()
+        for product_index, product in enumerate(products):
+            product_id = str(product.get("id") or "").strip()
+            if not product_id:
+                continue
+            if product_id in product_ids:
+                issues.append(
+                    self._compile_issue(
+                        "duplicate_product_id",
+                        f"products[{product_index}].id",
+                        f"产品 ID {product_id} 重复。",
+                        "建模表单管理",
+                    )
+                )
+            product_ids.add(product_id)
+
         component_ids = {str(component.get("id")) for component in components if component.get("id") not in (None, "")}
         support_node_aliases = self._support_node_reference_aliases(project)
         support_node_ids = set(support_node_aliases.keys()) | set(support_node_aliases.values())
@@ -1312,6 +1396,16 @@ class SimulationAdapter:
             else:
                 tail_seen[normalized_tail] = str(raw_tail).strip()
         for index, component in enumerate(components):
+            product_id = str(component.get("productId") or "").strip()
+            if not product_id or product_id not in product_ids:
+                issues.append(
+                    self._compile_issue(
+                        "missing_product_reference",
+                        f"components[{index}].productId",
+                        f"组件 productId 必须引用存在的产品，当前值为 {product_id or '<empty>'}。",
+                        "装备系统建模",
+                    )
+                )
             parent_id = component.get("parentId")
             if parent_id in (None, ""):
                 continue
@@ -1335,7 +1429,42 @@ class SimulationAdapter:
                     )
                 )
 
+        for resource_index, resource in enumerate(support_resources):
+            if str(resource.get("type") or "").strip().lower() != "spare":
+                continue
+            product_id = str(resource.get("productId") or "").strip()
+            if not product_id or product_id not in product_ids:
+                issues.append(
+                    self._compile_issue(
+                        "missing_product_reference",
+                        f"supportResources[{resource_index}].productId",
+                        f"备件资源 productId 必须引用存在的产品，当前值为 {product_id or '<empty>'}。",
+                        "保障资源建模",
+                    )
+                )
+        for job_index, job in enumerate(self._dict_list(project.get("supportActivityJobs"))):
+            for spare_index, requirement in enumerate(self._dict_list(job.get("spare"))):
+                product_id = str(requirement.get("productId") or "").strip()
+                if not product_id or product_id not in product_ids:
+                    issues.append(
+                        self._compile_issue(
+                            "missing_product_reference",
+                            f"supportActivityJobs[{job_index}].spare[{spare_index}].productId",
+                            f"保障活动备件需求 productId 必须引用存在的产品，当前值为 {product_id or '<empty>'}。",
+                            "保障活动建模",
+                        )
+                    )
         for policy_index, policy in enumerate(self._project_transport_policies(project)):
+            product_id = str(policy.get("productId") or "").strip()
+            if product_id and product_id not in product_ids:
+                issues.append(
+                    self._compile_issue(
+                        "missing_product_reference",
+                        f"transportPolicies[{policy_index}].productId",
+                        f"运输策略 productId 必须引用存在的产品，当前值为 {product_id or '<empty>'}。",
+                        "保障资源建模",
+                    )
+                )
             for endpoint in ("from", "to"):
                 field_name = "fromSupportNodeName" if endpoint == "from" else "toSupportNodeName"
                 value = policy.get(field_name, policy.get(endpoint))
@@ -2258,42 +2387,43 @@ class SimulationAdapter:
         scoped_node_ids = {str(node.get("id") or "") for node in scoped_nodes if str(node.get("id") or "")}
         modeled_aircraft_models = self._aircraft_support_v1_modeled_aircraft_models(simulation_inputs)
         spare_models = self._aircraft_support_v1_spare_models(simulation_inputs, modeled_aircraft_models)
+        product_names = self._aircraft_support_v1_product_names(simulation_inputs)
         baseline_quantities: dict[str, int] = {}
         for node in scoped_nodes:
             inventory = node.get("inventory") if isinstance(node.get("inventory"), dict) else {}
-            for spare_type, quantity in inventory.items():
-                key = str(spare_type or "").strip()
-                if not key or not self._is_number(quantity):
+            for raw_product_id, quantity in inventory.items():
+                product_id = str(raw_product_id or "").strip()
+                if not product_id or not self._is_number(quantity):
                     continue
-                baseline_quantities[key] = baseline_quantities.get(key, 0) + self._positive_int(quantity, 0)
+                baseline_quantities[product_id] = baseline_quantities.get(product_id, 0) + self._positive_int(quantity, 0)
 
         stats = self._aircraft_support_v1_spare_event_stats(samples, scoped_node_ids)
-        for _aircraft_model, spare_type in stats:
-            baseline_quantities.setdefault(spare_type, 0)
-        for spare_type in spare_models:
-            baseline_quantities.setdefault(spare_type, 0)
+        for _aircraft_model, product_id in stats:
+            baseline_quantities.setdefault(product_id, 0)
+        for product_id in spare_models:
+            baseline_quantities.setdefault(product_id, 0)
 
         rows = []
         sample_count = max(1, len(samples))
         planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
         mean_transport_delay = max(0.0, float(metrics.get("mean_transport_delay", 0) or 0))
         row_keys: list[tuple[str, str]] = []
-        for spare_type in baseline_quantities:
+        for product_id in baseline_quantities:
             event_models = {
                 aircraft_model
-                for aircraft_model, stat_spare_type in stats
-                if stat_spare_type == spare_type and aircraft_model in modeled_aircraft_models
+                for aircraft_model, stat_product_id in stats
+                if stat_product_id == product_id and aircraft_model in modeled_aircraft_models
             }
-            models = event_models | spare_models.get(spare_type, set())
+            models = event_models | spare_models.get(product_id, set())
             for aircraft_model in sorted(models):
-                row_keys.append((aircraft_model, spare_type))
+                row_keys.append((aircraft_model, product_id))
         for row_key in sorted(stats):
             if row_key[0] in modeled_aircraft_models and row_key not in row_keys:
                 row_keys.append(row_key)
 
-        for aircraft_model, spare_type in row_keys:
-            baseline_quantity = baseline_quantities.get(spare_type, 0)
-            row_stats = stats.get((aircraft_model, spare_type), {})
+        for aircraft_model, product_id in row_keys:
+            baseline_quantity = baseline_quantities.get(product_id, 0)
+            row_stats = stats.get((aircraft_model, product_id), {})
             consumed_quantity = max(0.0, float(row_stats.get("consumed_quantity", 0) or 0))
             shortage_count = max(0.0, float(row_stats.get("shortage_count", 0) or 0))
             shortage_quantity = max(0.0, float(row_stats.get("shortage_quantity", 0) or 0))
@@ -2308,7 +2438,8 @@ class SimulationAdapter:
             rows.append(
                 {
                     "aircraft_model": aircraft_model,
-                    "spare_type": spare_type,
+                    "product_id": product_id,
+                    "spare_type": product_names.get(product_id, product_id),
                     "baseline_quantity": baseline_quantity,
                     "recommended_quantity": max(0, baseline_quantity + replenish_quantity),
                     "demand_count": demand_count,
@@ -2346,12 +2477,35 @@ class SimulationAdapter:
         for component in simulation_inputs.get("equipment_tree", {}).get("components", []) or []:
             if not isinstance(component, dict):
                 continue
-            aircraft_model = str(component.get("aircraft_model") or component.get("aircraftModel") or "").strip()
-            spare_type = str(component.get("spare_type") or component.get("spareType") or "").strip()
-            if aircraft_model not in modeled_aircraft_models or not spare_type:
+            product_type = str(component.get("product_type") or component.get("productType") or "").strip().casefold()
+            if product_type == "whole":
                 continue
-            spare_models.setdefault(spare_type, set()).add(aircraft_model)
+            aircraft_model = str(component.get("aircraft_model") or component.get("aircraftModel") or "").strip()
+            product_id = str(component.get("product_id") or "").strip()
+            if aircraft_model not in modeled_aircraft_models or not product_id:
+                continue
+            spare_models.setdefault(product_id, set()).add(aircraft_model)
         return spare_models
+
+    def _aircraft_support_v1_product_names(self, simulation_inputs: dict[str, Any]) -> dict[str, str]:
+        product_names: dict[str, str] = {}
+        for component in simulation_inputs.get("equipment_tree", {}).get("components", []) or []:
+            if not isinstance(component, dict):
+                continue
+            product_id = str(component.get("product_id") or "").strip()
+            if product_id:
+                product_names[product_id] = str(component.get("product_name") or product_id)
+        for node in simulation_inputs.get("support_network", {}).get("nodes", []) or []:
+            if not isinstance(node, dict) or not isinstance(node.get("product_names"), dict):
+                continue
+            product_names.update(
+                {
+                    str(product_id): str(name or product_id)
+                    for product_id, name in node["product_names"].items()
+                    if str(product_id or "").strip()
+                }
+            )
+        return product_names
 
     def _aircraft_support_v1_scoped_support_nodes(self, simulation_inputs: dict[str, Any]) -> list[dict[str, Any]]:
         nodes = [
@@ -2450,8 +2604,8 @@ class SimulationAdapter:
                 if event_name not in {"spare_shortage", "spare_consumed"}:
                     continue
                 details = event.get("details") if isinstance(event.get("details"), dict) else {}
-                spare_type = str(details.get("spare_type") or details.get("spareType") or "").strip()
-                if not spare_type:
+                product_id = str(details.get("product_id") or details.get("productId") or details.get("spare_type") or "").strip()
+                if not product_id:
                     continue
                 aircraft_model = str(
                     details.get("aircraft_model")
@@ -2472,8 +2626,8 @@ class SimulationAdapter:
                 quantity = max(1.0, self._non_negative_number(details.get("quantity"), 1.0))
                 job_id = str(details.get("job_id") or details.get("jobId") or "").strip()
                 event_key = job_id or f"event-{event_index}"
-                spare_key = (aircraft_model, spare_type)
-                demand_key = (sample_key, node_id, aircraft_model, spare_type, event_key)
+                spare_key = (aircraft_model, product_id)
+                demand_key = (sample_key, node_id, aircraft_model, product_id, event_key)
                 if event_name == "spare_consumed":
                     filled_quantities.setdefault(spare_key, {})[demand_key] = max(
                         filled_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
@@ -2619,6 +2773,7 @@ class SimulationAdapter:
                 "data": [
                     {
                         "aircraft_model": row.get("aircraft_model", "全部机型"),
+                        "product_id": row["product_id"],
                         "spare_type": row["spare_type"],
                         "baseline_quantity": row["baseline_quantity"],
                         "demand_count": row["demand_count"],
@@ -2647,6 +2802,7 @@ class SimulationAdapter:
                 "data": [
                     {
                         "aircraft_model": row.get("aircraft_model", "全部机型"),
+                        "product_id": row["product_id"],
                         "spare_type": row["spare_type"],
                         "baseline_quantity": row["baseline_quantity"],
                         "recommended_quantity": row["recommended_quantity"],

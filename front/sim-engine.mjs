@@ -25,6 +25,7 @@ export const defaultScenario = {
     initialReady: 0,
     minRequiredSorties: 0
   },
+  products: [],
   components: [],
   supportNodes: [],
   supportActivities: [],

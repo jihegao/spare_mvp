@@ -137,6 +137,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
             self.assertEqual(memory["project_id"], project["project_id"])
             self.assertIn("basicMissions", memory["tables"])
             self.assertIn("basicMissions.missionPhases", memory["tables"])
+            self.assertIn("products", memory["tables"])
             self.assertIn("components", memory["tables"])
             self.assertIn("supportActivityJobs", memory["tables"])
             self.assertIn("durationMinutes", memory["tables"]["basicMissions.missionPhases"]["fields"])
@@ -156,13 +157,12 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         activity = project["supportActivities"][0]
         activity.update(
             {
-                "spareType": "hydraulic-pump",
                 "spareQuantity": 2,
                 "calendarDayInterval": 7,
                 "runHourInterval": 12,
                 "takeoffLandingInterval": 3,
                 "floatRatio": 0.2,
-                "transportStrategies": [{"from": "node-a", "to": "node-a", "spareType": "hydraulic-pump"}],
+                "transportStrategies": [{"from": "node-a", "to": "node-a", "productId": "product-whole-aircraft"}],
                 "organizationStrategies": [{"supportLevel": "base", "supportNodeId": "node-a"}],
             }
         )
@@ -204,7 +204,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
                 "id": "nested-tp-1",
                 "fromSupportNodeId": "node-a",
                 "toSupportNodeId": "node-a",
-                "spareType": "nested-spare",
+                "productId": "product-whole-aircraft",
                 "capacity": 3,
                 "priority": 2,
                 "transportTimeHours": 1.5,
@@ -221,7 +221,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
 
         self.assertIn("supportNodes.transportPolicies", memory["tables"])
-        self.assertIn("spareType", memory["tables"]["supportNodes.transportPolicies"]["fields"])
+        self.assertIn("productId", memory["tables"]["supportNodes.transportPolicies"]["fields"])
         self.assertIn("supportNodes.transportPolicies", explanation["保障组织"]["tables"])
         self.assertEqual(
             inputs["support_network"]["nodes"][0]["transport_policies"],
@@ -229,7 +229,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
                 {
                     "from": "node A",
                     "to": "node A",
-                    "spareType": "nested-spare",
+                    "productId": "product-whole-aircraft",
                     "capacity": 3,
                     "priority": 2,
                     "transportTimeHours": 1.5,

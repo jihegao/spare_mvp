@@ -25,6 +25,23 @@ class SimulationAdapterTest(unittest.TestCase):
         path = REPO_ROOT / "tests" / "fixtures" / name
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def _with_product_catalog(self, project: dict) -> dict:
+        project = copy.deepcopy(project)
+        products = []
+        component_products = {}
+        for component in project.get("components", []):
+            product_id = f"product-{component['id']}"
+            component["productId"] = product_id
+            component.pop("spareType", None)
+            products.append({"id": product_id, "name": component.get("name") or component["id"], "model": component.get("name") or component["id"]})
+            component_products[str(component.get("id"))] = product_id
+        for resource in project.get("supportResources", []):
+            if resource.get("type") != "spare":
+                continue
+            resource["productId"] = component_products.get(str(resource.get("model"))) or products[0]["id"]
+        project["products"] = products
+        return project
+
     def test_downtime_projection_maps_four_factor_event_ledger_without_duplicate_ids(self) -> None:
         samples = [
             {
@@ -85,6 +102,56 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["errors"][0]["path"], "components")
         self.assertEqual(result["errors"][0]["code"], "missing_required")
+
+    def test_aircraft_support_v1_compiles_product_ids_and_product_display_names(self) -> None:
+        project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        components = scenario["simulation_inputs"]["equipment_tree"]["components"]
+        self.assertTrue(all(component["product_id"] for component in components))
+        self.assertTrue(all("spare_type" not in component and "spareType" not in component for component in components))
+        self.assertEqual(
+            {component["product_name"] for component in components},
+            {product["name"] for product in project["products"]},
+        )
+        provenance = scenario["compiled_from"]["mapping_provenance"]["consumed_fields"]
+        self.assertIn("products[]", provenance)
+        self.assertIn("components[].productId", provenance)
+        self.assertNotIn("components[].spareType", provenance)
+
+    def test_issue_237_current_project_and_saved_plan_keep_the_same_aircraft_product_pairs(self) -> None:
+        current_project = self._with_product_catalog(self._load_fixture("m9_6_platform_case_export.json")["project"])
+        saved_plan_project = copy.deepcopy(current_project)
+
+        identities = []
+        for project in (current_project, saved_plan_project):
+            scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+            projections = self.adapter._aircraft_support_v1_analysis_projections(
+                {"planned_sorties": 1, "spare_fill_rate": 1.0, "spare_utilization": 0.0},
+                "issue-237-probe",
+                simulation_inputs=scenario["simulation_inputs"],
+            )
+            rows = projections["carry_list"]["data"]
+            self.assertTrue(rows)
+            self.assertNotIn("全部机型", {row["aircraft_model"] for row in rows})
+            self.assertTrue(all(row["product_id"] for row in rows))
+            identities.append(
+                {(row["aircraft_model"], row["product_id"], row["spare_type"]) for row in rows}
+            )
+
+        self.assertEqual(identities[0], identities[1])
+
+    def test_aircraft_support_v1_blocks_duplicate_product_ids_after_normalization(self) -> None:
+        project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
+        project["products"].append(dict(project["products"][0]))
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(
+            any(issue["code"] == "duplicate_product_id" for issue in result["issues"])
+        )
 
     def test_compile_smoke_scenario_is_retired(self) -> None:
         project = self._load_fixture("aircraft_support_v1_project.json")
@@ -204,9 +271,15 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertNotIn("analysisRequests", project)
         self.assertNotIn("monteCarlo", project)
         self.assertEqual(len(inputs["equipment_tree"]["components"]), len(project["components"]))
+        self.assertTrue(
+            all(
+                "spare_type" not in component and "spareType" not in component
+                for component in inputs["equipment_tree"]["components"]
+            )
+        )
         self.assertEqual(
-            [component["spare_type"] for component in inputs["equipment_tree"]["components"]],
-            [str(component.get("spareType") or "") for component in project["components"]],
+            [component["product_name"] for component in inputs["equipment_tree"]["components"]],
+            [str(component.get("spareType") or component.get("name") or "") for component in project["components"]],
         )
         self.assertEqual(len(inputs["support_network"]["nodes"]), len(project["supportNodes"]))
         self.assertEqual(len(inputs["support_activities"]["activities"]), len(project["supportActivities"]))
@@ -215,7 +288,8 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(provenance["model_family"], "aircraft_support_v1")
         self.assertEqual(provenance["mapping_version"], "aircraft-support-v1-input-v0")
         self.assertIn("components[].failureDistribution", provenance["consumed_fields"])
-        self.assertIn("components[].spareType", provenance["consumed_fields"])
+        self.assertIn("components[].productId", provenance["consumed_fields"])
+        self.assertNotIn("components[].spareType", provenance["consumed_fields"])
         self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
         self.assertIn("supportActivityJobs[]", provenance["consumed_fields"])
         self.assertIn("supportActivities[].activityCodes", provenance["consumed_fields"])
@@ -300,7 +374,7 @@ class SimulationAdapterTest(unittest.TestCase):
             },
         )
 
-    def test_aircraft_support_v1_composite_task_equipment_quantity_reaches_model_inputs(self) -> None:
+    def test_aircraft_support_v1_composite_task_legacy_equipment_quantity_is_not_runtime_input(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         task_item = project["missionProfile"]["compositeTasks"][0]["taskItems"][0]
         task_item["equipmentQuantity"] = 1
@@ -309,8 +383,8 @@ class SimulationAdapterTest(unittest.TestCase):
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
 
         compiled_item = scenario["simulation_inputs"]["mission_profile"]["composite_tasks"][0]["taskItems"][0]
-        self.assertEqual(compiled_item["equipmentQuantity"], 1)
-        self.assertEqual(compiled_item["requiredEquipmentQuantity"], 4)
+        self.assertNotIn("equipmentQuantity", compiled_item)
+        self.assertNotIn("requiredEquipmentQuantity", compiled_item)
 
     def test_aircraft_support_v1_derives_runtime_airport_objects_from_project_strings(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
@@ -717,16 +791,16 @@ class SimulationAdapterTest(unittest.TestCase):
         project["supportResources"] = [
             {"id": "personnel-1", "supportNodeName": "基地", "type": "personnel", "name": "航电人员", "quantity": 5},
             {"id": "equipment-1", "supportNodeName": "基地", "type": "equipment", "name": "电源车", "quantity": 3},
-            {"id": "spare-1", "supportNodeName": "基地", "type": "spare", "name": "航电模块", "quantity": 6},
+            {"id": "spare-1", "supportNodeName": "基地", "type": "spare", "name": "航电模块", "productId": "product-j15-avionics", "quantity": 6},
             {"id": "personnel-2", "supportNodeName": "基层", "type": "personnel", "name": "库房人员", "quantity": 2},
             {"id": "equipment-2", "supportNodeName": "基层", "type": "equipment", "name": "转运车", "quantity": 1},
-            {"id": "spare-2", "supportNodeName": "基层", "type": "spare", "name": "航电模块", "quantity": 9},
+            {"id": "spare-2", "supportNodeName": "基层", "type": "spare", "name": "航电模块", "productId": "product-j15-avionics", "quantity": 9},
         ]
         project["transportPolicies"] = [{
             "id": "transport-1",
             "fromSupportNodeName": "基层",
             "toSupportNodeName": "基地",
-            "spareName": "航电模块",
+            "productId": "product-j15-avionics",
             "capacity": 2,
             "priority": 1,
             "transportTimeHours": 1,
@@ -740,13 +814,18 @@ class SimulationAdapterTest(unittest.TestCase):
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
 
         nodes = {node["id"]: node for node in scenario["simulation_inputs"]["support_network"]["nodes"]}
+        avionics_product_id = next(
+            component["product_id"]
+            for component in scenario["simulation_inputs"]["equipment_tree"]["components"]
+            if component["id"] == "j15-avionics"
+        )
         self.assertEqual(nodes["基地"]["personnel_capacity"], 5)
         self.assertEqual(nodes["基地"]["equipment_capacity"], 3)
-        self.assertEqual(nodes["基地"]["inventory"]["航电模块"], 6)
-        self.assertEqual(nodes["基层"]["inventory"]["航电模块"], 9)
+        self.assertEqual(nodes["基地"]["inventory"][avionics_product_id], 6)
+        self.assertEqual(nodes["基层"]["inventory"][avionics_product_id], 9)
         self.assertEqual(nodes["基地"]["transport_policies"][0]["from"], "基层")
         self.assertEqual(nodes["基地"]["transport_policies"][0]["to"], "基地")
-        self.assertEqual(nodes["基地"]["transport_policies"][0]["spareType"], "航电模块")
+        self.assertEqual(nodes["基地"]["transport_policies"][0]["product_id"], avionics_product_id)
 
     def test_aircraft_support_v1_treats_support_organization_as_governance_only(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
@@ -1120,6 +1199,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 "supportNodeName": "基层1",
                 "type": "spare",
                 "name": target_spare_name,
+                "model": target_lru["id"],
                 "quantity": 6,
             }
         )
@@ -1129,6 +1209,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 "supportNodeName": "基地",
                 "type": "spare",
                 "name": target_spare_name,
+                "model": target_lru["id"],
                 "quantity": 0,
             }
         )
@@ -1136,7 +1217,7 @@ class SimulationAdapterTest(unittest.TestCase):
             {
                 "fromSupportNodeName": "基层1",
                 "toSupportNodeName": "基地",
-                "spareName": target_spare_name,
+                "productId": f"product-{target_lru['id']}",
                 "capacity": 4,
                 "priority": 1,
                 "transportTimeHours": 0,

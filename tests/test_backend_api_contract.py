@@ -75,9 +75,11 @@ def small_aircraft_support_project(project_id: str) -> dict[str, Any]:
             ],
         }],
         "combatUnit": {"members": [{"aircraftNo": "J15-001", "model": "J-15", "status": "ready", "airport": "A"}]},
+        "products": [{"id": "product-whole-aircraft", "name": "whole aircraft", "model": "whole-aircraft", "kind": "whole"}],
         "components": [{
             "id": "whole-aircraft",
             "name": "whole aircraft",
+            "productId": "product-whole-aircraft",
             "aircraftModel": "J-15",
             "productType": "whole",
             "quantity": 1,
@@ -92,7 +94,7 @@ def small_aircraft_support_project(project_id: str) -> dict[str, Any]:
             "name": "node A",
             "personnelCapacity": 1,
             "equipmentCapacity": 1,
-            "inventory": {"aircraft_support_v1_spares": 2},
+            "inventory": {"product-whole-aircraft": 2},
         }],
         "supportActivities": [{"id": "corrective", "activityType": "corrective", "durationHours": 1, "jobs": []}],
         "supportOrganization": {},
@@ -2441,8 +2443,9 @@ class BackendApiContractTest(unittest.TestCase):
 
         compile_result = self.adapter.compile_scenario_with_gate(compiled_project, model_family="aircraft_support_v1")
         simulation_inputs = compile_result["scenario"]["simulation_inputs"]
+        resource_product_id = compiled_project["components"][0]["productId"]
         self.assertEqual(
-            simulation_inputs["support_network"]["nodes"][0]["inventory"]["aircraft_support_v1_spares"],
+            simulation_inputs["support_network"]["nodes"][0]["inventory"][resource_product_id],
             9,
         )
 
@@ -2639,33 +2642,40 @@ class BackendApiContractTest(unittest.TestCase):
         ]
         project["combatUnit"]["members"][0]["airport"] = "航母飞行甲板"
         project["combatUnit"]["members"][0]["deploymentLocation"] = "前出海上保障点"
+        project["products"].extend([
+            {"id": "product-engine-spare", "name": "发动机备件", "kind": "spare"},
+            {"id": "product-hydraulic-spare", "name": "液压备件", "kind": "spare"},
+            {"id": "product-avionics-spare", "name": "航电模块", "kind": "spare"},
+            {"id": "product-forward-spare", "name": "前出备件", "kind": "spare"},
+            {"id": "product-stock-spare", "name": "仓库备件", "kind": "spare"},
+        ])
         project["supportNodes"] = [
             {
                 "id": "carrier-deck",
                 "name": "基地",
                 "personnelCapacity": 4,
                 "equipmentCapacity": 4,
-                "inventory": {"发动机备件": 4, "液压备件": 5, "航电模块": 6},
+                "inventory": {"product-engine-spare": 4, "product-hydraulic-spare": 5, "product-avionics-spare": 6},
             },
             {
                 "id": "forward-sea-base",
                 "name": "中继",
                 "personnelCapacity": 4,
                 "equipmentCapacity": 4,
-                "inventory": {"前出备件": 9},
+                "inventory": {"product-forward-spare": 9},
             },
             {
                 "id": "carrier-stock",
                 "name": "仓库",
                 "personnelCapacity": 4,
                 "equipmentCapacity": 4,
-                "inventory": {"仓库备件": 12},
+                "inventory": {"product-stock-spare": 12},
             },
         ]
         project["components"].extend([
-            {"id": "engine-spare", "name": "发动机控制模块", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "spareType": "发动机备件", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
-            {"id": "hydraulic-spare", "name": "液压执行器", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "spareType": "液压备件", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
-            {"id": "avionics-spare", "name": "航电模块", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "spareType": "航电模块", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
+            {"id": "engine-spare", "name": "发动机控制模块", "productId": "product-engine-spare", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
+            {"id": "hydraulic-spare", "name": "液压执行器", "productId": "product-hydraulic-spare", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
+            {"id": "avionics-spare", "name": "航电模块", "productId": "product-avionics-spare", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
         ])
 
         shortfall = self.api.run_lite_mesa_analysis(
@@ -2682,6 +2692,7 @@ class BackendApiContractTest(unittest.TestCase):
         expected_types = ["发动机备件", "液压备件", "航电模块"]
         self.assertEqual([row["spareType"] for row in shortfall["rows"]], expected_types)
         self.assertEqual([row["spareType"] for row in carry["rows"]], expected_types)
+        self.assertTrue(all(row["productId"] for row in shortfall["rows"] + carry["rows"]))
         self.assertTrue(all("aircraftModel" in row for row in carry["rows"]))
         self.assertTrue(all("lifeLimited" in row and "lifeLandings" in row and "lifeHours" in row for row in carry["rows"]))
         self.assertIn(["备件满足率下限", "0.90"], carry["metrics"])
@@ -2826,12 +2837,16 @@ class BackendApiContractTest(unittest.TestCase):
                 },
                 "equipment_tree": {
                     "components": [
-                        {"id": "j15-engine", "aircraft_model": "J-15", "spare_type": "发动机备件"},
-                        {"id": "j35-radar", "aircraft_model": "J-35", "spare_type": "雷达备件"},
+                        {"id": "j15-engine", "aircraft_model": "J-15", "product_id": "product-j15-engine", "product_name": "发动机备件"},
+                        {"id": "j35-radar", "aircraft_model": "J-35", "product_id": "product-j35-radar", "product_name": "雷达备件"},
                     ],
                 },
                 "support_network": {
-                    "nodes": [{"id": "carrier-deck", "inventory": {"发动机备件": 2, "雷达备件": 3, "未知备件": 9}}],
+                    "nodes": [{
+                        "id": "carrier-deck",
+                        "inventory": {"product-j15-engine": 2, "product-j35-radar": 3, "product-unknown": 9},
+                        "product_names": {"product-j15-engine": "发动机备件", "product-j35-radar": "雷达备件", "product-unknown": "未知备件"},
+                    }],
                 },
             },
         )
@@ -2840,6 +2855,10 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(
             [(row["aircraft_model"], row["spare_type"]) for row in rows],
             [("J-15", "发动机备件"), ("J-35", "雷达备件")],
+        )
+        self.assertEqual(
+            [row["product_id"] for row in rows],
+            ["product-j15-engine", "product-j35-radar"],
         )
         self.assertNotIn("全部机型", {row["aircraft_model"] for row in rows})
 
@@ -3920,14 +3939,16 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(created["project"]["missionProfile"]["sourceImportId"], import_package["importId"])
         self.assertNotIn("equipment", created["project"])
         self.assertGreaterEqual(len(created["project"]["components"]), 8)
-        self.assertTrue(any(
-            component.get("id") == "j15-avionics"
-            and component.get("aircraftModel") == "J-15"
-            and component.get("parentId") == "aircraft-root"
-            and component.get("productType") == "LRU"
-            and component.get("spareType") == "航电模块"
-            for component in created["project"]["components"]
-        ))
+        avionics = next(component for component in created["project"]["components"] if component.get("id") == "j15-avionics")
+        self.assertTrue(
+            avionics.get("aircraftModel") == "J-15"
+            and avionics.get("parentId") == "aircraft-root"
+            and avionics.get("productType") == "LRU"
+            and avionics.get("productId")
+        )
+        avionics_product = next(product for product in created["project"]["products"] if product["id"] == avionics["productId"])
+        self.assertEqual(avionics_product["name"], "航电系统")
+        self.assertNotIn("spareType", avionics)
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["periodicTasks"]), 1)
         self.assertNotIn("basicMission", created["project"])
@@ -4085,7 +4106,10 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertTrue(validation["ok"])
         self.assertEqual(project["transportPolicies"][0]["name"], "旧调运策略")
-        self.assertEqual(project["transportPolicies"][0]["spareName"], "航电模块")
+        product_id = project["transportPolicies"][0]["productId"]
+        self.assertEqual(next(product["name"] for product in project["products"] if product["id"] == product_id), "航电模块")
+        self.assertNotIn("spareName", project["transportPolicies"][0])
+        self.assertNotIn("spareType", project["transportPolicies"][0])
         self.assertEqual(project["transportPolicies"][0]["direction"], "横向运输")
         self.assertEqual(project["transportPolicies"][0]["transportMode"], "横向运输")
         self.assertEqual(project["transportPolicies"][0]["transferCycleHours"], 6)

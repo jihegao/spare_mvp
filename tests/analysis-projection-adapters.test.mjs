@@ -21,8 +21,8 @@ test("normalizes spare shortfall projection payload for formal KPI and table ren
       fields: ["fill_rate", "utilization", "shortage_probability"]
     },
     data: [
-      { spare_type: "engine", fill_rate: 0.81, utilization: 0.72, shortage_probability: 0.25, risk_level: "high" },
-      { spare_type: "radar", fill_rate: 0.96, utilization: 0.88, shortage_probability: 0, risk_level: "low" }
+      { product_id: "product-engine", spare_type: "engine", fill_rate: 0.81, utilization: 0.72, shortage_probability: 0.25, risk_level: "high" },
+      { product_id: "product-radar", spare_type: "radar", fill_rate: 0.96, utilization: 0.88, shortage_probability: 0, risk_level: "low" }
     ]
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
@@ -40,6 +40,7 @@ test("normalizes spare shortfall projection payload for formal KPI and table ren
   ]);
   assert.deepEqual(view.highestShortfallNames, ["engine"]);
   assert.equal(view.rows[0].name, "engine");
+  assert.equal(view.rows[0].productId, "product-engine");
   assert.equal(view.rows[0].level, "严重");
   assert.equal(view.rows[0].fillRateConstraint, "未达 0.85");
   assert.equal(view.rows[0].utilizationConstraint, "未达 0.85");
@@ -114,8 +115,8 @@ test("normalizes carry list projection payload for formal KPI and table renderin
     run_id: "run-ui",
     model_family: "aircraft_support_v1",
     data: [
-      { spare_type: "engine", recommended_multiplier: 1.4, risk_level: "high" },
-      { spare_type: "hydraulic", recommended_multiplier: 1.1, risk_level: "medium" }
+      { product_id: "product-engine", spare_type: "engine", recommended_multiplier: 1.4, risk_level: "high" },
+      { product_id: "product-hydraulic", spare_type: "hydraulic", recommended_multiplier: 1.1, risk_level: "medium" }
     ]
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
@@ -127,6 +128,7 @@ test("normalizes carry list projection payload for formal KPI and table renderin
   assert.equal(view.objective, "minimize_carry_spares");
   assert.deepEqual(view.metrics[0], ["默认目标", "携行备件越少越好"]);
   assert.equal(view.rows[0].priority, "高");
+  assert.equal(view.rows[0].productId, "product-engine");
   assert.equal(view.rows[0].qty, 2);
 });
 

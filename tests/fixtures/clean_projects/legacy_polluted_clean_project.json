@@ -1,4 +1,8 @@
 {
+  "schema_version": "project-v0",
+  "project_id": "project-polluted-aircraft-support-v1",
+  "project_version": "project-v0.1",
+  "scenarioId": "scenario-polluted-aircraft-support-v1",
   "activeModule": "sparePlanning",
   "airports": [
     {
@@ -6,82 +10,134 @@
       "name": "Airport A"
     }
   ],
+  "missionProfile": {
+    "name": "clean mission",
+    "durationHours": 1,
+    "compositeTasks": [],
+    "periodicTasks": []
+  },
   "basicMissions": [
     {
-      "equipmentType": "J-15",
       "id": "basic-small",
+      "name": "small sortie",
       "missionId": "basic-small",
+      "taskDurationMinutes": 30,
+      "equipmentType": "J-15",
       "missionPhases": [
         {
-          "durationMinutes": 30,
           "id": "phase-sortie",
           "name": "sortie",
-          "sequence": 1
+          "sequence": 1,
+          "durationMinutes": 30
         }
-      ],
-      "name": "small sortie",
-      "taskDurationMinutes": 30
+      ]
     }
   ],
   "combatUnit": {
     "members": [
       {
         "aircraftNo": "J15-001",
-        "airport": "Airport A",
         "model": "J-15",
-        "status": "ready"
+        "status": "ready",
+        "airport": "Airport A"
       }
     ]
   },
   "components": [
     {
+      "id": "whole-aircraft",
+      "name": "whole aircraft",
       "aircraftModel": "J-15",
+      "productType": "whole",
+      "quantity": 1,
       "failureDistribution": {
         "distributionType": "exponential"
       },
-      "id": "whole-aircraft",
       "kOutOfN": {
-        "enabled": false,
         "k": 1,
-        "n": 1
+        "n": 1,
+        "enabled": false
       },
-      "name": "whole aircraft",
-      "productType": "whole",
-      "quantity": 1
+      "productId": "product-whole-aircraft"
     }
   ],
-  "missionProfile": {
-    "compositeTasks": [],
-    "durationHours": 1,
-    "name": "clean mission",
-    "periodicTasks": []
+  "supportOrganization": {
+    "tree": {
+      "id": "org-root",
+      "name": "保障组织",
+      "children": [
+        {
+          "id": "node-a",
+          "name": "node A",
+          "children": []
+        }
+      ]
+    }
   },
-  "project_id": "project-polluted-aircraft-support-v1",
-  "project_version": "project-v0.1",
+  "supportNodes": [
+    {
+      "id": "support-node-1",
+      "name": "node A"
+    }
+  ],
+  "supportActivities": [
+    {
+      "id": "corrective",
+      "activityType": "corrective",
+      "durationHours": 1,
+      "activityCodes": [
+        "job-1"
+      ],
+      "predecessors": {
+        "job-1": []
+      },
+      "activityName": "corrective",
+      "planType": "修复性维修方案"
+    }
+  ],
   "reliabilityBlockDiagram": {
-    "edges": [],
     "nodes": [
       {
         "id": "whole-aircraft",
         "type": "system"
       }
-    ]
+    ],
+    "edges": []
   },
-  "scenarioId": "scenario-polluted-aircraft-support-v1",
-  "schema_version": "project-v0",
-  "supportActivities": [
+  "supportResources": [
     {
-      "activityCodes": [
-        "job-1"
-      ],
-      "activityName": "corrective",
-      "activityType": "corrective",
-      "durationHours": 1,
-      "id": "corrective",
-      "planType": "修复性维修方案",
-      "predecessors": {
-        "job-1": []
-      }
+      "id": "node-a-personnel",
+      "supportNodeName": "node A",
+      "type": "personnel",
+      "name": "node A人员",
+      "model": "",
+      "quantity": 1
+    },
+    {
+      "id": "node-a-equipment",
+      "supportNodeName": "node A",
+      "type": "equipment",
+      "name": "node A设备",
+      "model": "",
+      "quantity": 1
+    },
+    {
+      "id": "node-a-spare-0",
+      "supportNodeName": "node A",
+      "type": "spare",
+      "name": "aircraft_support_v1_spares",
+      "model": "aircraft_support_v1_spares",
+      "quantity": 2,
+      "productId": "product-node-a-spare-0"
+    }
+  ],
+  "transportPolicies": [
+    {
+      "id": "node-a-transport-0",
+      "fromSupportNodeName": "node A",
+      "toSupportNodeName": "node A",
+      "capacity": 1,
+      "productId": "product-node-a-spare-0"
     }
   ],
   "supportActivityJobs": [
@@ -90,58 +146,18 @@
       "id": "job-1"
     }
   ],
-  "supportNodes": [
+  "products": [
     {
-      "id": "support-node-1",
-      "name": "node A"
-    }
-  ],
-  "supportOrganization": {
-    "tree": {
-      "children": [
-        {
-          "children": [],
-          "id": "node-a",
-          "name": "node A"
-        }
-      ],
-      "id": "org-root",
-      "name": "保障组织"
-    }
-  },
-  "supportResources": [
-    {
-      "id": "node-a-personnel",
-      "model": "",
-      "name": "node A人员",
-      "quantity": 1,
-      "supportNodeName": "node A",
-      "type": "personnel"
+      "id": "product-whole-aircraft",
+      "name": "whole aircraft",
+      "model": "whole aircraft",
+      "kind": "whole"
     },
     {
-      "id": "node-a-equipment",
-      "model": "",
-      "name": "node A设备",
-      "quantity": 1,
-      "supportNodeName": "node A",
-      "type": "equipment"
-    },
-    {
-      "id": "node-a-spare-0",
-      "model": "aircraft_support_v1_spares",
+      "id": "product-node-a-spare-0",
       "name": "aircraft_support_v1_spares",
-      "quantity": 2,
-      "supportNodeName": "node A",
-      "type": "spare"
-    }
-  ],
-  "transportPolicies": [
-    {
-      "capacity": 1,
-      "fromSupportNodeName": "node A",
-      "id": "node-a-transport-0",
-      "spareName": "aircraft_support_v1_spares",
-      "toSupportNodeName": "node A"
+      "kind": "spare",
+      "model": "aircraft_support_v1_spares"
     }
   ]
 }

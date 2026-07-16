@@ -147,6 +147,7 @@
         "n": 6
       },
       "name": "舰载机",
+      "productId": "product-aircraft-root",
       "quantity": 6
     },
     {
@@ -163,9 +164,9 @@
       },
       "name": "发动机",
       "parentId": "aircraft-root",
+      "productId": "product-j15-engine",
       "productType": "LRU",
       "quantity": 2,
-      "spareType": "发动机备件",
       "specialRepairProfile": {
         "repairTimeMinutes": 220
       }
@@ -184,9 +185,9 @@
       },
       "name": "发动机控制模块",
       "parentId": "j15-engine",
+      "productId": "product-j15-engine-control",
       "productType": "SRU",
       "quantity": 1,
-      "spareType": "发动机备件",
       "specialRepairProfile": {
         "repairTimeMinutes": 160
       }
@@ -205,9 +206,9 @@
       },
       "name": "航电系统",
       "parentId": "aircraft-root",
+      "productId": "product-j15-avionics",
       "productType": "LRU",
       "quantity": 2,
-      "spareType": "航电模块",
       "specialRepairProfile": {
         "repairTimeMinutes": 150
       }
@@ -226,9 +227,9 @@
       },
       "name": "雷达 LRU",
       "parentId": "j15-avionics",
+      "productId": "product-j15-radar",
       "productType": "SRU",
       "quantity": 1,
-      "spareType": "航电模块",
       "specialRepairProfile": {
         "repairTimeMinutes": 145
       }
@@ -247,9 +248,9 @@
       },
       "name": "液压系统",
       "parentId": "aircraft-root",
+      "productId": "product-j15-hydraulic",
       "productType": "LRU",
       "quantity": 1,
-      "spareType": "液压备件",
       "specialRepairProfile": {
         "repairTimeMinutes": 135
       }
@@ -268,9 +269,9 @@
       },
       "name": "发动机",
       "parentId": "aircraft-root",
+      "productId": "product-j35-engine",
       "productType": "LRU",
       "quantity": 2,
-      "spareType": "发动机备件",
       "specialRepairProfile": {
         "repairTimeMinutes": 210
       }
@@ -289,9 +290,9 @@
       },
       "name": "航电系统",
       "parentId": "aircraft-root",
+      "productId": "product-j35-avionics",
       "productType": "LRU",
       "quantity": 2,
-      "spareType": "航电模块",
       "specialRepairProfile": {
         "repairTimeMinutes": 150
       }
@@ -310,9 +311,9 @@
       },
       "name": "任务计算机模块",
       "parentId": "j35-avionics",
+      "productId": "product-j35-mission-computer",
       "productType": "SRU",
       "quantity": 2,
-      "spareType": "航电模块",
       "specialRepairProfile": {
         "repairTimeMinutes": 125
       }
@@ -331,9 +332,9 @@
       },
       "name": "液压系统",
       "parentId": "aircraft-root",
+      "productId": "product-j35-hydraulic",
       "productType": "LRU",
       "quantity": 1,
-      "spareType": "液压备件",
       "specialRepairProfile": {
         "repairTimeMinutes": 130
       }
@@ -349,11 +350,11 @@
           {
             "basicMissionId": "bm-cv-01",
             "basicTaskName": "近海制空巡逻任务",
-            "dailyRepeatCount": 2,
-            "equipmentType": "J-15",
-            "firstWaveTime": "08:00",
             "groupName": "昼间制空编队",
-            "intervalHours": 6
+            "firstWaveTime": "08:00",
+            "dailyRepeatCount": 2,
+            "intervalHours": 6,
+            "equipmentType": "J-15"
           }
         ]
       },
@@ -365,11 +366,11 @@
           {
             "basicMissionId": "night-alert-main",
             "basicTaskName": "远海警戒任务",
-            "dailyRepeatCount": 1,
-            "equipmentType": "J-35",
-            "firstWaveTime": "20:15",
             "groupName": "夜间警戒编队",
-            "intervalHours": 8
+            "firstWaveTime": "20:15",
+            "dailyRepeatCount": 1,
+            "intervalHours": 8,
+            "equipmentType": "J-35"
           }
         ]
       }
@@ -378,10 +379,10 @@
     "name": "舰载机昼夜混合出动任务剖面",
     "periodicTasks": [
       {
-        "compositeTaskIds": [
-          "composite-day-cap",
-          "composite-night-alert"
-        ],
+        "id": "periodic-carrier-day-night",
+        "name": "航母昼夜保障周期任务",
+        "repeatWeeks": 2.0,
+        "cycleDays": 7.0,
         "compositeTasks": [
           {
             "compositeTaskId": "composite-day-cap",
@@ -400,10 +401,10 @@
             "week": "4"
           }
         ],
-        "cycleDays": 7.0,
-        "id": "periodic-carrier-day-night",
-        "name": "航母昼夜保障周期任务",
-        "repeatWeeks": 2.0
+        "compositeTaskIds": [
+          "composite-day-cap",
+          "composite-night-alert"
+        ]
       }
     ],
     "profileId": "MP-CV-01",
@@ -423,6 +424,85 @@
     },
     "warnings": []
   },
+  "products": [
+    {
+      "id": "product-aircraft-root",
+      "model": "舰载机",
+      "name": "舰载机"
+    },
+    {
+      "id": "product-j15-engine",
+      "kind": "LRU",
+      "model": "发动机",
+      "name": "发动机"
+    },
+    {
+      "id": "product-j15-engine-control",
+      "kind": "SRU",
+      "model": "发动机控制模块",
+      "name": "发动机控制模块"
+    },
+    {
+      "id": "product-j15-avionics",
+      "kind": "LRU",
+      "model": "航电系统",
+      "name": "航电系统"
+    },
+    {
+      "id": "product-j15-radar",
+      "kind": "SRU",
+      "model": "雷达 LRU",
+      "name": "雷达 LRU"
+    },
+    {
+      "id": "product-j15-hydraulic",
+      "kind": "LRU",
+      "model": "液压系统",
+      "name": "液压系统"
+    },
+    {
+      "id": "product-j35-engine",
+      "kind": "LRU",
+      "model": "发动机",
+      "name": "发动机"
+    },
+    {
+      "id": "product-j35-avionics",
+      "kind": "LRU",
+      "model": "航电系统",
+      "name": "航电系统"
+    },
+    {
+      "id": "product-j35-mission-computer",
+      "kind": "SRU",
+      "model": "任务计算机模块",
+      "name": "任务计算机模块"
+    },
+    {
+      "id": "product-j35-hydraulic",
+      "kind": "LRU",
+      "model": "液压系统",
+      "name": "液压系统"
+    },
+    {
+      "id": "product-support-resource-spare-f9224feeb0",
+      "kind": "spare",
+      "model": "发动机备件",
+      "name": "发动机备件"
+    },
+    {
+      "id": "product-support-resource-spare-17fde32d23",
+      "kind": "spare",
+      "model": "液压备件",
+      "name": "液压备件"
+    },
+    {
+      "id": "product-support-resource-spare-3c7d67e069",
+      "kind": "spare",
+      "model": "航电模块",
+      "name": "航电模块"
+    }
+  ],
   "projectInfo": {
     "baseCode": "IMPORTED-001",
     "name": "导入示例项目",
@@ -724,6 +804,7 @@
         {
           "model": "LRU",
           "name": "航电模块",
+          "productId": "product-support-resource-spare-3c7d67e069",
           "quantity": 1
         }
       ],
@@ -786,6 +867,7 @@
         {
           "model": "SRU",
           "name": "液压备件",
+          "productId": "product-support-resource-spare-17fde32d23",
           "quantity": 1
         }
       ],
@@ -848,29 +930,29 @@
   ],
   "supportOrganization": {
     "tree": {
+      "id": "support-org-root",
+      "name": "保障组织",
+      "description": "由导入项目保障节点生成的初始组织树",
       "children": [
         {
-          "children": [],
-          "description": "任务优先 + 备件安全库存",
           "id": "carrier-deck",
-          "name": "基地"
+          "name": "基地",
+          "description": "任务优先 + 备件安全库存",
+          "children": []
         },
         {
-          "children": [],
-          "description": "前置库存 + 横向支援",
           "id": "forward-sea-base",
-          "name": "中继"
+          "name": "中继",
+          "description": "前置库存 + 横向支援",
+          "children": []
         },
         {
-          "children": [],
-          "description": "集中库存 + 垂直补给",
           "id": "carrier-stock",
-          "name": "基层1"
+          "name": "基层1",
+          "description": "集中库存 + 垂直补给",
+          "children": []
         }
-      ],
-      "description": "由导入项目保障节点生成的初始组织树",
-      "id": "support-org-root",
-      "name": "保障组织"
+      ]
     }
   },
   "supportResources": [
@@ -894,6 +976,7 @@
       "id": "support-resource-spare-f9224feeb0",
       "model": "发动机备件",
       "name": "发动机备件",
+      "productId": "product-support-resource-spare-f9224feeb0",
       "quantity": 4,
       "supportNodeName": "基地",
       "type": "spare"
@@ -902,6 +985,7 @@
       "id": "support-resource-spare-17fde32d23",
       "model": "液压备件",
       "name": "液压备件",
+      "productId": "product-support-resource-spare-17fde32d23",
       "quantity": 5,
       "supportNodeName": "基地",
       "type": "spare"
@@ -910,6 +994,7 @@
       "id": "support-resource-spare-3c7d67e069",
       "model": "航电模块",
       "name": "航电模块",
+      "productId": "product-support-resource-spare-3c7d67e069",
       "quantity": 6,
       "supportNodeName": "基地",
       "type": "spare"
@@ -934,6 +1019,7 @@
       "id": "support-resource-spare-23e10ec846",
       "model": "发动机备件",
       "name": "发动机备件",
+      "productId": "product-support-resource-spare-f9224feeb0",
       "quantity": 2,
       "supportNodeName": "中继",
       "type": "spare"
@@ -942,6 +1028,7 @@
       "id": "support-resource-spare-18b536c487",
       "model": "液压备件",
       "name": "液压备件",
+      "productId": "product-support-resource-spare-17fde32d23",
       "quantity": 2,
       "supportNodeName": "中继",
       "type": "spare"
@@ -950,6 +1037,7 @@
       "id": "support-resource-spare-5ec05a2507",
       "model": "航电模块",
       "name": "航电模块",
+      "productId": "product-support-resource-spare-3c7d67e069",
       "quantity": 3,
       "supportNodeName": "中继",
       "type": "spare"
@@ -974,6 +1062,7 @@
       "id": "support-resource-spare-9d11b8cda2",
       "model": "发动机备件",
       "name": "发动机备件",
+      "productId": "product-support-resource-spare-f9224feeb0",
       "quantity": 6,
       "supportNodeName": "基层1",
       "type": "spare"
@@ -982,6 +1071,7 @@
       "id": "support-resource-spare-1e6d61dc33",
       "model": "液压备件",
       "name": "液压备件",
+      "productId": "product-support-resource-spare-17fde32d23",
       "quantity": 6,
       "supportNodeName": "基层1",
       "type": "spare"
@@ -990,6 +1080,7 @@
       "id": "support-resource-spare-e4529c562d",
       "model": "航电模块",
       "name": "航电模块",
+      "productId": "product-support-resource-spare-3c7d67e069",
       "quantity": 8,
       "supportNodeName": "基层1",
       "type": "spare"
@@ -997,62 +1088,57 @@
   ],
   "transportPolicies": [
     {
-      "capacity": 4,
-      "fromSupportNodeName": "基层1",
       "id": "transport-policy-21ae58b0d0",
-      "priority": 1,
-      "spareName": "",
+      "fromSupportNodeName": "基层1",
       "toSupportNodeName": "基地",
+      "capacity": 4,
+      "priority": 1,
       "transportMode": "升降机转运",
       "transportTimeHours": 1.0
     },
     {
-      "capacity": 2,
-      "fromSupportNodeName": "基地",
       "id": "transport-policy-9bbb44d0c0",
-      "priority": 1,
-      "spareName": "",
+      "fromSupportNodeName": "基地",
       "toSupportNodeName": "中继",
+      "capacity": 2,
+      "priority": 1,
       "transportMode": "补给艇转运",
       "transportTimeHours": 2.0
     },
     {
-      "capacity": 3,
-      "fromSupportNodeName": "基地",
       "id": "transport-policy-0b15cac048",
-      "priority": 2,
-      "spareName": "",
+      "fromSupportNodeName": "基地",
       "toSupportNodeName": "基层1",
+      "capacity": 3,
+      "priority": 2,
       "transportMode": "返修转运",
       "transportTimeHours": 3.0
     },
     {
-      "capacity": 1,
-      "criticalInventory": 2,
-      "direction": "纵向运输",
-      "fromSupportNodeName": "基层1",
       "id": "logistics-support-transport-1",
-      "name": "1",
-      "priority": 1,
-      "spareName": "发动机备件",
+      "fromSupportNodeName": "基层1",
       "toSupportNodeName": "基地",
+      "name": "1",
+      "direction": "纵向运输",
+      "triggerMode": "临界库存",
+      "criticalInventory": 2,
+      "capacity": 1,
+      "priority": 1,
       "transportMode": "纵向运输",
-      "transportTimeHours": 1.0,
-      "triggerMode": "临界库存"
+      "transportTimeHours": 1.0
     },
     {
-      "capacity": 1,
-      "direction": "横向运输",
-      "fromSupportNodeName": "基地",
       "id": "logistics-support-transport-2",
-      "name": "2",
-      "priority": 1,
-      "spareName": "航电模块",
+      "fromSupportNodeName": "基地",
       "toSupportNodeName": "中继",
+      "name": "2",
+      "direction": "横向运输",
+      "triggerMode": "周期性调运",
       "transferCycleHours": 24,
+      "capacity": 1,
+      "priority": 1,
       "transportMode": "横向运输",
-      "transportTimeHours": 2.0,
-      "triggerMode": "周期性调运"
+      "transportTimeHours": 2.0
     }
   ]
 }
