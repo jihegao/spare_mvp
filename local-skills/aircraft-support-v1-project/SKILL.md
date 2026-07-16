@@ -1,6 +1,6 @@
 ---
 name: aircraft-support-v1-project
-description: Use when Codex needs to choose a local spare_mvp backend Project, read or remember its Project JSON modeling table structure, explain the data by 任务、装备、保障组织、保障活动, or run aircraft_support_v1 Mesa simulation directly from Project JSON without using the formal backend/API/SimulationAdapter path.
+description: Use when Codex needs to choose a local spare_mvp backend Project, read or remember its Project JSON modeling table structure, explain the data by 任务、装备、保障组织、保障活动, run aircraft_support_v1 Mesa simulation directly from Project JSON without using the formal backend/API/SimulationAdapter path, or keep this skill synchronized after the Project schema, compiler mapping, or aircraft_support_v1 model input structure changes.
 ---
 
 # Aircraft Support V1 Project
@@ -29,6 +29,33 @@ Use this skill for local aircraft_support_v1 analysis from Project JSON. Keep it
    - Run `run --project-json <project.json> --repo-root <repo-with-src-package> --duration-minutes <n> --sample-every-minutes <n> --seed <n>`.
    - This compiles Project JSON to `aircraft-support-v1-input-v0` inside the skill script and imports only the `AircraftSupportV1Model` package from the provided repo/package path.
    - The independent compiler must prefer the clean format from issues `#160`-`#168`: no root `missionAreas`, no root `reliabilityBlockDiagram`, no required root `missionPhases`, no nested durable `supportActivities[].jobs`, and no nested `supportActivities[].transportStrategies`.
+6. Synchronize this skill in the same change set whenever the modeling data structure changes.
+   - Treat changes to Project schema fields, clean export/pruning rules, migrations, compiler mappings, `aircraft-support-v1-input-v0`, or model-consumed fields as skill-maintenance triggers.
+   - Review and update every affected skill surface before declaring the model change complete: this `SKILL.md`, `references/project-json-four-domain-map.md`, and `scripts/aircraft_support_v1_project.py`.
+   - Update `agents/openai.yaml` when the skill trigger, supported workflow, or default usage changes.
+   - Preserve the independent-path boundary. Do not copy the formal backend/API/`SimulationAdapter` workflow into the skill; synchronize only the Project semantics and the independent compiler/model contract.
+   - Run the validation gates in `Model-Structure Synchronization Contract` after synchronization.
+
+## Model-Structure Synchronization Contract
+
+Use the live `spare_mvp` repository as the source of truth. Inspect at least the relevant schema, clean Project exporter, formal compiler mapping, model consumed-field declaration, and representative fixtures/tests to identify semantic drift.
+
+For every modeling-structure change:
+
+1. Update the four-domain field map when a field is added, removed, moved, renamed, or changes ownership or meaning.
+2. Update the skill compiler, structure memory, explanation output, and save-template handling when the changed field affects those operations.
+3. Update clean-vs-legacy guidance and compatibility fallbacks explicitly; do not silently retain a retired field or invent a fallback that the repository does not support.
+4. Add or update a representative skill fixture/test when compilation or runtime behavior changes.
+5. Do not mark the repository model change complete until the skill review is finished. If no skill file requires a content change, record which surfaces were checked and why the skill remains compatible.
+
+Validate the synchronized skill with:
+
+```bash
+python3 -m py_compile scripts/aircraft_support_v1_project.py
+python3 /Users/gaojihe/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/gaojihe/.codex/skills/aircraft-support-v1-project
+```
+
+Also run the affected `remember-structure`, `explain`, compile, or independent `run` path against a representative current Project whenever its semantics changed.
 
 ## Script Contract
 
