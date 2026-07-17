@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { buildBackendProjectJson, buildExperimentPlanConfig, createBackendApiClient } from "../front/api-client.mjs";
+import {
+  buildBackendProjectJson,
+  buildExperimentPlanConfig,
+  createBackendApiClient,
+  liteMesaAnalysisRequestTimeoutMs
+} from "../front/api-client.mjs";
 
 test("frontend API client exposes stable PR-F save run and result methods", async () => {
   const calls = [];
@@ -193,6 +198,24 @@ test("frontend API client keeps lite Mesa analysis route while visualization sid
     settings: { samples: 2, seed: 20260705 },
     model_family: "aircraft_support_v1"
   });
+  assert.equal(calls[0].timeoutMs, 210000);
+});
+
+test("lite Mesa request timeout follows sample waves and stays above the backend session deadline", () => {
+  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 4, parallelCores: 1 }), 330000);
+  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 24, parallelCores: 4 }), 450000);
+  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 24, parallelCores: 1 }), 930000);
+  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 1000, parallelCores: 1 }), 930000);
+  assert.equal(
+    liteMesaAnalysisRequestTimeoutMs({
+      samples: 1,
+      parallelCores: 1,
+      sampleTimeoutSeconds: 1,
+      sessionTimeoutSeconds: 10
+    }),
+    40000
+  );
+  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 24, parallelCores: 4, sampleTimeoutSeconds: 120 }), 870000);
 });
 
 test("frontend API client saves and lists aircraft mission reliability snapshots", async () => {

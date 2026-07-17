@@ -4062,6 +4062,11 @@ test("Monte Carlo detail hides statistical chrome and renders three normalized b
       }
     }),
     liteMesaAnalysisResponseOverrides: {
+      sample_count: 3,
+      requested_sample_count: 4,
+      failed_sample_count: 1,
+      failed_samples: [{ sample_index: 3, seed: 20260624, error: { code: "sample_timeout" } }],
+      timings: { total_seconds: 70.9 },
       aggregate_metrics: {
         mission_success_rate: 0.73,
         spare_fill_rate: 0.64,
@@ -4126,7 +4131,38 @@ test("Monte Carlo detail hides statistical chrome and renders three normalized b
       runtime.appNode.innerHTML,
       /样本量|随机种子|样本数|均值|最小值|最大值|标准差|均值\s*\/\s*n=|\d+\s*样本\s*\/|\d+\s*参数组|mean_transport_delay|mission_success_rate|spare_fill_rate|spare_utilization/
     );
-    assert.match(runtime.appNode.innerHTML, /Mesa 分析完成。/);
+    assert.match(runtime.appNode.innerHTML, new RegExp("Mesa 分析完成：3/4 个样本，失败 1 个，总耗时 70\\.9 秒。"));
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("Monte Carlo detail renders backend sample timeout as an actionable blocked state", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: {
+      status: "blocked",
+      sample_count: 0,
+      requested_sample_count: 4,
+      failed_sample_count: 4,
+      message: "Mesa 分析样本全部超时；请减少样本数、提高并行核心数，或检查模型输入。",
+      errors: Array.from({ length: 4 }, (_, sampleIndex) => ({
+        sample_index: sampleIndex,
+        seed: 20260621 + sampleIndex,
+        error: { code: "sample_timeout", details: { timeout_seconds: 60 } }
+      })),
+      timings: { total_seconds: 60.1 }
+    }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-action='run']");
+    assert.match(
+      runtime.appNode.innerHTML,
+      /Mesa 分析未完成：Mesa 分析样本全部超时；请减少样本数、提高并行核心数，或检查模型输入。/
+    );
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
   } finally {
     runtime.restore();
   }

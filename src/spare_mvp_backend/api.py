@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import copy
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import contextmanager
 import hashlib
 import io
 import json
 import math
 import multiprocessing
 from pathlib import Path
+import signal
 import sqlite3
 import threading
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -41,6 +43,16 @@ ANALYSIS_PROJECTION_ARTIFACT_KINDS = {
     "mission_reliability": "analysis_projection_mission_reliability",
     "downtime_factors": "analysis_projection_downtime_factors",
 }
+
+LITE_MESA_SAMPLE_TIMEOUT_SECONDS = 60
+LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS = 180
+LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS = 900
+
+
+class LiteMesaSampleTimeoutError(TimeoutError):
+    def __init__(self, timeout_seconds: float) -> None:
+        self.timeout_seconds = timeout_seconds
+        super().__init__(f"Mesa sample exceeded the {timeout_seconds:g}s execution limit")
 
 
 class BackendApi:
@@ -800,6 +812,7 @@ class BackendApi:
         model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
     ) -> dict[str, Any]:
         """Run a current-project Mesa analysis in memory without formal run persistence."""
+        analysis_started = time.perf_counter()
         normalized_analysis_type = _normalize_analysis_type(analysis_type)
         try:
             normalized_settings = _normalize_lite_mesa_analysis_settings(settings or {})
@@ -824,7 +837,9 @@ class BackendApi:
                 "lite_mesa_analysis_compile_unavailable",
                 "SimulationAdapter does not expose compile_scenario_with_gate",
             )
+        compile_started = time.perf_counter()
         compile_result = compile_gate(project, model_family=model_family)
+        compile_seconds = time.perf_counter() - compile_started
         if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
             return _blocked_lite_mesa_analysis_payload(
                 project=project,
@@ -842,31 +857,62 @@ class BackendApi:
         run_id = _lite_mesa_analysis_run_id(project, scenario, normalized_analysis_type, normalized_settings)
         inputs = copy.deepcopy(scenario["simulation_inputs"])
         base_seed = normalized_settings["seed"] if normalized_settings["seed"] is not None else int(inputs.get("seed", 0))
-        samples, failed_samples, worker_count = _run_lite_mesa_analysis_samples(
+        sample_started = time.perf_counter()
+        samples, failed_samples, worker_count, sample_diagnostics = _run_lite_mesa_analysis_samples(
             inputs,
             base_seed=base_seed,
             settings=normalized_settings,
         )
+        sample_execution_seconds = time.perf_counter() - sample_started
 
         if not samples:
-            return _blocked_lite_mesa_analysis_payload(
+            timeout_failures = [
+                item for item in failed_samples
+                if item.get("error", {}).get("code") in {"sample_timeout", "session_timeout"}
+            ]
+            payload = _blocked_lite_mesa_analysis_payload(
                 project=project,
                 analysis_type=normalized_analysis_type,
                 model_family=model_family,
                 settings=normalized_settings,
-                message="Mesa 分析样本全部失败；当前建模粒度不足以生成会话内结果。",
+                message=(
+                    "Mesa 分析样本全部超时；请减少样本数、提高并行核心数，或检查导致单样本异常缓慢的模型输入。"
+                    if timeout_failures and len(timeout_failures) == len(failed_samples)
+                    else "Mesa 分析样本全部失败；当前建模粒度不足以生成会话内结果。"
+                ),
                 issues=[],
                 errors=failed_samples,
                 provenance=compile_result.get("provenance", {}),
                 run_id=run_id,
             )
+            payload.update(
+                _lite_mesa_execution_metadata(
+                    settings=normalized_settings,
+                    samples=samples,
+                    failed_samples=failed_samples,
+                    worker_count=worker_count,
+                    sample_diagnostics=sample_diagnostics,
+                    timings={
+                        "compile_seconds": compile_seconds,
+                        "sample_execution_seconds": sample_execution_seconds,
+                        "aggregation_seconds": 0.0,
+                        "projection_seconds": 0.0,
+                        "total_seconds": time.perf_counter() - analysis_started,
+                    },
+                )
+            )
+            payload["failed_samples"] = copy.deepcopy(failed_samples)
+            return payload
 
+        aggregation_started = time.perf_counter()
         aggregate = self.adapter._aggregate_sample_metrics(samples)  # noqa: SLF001 - in-memory aggregation, no writes.
         self.adapter._coerce_result_integer_metrics(aggregate)  # noqa: SLF001 - reuse canonical metric coercion.
         aggregate["mission_success_probability"] = aggregate.get(
             "mission_success_rate",
             aggregate.get("sortie_completion_rate", 0),
         )
+        aggregation_seconds = time.perf_counter() - aggregation_started
+        projection_started = time.perf_counter()
         base_artifact_id = f"lite-mesa-analysis-base-{run_id}"
         projections = self.adapter._aircraft_support_v1_analysis_projections(  # noqa: SLF001 - projection payload only.
             aggregate,
@@ -891,7 +937,15 @@ class BackendApi:
             artifact_manifest_id=f"lite-mesa-analysis-manifest-{run_id}",
             frames=copy.deepcopy(samples[0].get("frames") or []),
         )
-        return {
+        projection_seconds = time.perf_counter() - projection_started
+        timings = {
+            "compile_seconds": compile_seconds,
+            "sample_execution_seconds": sample_execution_seconds,
+            "aggregation_seconds": aggregation_seconds,
+            "projection_seconds": projection_seconds,
+            "total_seconds": 0.0,
+        }
+        payload = {
             "status": "session_complete",
             "source": "lite_mesa_aircraft_support_v1",
             "run_id": run_id,
@@ -925,7 +979,17 @@ class BackendApi:
             "limitations": _lite_mesa_analysis_limitations(),
             "failed_samples": failed_samples,
             "compile_provenance": compile_result.get("provenance", {}),
+            **_lite_mesa_execution_metadata(
+                settings=normalized_settings,
+                samples=samples,
+                failed_samples=failed_samples,
+                worker_count=worker_count,
+                sample_diagnostics=sample_diagnostics,
+                timings=timings,
+            ),
         }
+        timings["total_seconds"] = time.perf_counter() - analysis_started
+        return payload
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_run(run_id)
@@ -1614,6 +1678,26 @@ def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str
         settings.get("parallelCores"),
         field_path="settings.parallelCores",
     )
+    sample_timeout_seconds = _bounded_int(
+        settings.get("sampleTimeoutSeconds"),
+        default=LITE_MESA_SAMPLE_TIMEOUT_SECONDS,
+        minimum=1,
+        maximum=300,
+    )
+    execution_waves = math.ceil(samples / min(parallel_cores, samples))
+    default_session_timeout_seconds = min(
+        LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS,
+        max(
+            LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS,
+            execution_waves * sample_timeout_seconds + sample_timeout_seconds,
+        ),
+    )
+    session_timeout_seconds = _bounded_int(
+        settings.get("sessionTimeoutSeconds"),
+        default=default_session_timeout_seconds,
+        minimum=1,
+        maximum=LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS,
+    )
     return {
         "samples": samples,
         "seed": seed,
@@ -1621,6 +1705,8 @@ def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str
         "maxTimeWindow": max_time_window,
         "topN": top_n,
         "parallelCores": parallel_cores,
+        "sampleTimeoutSeconds": sample_timeout_seconds,
+        "sessionTimeoutSeconds": session_timeout_seconds,
         "write_event_snapshots": bool(settings.get("write_event_snapshots")),
     }
 
@@ -1630,47 +1716,232 @@ def _run_lite_mesa_analysis_samples(
     *,
     base_seed: int,
     settings: dict[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, list[dict[str, Any]]]:
     sample_count = settings["samples"]
     worker_count = min(settings["parallelCores"], sample_count)
     tasks = [
-        (inputs, base_seed + sample_index, sample_index, settings["write_event_snapshots"])
+        (
+            inputs,
+            base_seed + sample_index,
+            sample_index,
+            settings["write_event_snapshots"],
+            settings["sampleTimeoutSeconds"],
+        )
         for sample_index in range(sample_count)
     ]
-    outcomes = []
-    if worker_count == 1:
-        outcomes = [_run_lite_mesa_analysis_sample_worker(task) for task in tasks]
-    else:
-        with ProcessPoolExecutor(
-            max_workers=worker_count,
-            mp_context=multiprocessing.get_context("spawn"),
-        ) as executor:
-            futures = [executor.submit(_run_lite_mesa_analysis_sample_worker, task) for task in tasks]
-            outcomes = [future.result() for future in as_completed(futures)]
+    outcomes: list[dict[str, Any]] = []
+    context = multiprocessing.get_context("spawn")
+    pool = context.Pool(processes=worker_count)
+    pending = [
+        (task, pool.apply_async(_run_lite_mesa_analysis_sample_worker, (task,)))
+        for task in tasks
+    ]
+    session_started = time.perf_counter()
+    session_deadline = session_started + settings["sessionTimeoutSeconds"]
+    terminated = False
+    try:
+        while pending:
+            completed_any = False
+            for task, async_result in list(pending):
+                if not async_result.ready():
+                    continue
+                completed_any = True
+                pending.remove((task, async_result))
+                try:
+                    outcomes.append(async_result.get())
+                except Exception as exc:  # pragma: no cover - worker process failure guard.
+                    outcomes.append(_lite_mesa_worker_process_failure(task, exc))
+            if not pending:
+                break
+            if time.perf_counter() >= session_deadline:
+                elapsed_seconds = time.perf_counter() - session_started
+                outcomes.extend(
+                    _lite_mesa_session_timeout_failure(task, settings, elapsed_seconds)
+                    for task, _async_result in pending
+                )
+                pool.terminate()
+                terminated = True
+                pending.clear()
+                break
+            if not completed_any:
+                time.sleep(0.01)
+    finally:
+        if not terminated:
+            pool.close()
+        pool.join()
     outcomes.sort(key=lambda outcome: outcome["sample_index"])
     samples = [outcome["sample"] for outcome in outcomes if outcome["status"] == "ok"]
     failed_samples = [outcome["failure"] for outcome in outcomes if outcome["status"] == "failed"]
-    return samples, failed_samples, worker_count
+    sample_diagnostics = [
+        {
+            "sample_index": outcome["sample_index"],
+            "seed": outcome["seed"],
+            "status": outcome["status"],
+            "elapsed_seconds": outcome["elapsed_seconds"],
+            **(
+                {"error_code": outcome["failure"]["error"]["code"]}
+                if outcome["status"] == "failed"
+                else {}
+            ),
+        }
+        for outcome in outcomes
+    ]
+    return samples, failed_samples, worker_count, sample_diagnostics
 
 
-def _run_lite_mesa_analysis_sample_worker(task: tuple[dict[str, Any], int, int, bool]) -> dict[str, Any]:
-    inputs, seed, sample_index, write_event_snapshots = task
+def _lite_mesa_worker_process_failure(
+    task: tuple[dict[str, Any], int, int, bool, float],
+    exc: Exception,
+) -> dict[str, Any]:
+    _inputs, seed, sample_index, _write_event_snapshots, _sample_timeout_seconds = task
+    return {
+        "status": "failed",
+        "sample_index": sample_index,
+        "seed": seed,
+        "elapsed_seconds": 0.0,
+        "failure": {
+            "sample_index": sample_index,
+            "seed": seed,
+            "error": {
+                "code": "sample_worker_failed",
+                "message": str(exc),
+                "details": {"phase": "worker_process"},
+            },
+        },
+    }
+
+
+def _lite_mesa_session_timeout_failure(
+    task: tuple[dict[str, Any], int, int, bool, float],
+    settings: dict[str, Any],
+    elapsed_seconds: float,
+) -> dict[str, Any]:
+    _inputs, seed, sample_index, _write_event_snapshots, _sample_timeout_seconds = task
+    return {
+        "status": "failed",
+        "sample_index": sample_index,
+        "seed": seed,
+        "elapsed_seconds": elapsed_seconds,
+        "failure": {
+            "sample_index": sample_index,
+            "seed": seed,
+            "error": {
+                "code": "session_timeout",
+                "message": f"Mesa analysis session exceeded {settings['sessionTimeoutSeconds']}s",
+                "details": {
+                    "phase": "sample_batch",
+                    "timeout_seconds": settings["sessionTimeoutSeconds"],
+                    "elapsed_seconds": elapsed_seconds,
+                },
+            },
+        },
+    }
+
+
+@contextmanager
+def _lite_mesa_sample_deadline(timeout_seconds: float):
+    if timeout_seconds <= 0 or not hasattr(signal, "SIGALRM") or not hasattr(signal, "setitimer"):
+        yield
+        return
+
+    def handle_timeout(_signum: int, _frame: Any) -> None:
+        raise LiteMesaSampleTimeoutError(timeout_seconds)
+
     try:
-        sample = _run_aircraft_support_v1_analysis_sample(
-            inputs,
-            seed=seed,
-            sample_index=sample_index,
-            write_event_snapshots=write_event_snapshots,
-        )
-        return {"status": "ok", "sample_index": sample_index, "sample": sample}
-    except Exception as exc:  # pragma: no cover - defensive fail-closed path.
+        previous_handler = signal.getsignal(signal.SIGALRM)
+        previous_timer = signal.getitimer(signal.ITIMER_REAL)
+        signal.signal(signal.SIGALRM, handle_timeout)
+        signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    except (ValueError, OSError):
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0] > 0:
+            signal.setitimer(signal.ITIMER_REAL, *previous_timer)
+
+
+def _lite_mesa_execution_metadata(
+    *,
+    settings: dict[str, Any],
+    samples: list[dict[str, Any]],
+    failed_samples: list[dict[str, Any]],
+    worker_count: int,
+    sample_diagnostics: list[dict[str, Any]],
+    timings: dict[str, float],
+) -> dict[str, Any]:
+    return {
+        "requested_sample_count": settings["samples"],
+        "completed_sample_count": len(samples),
+        "failed_sample_count": len(failed_samples),
+        "parallel_cores": settings["parallelCores"],
+        "worker_count": worker_count,
+        "sample_timeout_seconds": settings["sampleTimeoutSeconds"],
+        "session_timeout_seconds": settings["sessionTimeoutSeconds"],
+        "sample_diagnostics": sample_diagnostics,
+        "timings": timings,
+    }
+
+
+def _run_lite_mesa_analysis_sample_worker(
+    task: tuple[dict[str, Any], int, int, bool, float],
+) -> dict[str, Any]:
+    inputs, seed, sample_index, write_event_snapshots, sample_timeout_seconds = task
+    started = time.perf_counter()
+    try:
+        with _lite_mesa_sample_deadline(sample_timeout_seconds):
+            sample = _run_aircraft_support_v1_analysis_sample(
+                inputs,
+                seed=seed,
+                sample_index=sample_index,
+                write_event_snapshots=write_event_snapshots,
+            )
+        return {
+            "status": "ok",
+            "sample_index": sample_index,
+            "seed": seed,
+            "elapsed_seconds": time.perf_counter() - started,
+            "sample": sample,
+        }
+    except LiteMesaSampleTimeoutError as exc:
+        elapsed_seconds = time.perf_counter() - started
         return {
             "status": "failed",
             "sample_index": sample_index,
+            "seed": seed,
+            "elapsed_seconds": elapsed_seconds,
             "failure": {
                 "sample_index": sample_index,
                 "seed": seed,
-                "error": {"code": "sample_failed", "message": str(exc), "details": {}},
+                "error": {
+                    "code": "sample_timeout",
+                    "message": str(exc),
+                    "details": {
+                        "phase": "model_execution",
+                        "timeout_seconds": sample_timeout_seconds,
+                        "elapsed_seconds": elapsed_seconds,
+                    },
+                },
+            },
+        }
+    except Exception as exc:  # pragma: no cover - defensive fail-closed path.
+        elapsed_seconds = time.perf_counter() - started
+        return {
+            "status": "failed",
+            "sample_index": sample_index,
+            "seed": seed,
+            "elapsed_seconds": elapsed_seconds,
+            "failure": {
+                "sample_index": sample_index,
+                "seed": seed,
+                "error": {
+                    "code": "sample_failed",
+                    "message": str(exc),
+                    "details": {"phase": "model_execution", "elapsed_seconds": elapsed_seconds},
+                },
             },
         }
 

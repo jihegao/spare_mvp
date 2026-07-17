@@ -16447,7 +16447,7 @@ async function runLiteMesaMonteCarloAnalysis() {
     return;
   }
   liteMesaMonteCarloSettings = { samples, seed, parallelCores };
-  liteMesaMonteCarloStatus = "正在运行 Mesa 分析";
+  liteMesaMonteCarloStatus = `正在运行 Mesa 分析（样本 ${samples}，Base seed ${seed}，并行核心 ${parallelCores}）`;
   try {
     const selectedProjectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
     const projectJson = {
@@ -16465,13 +16465,35 @@ async function runLiteMesaMonteCarloAnalysis() {
     });
     liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response);
     const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
-    liteMesaMonteCarloStatus = runCount
-      ? "Mesa 分析完成。"
-      : "当前建模数据不足：请补充装备数量、任务要求、任务周期、部件和保障节点。";
+    liteMesaMonteCarloStatus = liteMesaMonteCarloResult.status === "blocked"
+      ? `Mesa 分析未完成：${liteMesaMonteCarloResult.message}`
+      : liteMesaMonteCarloCompletionStatus(liteMesaMonteCarloResult, { samples, seed, parallelCores, runCount });
   } catch (err) {
     liteMesaMonteCarloResult = null;
-    liteMesaMonteCarloStatus = `Mesa 分析失败：${err && err.message ? err.message : "运行错误"}`;
+    liteMesaMonteCarloStatus = liteMesaMonteCarloFailureStatus(err, { samples, seed, parallelCores });
   }
+}
+
+function liteMesaMonteCarloCompletionStatus(result, { samples, runCount }) {
+  const failedCount = Number(result.failedSampleCount || result.failedSamples?.length || 0);
+  const totalSeconds = Number(result.timings?.total_seconds);
+  const elapsed = Number.isFinite(totalSeconds) && totalSeconds >= 0 ? `，总耗时 ${totalSeconds.toFixed(1)} 秒` : "";
+  const failures = failedCount ? `，失败 ${failedCount} 个` : "";
+  return `Mesa 分析完成：${runCount}/${samples} 个样本${failures}${elapsed}。`;
+}
+
+function liteMesaMonteCarloFailureStatus(error, { samples, seed, parallelCores }) {
+  const message = error && error.message ? error.message : "运行错误";
+  const context = `样本 ${samples}，Base seed ${seed}，并行核心 ${parallelCores}`;
+  if (error?.code === "backend_request_timeout") {
+    const timeoutSeconds = Math.round(Number(error.details?.timeoutMs || 0) / 1000);
+    const waited = timeoutSeconds > 0 ? `前端已等待 ${timeoutSeconds} 秒` : "前端等待已达到上限";
+    return `Mesa 分析等待超时：${waited}（${context}）。请减少运行样本或提高并行核心数；后端会按单样本和整批上限失败关闭。`;
+  }
+  if (error?.code === "backend_network_error") {
+    return `Mesa 分析网络连接失败（${context}）：${message}`;
+  }
+  return `Mesa 分析失败（${context}）：${message}`;
 }
 
 function normalizeLiteMesaMonteCarloResult(payload) {
@@ -16483,6 +16505,15 @@ function normalizeLiteMesaMonteCarloResult(payload) {
       runs: [],
       metrics: Array.isArray(payload?.metrics) ? payload.metrics : [],
       aggregateMetrics: payload?.aggregate_metrics || {},
+      requestedSampleCount: Number(payload?.requested_sample_count || 0),
+      failedSampleCount: Number(payload?.failed_sample_count || payload?.errors?.length || 0),
+      failedSamples: Array.isArray(payload?.failed_samples)
+        ? payload.failed_samples
+        : Array.isArray(payload?.errors) ? payload.errors : [],
+      parallelCores: Number(payload?.parallel_cores || 0),
+      workerCount: Number(payload?.worker_count || 0),
+      sampleDiagnostics: Array.isArray(payload?.sample_diagnostics) ? payload.sample_diagnostics : [],
+      timings: payload?.timings || {},
       message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
     };
   }
@@ -16494,6 +16525,13 @@ function normalizeLiteMesaMonteCarloResult(payload) {
     metrics: Array.isArray(payload.metrics) ? payload.metrics : [],
     aggregateMetrics: payload.aggregate_metrics || {},
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
+    requestedSampleCount: Number(payload.requested_sample_count || payload.sample_count || 0),
+    failedSampleCount: Number(payload.failed_sample_count || payload.failed_samples?.length || 0),
+    failedSamples: Array.isArray(payload.failed_samples) ? payload.failed_samples : [],
+    parallelCores: Number(payload.parallel_cores || 0),
+    workerCount: Number(payload.worker_count || 0),
+    sampleDiagnostics: Array.isArray(payload.sample_diagnostics) ? payload.sample_diagnostics : [],
+    timings: payload.timings || {},
     message: payload.message || ""
   };
 }
