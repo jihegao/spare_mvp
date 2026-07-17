@@ -402,6 +402,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "weekdayAssignments",
         ):
             self.assertNotIn(field, periodic_task)
+
         self.assertNotIn("inventory", clean["supportNodes"][0])
         self.assertNotIn("transportPolicies", clean["supportNodes"][0])
         self.assertGreaterEqual(len(clean["supportResources"]), 3)
@@ -433,6 +434,22 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("predecessors", clean["supportActivityJobs"][0])
         self.assertFalse(_contains_key(clean, "missionAreas"))
         self.assertFalse(_contains_key(clean, "mission_areas"))
+
+    def test_export_preserves_periodic_profile_empty_slots_with_builtin_and_schema_validation(self) -> None:
+        project = self._polluted_project()
+        profile_lists = {
+            "week": [{"id": "periodic-a", "name": "常规周"}],
+            "month": [{"id": "month-a", "name": "常规月", "weekProfileIds": ["periodic-a", "", "", ""]}],
+            "year": [{"id": "year-a", "name": "基准年度", "monthProfileIds": ["month-a", *([""] * 11)]}],
+        }
+        project["missionProfile"]["periodicProfileLists"] = profile_lists
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+        fallback_clean = self._export_with_old_jsonschema(project)
+
+        self.assertEqual(clean["missionProfile"]["periodicProfileLists"], profile_lists)
+        self.assertEqual(fallback_clean["missionProfile"]["periodicProfileLists"], profile_lists)
+        self.assertEqual(self._schema_errors(clean), [])
 
     def test_aircraft_support_v1_exporter_normalizes_missing_catalog_rows_and_rejects_duplicates(self) -> None:
         unknown = self._polluted_project()

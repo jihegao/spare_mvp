@@ -596,6 +596,7 @@ test("periodic task editor uses named week month and year profiles without total
     hash: "feature=spare-planning-periodic-task",
     projectJson
   });
+  let savedProject;
 
   try {
     await runtime.flush();
@@ -617,6 +618,27 @@ test("periodic task editor uses named week month and year profiles without total
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-periodic-composition-field="repeatWeeks"/);
     assert.equal((runtime.appNode.innerHTML.match(/data-periodic-month-slot=/g) || []).length, 4);
     assert.match(runtime.appNode.innerHTML, /第 4 周/);
+    assert.match(runtime.appNode.innerHTML, /0 \/ 4 周已配置/);
+    assert.equal((runtime.appNode.innerHTML.match(/<option value="" selected>未配置周剖面<\/option>/g) || []).length, 4);
+    await runtime.change("[data-periodic-composition-field]", {
+      periodicCompositionField: "weekProfileId",
+      periodicCompositionType: "month",
+      periodicCompositionProfile: "month-default",
+      periodicCompositionIndex: "0"
+    }, { value: "periodic-runtime" });
+    await runtime.change("[data-periodic-composition-field]", {
+      periodicCompositionField: "weekProfileId",
+      periodicCompositionType: "month",
+      periodicCompositionProfile: "month-default",
+      periodicCompositionIndex: "1"
+    }, { value: "periodic-runtime" });
+    await runtime.change("[data-periodic-composition-field]", {
+      periodicCompositionField: "weekProfileId",
+      periodicCompositionType: "month",
+      periodicCompositionProfile: "month-default",
+      periodicCompositionIndex: "1"
+    }, { value: "" });
+    assert.match(runtime.appNode.innerHTML, /1 \/ 4 周已配置/);
     await runtime.click("[data-periodic-composition-action]", {
       periodicCompositionAction: "add",
       periodicCompositionType: "month",
@@ -624,6 +646,7 @@ test("periodic task editor uses named week month and year profiles without total
     });
     assert.equal((runtime.appNode.innerHTML.match(/data-periodic-month-slot=/g) || []).length, 5);
     assert.match(runtime.appNode.innerHTML, /第 5 周（可选）/);
+    assert.match(runtime.appNode.innerHTML, /1 \/ 5 周已配置/);
     await runtime.click("[data-periodic-composition-action]", {
       periodicCompositionAction: "remove",
       periodicCompositionType: "month",
@@ -631,6 +654,28 @@ test("periodic task editor uses named week month and year profiles without total
       periodicCompositionIndex: "4"
     });
     assert.equal((runtime.appNode.innerHTML.match(/data-periodic-month-slot=/g) || []).length, 4);
+    await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+    assert.match(runtime.appNode.innerHTML, /0 \/ 12 月 · 0 \/ 52 周/);
+    assert.equal((runtime.appNode.innerHTML.match(/<option value="" selected>未配置月剖面<\/option>/g) || []).length, 12);
+    await runtime.change("[data-periodic-composition-field]", {
+      periodicCompositionField: "monthProfileId",
+      periodicCompositionType: "year",
+      periodicCompositionProfile: "year-default",
+      periodicCompositionIndex: "0"
+    }, { value: "month-default" });
+    await runtime.change("[data-periodic-composition-field]", {
+      periodicCompositionField: "monthProfileId",
+      periodicCompositionType: "year",
+      periodicCompositionProfile: "year-default",
+      periodicCompositionIndex: "1"
+    }, { value: "month-default" });
+    await runtime.change("[data-periodic-composition-field]", {
+      periodicCompositionField: "monthProfileId",
+      periodicCompositionType: "year",
+      periodicCompositionProfile: "year-default",
+      periodicCompositionIndex: "1"
+    }, { value: "" });
+    assert.match(runtime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周/);
     await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "week" });
 
     await runtime.click("[data-periodic-profile-add]", { periodicProfileAdd: "week" });
@@ -680,7 +725,7 @@ test("periodic task editor uses named week month and year profiles without total
     await runtime.input("[data-periodic-field]", { periodicField: "weekComposite:0" }, { value: "composite-night" });
     await runtime.click("[data-project-draft-save]");
 
-    const savedProject = await waitForProjectSave(runtime, (body) => {
+    savedProject = await waitForProjectSave(runtime, (body) => {
       const periodicTask = body.missionProfile?.periodicTasks?.[0];
       return periodicTask
         && !("parentTaskName" in periodicTask)
@@ -696,10 +741,29 @@ test("periodic task editor uses named week month and year profiles without total
 
     assert.equal(savedProject.missionProfile.periodicTasks[0].name, "更新后的周剖面");
     const savedMonthProfile = savedProject.missionProfile.periodicProfileLists.month[0];
-    assert.deepEqual(savedMonthProfile.weekProfileIds, Array(4).fill("periodic-runtime"));
+    assert.deepEqual(savedMonthProfile.weekProfileIds, ["periodic-runtime", "", "", ""]);
+    assert.deepEqual(
+      savedProject.missionProfile.periodicProfileLists.year[0].monthProfileIds,
+      ["month-default", ...Array(11).fill("")]
+    );
     assert.equal("weekSegments" in savedMonthProfile, false);
   } finally {
     runtime.restore();
+  }
+
+  const reopenedRuntime = await setupRuntimeApp({
+    hash: "feature=spare-planning-periodic-task",
+    projectJson: savedProject
+  });
+  try {
+    await reopenedRuntime.click("[data-periodic-profile-tab]", { periodicProfileTab: "month" });
+    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 4 周已配置/);
+    assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置周剖面<\/option>/g) || []).length, 3);
+    await reopenedRuntime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周/);
+    assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置月剖面<\/option>/g) || []).length, 11);
+  } finally {
+    reopenedRuntime.restore();
   }
 });
 

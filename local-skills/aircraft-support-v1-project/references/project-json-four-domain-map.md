@@ -11,6 +11,7 @@ Sources:
 - `basicMissions[].missionPhases[]`
 - `missionProfile.compositeTasks[]`
 - `missionProfile.periodicTasks[]`
+- `missionProfile.periodicProfileLists`
 - `airports[]`
 - legacy fallback only: root `missionPhases[]`, root `missionAreas[]`
 
@@ -19,6 +20,7 @@ Interpretation:
 - Basic missions describe sortie/task units and default durations.
 - Composite tasks group basic mission items into waves or task packages.
 - Periodic tasks describe calendar or repeat rules that create mission instances.
+- Periodic profile lists persist the month-to-week and year-to-month planning composition. Empty strings in their reference arrays mean “not configured” and must not be replaced with another profile ID; these lists support authoring and summaries, while runtime task generation still uses `missionProfile.periodicTasks[]`.
 - Mission phases now belong to each basic mission. Airports provide context for timing/location. Root mission phases and mission areas are legacy fallback fields only.
 
 ## 装备

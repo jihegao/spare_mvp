@@ -17,7 +17,7 @@ Use this skill for local aircraft_support_v1 analysis from Project JSON. Keep it
 2. Remember the modeling table structure.
    - Run `remember-structure --project-json <project.json> --memory <memory.json>`.
    - Treat the memory as a reusable schema note for this Project shape, not as runtime output.
-   - For clean Project JSON, expect the top-level product catalog under `products[]`, equipment references under `components[].productId`, spare references under `supportResources[].productId`, task phases under `basicMissions[].missionPhases`, support job definitions under top-level `supportActivityJobs`, activity references under `supportActivities[].activityCodes`, and logistics links under top-level `transportPolicies` or node-scoped `supportNodes[].transportPolicies`.
+   - For clean Project JSON, expect the top-level product catalog under `products[]`, equipment references under `components[].productId`, spare references under `supportResources[].productId`, task phases under `basicMissions[].missionPhases`, persisted month/year planning composition under `missionProfile.periodicProfileLists`, support job definitions under top-level `supportActivityJobs`, activity references under `supportActivities[].activityCodes`, and logistics links under top-level `transportPolicies` or node-scoped `supportNodes[].transportPolicies`.
 3. Explain the data in this exact order: `任务`, `装备`, `保障组织`, `保障活动`.
    - Run `explain --project-json <project.json> --memory <memory.json>`.
    - Use the four domains to separate mission/task intent, aircraft/equipment structure, organization/resources, and support work definitions.
@@ -93,4 +93,5 @@ Guardrails:
 - Treat `products[]` as the shared product catalog; `components[].productId` identifies the product represented by equipment structure, spare `supportResources[].productId` identifies inventory, and `supportActivityJobs[].spare[].productId` identifies activity demand for that same product. Compile inventory and repair requirements by product id, retaining product names only for display. Do not restore or infer `spareType`.
 - Treat `components` and `combatUnit.members` as equipment structure and behavior inputs, and use `failureDistribution` / `repairDistribution` instead of restored legacy rate or repair-ratio fields.
 - Treat root `reliabilityBlockDiagram`, root `missionAreas`, and root `missionPhases` as legacy fallbacks, not required clean Project tables.
+- Treat empty strings in `missionProfile.periodicProfileLists.month[].weekProfileIds` and `year[].monthProfileIds` as explicit unconfigured slots. Preserve them during read, explain, and template save; do not infer the first available profile. The independent runtime compiler continues to derive tasks from `missionProfile.periodicTasks[]`.
 - If the user asks whether the formal product path accepts the same Project, switch to repo inspection and adapter tests; do not infer formal acceptance from this independent script.

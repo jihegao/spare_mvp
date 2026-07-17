@@ -236,6 +236,24 @@ class BackendApiContractTest(unittest.TestCase):
     def test_lite_mesa_analysis_defaults_to_four_samples(self) -> None:
         self.assertEqual(_normalize_lite_mesa_analysis_settings({})["samples"], 4)
 
+    def test_periodic_profile_empty_slots_survive_project_round_trip_and_compile(self) -> None:
+        project = small_aircraft_support_project("project-periodic-profile-empty-slots")
+        project["missionProfile"]["periodicProfileLists"] = {
+            "week": [{"id": "week-a", "name": "常规周"}],
+            "month": [{"id": "month-a", "name": "常规月", "weekProfileIds": ["week-a", "", "", ""]}],
+            "year": [{"id": "year-a", "name": "基准年度", "monthProfileIds": ["month-a", *([""] * 11)]}],
+        }
+
+        saved = self.api.save_project(project)
+        stored = self.api.get_project(saved["project_id"])
+        compiled = self.adapter.compile_scenario(stored, model_family="aircraft_support_v1")
+
+        self.assertEqual(
+            stored["missionProfile"]["periodicProfileLists"],
+            project["missionProfile"]["periodicProfileLists"],
+        )
+        self.assertEqual(compiled["simulation_model"]["family"], "aircraft_support_v1")
+
     def test_aircraft_mission_reliability_analysis_history_is_immutable_and_project_scoped(self) -> None:
         first_project = small_aircraft_support_project("project-aircraft-reliability-history-a")
         second_project = small_aircraft_support_project("project-aircraft-reliability-history-b")

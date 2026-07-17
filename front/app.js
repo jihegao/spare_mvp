@@ -5780,21 +5780,23 @@ function renderPeriodicTaskModeling(page) {
   `;
   const monthWeekProfileIds = selectedProfile?.weekProfileIds || [];
   const monthWeekCount = monthWeekProfileIds.length;
+  const monthConfiguredWeekCount = monthWeekProfileIds.filter((weekProfileId) => Boolean(weekProfileId)).length;
   const monthCanAddFifthWeek = monthWeekCount === 4;
   const monthEditor = `
-    <div class="periodic-panel-head"><div><h4>月剖面配置</h4><p class="muted">按周次依次选择周剖面。前 4 周为固定坑位；需要覆盖第 5 周时再添加。</p></div>${selectedProfile ? `<span class="status-badge">${monthWeekCount} 个周剖面</span>` : ""}</div>
-    ${selectedProfile ? `<div class="periodic-month-slot-grid" aria-label="${htmlEscape(selectedProfile.name)}的周剖面坑位">${monthWeekProfileIds.map((weekProfileId, index) => `<label class="periodic-month-slot ${index === 4 ? "is-optional" : ""}" data-periodic-month-slot="${index + 1}"><span>第 ${index + 1} 周${index === 4 ? "（可选）" : ""}</span><select data-periodic-composition-field="weekProfileId" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}" aria-label="第 ${index + 1} 周周剖面">${profiles.week.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === weekProfileId ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select>${index === 4 ? `<button type="button" class="periodic-slot-remove" data-periodic-composition-action="remove" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}">移除第 5 周</button>` : ""}</label>`).join("")}</div><div class="toolbar-row periodic-month-slot-actions">${monthCanAddFifthWeek ? `<button type="button" data-periodic-composition-action="add" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}">＋ 添加第 5 周</button>` : ""}<span class="muted">每个月配置 4 个周剖面；少数跨 5 周的月份可增加第 5 个坑位。</span></div>` : `<div class="alert warn">暂无月剖面，请先新增。</div>`}
+    <div class="periodic-panel-head"><div><h4>月剖面配置</h4><p class="muted">按周次依次选择周剖面。前 4 周为固定坑位；需要覆盖第 5 周时再添加。未配置的周不会自动套用其他剖面。</p></div>${selectedProfile ? `<span class="status-badge ${monthConfiguredWeekCount === monthWeekCount ? "" : "warn"}">${monthConfiguredWeekCount} / ${monthWeekCount} 周已配置 · ${monthConfiguredWeekCount === monthWeekCount ? "完整" : "待配置"}</span>` : ""}</div>
+    ${selectedProfile ? `<div class="periodic-month-slot-grid" aria-label="${htmlEscape(selectedProfile.name)}的周剖面坑位">${monthWeekProfileIds.map((weekProfileId, index) => `<label class="periodic-month-slot ${index === 4 ? "is-optional" : ""}" data-periodic-month-slot="${index + 1}"><span>第 ${index + 1} 周${index === 4 ? "（可选）" : ""}</span><select data-periodic-composition-field="weekProfileId" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}" aria-label="第 ${index + 1} 周周剖面"><option value="" ${weekProfileId ? "" : "selected"}>未配置周剖面</option>${profiles.week.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === weekProfileId ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select>${index === 4 ? `<button type="button" class="periodic-slot-remove" data-periodic-composition-action="remove" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}">移除第 5 周</button>` : ""}</label>`).join("")}</div><div class="toolbar-row periodic-month-slot-actions">${monthCanAddFifthWeek ? `<button type="button" data-periodic-composition-action="add" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}">＋ 添加第 5 周</button>` : ""}<span class="muted">每个月保留 4 个周坑位；空选表示该周尚未配置，不参与汇总和分析展开。</span></div>` : `<div class="alert warn">暂无月剖面，请先新增。</div>`}
   `;
   const yearMonths = selectedProfile?.monthProfileIds || [];
   const selectedYearIndex = Math.max(0, profiles.year.findIndex((item) => item.id === selectedProfile?.id));
+  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => Boolean(monthProfileId)).length;
   const yearTotalWeeks = yearMonths.reduce((sum, monthProfileId) => {
     const monthProfile = profiles.month.find((item) => item.id === monthProfileId);
-    return sum + (monthProfile?.weekProfileIds?.length || 0);
+    return sum + (monthProfile?.weekProfileIds?.filter((weekProfileId) => Boolean(weekProfileId)).length || 0);
   }, 0);
   const yearEditor = `
-    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；每个规划年度的 12 个月合计应为 52 周。</p></div>${selectedProfile ? `<span class="status-badge ${yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearTotalWeeks} / 52 周</span>` : ""}</div>
+    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "有效" : "待完善"}</span>` : ""}</div>
     ${selectedProfile ? `<div class="toolbar-row periodic-year-actions"><button type="button" data-periodic-year-action="duplicate" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">复制为下一年</button><button type="button" data-periodic-year-action="up" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">上移一年</button><button type="button" data-periodic-year-action="down" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">下移一年</button></div>` : ""}
-    ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}">${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
+    ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}"><option value="" ${yearMonths[index] ? "" : "selected"}>未配置月剖面</option>${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
   `;
   const profileEditor = periodicActiveProfile === "week" ? weekEditor : periodicActiveProfile === "month" ? monthEditor : yearEditor;
   return `
@@ -5829,23 +5831,21 @@ function periodicProfileLists(periodicTasks = periodicTaskList()) {
       () => segment.weekProfileId
     ));
     const sourceSlots = legacyWeekIds.length ? legacyWeekIds : expandedLegacySlots;
-    const fallbackWeekId = String(weekIds[0] || "");
     const weekProfileIds = sourceSlots
-      .map((weekProfileId) => weekIds.includes(String(weekProfileId)) ? String(weekProfileId) : fallbackWeekId)
-      .filter(Boolean)
+      .map((weekProfileId) => weekIds.includes(String(weekProfileId)) ? String(weekProfileId) : "")
       .slice(0, 5);
-    while (weekProfileIds.length < 4 && fallbackWeekId) weekProfileIds.push(fallbackWeekId);
+    while (weekProfileIds.length < 4) weekProfileIds.push("");
     const { weekSegments: _legacyWeekSegments, ...monthProfile } = item;
     return { ...monthProfile, name: String(item.name || "未命名月剖面"), weekProfileIds };
   });
-  if (!lists.month.length) lists.month.push({ id: "month-default", name: "常规月", weekProfileIds: Array(4).fill(String(weekIds[0] || "")) });
+  if (!lists.month.length) lists.month.push({ id: "month-default", name: "常规月", weekProfileIds: Array(4).fill("") });
   const monthIds = lists.month.map((item) => String(item.id));
   lists.year = (Array.isArray(lists.year) ? lists.year : []).filter((item) => item && item.id).map((item) => {
     const sourceMonths = Array.isArray(item.monthProfileIds) ? item.monthProfileIds : [];
-    const monthProfileIds = Array.from({ length: 12 }, (_, index) => monthIds.includes(String(sourceMonths[index])) ? String(sourceMonths[index]) : String(monthIds[0] || ""));
+    const monthProfileIds = Array.from({ length: 12 }, (_, index) => monthIds.includes(String(sourceMonths[index])) ? String(sourceMonths[index]) : "");
     return { ...item, name: String(item.name || "未命名年剖面"), monthProfileIds };
   });
-  if (!lists.year.length) lists.year.push({ id: "year-default", name: "基准年度", monthProfileIds: Array(12).fill(String(monthIds[0] || "")) });
+  if (!lists.year.length) lists.year.push({ id: "year-default", name: "基准年度", monthProfileIds: Array(12).fill("") });
   return lists;
 }
 
@@ -5860,8 +5860,8 @@ function addPeriodicProfile(type) {
   } else {
     const prefix = type === "month" ? "月剖面" : "年剖面";
     const item = { id: `${type}-${Date.now()}`, name: `${prefix}${order}` };
-    if (type === "month") item.weekProfileIds = Array(4).fill(String(lists.week[0]?.id || ""));
-    if (type === "year") item.monthProfileIds = Array(12).fill(String(lists.month[0]?.id || ""));
+    if (type === "month") item.weekProfileIds = Array(4).fill("");
+    if (type === "year") item.monthProfileIds = Array(12).fill("");
     lists[type].push(item);
     selectedPeriodicProfileIds[type] = item.id;
   }
@@ -5874,19 +5874,17 @@ function deletePeriodicProfile(id, type) {
   if (type === "week") {
     scenario.missionProfile.periodicTasks = periodicTaskList().filter((task) => String(task.id) !== String(id));
     selectedPeriodicTaskId = String(periodicTaskList()[0]?.id || "");
-    const fallbackWeekId = String(periodicTaskList()[0]?.id || "");
     lists.month.forEach((month) => {
       month.weekProfileIds = (month.weekProfileIds || []).map((weekProfileId) => (
-        String(weekProfileId) === String(id) ? fallbackWeekId : String(weekProfileId)
+        String(weekProfileId) === String(id) ? "" : String(weekProfileId)
       ));
     });
   } else {
     lists[type] = lists[type].filter((item) => String(item.id) !== String(id));
     selectedPeriodicProfileIds[type] = String(lists[type][0]?.id || "");
     if (type === "month") {
-      const fallbackMonthId = String(lists.month[0]?.id || "");
       lists.year.forEach((year) => {
-        year.monthProfileIds = (year.monthProfileIds || []).map((monthId) => String(monthId) === String(id) ? fallbackMonthId : monthId);
+        year.monthProfileIds = (year.monthProfileIds || []).map((monthId) => String(monthId) === String(id) ? "" : monthId);
       });
     }
   }
@@ -5900,7 +5898,7 @@ function updatePeriodicComposition(type, profileId, action, index) {
   if (!profile) return;
   const weekProfileIds = Array.isArray(profile.weekProfileIds) ? profile.weekProfileIds : [];
   if (action === "add" && weekProfileIds.length === 4) {
-    weekProfileIds.push(String(lists.week[0]?.id || ""));
+    weekProfileIds.push("");
   } else if (action === "remove" && weekProfileIds.length === 5 && index === 4) {
     weekProfileIds.pop();
   }
@@ -5912,12 +5910,12 @@ function updatePeriodicCompositionField(type, profileId, index, field, value) {
   const lists = periodicProfileLists();
   if (type === "month") {
     const profile = lists.month.find((item) => String(item.id) === String(profileId));
-    if (!profile?.weekProfileIds?.[index]) return;
-    if (field === "weekProfileId" && lists.week.some((item) => item.id === String(value))) profile.weekProfileIds[index] = String(value);
+    if (!profile || !Array.isArray(profile.weekProfileIds) || index < 0 || index >= profile.weekProfileIds.length) return;
+    if (field === "weekProfileId" && (value === "" || lists.week.some((item) => item.id === String(value)))) profile.weekProfileIds[index] = String(value);
   }
   if (type === "year") {
     const profile = lists.year.find((item) => String(item.id) === String(profileId));
-    if (!profile || field !== "monthProfileId" || !lists.month.some((item) => item.id === String(value))) return;
+    if (!profile || field !== "monthProfileId" || index < 0 || index >= 12 || (value !== "" && !lists.month.some((item) => item.id === String(value)))) return;
     profile.monthProfileIds[index] = String(value);
   }
   updatePreviewResultsThroughApiClient();
