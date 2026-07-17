@@ -1919,6 +1919,59 @@ test("equipment parent node selector uses Chinese names while retaining parent I
   }
 });
 
+test("equipment product search waits for Enter or focusout before filtering", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
+      products: [
+        { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" },
+        { id: "product-radar", name: "雷达产品", model: "RADAR", kind: "LRU" }
+      ],
+      components: [
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(runtime, /data-equipment-product-edit="engine-system"/, "equipment product editor should be available");
+    await runtime.click("[data-equipment-product-edit]", { equipmentProductEdit: "engine-system" });
+
+    let editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /发动机产品/);
+    assert.match(editorHtml, /雷达产品/);
+
+    await runtime.input("[data-equipment-product-query]", {}, { value: "雷达" });
+    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /发动机产品/);
+    assert.match(editorHtml, /雷达产品/);
+
+    let enterPrevented = false;
+    await runtime.keydown("[data-equipment-product-query]", {}, {
+      key: "Enter",
+      value: "雷达",
+      preventDefault() { enterPrevented = true; }
+    });
+    assert.equal(enterPrevented, true);
+    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.doesNotMatch(editorHtml, /发动机产品/);
+    assert.match(editorHtml, /雷达产品/);
+    assert.match(editorHtml, /value="雷达"[^>]*data-equipment-product-query/);
+
+    await runtime.input("[data-equipment-product-query]", {}, { value: "发动机" });
+    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /雷达产品/);
+    await runtime.focusout("[data-equipment-product-query]", {}, { value: "发动机" });
+    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /发动机产品/);
+    assert.doesNotMatch(editorHtml, /雷达产品/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("equipment aircraft rename keeps aircraftTypes catalog in saved Project draft", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -4615,6 +4668,21 @@ async function setupRuntimeApp({
     },
     async input(selector, dataset = {}, props = {}) {
       await appListeners.input?.({ target: eventTarget(selector, dataset, props) });
+      await flushRuntimeTasks();
+    },
+    async keydown(selector, dataset = {}, props = {}) {
+      await appListeners.keydown?.({
+        key: props.key || "",
+        preventDefault: props.preventDefault || (() => {}),
+        target: eventTarget(selector, dataset, props)
+      });
+      await flushRuntimeTasks();
+    },
+    async focusout(selector, dataset = {}, props = {}) {
+      await appListeners.focusout?.({
+        relatedTarget: props.relatedTarget || null,
+        target: eventTarget(selector, dataset, props)
+      });
       await flushRuntimeTasks();
     },
     async setHash(nextHash) {

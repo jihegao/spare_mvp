@@ -784,6 +784,7 @@ let selectedEquipmentNodeKey = "";
 let equipmentSearchQuery = "";
 let equipmentProductEditorComponentId = "";
 let equipmentProductQuery = "";
+let equipmentProductQueryDraft = "";
 let equipmentProductDraft = { name: "", model: "", kind: "LRU" };
 let spareShortfallSort = { field: "", direction: "" };
 let spareAircraftFilter = "";
@@ -1031,6 +1032,7 @@ function bindEvents() {
     if (equipmentProductEditButton) {
       equipmentProductEditorComponentId = equipmentProductEditButton.dataset.equipmentProductEdit || "";
       equipmentProductQuery = "";
+      equipmentProductQueryDraft = "";
       equipmentProductDraft = { name: "", model: "", kind: "LRU" };
       render();
       return;
@@ -2181,6 +2183,12 @@ function bindEvents() {
   });
 
   app.addEventListener("keydown", (event) => {
+    const equipmentProductQueryInput = event.target.closest("[data-equipment-product-query]");
+    if (equipmentProductQueryInput && event.key === "Enter") {
+      event.preventDefault();
+      commitEquipmentProductQuery(equipmentProductQueryInput);
+      return;
+    }
     const periodicProfileNameInput = event.target.closest("[data-periodic-profile-name]");
     if (periodicProfileNameInput && event.key === "Enter") {
       event.preventDefault();
@@ -2845,6 +2853,11 @@ function bindEvents() {
   });
 
   app.addEventListener("focusout", (event) => {
+    const equipmentProductQueryInput = event.target.closest("[data-equipment-product-query]");
+    if (equipmentProductQueryInput) {
+      commitEquipmentProductQuery(equipmentProductQueryInput, { deferRender: true });
+      return;
+    }
     const periodicProfileNameInput = event.target.closest("[data-periodic-profile-name]");
     if (periodicProfileNameInput) {
       const nextTarget = event.relatedTarget;
@@ -2896,8 +2909,7 @@ function bindEvents() {
 
     const equipmentProductQueryInput = event.target.closest("[data-equipment-product-query]");
     if (equipmentProductQueryInput) {
-      equipmentProductQuery = equipmentProductQueryInput.value;
-      render();
+      equipmentProductQueryDraft = equipmentProductQueryInput.value;
       return;
     }
 
@@ -6901,7 +6913,7 @@ function renderEquipmentProductEditor() {
   return `
     <div class="detail-card" data-equipment-product-editor>
       <div class="section-head"><h4>编辑/搜索产品：${htmlEscape(component.name || component.id)}</h4><button type="button" data-equipment-product-close>关闭</button></div>
-      <div class="toolbar-row"><input value="${htmlEscape(equipmentProductQuery)}" placeholder="搜索已有产品" data-equipment-product-query></div>
+      <div class="toolbar-row"><input value="${htmlEscape(equipmentProductQueryDraft)}" placeholder="搜索已有产品" aria-label="搜索已有产品" title="按 Enter 或离开输入框后搜索" data-equipment-product-query></div>
       <div class="table-wrap compact-table">
         <table><thead><tr><th>产品 ID</th><th>名称</th><th>型号</th><th>匹配</th></tr></thead><tbody>
           ${products.map((product) => `<tr><td>${htmlEscape(product.id)}</td><td>${htmlEscape(product.name)}</td><td>${htmlEscape(product.model || "-")}</td><td><button type="button" class="inline-action" data-equipment-product-select="${htmlEscape(product.id)}">${component.productId === product.id ? "已匹配" : "匹配"}</button></td></tr>`).join("") || '<tr><td colspan="4" class="muted">没有匹配产品，可在下方添加</td></tr>'}
@@ -6916,6 +6928,20 @@ function renderEquipmentProductEditor() {
       <button type="button" class="btn-primary" data-equipment-product-create>添加并匹配</button>
     </div>
   `;
+}
+
+function commitEquipmentProductQuery(input, { deferRender = false } = {}) {
+  const nextQuery = String(input?.value || "");
+  equipmentProductQueryDraft = nextQuery;
+  if (equipmentProductQuery === nextQuery) return;
+  equipmentProductQuery = nextQuery;
+  if (deferRender) {
+    setTimeout(() => {
+      if (equipmentProductEditorComponentId) render();
+    }, 0);
+    return;
+  }
+  render();
 }
 
 function equipmentTableInput(label, path, type = "text", attrs = {}) {
