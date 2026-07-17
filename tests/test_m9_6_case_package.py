@@ -55,6 +55,7 @@ class M96CasePackageTest(unittest.TestCase):
             export["monte_carlo_config"],
             {
                 "sample_count": 24,
+                "parallel_cores": 1,
                 "sweep": {
                     "failureRates": [0.035, 0.055, 0.075],
                     "spareMultipliers": [0.75, 1.0, 1.25],
