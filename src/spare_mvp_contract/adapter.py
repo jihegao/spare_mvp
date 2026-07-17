@@ -9,10 +9,12 @@ the adapter entrypoints.
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import multiprocessing
 from pathlib import Path
 import re
 from typing import Any
@@ -1824,23 +1826,15 @@ class SimulationAdapter:
         now = _utc_now()
 
         profile = self._monte_carlo_profile(scenario, monte_carlo_config=config)
+        parallel_cores = self._validate_monte_carlo_parallel_cores(config.get("parallel_cores", 1))
+        worker_count = min(parallel_cores, len(profile["sample_points"]))
         sampling_contract = self._aircraft_support_v1_monte_carlo_sampling_contract(profile)
-        samples: list[dict[str, Any]] = []
-        failed_samples: list[dict[str, Any]] = []
-        for index, point in enumerate(profile["sample_points"]):
-            try:
-                samples.append(
-                    self._run_aircraft_support_v1_monte_carlo_sample(
-                        inputs,
-                        point,
-                        steps=steps,
-                        sample_index=index,
-                    )
-                )
-            except AdapterError as exc:
-                failed_samples.append(self._failed_monte_carlo_sample(index, point, exc.code, str(exc), exc.details))
-            except Exception as exc:
-                failed_samples.append(self._failed_monte_carlo_sample(index, point, "sample_failed", str(exc), {}))
+        samples, failed_samples = self._execute_aircraft_support_v1_monte_carlo_samples(
+            inputs,
+            profile["sample_points"],
+            steps=steps,
+            worker_count=worker_count,
+        )
         if not samples:
             raise AdapterError(
                 "monte_carlo_all_samples_failed",
@@ -1884,7 +1878,9 @@ class SimulationAdapter:
             "logs_summary": {
                 "completed_samples": len(samples),
                 "failed_samples": len(failed_samples),
-                "executor": "local_sync_aircraft_support_v1",
+                "executor": "local_sync_aircraft_support_v1" if worker_count == 1 else "process_pool_aircraft_support_v1",
+                "parallel_cores": parallel_cores,
+                "worker_count": worker_count,
             },
         }
         run_config = {
@@ -2055,6 +2051,51 @@ class SimulationAdapter:
         }
         self._write_json(run_dir / "artifact-manifest.json", manifest)
         return {"run": run, "result": result, "artifact_manifest": manifest}
+
+    def _execute_aircraft_support_v1_monte_carlo_samples(
+        self,
+        inputs: dict[str, Any],
+        sample_points: list[dict[str, Any]],
+        *,
+        steps: int,
+        worker_count: int,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        tasks = [
+            (inputs, point, steps, sample_index)
+            for sample_index, point in enumerate(sample_points)
+        ]
+        if worker_count == 1:
+            outcomes = [self._run_aircraft_support_v1_monte_carlo_worker_task(task) for task in tasks]
+        else:
+            with ProcessPoolExecutor(
+                max_workers=worker_count,
+                mp_context=multiprocessing.get_context("spawn"),
+            ) as executor:
+                futures = [executor.submit(_aircraft_support_v1_monte_carlo_process_worker, task) for task in tasks]
+                outcomes = [future.result() for future in as_completed(futures)]
+        outcomes.sort(key=lambda outcome: outcome["sample_index"])
+        samples = [outcome["sample"] for outcome in outcomes if outcome["status"] == "ok"]
+        failed_samples = [outcome["failure"] for outcome in outcomes if outcome["status"] == "failed"]
+        return samples, failed_samples
+
+    def _run_aircraft_support_v1_monte_carlo_worker_task(
+        self,
+        task: tuple[dict[str, Any], dict[str, Any], int, int],
+    ) -> dict[str, Any]:
+        inputs, point, steps, sample_index = task
+        try:
+            sample = self._run_aircraft_support_v1_monte_carlo_sample(
+                inputs,
+                point,
+                steps=steps,
+                sample_index=sample_index,
+            )
+            return {"status": "ok", "sample_index": sample_index, "sample": sample}
+        except AdapterError as exc:
+            failure = self._failed_monte_carlo_sample(sample_index, point, exc.code, str(exc), exc.details)
+        except Exception as exc:
+            failure = self._failed_monte_carlo_sample(sample_index, point, "sample_failed", str(exc), {})
+        return {"status": "failed", "sample_index": sample_index, "failure": failure}
 
     def _aircraft_support_v1_monte_carlo_sampling_contract(self, profile: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -3738,6 +3779,26 @@ class SimulationAdapter:
             )
         return count
 
+    def _validate_monte_carlo_parallel_cores(self, value: Any) -> int:
+        if isinstance(value, bool) or not self._is_integer_like(value):
+            raise AdapterError(
+                "bad_analysis_request",
+                "monte carlo parallel_cores must be an integer between 1 and 32",
+                field_path="monte_carlo_config.parallel_cores",
+                value=value,
+            )
+        count = int(value)
+        if count < 1 or count > 32:
+            raise AdapterError(
+                "bad_analysis_request",
+                "monte carlo parallel_cores must be an integer between 1 and 32",
+                field_path="monte_carlo_config.parallel_cores",
+                value=value,
+                minimum=1,
+                maximum=32,
+            )
+        return count
+
     def _normalize_numeric_sweep_values(self, values: Any, fallback: list[float], *, field_path: str) -> list[float]:
         if values is None:
             if not fallback:
@@ -4178,6 +4239,13 @@ class SimulationAdapter:
             target.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
             return
         target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _aircraft_support_v1_monte_carlo_process_worker(
+    task: tuple[dict[str, Any], dict[str, Any], int, int],
+) -> dict[str, Any]:
+    """Run one isolated sample in a spawned process without sharing adapter/model state."""
+    return SimulationAdapter()._run_aircraft_support_v1_monte_carlo_worker_task(task)  # noqa: SLF001
 
 
 def _utc_now() -> str:

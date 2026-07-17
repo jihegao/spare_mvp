@@ -1400,7 +1400,8 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
       name: "branch config",
       steps: 12,
       samples: 24,
-      seed: 20260620
+      seed: 20260620,
+      parallelCores: 6
     },
     monteCarlo: {
       failureRates: [0.06, 0.08, 0.1],
@@ -1415,6 +1416,7 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
   assert.equal(config.steps, 12);
   assert.equal(config.samples, 24);
   assert.equal(config.seed, 20260620);
+  assert.equal(config.parallelCores, 6);
   assert.deepEqual(config.monteCarlo, {
     failureRates: [0.06, 0.08, 0.1],
     spareMultipliers: [0.75, 1, 1.25],
@@ -1425,6 +1427,15 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
   assert.equal("experiment" in config.projectJson, false);
   assert.equal("monteCarlo" in config.projectJson, false);
   assert.equal("analysisRequests" in config.projectJson, false);
+});
+
+test("experiment plan config rejects invalid Monte Carlo parallel cores", () => {
+  for (const parallelCores of [0, 1.5, 33, "abc"]) {
+    assert.throws(
+      () => buildExperimentPlanConfig({ experiment: { parallelCores } }),
+      /并行核心数必须是 1-32 之间的正整数/
+    );
+  }
 });
 
 test("experiment plan config preserves analysisRequests for formal Monte Carlo runs", () => {

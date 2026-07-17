@@ -3,7 +3,7 @@
   "$id": "https://spare-mvp.local/contracts/rms_allocation_result.schema.json",
   "title": "RMS Allocation Result",
   "type": "object",
-  "required": ["ok", "planId", "planVersion", "status", "algorithmVersion", "method", "nodeResults", "totals", "warnings", "assumptions"],
+  "required": ["ok", "planId", "planVersion", "status", "algorithmVersion", "aircraftModel", "inputSnapshot", "method", "nodeResults", "totals", "warnings", "assumptions"],
   "additionalProperties": false,
   "properties": {
     "ok": { "type": "boolean" },
@@ -12,6 +12,18 @@
     "planStatus": { "type": "string" },
     "status": { "type": "string" },
     "algorithmVersion": { "type": "string", "minLength": 1 },
+    "aircraftModel": { "type": "string" },
+    "inputSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missionReliability", "missionHours", "criticalFailureRatio", "mttrHours"],
+      "properties": {
+        "missionReliability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "missionHours": { "type": "number", "minimum": 0 },
+        "criticalFailureRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "mttrHours": { "type": "number", "minimum": 0 }
+      }
+    },
     "method": { "enum": ["equal", "proportional", "similar"] },
     "similarProduct": { "type": ["object", "null"] },
     "nodeResults": {

@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   aircraftMissionReliabilityOptions,
   aircraftMissionReliabilityProject,
-  aircraftMissionReliabilityRowsToCsv,
+  aircraftMissionReliabilityResultToXlsx,
   evaluateAircraftMissionReliability
 } from "../front/aircraft-mission-reliability.mjs";
 
@@ -236,10 +236,43 @@ test("missing relation and missing, illegal, or wrongly-unitized leaf parameters
   assert.equal(evaluateAircraftMissionReliability(badUnit, selection).code, "INVALID_UNIT");
 });
 
-test("CSV helper exports the result hierarchy and probabilities", () => {
+test("XLSX export is an openable OOXML workbook containing the retained summary results", () => {
   const result = evaluateAircraftMissionReliability(issueProject(), selection);
-  const csv = aircraftMissionReliabilityRowsToCsv(result.rows);
+  const workbook = aircraftMissionReliabilityResultToXlsx(result);
+  const entries = storedZipEntries(workbook);
 
-  assert.match(csv, /^层级,节点ID,名称,类型,关系,参数,可靠度,失效概率/m);
-  assert.match(csv, /group-b,B 组,group,并联/);
+  assert.equal(new DataView(workbook.buffer, workbook.byteOffset, workbook.byteLength).getUint32(0, true), 0x04034b50);
+  assert.ok(entries.has("[Content_Types].xml"));
+  assert.ok(entries.has("xl/workbook.xml"));
+  assert.ok(entries.has("xl/worksheets/sheet1.xml"));
+  assert.match(entries.get("xl/workbook.xml"), /sheet name="可靠性汇总"/);
+
+  const worksheet = entries.get("xl/worksheets/sheet1.xml");
+  assert.match(worksheet, /飞机任务可靠性评估/);
+  assert.match(worksheet, /飞机型号[\s\S]*AC-202/);
+  assert.match(worksheet, /任务剖面[\s\S]*五小时任务/);
+  assert.match(worksheet, /任务时长（小时）[\s\S]*<v>5<\/v>/);
+  assert.match(worksheet, new RegExp(`<v>${result.aircraftReliability}<\\/v>`));
+  assert.match(worksheet, new RegExp(`<v>${result.failureProbability}<\\/v>`));
+  assert.match(worksheet, /计算节点[\s\S]*<v>7<\/v>/);
+  assert.doesNotMatch(worksheet, /节点ID|串并联关系|产品可靠性参数/);
 });
+
+function storedZipEntries(bytes) {
+  const entries = new Map();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder();
+  let offset = 0;
+  while (offset + 30 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
+    assert.equal(view.getUint16(offset + 8, true), 0, "test parser expects stored ZIP entries");
+    const compressedSize = view.getUint32(offset + 18, true);
+    const nameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + nameLength + extraLength;
+    const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength));
+    entries.set(name, decoder.decode(bytes.subarray(dataStart, dataStart + compressedSize)));
+    offset = dataStart + compressedSize;
+  }
+  return entries;
+}

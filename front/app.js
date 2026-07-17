@@ -13,6 +13,8 @@ import {
   buildPreviewResultState,
   buildFrontendResultState,
   createBackendApiClient,
+  MAX_MONTE_CARLO_PARALLEL_CORES,
+  normalizeMonteCarloParallelCores,
   normalizeProjectJsonBasicMissions,
   normalizeProjectJsonForClientDraft
 } from "./api-client.mjs";
@@ -39,7 +41,12 @@ import {
 import { buildRunIntent, submitRunIntent } from "./run-intent.mjs";
 import {
   buildSolaraVisualizationUrl,
-  resolveSolaraVisualizationBaseUrl
+  localizeVisualizationEvent,
+  resolveSolaraVisualizationBaseUrl,
+  visualizationEventTypeLabel,
+  visualizationJobStateLabel,
+  visualizationMissionStatusLabel,
+  visualizationShortageReasonLabel
 } from "./solara-visualization.mjs";
 import {
   cloneScenario,
@@ -57,15 +64,16 @@ import {
 } from "./rbd-evaluator.mjs?v=20260628-rbd-child-selection-view";
 import {
   aircraftMissionReliabilityOptions,
-  aircraftMissionReliabilityProject,
+  aircraftMissionReliabilityResultToXlsx,
   evaluateAircraftMissionReliability
 } from "./aircraft-mission-reliability.mjs";
 import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
-  createDemoRmsAllocationProject,
+  createRmsAllocationProjectForScenario,
   createRmsAllocationFailureResult,
   normalizeRmsEquipmentImportRows,
+  rmsAllocationInputErrors,
   rmsEquipmentRoots,
   selectRmsAllocationEquipmentRoot
 } from "./rms-allocation-engine.mjs";
@@ -133,10 +141,11 @@ const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
   supportCapacities: [1]
 });
 const LITE_MESA_MONTE_CARLO_METRICS = Object.freeze([
-  { key: "mission_success_rate", label: "任务成功率", format: "ratio" },
+  { key: "mission_success_rate", label: "任务可靠度", format: "ratio" },
+  { key: "spare_fill_rate", label: "备件满足率", format: "ratio" },
+  { key: "spare_utilization", label: "备件利用率", format: "ratio" },
   { key: "ready_rate", label: "战备完好率", format: "ratio" },
   { key: "sortie_rate", label: "出动架次率", format: "ratio" },
-  { key: "spare_fill_rate", label: "备件满足率", format: "ratio" },
   { key: "mean_transport_delay", label: "平均备件延误时间", format: "number" },
   { key: "repair_backlog", label: "维修积压", format: "number" }
 ]);
@@ -152,8 +161,8 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
   carry_list: {
     experimentId: "minimum_carry_list_search",
     title: "飞机转场携行清单分析",
-    subtitle: "按备件类别独立变化的最小携行清单搜索",
-    settingSubject: "备件类别独立变化",
+    subtitle: "按产品独立变化的最小携行清单搜索",
+    settingSubject: "产品独立变化",
     settingMethod: "最小携行清单搜索",
     metricLabels: ["建议携行总数", "高优先级备件"]
   },
@@ -551,6 +560,8 @@ const SYSTEM_PERMISSION_ROWS = [
   { feature: "结果分析", admin: "只读", data: "只读", user: "只读" }
 ];
 
+let permissionMenuVisibilityRows = createDefaultPermissionMenuVisibilityRows();
+
 function mergeProjectsById(projects) {
   const byId = new Map();
   for (const project of projects) {
@@ -657,19 +668,25 @@ let currentAnalysisResultLoadInFlight = {};
 let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
 let liteMesaMonteCarloSettings = {
   samples: Number(scenario.experiment?.samples || 4),
-  seed: Number(scenario.experiment?.seed || 20260621)
+  seed: Number(scenario.experiment?.seed || 20260621),
+  parallelCores: normalizeMonteCarloParallelCores(scenario.experiment?.parallelCores)
 };
 let liteMesaMonteCarloResult = null;
-let liteMesaMonteCarloStatus = "设置样本量和随机种子后运行分析。";
+let liteMesaMonteCarloStatus = "等待运行分析。";
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
 let liteMesaAnalysisResults = {};
 let aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
-let rmsAllocationProject = createDemoRmsAllocationProject();
+let rmsAllocationProject = createRmsAllocationProjectForScenario(scenario);
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
-let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
-let rmsEquipmentImportStatus = "当前装备树为 RMS 分配工作台独立数据，未写入项目建模。";
-let rmsSelectedEquipmentNodeId = rmsAllocationProject.rootId;
-let rmsCalculationInFlight = false;
+let rmsAllocationResult = null;
+let rmsEquipmentImportStatus = "当前装备树来自项目装备系统建模，RMS 编辑值按飞机型号独立保存。";
+let rmsSelectedAircraftModel = "";
+let rmsSelectedEquipmentNodeId = "";
+let rmsValidationMessage = "";
+let rmsAircraftStates = {};
+let rmsStateScenarioSource = null;
+let rmsStateScenarioStructureKey = "";
+let rmsCalculationRunSequence = 0;
 let modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
 let modelingImportPublishedPackage = null;
 
@@ -768,9 +785,11 @@ let equipmentSearchQuery = "";
 let equipmentProductEditorComponentId = "";
 let equipmentProductQuery = "";
 let equipmentProductDraft = { name: "", model: "", kind: "LRU" };
-let spareDemandSort = "default";
+let spareShortfallSort = { field: "", direction: "" };
 let spareAircraftFilter = "";
 let carryHideZeroDemand = true;
+let carryRecommendedSort = "default";
+let carryAircraftFilter = "";
 let selectedDowntimeFactorTypes = new Set(DOWNTIME_FACTOR_OPTIONS.map((item) => item.value));
 let selectedBasicMissionKey = "primary";
 let selectedBasicMissionTreeLevel = "mission";
@@ -1821,6 +1840,16 @@ function bindEvents() {
       return;
     }
 
+    const permissionMenuVisibilityButton = event.target.closest("[data-permission-menu-visibility]");
+    if (permissionMenuVisibilityButton) {
+      togglePermissionMenuVisibility(
+        permissionMenuVisibilityButton.dataset.permissionMenuVisibility,
+        permissionMenuVisibilityButton.dataset.roleKey
+      );
+      render();
+      return;
+    }
+
     const systemUserEditButton = event.target.closest("[data-system-user-edit]");
     if (systemUserEditButton) {
       openSystemUserEditor(systemUserEditButton.dataset.systemUserEdit);
@@ -2018,7 +2047,10 @@ function bindEvents() {
 
     const rmsEquipmentRootButton = event.target.closest("[data-rms-equipment-root]");
     if (rmsEquipmentRootButton) {
-      setRmsEquipmentRoot(rmsEquipmentRootButton.dataset.rmsEquipmentRoot);
+      rmsSelectedEquipmentNodeId = rmsEquipmentRootButton.dataset.rmsEquipmentRoot;
+      updateCurrentRmsAircraftState();
+      persistRmsAllocationDraftToScenario();
+      markRmsAllocationDraftChanged();
       render();
       return;
     }
@@ -2026,6 +2058,9 @@ function bindEvents() {
     const rmsEquipmentNodeButton = event.target.closest("[data-rms-equipment-node]");
     if (rmsEquipmentNodeButton) {
       rmsSelectedEquipmentNodeId = rmsEquipmentNodeButton.dataset.rmsEquipmentNode;
+      updateCurrentRmsAircraftState();
+      persistRmsAllocationDraftToScenario();
+      markRmsAllocationDraftChanged();
       render();
       return;
     }
@@ -2053,9 +2088,19 @@ function bindEvents() {
       return;
     }
 
-    const spareSortButton = event.target.closest("[data-spare-demand-sort]");
+    const spareSortButton = event.target.closest("[data-spare-shortfall-sort]");
     if (spareSortButton) {
-      spareDemandSort = spareSortButton.dataset.spareDemandSort || "default";
+      spareShortfallSort = {
+        field: spareSortButton.dataset.spareShortfallSort || "",
+        direction: spareSortButton.dataset.sortDirection || ""
+      };
+      render();
+      return;
+    }
+
+    const carrySortButton = event.target.closest("[data-carry-recommended-sort]");
+    if (carrySortButton) {
+      carryRecommendedSort = carrySortButton.dataset.carryRecommendedSort || "default";
       render();
       return;
     }
@@ -2192,6 +2237,12 @@ function bindEvents() {
     const carryZeroFilter = event.target.closest("[data-carry-hide-zero]");
     if (carryZeroFilter) {
       carryHideZeroDemand = carryZeroFilter.checked;
+      render();
+      return;
+    }
+    const carryAircraftFilterSelect = event.target.closest("[data-carry-aircraft-filter]");
+    if (carryAircraftFilterSelect) {
+      carryAircraftFilter = carryAircraftFilterSelect.value;
       render();
       return;
     }
@@ -2739,9 +2790,22 @@ function bindEvents() {
       return;
     }
 
+    const rmsAircraftModelInput = event.target.closest("[data-rms-aircraft-model]");
+    if (rmsAircraftModelInput) {
+      selectRmsAircraftModel(rmsAircraftModelInput.value);
+      render();
+      return;
+    }
+
     const rmsInput = event.target.closest("[data-rms-path]");
     if (rmsInput) {
-      setPath(rmsAllocationPlan, rmsInput.dataset.rmsPath, parseInput(rmsInput));
+      const value = rmsInput.type === "number" && rmsInput.value === "" ? "" : parseInput(rmsInput);
+      setPath(rmsAllocationPlan, rmsInput.dataset.rmsPath, value);
+      rmsValidationMessage = "";
+      invalidateCurrentRmsAllocationResult();
+      updateCurrentRmsAircraftState();
+      persistRmsAllocationDraftToScenario();
+      markRmsAllocationDraftChanged();
       render();
       return;
     }
@@ -3265,14 +3329,16 @@ function shouldUseExperimentPlanContextDropdown(page) {
   return isVisualSimulationPage(page)
     || page.component === "lite-mesa-monte-carlo-analysis"
     || page.component === "lite-mesa-analysis"
-    || page.component === "analysis";
+    || page.component === "analysis"
+    || page.component === "aircraft-mission-reliability-analysis";
 }
 
 function shouldEmbedExperimentPlanContextInComponent(page) {
   return isVisualSimulationPage(page)
     || page.component === "lite-mesa-monte-carlo-analysis"
     || page.component === "lite-mesa-analysis"
-    || page.component === "analysis";
+    || page.component === "analysis"
+    || page.component === "aircraft-mission-reliability-analysis";
 }
 
 function renderExperimentPlanContextDropdown(page) {
@@ -3338,17 +3404,23 @@ function renderMainComponent(page) {
   if (page.component === "experiment-form") return renderExperimentPlanEditor(page);
   if (page.component === "system-project-management") return renderSystemProjectManagement(page);
   if (page.component === "system-basic-config") return renderSystemBasicConfig(page);
-  if (page.component === "rms-allocation") return renderRmsAllocationWorkbench({
-    project: rmsAllocationProject,
-    plan: rmsAllocationPlan,
-    result: rmsAllocationResult,
-    importStatus: rmsEquipmentImportStatus,
-    selectedEquipmentNodeId: rmsSelectedEquipmentNodeId,
-    isCalculating: rmsCalculationInFlight,
-    htmlEscape,
-    fixed,
-    pct
-  });
+  if (page.component === "rms-allocation") {
+    ensureRmsAllocationStateForScenario();
+    return renderRmsAllocationWorkbench({
+      project: rmsAllocationProject,
+      plan: rmsAllocationPlan,
+      result: rmsAllocationResult,
+      importStatus: rmsEquipmentImportStatus,
+      aircraftModels: wholeMachineModels(),
+      selectedAircraftModel: rmsSelectedAircraftModel,
+      selectedEquipmentNodeId: rmsSelectedEquipmentNodeId,
+      validationMessage: rmsValidationMessage,
+      calculationStatus: rmsAircraftStates[rmsSelectedAircraftModel]?.calculationStatus || "not-calculated",
+      htmlEscape,
+      fixed,
+      pct
+    });
+  }
   if (page.component === "aircraft-mission-reliability-analysis") return renderAircraftMissionReliabilityAnalysis();
   if (page.component === "lite-mesa-monte-carlo-analysis") return renderLiteMesaMonteCarloAnalysis(page);
   if (page.component === "lite-mesa-analysis") return renderLiteMesaAnalysisPage(page);
@@ -4681,6 +4753,7 @@ function createDefaultSystemRuntimeConfig() {
     activeGranularityProfile: DEFAULT_MODELING_GRANULARITY,
     granularityProfiles: modelingGranularityProfiles(),
     permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
+    permissionMenuVisibility: createDefaultPermissionMenuVisibilityRows(),
     modelingForms: {
       fieldUnits: createDefaultModelingFormFieldUnits(),
       personnelSpecialties: [...PERSONNEL_SPECIALTY_FALLBACK]
@@ -4706,6 +4779,10 @@ function currentSystemRuntimeConfigPayload() {
     activeGranularityProfile: selectedModelingGranularityKey,
     granularityProfiles: modelingGranularityProfiles(),
     permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
+    permissionMenuVisibility: permissionMenuVisibilityRows.map((row) => ({
+      ...row,
+      pageIds: [...row.pageIds]
+    })),
     modelingForms: {
       fieldUnits: normalizeModelingFormFieldUnits(modelingFormFieldUnits),
       personnelSpecialties: configuredPersonnelSpecialties()
@@ -4736,6 +4813,10 @@ function applySystemRuntimeConfig(payload = {}) {
       row.data = normalizePermissionLevel(saved.data);
       row.user = normalizePermissionLevel(saved.user);
     }
+  }
+
+  if (Array.isArray(payload.permissionMenuVisibility)) {
+    permissionMenuVisibilityRows = normalizePermissionMenuVisibilityRows(payload.permissionMenuVisibility);
   }
 
   if (payload.modelingForms && typeof payload.modelingForms === "object") {
@@ -4779,6 +4860,35 @@ async function saveSystemRuntimeConfig(contextLabel = "系统配置") {
 
 function normalizePermissionLevel(value) {
   return ["编辑", "管理"].includes(value) ? "编辑" : "只读";
+}
+
+function permissionMenuLeafKey(pageIds = []) {
+  return pageIds.map((pageId) => String(pageId || "").trim()).filter(Boolean).join("|");
+}
+
+function createDefaultPermissionMenuVisibilityRows() {
+  return buildPermissionMenuTree().flatMap(({ secondaryGroups }) => secondaryGroups.flatMap(({ leaves }) => (
+    leaves.map(({ pageIds, visibility }) => ({
+      leafKey: permissionMenuLeafKey(pageIds),
+      pageIds: [...pageIds],
+      ...Object.fromEntries(PERMISSION_MENU_ROLES.map(({ key }) => [key, Boolean(visibility[key])]))
+    }))
+  )));
+}
+
+function normalizePermissionMenuVisibilityRows(savedRows = []) {
+  const savedByLeafKey = new Map(savedRows.map((row) => [String(row?.leafKey || ""), row]));
+  return createDefaultPermissionMenuVisibilityRows().map((defaultRow) => {
+    const savedRow = savedByLeafKey.get(defaultRow.leafKey);
+    if (!savedRow) return defaultRow;
+    return {
+      ...defaultRow,
+      ...Object.fromEntries(PERMISSION_MENU_ROLES.map(({ key }) => [
+        key,
+        typeof savedRow[key] === "boolean" ? savedRow[key] : defaultRow[key]
+      ]))
+    };
+  });
 }
 
 function configuredPersonnelSpecialties() {
@@ -4948,8 +5058,8 @@ function renderSystemUserEditor() {
 
 function renderPermissionManagementConfig() {
   const menuTree = buildPermissionMenuTree();
+  const configuredVisibility = new Map(permissionMenuVisibilityRows.map((row) => [row.leafKey, row]));
   return `
-    <p class="inline-status">按左侧菜单的最小叶子项展示当前角色可见性；此处不修改既有三类角色权限口径。</p>
     <div class="table-wrap permission-menu-table-wrap">
       <table>
         <thead><tr><th>左侧菜单层级</th>${PERMISSION_MENU_ROLES.map(({ label }) => `<th>${label}</th>`).join("")}</tr></thead>
@@ -4957,10 +5067,16 @@ function renderPermissionManagementConfig() {
           <tr class="permission-menu-module-row"><th colspan="4" scope="rowgroup">${htmlEscape(module)}</th></tr>
           ${secondaryGroups.map(({ secondary, leaves }) => `
             <tr class="permission-menu-secondary-row"><th colspan="4" scope="rowgroup">${htmlEscape(secondary)}</th></tr>
-            ${leaves.map(({ tertiary, visibility }) => `
+            ${leaves.map(({ tertiary, pageIds, visibility }) => `
               <tr data-permission-menu-leaf="${htmlEscape(tertiary)}">
                 <th scope="row" class="permission-menu-leaf"><span aria-hidden="true">└</span>${htmlEscape(tertiary)}</th>
-                ${PERMISSION_MENU_ROLES.map(({ key }) => renderPermissionVisibility(visibility[key])).join("")}
+                ${PERMISSION_MENU_ROLES.map(({ key, label }) => renderPermissionVisibility({
+                  leafKey: permissionMenuLeafKey(pageIds),
+                  leafLabel: tertiary,
+                  roleKey: key,
+                  roleLabel: label,
+                  visible: configuredVisibility.get(permissionMenuLeafKey(pageIds))?.[key] ?? visibility[key]
+                })).join("")}
               </tr>
             `).join("")}
           `).join("")}
@@ -4970,9 +5086,9 @@ function renderPermissionManagementConfig() {
   `;
 }
 
-function renderPermissionVisibility(visible) {
+function renderPermissionVisibility({ leafKey, leafLabel, roleKey, roleLabel, visible }) {
   const label = visible ? "可见" : "不可见";
-  return `<td><span class="permission-visibility ${visible ? "is-visible" : "is-hidden"}">${label}</span></td>`;
+  return `<td><button type="button" class="permission-visibility ${visible ? "is-visible" : "is-hidden"}" data-permission-menu-visibility="${htmlEscape(leafKey)}" data-role-key="${htmlEscape(roleKey)}" aria-pressed="${visible}" aria-label="${htmlEscape(`${leafLabel} / ${roleLabel}：${label}，点击切换`)}">${label}</button></td>`;
 }
 
 function renderPermissionConfigEditor() {
@@ -5000,7 +5116,6 @@ function renderModelingFormManagementConfig() {
   const timeUnitFieldCount = timeUnitSheets.reduce((sum, sheet) => sum + sheet.fields.length, 0);
   const specialties = configuredPersonnelSpecialties();
   return `
-    <p class="inline-status">仅保留保障人员专业字典与 ${timeUnitFieldCount} 个带时间单位的表单字段配置。</p>
     <div class="modeling-field-config modeling-form-config-grid" data-modeling-form-management>
       <section class="modeling-config-card" data-personnel-specialty-dictionary>
         <div class="section-head">
@@ -10722,9 +10837,18 @@ function selectedExperimentPlanRunSettings() {
     : {};
   const samples = positiveExperimentNumber(config.samples, positiveExperimentNumber(experiment.samples, 0));
   const seed = positiveExperimentNumber(config.seed, positiveExperimentNumber(experiment.seed, 0));
+  const configuredParallelCores = config.parallelCores ?? experiment.parallelCores ?? 1;
+  let parallelCoresError = "";
+  try {
+    normalizeMonteCarloParallelCores(configuredParallelCores);
+  } catch (err) {
+    parallelCoresError = err.message;
+  }
   return {
     ...(samples > 0 ? { samples: Math.max(1, Math.min(1000, Math.trunc(samples))) } : {}),
-    ...(seed > 0 ? { seed: Math.trunc(seed) } : {})
+    ...(seed > 0 ? { seed: Math.trunc(seed) } : {}),
+    parallelCores: configuredParallelCores,
+    parallelCoresError
   };
 }
 
@@ -10739,7 +10863,8 @@ function resetRunContextToCurrentProject() {
   const seed = positiveExperimentNumber(experiment.seed, 0);
   liteMesaMonteCarloSettings = {
     samples: samples > 0 ? Math.max(1, Math.min(1000, Math.trunc(samples))) : 4,
-    seed: seed > 0 ? Math.trunc(seed) : 20260621
+    seed: seed > 0 ? Math.trunc(seed) : 20260621,
+    parallelCores: experiment.parallelCores ?? 1
   };
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
@@ -10765,11 +10890,19 @@ function selectCurrentExperimentPlan(planKey) {
     ? `已绑定实验方案：${selected.name}`
     : `已切换运行来源：${selected.name}`;
   liteMesaAnalysisResults = {};
+  aircraftMissionReliabilityState.result = null;
+  aircraftMissionReliabilityState.status = "运行上下文已更新，请重新运行。";
+  aircraftMissionReliabilityState.actionStatus = "";
+  aircraftMissionReliabilityState.viewingHistoryId = "";
   const planRunSettings = selectedExperimentPlanRunSettings();
   liteMesaMonteCarloSettings = {
     samples: Number(planRunSettings.samples) > 0 ? Number(planRunSettings.samples) : 4,
-    seed: Number(planRunSettings.seed) > 0 ? Number(planRunSettings.seed) : 20260621
+    seed: Number(planRunSettings.seed) > 0 ? Number(planRunSettings.seed) : 20260621,
+    parallelCores: planRunSettings.parallelCores
   };
+  if (planRunSettings.parallelCoresError) {
+    liteMesaMonteCarloStatus = `无法运行：${planRunSettings.parallelCoresError}`;
+  }
 }
 
 function toggleExperimentPlanSelection(planKey, checked) {
@@ -10843,17 +10976,19 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
 function renderExperimentPlanEditor(page) {
   const seedPolicy = experimentPlanSeedPolicy();
   const stopPolicy = experimentPlanStopPolicy();
+  const parallelCoresError = experimentPlanParallelCoresError();
   return `
     <div class="section-head">
       <h3>方案编辑</h3>
-      <span>基本信息、运行配置与分析配置</span>
+      <span>基本信息与运行配置</span>
     </div>
     <div class="section-head sub-section-head"><h3>基本信息</h3><span>方案标识与说明</span></div>
     <div class="form-table-grid">
       ${experimentPlanField("实验名称", "experiment.name")}
       ${experimentPlanField("样本数", "experiment.samples", "number")}
-      ${experimentPlanField("并行核心数", "experiment.parallelCores", "number")}
+      ${experimentPlanField("并行核心数", "experiment.parallelCores", "number", `min="1" max="${MAX_MONTE_CARLO_PARALLEL_CORES}" step="1" ${parallelCoresError ? 'aria-invalid="true"' : ""}`)}
     </div>
+    ${parallelCoresError ? `<p class="inline-status error">${htmlEscape(parallelCoresError)}</p>` : ""}
     <div class="section-head sub-section-head">
       <h3>运行配置</h3>
       <span>${seedPolicy.mode === "random" ? "生成方案时固化随机 base seed" : "固定 base seed 可复现"}</span>
@@ -10868,16 +11003,9 @@ function renderExperimentPlanEditor(page) {
       <label>Base seed<input data-experiment-seed-base type="number" step="1" value="${htmlEscape(seedPolicy.baseSeed)}"></label>
     </div>
     ${renderExperimentStopPolicyControls(stopPolicy)}
-    <div class="section-head sub-section-head">
-      <h3>分析配置</h3>
-      <span>分析项沿用实验方案的独立配置，不写回 Project JSON</span>
-    </div>
-    <div class="alert info">
-      任务可靠性、备件规划、停机因素等分析项在运行后按结果页配置展示。
-    </div>
     <div class="plan-editor-actions">
-      <button type="button" data-plan-list-link>返回方案列表</button>
-      <button type="button" class="btn-primary" data-save-plan>保存方案</button>
+      <button type="button" data-plan-list-link>返回</button>
+      <button type="button" class="btn-primary" data-save-plan ${parallelCoresError ? "disabled" : ""}>保存</button>
     </div>
   `;
 }
@@ -10911,7 +11039,7 @@ function renderExperimentStopPolicyControls(stopPolicy) {
           <input class="experiment-stop-condition-checkbox" id="experiment-stop-condition-specified-time" data-experiment-stop-condition="specifiedTime" type="checkbox" aria-label="达到指定时间" ${conditions.has("specifiedTime") ? "checked" : ""}>
           <label class="experiment-stop-condition-field" for="experiment-stop-condition-specified-time">达到指定时间</label>
         </div>
-        <label class="experiment-stop-minute-field">停止分钟<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}" ${conditions.has("specifiedTime") ? "" : "disabled"}></label>
+        <label class="experiment-stop-minute-field">停止分钟（min）<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}" ${conditions.has("specifiedTime") ? "" : "disabled"}></label>
       </div>
     </div>
   `;
@@ -11286,8 +11414,8 @@ function collectScenarioOverrideParameterOptions(value, path, options) {
   }
 }
 
-function experimentPlanField(label, path, type = "text") {
-  return `<label>${label}<input data-experiment-plan-path="${path}" type="${type}" value="${htmlEscape(getPath(experimentPlanDraft, path))}"></label>`;
+function experimentPlanField(label, path, type = "text", attrs = "") {
+  return `<label>${label}<input data-experiment-plan-path="${path}" type="${type}" value="${htmlEscape(getPath(experimentPlanDraft, path))}" ${attrs}></label>`;
 }
 
 async function handleLogin() {
@@ -11976,6 +12104,11 @@ function projectDraftSaveFailureText(err) {
 }
 
 async function saveCurrentExperimentPlanThroughApi() {
+  const parallelCoresError = experimentPlanParallelCoresError();
+  if (parallelCoresError) {
+    backendApiStatus = `实验方案保存失败：${parallelCoresError}`;
+    return;
+  }
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   const planProjectJson = cloneScenario(experimentPlanDraft);
   ensureExperimentPlanLargeSampleRequest(planProjectJson);
@@ -12823,33 +12956,245 @@ function compileGateStatusText(run) {
   return `运行失败：${error.message || run?.status || "Backend run failed"}`;
 }
 
-function recalculateRmsAllocation() {
-  try {
-    rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
-  } catch (err) {
-    rmsAllocationResult = createRmsAllocationFailureResult(rmsAllocationPlan, err);
+function ensureRmsAllocationStateForScenario() {
+  const structureKey = rmsScenarioStructureKey();
+  if (rmsStateScenarioSource === scenario && rmsStateScenarioStructureKey === structureKey) return;
+  const aircraftModels = wholeMachineModels();
+  const previousAircraftStates = rmsStateScenarioStructureKey === structureKey ? rmsAircraftStates : {};
+  const savedPlanEnvelope = scenario?.rmsAllocationPlan?.schemaVersion === "rms-allocation-workbench-v1"
+    ? scenario.rmsAllocationPlan
+    : {};
+  const savedResultEnvelope = scenario?.rmsAllocationResult?.schemaVersion === "rms-allocation-result-set-v1"
+    ? scenario.rmsAllocationResult
+    : {};
+  rmsAircraftStates = {};
+  for (const aircraftModel of aircraftModels) {
+    if (previousAircraftStates[aircraftModel]?.calculationStatus === "calculating") {
+      rmsAircraftStates[aircraftModel] = previousAircraftStates[aircraftModel];
+      continue;
+    }
+    const baseProject = createRmsAllocationProjectForScenario(scenario, aircraftModel);
+    const savedState = savedPlanEnvelope.aircraftStates?.[aircraftModel] || {};
+    const savedNodesById = new Map((savedState.equipmentNodes || []).map((node) => [node.id, node]));
+    baseProject.equipmentNodes = baseProject.equipmentNodes.map((node) => {
+      const savedNode = savedNodesById.get(node.id);
+      if (!savedNode) return node;
+      return {
+        ...node,
+        name: savedNode.name || node.name,
+        model: savedNode.model ?? node.model,
+        quantity: savedNode.quantity ?? node.quantity,
+        missionUse: { ...(node.missionUse || {}), ...(savedNode.missionUse || {}) }
+      };
+    });
+    const defaultPlan = createDefaultRmsAllocationPlan(baseProject);
+    const savedPlan = savedState.plan || {};
+    const plan = {
+      ...defaultPlan,
+      ...savedPlan,
+      projectId: baseProject.projectId,
+      inputs: { ...defaultPlan.inputs, ...(savedPlan.inputs || {}) },
+      methods: {
+        ...defaultPlan.methods,
+        ...(savedPlan.methods || {}),
+        similarProduct: {
+          ...defaultPlan.methods.similarProduct,
+          ...(savedPlan.methods?.similarProduct || {}),
+          targetModel: aircraftModel
+        }
+      }
+    };
+    const selectedEquipmentNodeId = baseProject.equipmentNodes.some((node) => node.id === savedState.selectedEquipmentNodeId)
+      ? savedState.selectedEquipmentNodeId
+      : baseProject.rootId;
+    const savedResult = savedResultEnvelope.byAircraftModel?.[aircraftModel];
+    const completedResult = rmsResultMatchesCurrentState(savedResult, plan, baseProject) ? savedResult : null;
+    rmsAircraftStates[aircraftModel] = {
+      project: baseProject,
+      plan,
+      result: completedResult,
+      selectedEquipmentNodeId,
+      calculationStatus: completedResult ? "completed" : "not-calculated",
+      calculationRunId: 0
+    };
   }
+  const savedAircraftModel = String(savedPlanEnvelope.selectedAircraftModel || "");
+  rmsSelectedAircraftModel = aircraftModels.includes(savedAircraftModel) ? savedAircraftModel : "";
+  rmsStateScenarioSource = scenario;
+  rmsStateScenarioStructureKey = structureKey;
+  activateRmsAircraftState(rmsSelectedAircraftModel);
+}
+
+function rmsScenarioStructureKey() {
+  return JSON.stringify({
+    projectId: scenario?.project_id || scenario?.scenarioId || "",
+    aircraftModels: wholeMachineModels(),
+    components: (scenario?.components || []).map((component) => [
+      component?.id,
+      component?.parentId,
+      component?.aircraftModel,
+      component?.name,
+      component?.model,
+      component?.quantity,
+      component?.runningRatio,
+      component?.missionUse?.runningRatio,
+      component?.missionUse?.dutyCycle
+    ])
+  });
+}
+
+function rmsResultMatchesCurrentState(result, plan, project) {
+  if (result?.status !== "calculated" || !Array.isArray(result.nodeResults) || result.nodeResults.length === 0) return false;
+  const selectedRoot = project.equipmentNodes.find((node) => node.id === project.rootId);
+  const aircraftModel = selectedRoot?.aircraftModel || selectedRoot?.name || "";
+  if (result.aircraftModel !== aircraftModel || result.method !== plan.methods.allocation) return false;
+  const inputKeys = ["missionReliability", "missionHours", "criticalFailureRatio", "mttrHours"];
+  if (inputKeys.some((key) => Number(result.inputSnapshot?.[key]) !== Number(plan.inputs?.[key]))) return false;
+  const expectedNodes = project.equipmentNodes.filter((node) => node.parentId === project.rootId);
+  if (expectedNodes.length !== result.nodeResults.length) return false;
+  const resultByNodeId = new Map(result.nodeResults.map((row) => [row.nodeId, row]));
+  return expectedNodes.every((node) => {
+    const row = resultByNodeId.get(node.id);
+    const runningRatio = node.missionUse?.runningRatio ?? node.missionUse?.dutyCycle ?? node.runningRatio ?? 1;
+    return row
+      && row.nodeName === node.name
+      && String(row.model || "") === String(node.model || node.partNumber || "")
+      && Number(row.installationCount) === Number(node.quantity)
+      && Number(row.runningRatio) === Number(runningRatio);
+  });
+}
+
+function selectRmsAircraftModel(aircraftModel) {
+  ensureRmsAllocationStateForScenario();
+  const selectedModel = wholeMachineModels().includes(String(aircraftModel || "")) ? String(aircraftModel) : "";
+  rmsSelectedAircraftModel = selectedModel;
+  rmsValidationMessage = selectedModel ? "" : "请先选择飞机型号。";
+  activateRmsAircraftState(selectedModel);
+  persistRmsAllocationDraftToScenario();
+  markRmsAllocationDraftChanged();
+}
+
+function activateRmsAircraftState(aircraftModel) {
+  const state = rmsAircraftStates[aircraftModel];
+  if (!state) {
+    rmsAllocationProject = createRmsAllocationProjectForScenario(scenario);
+    rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
+    rmsAllocationResult = null;
+    rmsSelectedEquipmentNodeId = "";
+    return;
+  }
+  rmsAllocationProject = state.project;
+  rmsAllocationPlan = state.plan;
+  rmsAllocationResult = state.result;
+  rmsSelectedEquipmentNodeId = state.selectedEquipmentNodeId;
+}
+
+function updateCurrentRmsAircraftState() {
+  const state = rmsAircraftStates[rmsSelectedAircraftModel];
+  if (!state) return;
+  state.project = rmsAllocationProject;
+  state.plan = rmsAllocationPlan;
+  state.result = rmsAllocationResult;
+  state.selectedEquipmentNodeId = rmsSelectedEquipmentNodeId;
+}
+
+function invalidateCurrentRmsAllocationResult() {
+  const state = rmsAircraftStates[rmsSelectedAircraftModel];
+  if (!state) return;
+  state.calculationRunId = ++rmsCalculationRunSequence;
+  state.calculationStatus = "not-calculated";
+  state.result = null;
+  rmsAllocationResult = null;
+}
+
+function persistRmsAllocationDraftToScenario() {
+  updateCurrentRmsAircraftState();
+  scenario.rmsAllocationPlan = {
+    schemaVersion: "rms-allocation-workbench-v1",
+    selectedAircraftModel: rmsSelectedAircraftModel,
+    aircraftStates: Object.fromEntries(Object.entries(rmsAircraftStates).map(([aircraftModel, state]) => [aircraftModel, {
+      plan: structuredClone(state.plan),
+      selectedEquipmentNodeId: state.selectedEquipmentNodeId,
+      equipmentNodes: structuredClone(state.project.equipmentNodes)
+    }]))
+  };
+  scenario.rmsAllocationResult = {
+    schemaVersion: "rms-allocation-result-set-v1",
+    byAircraftModel: Object.fromEntries(Object.entries(rmsAircraftStates)
+      .filter(([, state]) => state.calculationStatus === "completed" && rmsResultMatchesCurrentState(state.result, state.plan, state.project))
+      .map(([aircraftModel, state]) => [aircraftModel, structuredClone(state.result)]))
+  };
+}
+
+function markRmsAllocationDraftChanged() {
+  projectDraftSaveStatus = "有未保存修改";
+  scheduleProjectDraftAutosave();
 }
 
 function startRmsAllocationCalculation() {
-  if (rmsCalculationInFlight) return;
-  rmsCalculationInFlight = true;
-  render();
+  ensureRmsAllocationStateForScenario();
+  const aircraftModel = rmsSelectedAircraftModel;
+  const state = rmsAircraftStates[aircraftModel];
+  if (!state) {
+    rmsValidationMessage = "请先选择飞机型号。";
+    return;
+  }
+  if (state.calculationStatus === "calculating") return;
+  if (!state.project.equipmentNodes.some((node) => node.parentId === state.project.rootId)) {
+    rmsValidationMessage = "当前机型未加载到可分配的装备结构，请先完成装备系统建模。";
+    return;
+  }
+  const inputErrors = rmsAllocationInputErrors(state.plan.inputs);
+  if (inputErrors.length) {
+    rmsValidationMessage = inputErrors.join("；");
+    return;
+  }
+  rmsValidationMessage = "";
+  const calculationRunId = ++rmsCalculationRunSequence;
+  const planSnapshot = structuredClone(state.plan);
+  const projectSnapshot = structuredClone(state.project);
+  state.calculationRunId = calculationRunId;
+  state.calculationStatus = "calculating";
+  state.result = null;
+  rmsAllocationResult = null;
+  persistRmsAllocationDraftToScenario();
+  markRmsAllocationDraftChanged();
   globalThis.setTimeout(() => {
-    recalculateRmsAllocation();
-    rmsCalculationInFlight = false;
+    let nextResult;
+    try {
+      nextResult = calculateRmsAllocation(planSnapshot, projectSnapshot);
+    } catch (err) {
+      nextResult = createRmsAllocationFailureResult(planSnapshot, err);
+    }
+    if (state.calculationRunId !== calculationRunId || state.calculationStatus !== "calculating") return;
+    const completed = rmsResultMatchesCurrentState(nextResult, state.plan, state.project);
+    state.result = nextResult;
+    state.calculationStatus = completed ? "completed" : "not-calculated";
+    if (rmsSelectedAircraftModel === aircraftModel) rmsAllocationResult = state.result;
+    persistRmsAllocationDraftToScenario();
+    markRmsAllocationDraftChanged();
     render();
   }, 2000);
 }
 
 function applyRmsEquipmentImport(rowsOrProject, statusText) {
+  if (!rmsSelectedAircraftModel) {
+    rmsEquipmentImportStatus = "请先选择飞机型号，再导入该机型的装备树。";
+    return;
+  }
   rmsAllocationProject = normalizeRmsEquipmentImportRows(rowsOrProject, {
     baseProject: rmsAllocationProject
   });
-  rmsAllocationProject = selectRmsAllocationEquipmentRoot(rmsAllocationProject, rmsEquipmentRoots(rmsAllocationProject)[0]?.id || rmsAllocationProject.rootId);
+  const importedRoot = rmsEquipmentRoots(rmsAllocationProject).find((node) => node.name === rmsSelectedAircraftModel)
+    || rmsEquipmentRoots(rmsAllocationProject)[0];
+  rmsAllocationProject = selectRmsAllocationEquipmentRoot(rmsAllocationProject, importedRoot?.id || rmsAllocationProject.rootId);
+  const selectedRoot = rmsEquipmentRoots(rmsAllocationProject).find((node) => node.id === rmsAllocationProject.rootId);
+  if (selectedRoot) {
+    selectedRoot.name = rmsSelectedAircraftModel;
+    selectedRoot.aircraftModel = rmsSelectedAircraftModel;
+  }
   rmsSelectedEquipmentNodeId = rmsAllocationProject.rootId;
   const rootNames = rmsEquipmentRoots(rmsAllocationProject).map((node) => node.name);
-  const selectedRoot = rmsEquipmentRoots(rmsAllocationProject).find((node) => node.id === rmsAllocationProject.rootId);
   const importedSimilarProduct = rmsAllocationProject.equipmentNodes.find((node) => node.rms?.similar)?.rms?.similar;
   const sourceModelCandidates = rootNames.filter((name) => name !== selectedRoot?.name);
   const sourceModel = sourceModelCandidates.includes(importedSimilarProduct?.sourceModel)
@@ -12869,31 +13214,10 @@ function applyRmsEquipmentImport(rowsOrProject, statusText) {
     }
   };
   rmsEquipmentImportStatus = `${statusText}，仅更新 RMS 指标分配装备树。`;
-  recalculateRmsAllocation();
-}
-
-function setRmsEquipmentRoot(rootId) {
-  rmsAllocationProject = selectRmsAllocationEquipmentRoot(rmsAllocationProject, rootId);
-  rmsSelectedEquipmentNodeId = rmsAllocationProject.rootId;
-  const roots = rmsEquipmentRoots(rmsAllocationProject);
-  const selectedRoot = roots.find((node) => node.id === rmsAllocationProject.rootId);
-  const currentSource = rmsAllocationPlan.methods?.similarProduct?.sourceModel || "";
-  const sourceModel = currentSource && currentSource !== selectedRoot?.name
-    ? currentSource
-    : (roots.find((node) => node.id !== selectedRoot?.id)?.name || currentSource);
-  rmsAllocationPlan = {
-    ...rmsAllocationPlan,
-    projectId: rmsAllocationProject.projectId,
-    methods: {
-      ...rmsAllocationPlan.methods,
-      similarProduct: {
-        ...(rmsAllocationPlan.methods?.similarProduct || {}),
-        sourceModel,
-        targetModel: selectedRoot?.name || rmsAllocationPlan.methods?.similarProduct?.targetModel || ""
-      }
-    }
-  };
-  recalculateRmsAllocation();
+  invalidateCurrentRmsAllocationResult();
+  updateCurrentRmsAircraftState();
+  persistRmsAllocationDraftToScenario();
+  markRmsAllocationDraftChanged();
 }
 
 function updateRmsEquipmentField(nodeId, field, rawValue) {
@@ -12926,7 +13250,10 @@ function updateRmsEquipmentField(nodeId, field, rawValue) {
     return;
   }
   rmsEquipmentImportStatus = "已更新 RMS 指标分配装备树独立数据。";
-  recalculateRmsAllocation();
+  invalidateCurrentRmsAllocationResult();
+  updateCurrentRmsAircraftState();
+  persistRmsAllocationDraftToScenario();
+  markRmsAllocationDraftChanged();
 }
 
 async function importRmsEquipmentTableFile(file) {
@@ -12949,12 +13276,17 @@ function downloadRmsEquipmentTemplate() {
 }
 
 async function exportRmsAllocationExcel() {
-  const rows = rmsAllocationResult.nodeResults || [];
+  const state = rmsAircraftStates[rmsSelectedAircraftModel];
+  if (!state || state.calculationStatus !== "completed" || !rmsResultMatchesCurrentState(state.result, state.plan, state.project)) {
+    rmsEquipmentImportStatus = "当前飞机型号暂无可导出的计算结果，请先完成计算。";
+    return;
+  }
+  const rows = state.result.nodeResults;
   rmsEquipmentImportStatus = "正在生成 XLSX 结果";
   try {
     const blob = await backendApi.exportRmsAllocationXlsx({
       project_name: rmsAllocationProject.name,
-      method: rmsAllocationResult.method,
+      method: state.result.method,
       generated_at: new Date().toISOString(),
       rows
     });
@@ -13496,6 +13828,19 @@ function updatePermissionRole(feature, encodedRole) {
   if (["admin", "data", "user"].includes(roleKey)) {
     row[roleKey] = normalizePermissionLevel(value);
     permissionConfigStatus = `已更新 ${feature} / ${permissionRoleLabel(roleKey)}：${row[roleKey]}`;
+  }
+}
+
+function togglePermissionMenuVisibility(leafKey, roleKey) {
+  if (!PERMISSION_MENU_ROLES.some((role) => role.key === roleKey)) return;
+  let updated = false;
+  permissionMenuVisibilityRows = permissionMenuVisibilityRows.map((row) => {
+    if (row.leafKey !== leafKey) return row;
+    updated = true;
+    return { ...row, [roleKey]: !row[roleKey] };
+  });
+  if (updated) {
+    systemRuntimeConfigStatus = "菜单可见性已更新，待保存";
   }
 }
 
@@ -14175,16 +14520,18 @@ function renderVisualizationEventStream(events, activeFrameIndex) {
         <details class="simulation-log-collapse">
           <summary><strong>全部保障事件</strong><span>${events.length} 条，点击展开</span></summary>
           <div class="stack-list">
-            ${events.map((event) => `
+            ${events.map((event) => {
+              const displayEvent = simulationLogDisplayEvent(event);
+              return `
               <button type="button" class="event simulation-log-event ${event.frame_index === activeFrameIndex ? "success" : htmlEscape(event.severity || "info")}" data-mesa-event-jump="${htmlEscape(event.frame_index)}">
                 <span class="simulation-log-head">
                   <strong>${htmlEscape(simulationDayMinuteLabel(event.simulation_time))}</strong>
-                  <em>${htmlEscape(event.log_type || simulationLogTypeLabel(event.event_type || event.event))}</em>
+                  <em>${htmlEscape(displayEvent.log_type)}</em>
                 </span>
-                <span>${htmlEscape(event.message)}</span>
-                <small>frame ${htmlEscape(Number(event.frame_index) + 1)} / step ${htmlEscape(event.step)} / run ${htmlEscape(event.run_id || "-")}</small>
+                <span>${htmlEscape(displayEvent.localized_message)}</span>
+                <small>内部信息：采样帧 ${htmlEscape(Number(event.frame_index) + 1)} / 推演步 ${htmlEscape(event.step)}${displayEvent.internal_id ? ` / 标识 ${htmlEscape(displayEvent.internal_id)}` : ""}</small>
               </button>
-            `).join("")}
+            `;}).join("")}
           </div>
         </details>
       ` : `<div class="event warning">暂无任务分配、保障作业、任务启动/结束、故障或维修日志。</div>`}
@@ -14359,15 +14706,26 @@ function buildSimulationLogStream(series = {}) {
   const frames = Array.isArray(series?.frames) ? series.frames : [];
   const directLogs = buildVisualizationEventStream(series)
     .filter((event) => !isStateFrameEvent(event))
-    .map((event) => ({
+    .map((event) => simulationLogDisplayEvent({
       ...event,
-      log_type: simulationLogTypeLabel(event.event_type || event.event),
       severity: simulationLogSeverity(event.event_type || event.event)
     }));
   const derivedLogs = deriveSimulationLogEvents(frames, series?.run_id || "");
   return dedupeSimulationLogs([...directLogs, ...derivedLogs])
     .sort((a, b) => Number(a.simulation_time || 0) - Number(b.simulation_time || 0) || Number(a.frame_index || 0) - Number(b.frame_index || 0))
     .slice(-240);
+}
+
+function simulationLogDisplayEvent(event = {}) {
+  const localized = localizeVisualizationEvent(event);
+  const hasChineseMessage = /[^\x00-\x7F]/.test(String(event.message || ""));
+  return {
+    ...event,
+    event_label: localized.event_label,
+    log_type: event.log_type || localized.event_label,
+    localized_message: event.localized_message || (hasChineseMessage ? String(event.message) : localized.localized_message),
+    internal_id: event.internal_id || localized.internal_id
+  };
 }
 
 function isStateFrameEvent(event = {}) {
@@ -14396,19 +14754,20 @@ function deriveMissionLogs(logs, previousState, state, frame, frameIndex, runId)
     const assigned = Array.isArray(mission.assignedTailNumbers) ? mission.assignedTailNumbers : [];
     const previousAssigned = Array.isArray(previous.assignedTailNumbers) ? previous.assignedTailNumbers : [];
     if (assigned.length && assigned.join("|") !== previousAssigned.join("|")) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_assigned", "任务成员分配", `任务 ${missionId} 分配 ${assigned.join(" / ")}`, "info", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_assigned", "任务成员分配", `已完成任务成员分配；执行飞机：${assigned.join(" / ")}；任务标识：${missionId}`, "info", missionId);
     }
     if (["launched", "flying"].includes(String(mission.status)) && !["launched", "flying"].includes(String(previous.status))) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_started", "任务启动", `任务 ${missionId} 启动，执行飞机 ${assigned.join(" / ") || "-"}`, "success", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_started", "任务启动", `任务已启动；执行飞机：${assigned.join(" / ") || "-"}；任务标识：${missionId}`, "success", missionId);
     }
     if (["completed", "succeeded", "failed", "cancelled"].includes(String(mission.status)) && String(mission.status) !== String(previous.status)) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_finished", "任务结束", `任务 ${missionId} ${missionStatusLabel(mission.status)}，执行飞机 ${assigned.join(" / ") || "-"}`, mission.status === "completed" || mission.status === "succeeded" ? "success" : "warning", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_finished", "任务结束", `任务状态：${missionStatusLabel(mission.status)}；执行飞机：${assigned.join(" / ") || "-"}；任务标识：${missionId}`, mission.status === "completed" || mission.status === "succeeded" ? "success" : "warning", missionId);
     }
   }
 }
 
 function deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, runId) {
   const previousJobs = new Map((previousState?.jobs || []).map((job) => [String(job.id), job]));
+  const rawJobs = new Map((Array.isArray(frame?.jobs) ? frame.jobs : []).map((job) => [String(job.job_id || ""), job]));
   for (const job of state.jobs || []) {
     const jobId = String(job.id || `${job.tailNumber}-${job.kind}-${job.task}`);
     const previous = previousJobs.get(jobId) || {};
@@ -14416,7 +14775,14 @@ function deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, run
       continue;
     }
     const label = job.kind === "repair" ? "维修" : "飞机保障作业";
-    const message = `${job.tailNumber || "-"} ${job.task || supportJobKindLabel(job.kind)} / ${supportJobStateLabel(job.state)} / 剩余 ${Number(job.remaining || 0)}min`;
+    const shortageReason = rawJobs.get(jobId)?.shortage_reason;
+    const reasonText = shortageReason
+      ? `；原因：${visualizationShortageReasonLabel(shortageReason)}`
+      : "";
+    const rawTask = String(job.task || supportJobKindLabel(job.kind));
+    const taskLabel = /[^\x00-\x7F]/.test(rawTask) ? rawTask : `保障作业（内部标识：${rawTask}）`;
+    const aircraftSuffix = job.tailNumber ? `；飞机编号：${job.tailNumber}` : "";
+    const message = `${taskLabel} / ${supportJobStateLabel(job.state)}${reasonText} / 剩余 ${Number(job.remaining || 0)} 分钟${aircraftSuffix}`;
     pushSimulationLog(logs, frame, frameIndex, runId, `support_job_${job.kind || "job"}`, label, message, job.kind === "repair" ? "warning" : "info", jobId);
   }
 }
@@ -14426,13 +14792,13 @@ function deriveAircraftStatusLogs(logs, previousState, state, frame, frameIndex,
   for (const aircraft of state.aircraft || []) {
     const previous = previousAircraft.get(String(aircraft.id)) || {};
     if (aircraft.failedLru && aircraft.failedLru !== previous.failedLru) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "aircraft_failure", "飞机故障", `${aircraft.label} 故障 LRU ${aircraft.failedLru}`, "warning", aircraft.id);
+      pushSimulationLog(logs, frame, frameIndex, runId, "aircraft_failure", "飞机故障", `飞机发生可更换单元故障：${aircraft.failedLru}；飞机编号：${aircraft.label}`, "warning", aircraft.id);
     }
     if (previousState && isMaintenanceAircraftState(previous.state) && !isMaintenanceAircraftState(aircraft.state) && !aircraft.failedLru) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "repair_finished", "维修", `${aircraft.label} 维修结束，状态 ${visualAircraftStateLabel(aircraft.state)}`, "success", aircraft.id);
+      pushSimulationLog(logs, frame, frameIndex, runId, "repair_finished", "维修", `维修结束，当前状态：${visualAircraftStateLabel(aircraft.state)}；飞机编号：${aircraft.label}`, "success", aircraft.id);
     }
     if (previousState && !isSupportAircraftState(previous.state) && isSupportAircraftState(aircraft.state)) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "support_started", "飞机保障作业", `${aircraft.label} 进入${visualAircraftStateLabel(aircraft.state)}`, "info", aircraft.id);
+      pushSimulationLog(logs, frame, frameIndex, runId, "support_started", "飞机保障作业", `飞机进入${visualAircraftStateLabel(aircraft.state)}；飞机编号：${aircraft.label}`, "info", aircraft.id);
     }
   }
 }
@@ -14466,15 +14832,7 @@ function dedupeSimulationLogs(logs) {
 }
 
 function simulationLogTypeLabel(eventType) {
-  const type = String(eventType || "").toLowerCase();
-  if (type.includes("launch") || type.includes("started")) return "任务启动";
-  if (type.includes("assigned")) return "任务成员分配";
-  if (type.includes("mission_return") || type.includes("mission_failed") || type.includes("mission_cancel") || type.includes("mission_finished") || type.includes("completed")) return "任务结束";
-  if (type.includes("preflight") || type.includes("postflight") || type.includes("job") || type.includes("support")) return "飞机保障作业";
-  if (type.includes("repair")) return "维修";
-  if (type.includes("fail")) return "飞机故障";
-  if (type.includes("transport") || type.includes("spare")) return "备件转运";
-  return "仿真日志";
+  return visualizationEventTypeLabel(eventType);
 }
 
 function simulationLogSeverity(eventType) {
@@ -14495,13 +14853,7 @@ function supportJobKindLabel(kind) {
 }
 
 function supportJobStateLabel(state) {
-  const labels = {
-    waiting: "等待",
-    running: "执行中",
-    completed: "已完成",
-    blocked: "受阻"
-  };
-  return labels[state] || state || "-";
+  return visualizationJobStateLabel(state);
 }
 
 function renderMesaStage(activeView, state) {
@@ -15483,17 +15835,7 @@ function missionStatusClass(status) {
 }
 
 function missionStatusLabel(status) {
-  const labels = {
-    completed: "已完成",
-    succeeded: "成功",
-    launched: "执行中",
-    flying: "执行中",
-    scheduled: "计划中",
-    delayed: "延误",
-    cancelled: "已取消",
-    failed: "失败"
-  };
-  return labels[status] || status || "-";
+  return visualizationMissionStatusLabel(status);
 }
 
 function visualAircraftStateLabel(state) {
@@ -15976,8 +16318,7 @@ function m7RunArtifactRows() {
 function renderLiteMesaMonteCarloAnalysis(page) {
   const result = liteMesaMonteCarloResult;
   const runCount = result?.sampleCount || result?.runs?.length || 0;
-  const groupCount = result?.groups?.length || 0;
-  const metricRows = liteMesaMetricStatisticRows(result);
+  const metricRows = liteMesaBusinessMetricRows(result);
   const topMetrics = metricRows.slice(0, 4);
   const projectName = currentProject?.name || "当前项目";
   const experimentPlanName = selectedExperimentPlanName();
@@ -15996,15 +16337,6 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         <section class="lite-mesa-settings">
           <div class="section-head">
             <h3>实验设置</h3>
-            <span>样本量 / 随机种子</span>
-          </div>
-          <div class="lite-mesa-setting-grid">
-            <label>样本量
-              <input data-lite-mesa-field="samples" type="number" min="1" max="1000" step="1" value="${htmlEscape(liteMesaMonteCarloSettings.samples)}">
-            </label>
-            <label>随机种子
-              <input data-lite-mesa-field="seed" type="number" step="1" value="${htmlEscape(liteMesaMonteCarloSettings.seed)}">
-            </label>
           </div>
           <button type="button" class="btn-primary" data-lite-mesa-action="run">运行分析</button>
           <p class="inline-status">${htmlEscape(liteMesaMonteCarloStatus)}</p>
@@ -16012,22 +16344,19 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         <section class="lite-mesa-results">
           <div class="section-head">
             <h3>实验运行结果</h3>
-            <span>${runCount ? `${runCount} 样本 / ${groupCount} 参数组` : "等待运行"}</span>
           </div>
           ${runCount ? `
             <div class="lite-mesa-metric-cards">
               ${topMetrics.map((row) => `
                 <div class="metric-card">
                   <span>${htmlEscape(row.label)}</span>
-                  <strong>${htmlEscape(row.meanLabel)}</strong>
-                  <em>均值 / n=${row.count}</em>
+                  <strong>${htmlEscape(row.resultLabel)}</strong>
                 </div>
               `).join("")}
             </div>
           ` : `
             <div class="empty-state">
               <strong>尚未运行分析</strong>
-              <p>设置样本量和随机种子后运行。</p>
             </div>
           `}
         </section>
@@ -16035,22 +16364,16 @@ function renderLiteMesaMonteCarloAnalysis(page) {
       <section class="lite-mesa-stat-section">
         <div class="section-head">
           <h3>主要输出指标统计值</h3>
-          <span>均值 / 最小值 / 最大值 / 标准差</span>
         </div>
         <div class="table-wrap">
           <table class="lite-mesa-stat-table">
-            <thead><tr><th>指标</th><th>metric</th><th>样本数</th><th>均值</th><th>最小值</th><th>最大值</th><th>标准差</th></tr></thead>
+            <thead><tr><th>业务指标</th><th>最终结果</th></tr></thead>
             <tbody>${runCount ? metricRows.map((row) => `
               <tr>
                 <td>${htmlEscape(row.label)}</td>
-                <td>${htmlEscape(row.key)}</td>
-                <td>${row.count}</td>
-                <td>${htmlEscape(row.meanLabel)}</td>
-                <td>${htmlEscape(row.minLabel)}</td>
-                <td>${htmlEscape(row.maxLabel)}</td>
-                <td>${htmlEscape(row.stdDevLabel)}</td>
+                <td>${htmlEscape(row.resultLabel)}</td>
               </tr>
-            `).join("") : `<tr><td colspan="7">当前没有可展示的统计值。</td></tr>`}</tbody>
+            `).join("") : `<tr><td colspan="2">当前没有可展示的业务结果。</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -16062,7 +16385,8 @@ function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
   if (!experiment) return;
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(experiment.samples) || liteMesaMonteCarloSettings.samples || 1)));
   const seed = Math.trunc(Number(experiment.seed) || liteMesaMonteCarloSettings.seed || 1);
-  liteMesaMonteCarloSettings = { samples, seed };
+  const parallelCores = experiment.parallelCores ?? 1;
+  liteMesaMonteCarloSettings = { samples, seed, parallelCores };
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = "已载入蒙特卡洛实验设置，等待运行 Mesa 分析。";
 }
@@ -16087,7 +16411,15 @@ function updateLiteMesaMonteCarloSetting(field, value) {
 async function runLiteMesaMonteCarloAnalysis() {
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(liteMesaMonteCarloSettings.samples) || 1)));
   const seed = Math.trunc(Number(liteMesaMonteCarloSettings.seed) || 1);
-  liteMesaMonteCarloSettings = { samples, seed };
+  let parallelCores;
+  try {
+    parallelCores = normalizeMonteCarloParallelCores(liteMesaMonteCarloSettings.parallelCores);
+  } catch (err) {
+    liteMesaMonteCarloResult = null;
+    liteMesaMonteCarloStatus = `Mesa 分析失败：${err.message}`;
+    return;
+  }
+  liteMesaMonteCarloSettings = { samples, seed, parallelCores };
   liteMesaMonteCarloStatus = "正在运行 Mesa 分析";
   try {
     const selectedProjectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
@@ -16101,12 +16433,13 @@ async function runLiteMesaMonteCarloAnalysis() {
     };
     const response = await backendApi.runLiteMesaAnalysis(projectJson, "mission_reliability", {
       samples,
-      seed
+      seed,
+      parallelCores
     });
     liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response);
     const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
     liteMesaMonteCarloStatus = runCount
-      ? `Mesa 分析完成：${runCount} 个样本，seed ${seed}。`
+      ? "Mesa 分析完成。"
       : "当前建模数据不足：请补充装备数量、任务要求、任务周期、部件和保障节点。";
   } catch (err) {
     liteMesaMonteCarloResult = null;
@@ -16138,41 +16471,23 @@ function normalizeLiteMesaMonteCarloResult(payload) {
   };
 }
 
-function liteMesaMetricStatisticRows(result) {
+function liteMesaBusinessMetricRows(result) {
   const runs = Array.isArray(result?.runs) ? result.runs : [];
   return LITE_MESA_MONTE_CARLO_METRICS.map((metric) => {
     const values = runs
       .map((run) => Number(run.final?.[metric.key]))
       .filter((value) => Number.isFinite(value));
     const aggregateValue = Number(result?.aggregateMetrics?.[metric.key]);
-    const stats = values.length
-      ? summarizeLiteMesaValues(values)
-      : Number.isFinite(aggregateValue)
-        ? { mean: aggregateValue, min: aggregateValue, max: aggregateValue, stdDev: 0 }
-        : summarizeLiteMesaValues([]);
+    const finalValue = Number.isFinite(aggregateValue)
+      ? aggregateValue
+      : values.length
+        ? values.reduce((sum, value) => sum + value, 0) / values.length
+        : 0;
     return {
       ...metric,
-      count: values.length || Number(result?.sampleCount || 0),
-      meanLabel: formatLiteMesaMetric(stats.mean, metric.format),
-      minLabel: formatLiteMesaMetric(stats.min, metric.format),
-      maxLabel: formatLiteMesaMetric(stats.max, metric.format),
-      stdDevLabel: formatLiteMesaMetric(stats.stdDev, metric.format)
+      resultLabel: formatLiteMesaMetric(finalValue, metric.format)
     };
   });
-}
-
-function summarizeLiteMesaValues(values) {
-  if (!values.length) {
-    return { mean: 0, min: 0, max: 0, stdDev: 0 };
-  }
-  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
-  return {
-    mean,
-    min: Math.min(...values),
-    max: Math.max(...values),
-    stdDev: Math.sqrt(variance)
-  };
 }
 
 function formatLiteMesaMetric(value, format) {
@@ -16761,15 +17076,22 @@ function renderFormalProjectionBody(formalProjection) {
   }
   if (formalProjection.analysisType === "spare_shortfall") {
     const sourceRows = formalProjection.rows || [];
-    const rows = spareDemandSort === "asc" ? [...sourceRows].sort((a, b) => a.demand - b.demand) : spareDemandSort === "desc" ? [...sourceRows].sort((a, b) => b.demand - a.demand) : sourceRows;
+    const productsById = analysisProductsById();
+    const aircraftModels = [...new Set(sourceRows
+      .map((row) => String(row.aircraftModel || "").trim())
+      .filter((model) => model && !["全部机型", "未指定机型"].includes(model)))].sort();
+    const filteredRows = spareAircraftFilter
+      ? sourceRows.filter((row) => row.aircraftModel === spareAircraftFilter)
+      : sourceRows;
+    const rows = sortSpareShortfallRows(filteredRows);
     const maxShortage = rows.reduce((maxValue, row) => Math.max(maxValue, row.shortage || row.shortageProbability || 0), 1);
     return `
-      <div class="toolbar-row"><span>需求数量排序</span><button type="button" data-spare-demand-sort="asc">升序</button><button type="button" data-spare-demand-sort="desc">降序</button><button type="button" data-spare-demand-sort="default">恢复默认</button></div><div class="table-wrap">
+      <div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap">
         <table>
-          <thead><tr><th>机型</th><th>备件</th><th>需求数量</th><th>备件满足率</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
+          <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
+              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
               <td><span class="status-badge ${row.level === "严重" ? "danger" : row.level === "短缺" ? "warn" : ""}">${htmlEscape(row.level)}</span></td>
               <td class="bar-cell">${renderBar(row.shortage || row.shortageProbability, maxShortage, "red")}</td>
             </tr>
@@ -16975,15 +17297,27 @@ function createAircraftMissionReliabilityState() {
     missionProfileId: "",
     durationHours: "",
     result: null,
-    status: "请选择飞机型号和任务剖面后运行分析。",
-    saveStatus: "",
+    status: "等待运行：请选择飞机型号和任务剖面后运行分析。",
+    actionStatus: "",
+    viewingHistoryId: "",
     history: [],
     historyLoaded: false,
     historyLoading: false
   };
 }
 
-function normalizedAircraftMissionReliabilityOptions(projectJson = currentProjectJsonForExperimentContext()) {
+function aircraftMissionReliabilityContextProjectJson() {
+  const context = selectedExperimentPlanContext();
+  if (
+    context?.kind === "experiment-plan"
+    && context.projectJson
+    && typeof context.projectJson === "object"
+    && !Array.isArray(context.projectJson)
+  ) return context.projectJson;
+  return currentProjectJsonForExperimentContext();
+}
+
+function normalizedAircraftMissionReliabilityOptions(projectJson = aircraftMissionReliabilityContextProjectJson()) {
   const raw = aircraftMissionReliabilityOptions(projectJson) || {};
   const aircraftModels = (raw.aircraftModels || []).map((item) => typeof item === "string"
     ? { value: item, label: item }
@@ -17004,8 +17338,8 @@ function compatibleAircraftMissionProfiles(options, aircraftModel) {
 }
 
 function ensureAircraftMissionReliabilitySelection(options) {
-  if (!aircraftMissionReliabilityState.aircraftModel && options.aircraftModels.length) {
-    aircraftMissionReliabilityState.aircraftModel = options.aircraftModels[0].value;
+  if (!options.aircraftModels.some((item) => item.value === aircraftMissionReliabilityState.aircraftModel)) {
+    aircraftMissionReliabilityState.aircraftModel = options.aircraftModels[0]?.value || "";
   }
   const missions = compatibleAircraftMissionProfiles(options, aircraftMissionReliabilityState.aircraftModel);
   if (!missions.some((item) => item.id === aircraftMissionReliabilityState.missionProfileId)) {
@@ -17016,6 +17350,17 @@ function ensureAircraftMissionReliabilitySelection(options) {
     aircraftMissionReliabilityState.durationHours = selected?.durationHours > 0 ? selected.durationHours : "";
   }
   return missions;
+}
+
+function calculateAircraftMissionReliability(projectJson) {
+  const result = evaluateAircraftMissionReliability(projectJson, {
+    aircraftModel: aircraftMissionReliabilityState.aircraftModel,
+    missionProfileId: aircraftMissionReliabilityState.missionProfileId,
+    durationHours: Number(aircraftMissionReliabilityState.durationHours)
+  });
+  aircraftMissionReliabilityState.result = result;
+  aircraftMissionReliabilityState.status = result?.message || (result?.ok ? "任务可靠度计算完成。" : "可靠度计算被阻止，请检查输入。");
+  return result;
 }
 
 function updateAircraftMissionReliabilityInput(field, value) {
@@ -17033,46 +17378,17 @@ function updateAircraftMissionReliabilityInput(field, value) {
     aircraftMissionReliabilityState.durationHours = value;
   }
   aircraftMissionReliabilityState.result = null;
-  aircraftMissionReliabilityState.saveStatus = "";
+  aircraftMissionReliabilityState.actionStatus = "";
+  aircraftMissionReliabilityState.viewingHistoryId = "";
   aircraftMissionReliabilityState.status = "分析输入已更新，请重新运行。";
 }
 
 async function handleAircraftMissionReliabilityAction(action, analysisId = "") {
   if (action === "run") {
-    const result = evaluateAircraftMissionReliability(currentProjectJsonForExperimentContext(), {
-      aircraftModel: aircraftMissionReliabilityState.aircraftModel,
-      missionProfileId: aircraftMissionReliabilityState.missionProfileId,
-      durationHours: Number(aircraftMissionReliabilityState.durationHours)
-    });
+    const result = calculateAircraftMissionReliability(aircraftMissionReliabilityContextProjectJson());
     aircraftMissionReliabilityState.result = result?.ok ? result : null;
-    aircraftMissionReliabilityState.status = result?.message || (result?.ok ? "分析完成。" : "分析被阻止，请检查输入。");
-    aircraftMissionReliabilityState.saveStatus = "";
-    return;
-  }
-  if (action === "save") {
-    const result = aircraftMissionReliabilityState.result;
-    if (!result?.ok) {
-      aircraftMissionReliabilityState.saveStatus = "请先完成有效分析再保存。";
-      return;
-    }
-    try {
-      const saved = await backendApi.saveAircraftMissionReliabilityAnalysis(
-        savedProject?.project_id || currentBackendProjectId(),
-        {
-          aircraftModel: result.aircraftModel,
-          missionProfileId: result.missionProfile?.id || result.missionProfileId,
-          missionProfileName: result.missionProfile?.name || result.missionProfileName,
-          durationHours: result.durationHours,
-          aircraftReliability: result.aircraftReliability,
-          snapshot: result
-        }
-      );
-      aircraftMissionReliabilityState.saveStatus = `分析结果已保存：${saved.analysis_id || saved.analysisId || "历史记录"}`;
-      aircraftMissionReliabilityState.historyLoaded = false;
-      ensureAircraftMissionReliabilityHistoryLoaded();
-    } catch (err) {
-      aircraftMissionReliabilityState.saveStatus = `保存失败：${formatBackendError(err)}`;
-    }
+    aircraftMissionReliabilityState.actionStatus = result?.ok ? "分析完成。" : "分析未完成，请检查输入与建模数据。";
+    aircraftMissionReliabilityState.viewingHistoryId = "";
     return;
   }
   if (action === "export") {
@@ -17087,6 +17403,7 @@ async function handleAircraftMissionReliabilityAction(action, analysisId = "") {
       aircraftMissionReliabilityState.aircraftModel = snapshot.aircraftModel || snapshot.aircraft_model || aircraftMissionReliabilityState.aircraftModel;
       aircraftMissionReliabilityState.missionProfileId = snapshot.missionProfile?.id || snapshot.mission_profile_id || aircraftMissionReliabilityState.missionProfileId;
       aircraftMissionReliabilityState.durationHours = snapshot.durationHours || snapshot.duration_hours || aircraftMissionReliabilityState.durationHours;
+      aircraftMissionReliabilityState.viewingHistoryId = analysisId;
       aircraftMissionReliabilityState.status = `正在查看历史分析 ${analysisId}`;
     }
   }
@@ -17105,7 +17422,7 @@ function ensureAircraftMissionReliabilityHistoryLoaded() {
       aircraftMissionReliabilityState.historyLoaded = true;
     })
     .catch((err) => {
-      aircraftMissionReliabilityState.saveStatus = `历史记录读取失败：${formatBackendError(err)}`;
+      aircraftMissionReliabilityState.actionStatus = `历史记录读取失败：${formatBackendError(err)}`;
       aircraftMissionReliabilityState.historyLoaded = true;
     })
     .finally(() => {
@@ -17115,54 +17432,40 @@ function ensureAircraftMissionReliabilityHistoryLoaded() {
 }
 
 function exportAircraftMissionReliabilityDetails(result) {
-  if (!result?.ok || !Array.isArray(result.rows)) {
-    aircraftMissionReliabilityState.saveStatus = "暂无可导出的分析明细。";
+  if (!result?.ok) {
+    aircraftMissionReliabilityState.actionStatus = "暂无可导出的分析结果。";
     return;
   }
-  const header = ["节点名称", "节点类型", "串并联关系", "产品可靠性参数", "任务时长(h)", "节点可靠度", "节点失效概率"];
-  const rows = result.rows.map((row) => [
-    `${"  ".repeat(Number(row.depth || 0))}${row.name || row.nodeName || ""}`,
-    row.nodeType || row.type || "",
-    row.relationLabel || row.connectionLabel || row.relation || "",
-    row.parameterLabel || row.reliabilityParameter || "",
-    row.durationHours ?? result.durationHours,
-    Number(row.reliability || 0).toFixed(8),
-    Number(row.failureProbability ?? (1 - Number(row.reliability || 0))).toFixed(8)
-  ]);
-  const csv = [header, ...rows].map((values) => values.map(csvCell).join(",")).join("\n");
-  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+  const workbook = aircraftMissionReliabilityResultToXlsx(result);
+  const blob = new Blob([workbook], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `aircraft-mission-reliability-${normalizeProjectFileSegment(result.aircraftModel || "aircraft")}.csv`;
+  anchor.download = `aircraft-mission-reliability-${normalizeProjectFileSegment(result.aircraftModel || "aircraft")}.xlsx`;
   anchor.click();
   URL.revokeObjectURL(url);
-  aircraftMissionReliabilityState.saveStatus = `已导出 ${rows.length} 行可靠性计算明细。`;
-}
-
-function csvCell(value) {
-  const text = String(value ?? "");
-  return `"${text.replace(/"/g, '""')}"`;
+  aircraftMissionReliabilityState.actionStatus = "已导出可靠性汇总结果。";
 }
 
 function renderAircraftMissionReliabilityAnalysis() {
-  const projectJson = currentProjectJsonForExperimentContext();
+  const page = getFeaturePageById(selectedFeatureId);
+  const projectJson = aircraftMissionReliabilityContextProjectJson();
   const options = normalizedAircraftMissionReliabilityOptions(projectJson);
   const missions = ensureAircraftMissionReliabilitySelection(options);
   const result = aircraftMissionReliabilityState.result;
-  const reliabilityProject = aircraftMissionReliabilityProject(projectJson, aircraftMissionReliabilityState.aircraftModel);
-  const rbd = reliabilityProject.reliabilityBlockDiagram || {};
   ensureAircraftMissionReliabilityHistoryLoaded();
   return `
     <div class="lite-mesa-workbench aircraft-mission-reliability-page">
       <section class="lite-mesa-hero">
         <div>
           <h3>飞机任务可靠性评估</h3>
-          <p>依据任务时长和装备可靠性框图，按串联、并联及 n 中取 k 关系逐级计算整机可靠度。</p>
+        </div>
+        <div class="lite-mesa-hero-actions">
+          ${renderExperimentPlanContextDropdown(page)}
         </div>
       </section>
       <section class="lite-mesa-settings lite-mesa-analysis-settings">
-        <div class="section-head"><h3>分析输入</h3><span>可靠性框图与产品参数自动读取</span></div>
+        <div class="section-head"><h3>分析输入</h3></div>
         <div class="analysis-config-grid">
           <label class="readonly-field"><span>飞机型号</span><select data-aircraft-reliability-field="aircraftModel" aria-label="飞机型号">
             ${options.aircraftModels.length ? options.aircraftModels.map((item) => `<option value="${htmlEscape(item.value)}"${item.value === aircraftMissionReliabilityState.aircraftModel ? " selected" : ""}>${htmlEscape(item.label)}</option>`).join("") : `<option value="">无可用飞机型号</option>`}
@@ -17171,7 +17474,6 @@ function renderAircraftMissionReliabilityAnalysis() {
             ${missions.length ? missions.map((item) => `<option value="${htmlEscape(item.id)}"${item.id === aircraftMissionReliabilityState.missionProfileId ? " selected" : ""}>${htmlEscape(item.name)}</option>`).join("") : `<option value="">无可用任务剖面</option>`}
           </select></label>
           <label class="readonly-field"><span>任务时长（小时）</span><input data-aircraft-reliability-field="durationHours" aria-label="任务时长" type="number" min="0.000001" step="0.1" value="${htmlEscape(aircraftMissionReliabilityState.durationHours)}"></label>
-          <div class="readonly-field"><span>可靠性框图</span><strong>${Array.isArray(rbd.nodes) ? rbd.nodes.length : 0} 个节点 / ${Array.isArray(rbd.edges) ? rbd.edges.length : 0} 条关系</strong></div>
         </div>
         <div class="lite-mesa-analysis-action-line">
           <button type="button" class="btn-primary" data-aircraft-reliability-action="run">运行分析</button>
@@ -17192,20 +17494,16 @@ function renderAircraftMissionReliabilityResult(result) {
   const failureProbability = Number(result.failureProbability ?? (1 - reliability));
   return `
     <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
-      <div class="section-head"><h3>分析结果明细</h3><span>${htmlEscape(result.aircraftModel || "整机")} / ${htmlEscape(result.missionProfile?.name || result.missionProfileName || "任务剖面")}</span></div>
+      <div class="section-head"><h3>分析结果</h3><span>${htmlEscape(result.aircraftModel || "整机")} / ${htmlEscape(result.missionProfile?.name || result.missionProfileName || "任务剖面")}</span></div>
       <div class="mc-formal-metrics">
         <div class="metric-card"><span>整机任务可靠度</span><strong>${reliability.toFixed(3)}</strong><em>${(reliability * 100).toFixed(3)}%</em></div>
         <div class="metric-card"><span>整机失效概率</span><strong>${failureProbability.toFixed(3)}</strong><em>${(failureProbability * 100).toFixed(3)}%</em></div>
         <div class="metric-card"><span>任务时长</span><strong>${htmlEscape(result.durationHours)} h</strong><em>任务剖面</em></div>
         <div class="metric-card"><span>计算节点</span><strong>${Array.isArray(result.rows) ? result.rows.length : 0}</strong><em>整机 / 系统 / 分系统 / 产品</em></div>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>节点名称</th><th>节点类型</th><th>串并联关系</th><th>产品可靠性参数</th><th>任务时长</th><th>节点可靠度</th><th>节点失效概率</th></tr></thead><tbody>
-        ${(result.rows || []).map((row) => `<tr><td>${"&nbsp;&nbsp;".repeat(Number(row.depth || 0))}${htmlEscape(row.name || row.nodeName || "")}</td><td>${htmlEscape(row.nodeType || row.type || "")}</td><td>${htmlEscape(row.relationLabel || row.connectionLabel || row.relation || "")}</td><td>${htmlEscape(row.parameterLabel || row.reliabilityParameter || "-")}</td><td>${htmlEscape(row.durationHours ?? result.durationHours)} h</td><td>${Number(row.reliability || 0).toFixed(3)}</td><td>${Number(row.failureProbability ?? (1 - Number(row.reliability || 0))).toFixed(3)}</td></tr>`).join("")}
-      </tbody></table></div>
       <div class="toolbar-row compact-actions">
-        <button type="button" class="btn-primary" data-aircraft-reliability-action="save">保存分析结果</button>
-        <button type="button" data-aircraft-reliability-action="export">导出计算明细 CSV</button>
-        <span class="inline-status">${htmlEscape(aircraftMissionReliabilityState.saveStatus)}</span>
+        <button type="button" class="btn-primary" data-aircraft-reliability-action="export">导出</button>
+        <span class="inline-status">${htmlEscape(aircraftMissionReliabilityState.actionStatus)}</span>
       </div>
     </section>
   `;
@@ -17215,11 +17513,11 @@ function renderAircraftMissionReliabilityHistory() {
   const history = aircraftMissionReliabilityState.history || [];
   return `
     <section class="lite-mesa-stat-section">
-      <div class="section-head"><h3>历史分析记录</h3><span>保存时固化飞机、任务剖面、任务时长和可靠性框图快照</span></div>
+      <div class="section-head"><h3>历史分析记录</h3><span>读取当前项目已有的可靠性分析快照</span></div>
       ${aircraftMissionReliabilityState.historyLoading ? `<div class="empty-state"><strong>正在读取历史记录</strong></div>` : history.length ? `
         <div class="table-wrap"><table><thead><tr><th>保存时间</th><th>飞机型号</th><th>任务剖面</th><th>任务时长</th><th>整机可靠度</th><th>记录查看</th></tr></thead><tbody>
           ${history.map((record) => `<tr><td>${htmlEscape(record.created_at || record.createdAt || "")}</td><td>${htmlEscape(record.aircraft_model || record.aircraftModel || "")}</td><td>${htmlEscape(record.mission_profile_name || record.missionProfileName || "")}</td><td>${htmlEscape(record.duration_hours || record.durationHours || "")} h</td><td>${Number(record.aircraft_reliability ?? record.aircraftReliability ?? 0).toFixed(3)}</td><td><button type="button" data-aircraft-reliability-action="view-history" data-analysis-id="${htmlEscape(record.analysis_id || record.analysisId || "")}">查看</button></td></tr>`).join("")}
-        </tbody></table></div>` : `<div class="empty-state"><strong>暂无已保存的历史分析</strong><p>运行分析后可将完整输入快照和计算明细保存到当前项目。</p></div>`}
+        </tbody></table></div>` : `<div class="empty-state"><strong>暂无已保存的历史分析</strong></div>`}
     </section>
   `;
 }
@@ -17228,6 +17526,15 @@ function renderLiteMesaAnalysisPage(page) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const settings = liteMesaAnalysisEffectiveSettings(definition);
   const result = liteMesaAnalysisResults[definition.analysisType] || null;
+  if (definition.analysisType === "spare_shortfall") {
+    return renderSpareShortfallAnalysisPage(page, definition, result);
+  }
+  if (definition.analysisType === "carry_list") {
+    return renderCarryListAnalysisPage(page, definition, result);
+  }
+  if (definition.analysisType === "downtime_factors") {
+    return renderDowntimeFactorAnalysisPage(page, definition, settings, result);
+  }
   const runCount = result?.sampleCount || 0;
   const statusText = result?.status === "session_complete"
     ? `分析结果已生成：${runCount} 个样本`
@@ -17249,7 +17556,101 @@ function renderLiteMesaAnalysisPage(page) {
       <section class="lite-mesa-settings lite-mesa-analysis-settings">
         <div class="section-head">
           <h3>分析设定</h3>
-          <span>样本量 / 随机种子只读</span>
+        </div>
+        ${renderLiteMesaAnalysisSettings(definition, settings, result)}
+        <div class="lite-mesa-analysis-action-line">
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(statusText)}</p>
+        </div>
+      </section>
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
+        <div class="section-head">
+          <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
+          <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
+        </div>
+        ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderLiteMesaAnalysisSessionBody(definition, result)}
+      </section>
+    </div>
+  `;
+}
+
+function renderSpareShortfallAnalysisPage(page, definition, result) {
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
+  const statusText = liteMesaAnalysisStatusText(definition, result);
+  return `
+    <div class="lite-mesa-workbench lite-mesa-analysis-page spare-shortfall-analysis-page">
+      <section class="lite-mesa-hero">
+        <div><h3>${htmlEscape(definition.title)}</h3></div>
+        <div class="lite-mesa-hero-actions">${renderExperimentPlanContextDropdown(page)}</div>
+      </section>
+      <section class="lite-mesa-settings lite-mesa-analysis-settings">
+        <div class="section-head"><h3>分析设定</h3></div>
+        ${renderLiteMesaAnalysisSettings(definition, settings, result)}
+        <div class="lite-mesa-analysis-action-line">
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(statusText)}</p>
+        </div>
+      </section>
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
+        <div class="section-head">
+          <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
+          <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
+        </div>
+        ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderLiteMesaAnalysisSessionBody(definition, result)}
+      </section>
+    </div>
+  `;
+}
+
+function renderCarryListAnalysisPage(page, definition, result) {
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
+  const statusText = liteMesaAnalysisStatusText(definition, result);
+  return `
+    <div class="lite-mesa-workbench lite-mesa-analysis-page carry-list-analysis-page">
+      <section class="lite-mesa-hero">
+        <div><h3>${htmlEscape(definition.title)}</h3></div>
+        <div class="lite-mesa-hero-actions">${renderExperimentPlanContextDropdown(page)}</div>
+      </section>
+      <section class="lite-mesa-settings lite-mesa-analysis-settings">
+        <div class="section-head"><h3>分析设定</h3></div>
+        ${renderLiteMesaAnalysisSettings(definition, settings, result)}
+        <div class="lite-mesa-analysis-action-line">
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(statusText)}</p>
+        </div>
+      </section>
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
+        <div class="section-head">
+          <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
+          <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
+        </div>
+        ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderLiteMesaAnalysisSessionBody(definition, result)}
+      </section>
+    </div>
+  `;
+}
+
+function renderDowntimeFactorAnalysisPage(page, definition, settings, result) {
+  const runCount = result?.sampleCount || 0;
+  const statusText = result?.status === "session_complete"
+    ? `分析结果已生成：${runCount} 个样本`
+    : result?.status === "blocked"
+      ? result.message
+      : result?.status === "running"
+        ? "分析运行中"
+        : "等待运行";
+  return `
+    <div class="lite-mesa-workbench lite-mesa-analysis-page downtime-factor-analysis-page">
+      <section class="lite-mesa-hero">
+        <div><h3>停机因素分析</h3></div>
+        <div class="lite-mesa-hero-actions">${renderExperimentPlanContextDropdown(page)}</div>
+      </section>
+      <section class="lite-mesa-settings lite-mesa-analysis-settings downtime-factor-analysis-settings">
+        <div class="section-head">
+          <h3>分析设定</h3>
         </div>
         ${renderLiteMesaAnalysisSettings(definition, settings, result)}
         <div class="lite-mesa-analysis-action-line">
@@ -17272,6 +17673,15 @@ function renderLiteMesaAnalysisPage(page) {
 function liteMesaAnalysisResultHeader(_definition, result) {
   if (result?.status === "session_complete") return "分析完成";
   if (result?.status === "running") return "运行中";
+  return "等待运行";
+}
+
+function liteMesaAnalysisStatusText(definition, result) {
+  if (result?.status === "session_complete") {
+    return `分析结果已生成：${result.sampleCount || 0} 个样本`;
+  }
+  if (result?.status === "blocked") return result.message;
+  if (result?.status === "running") return "分析运行中";
   return "等待运行";
 }
 
@@ -17355,6 +17765,7 @@ function renderLiteMesaAnalysisEditableSettings(definition, settings) {
         <span>排序范围</span>
         <input data-lite-mesa-analysis-field="topN" type="number" min="1" max="20" step="1" value="${htmlEscape(settings.topN ?? 4)}">
       </label>
+      <span class="downtime-topn-note">后端按累计停机时长生成排行；排序范围随请求提交，并限制返回的停机事件快照明细数量。页面筛选仅作用于已加载结果。</span>
     `;
   }
   return "";
@@ -17498,6 +17909,7 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 function liteMesaAnalysisVisibleMetrics(definition, metrics) {
   const hiddenLabels = {
     carry_list: new Set(["备件满足率下限", "置信度目标", "样本数"]),
+    mission_reliability: new Set(["任务成功率", "战备完好率"]),
     downtime_factors: new Set(["样本数"])
   }[definition.analysisType] || new Set();
   return (metrics || []).filter(([label]) => !hiddenLabels.has(String(label)));
@@ -17518,30 +17930,42 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     : (result.rows || []);
   if (definition.analysisType === "spare_shortfall") {
     const concreteRows = rows.filter((row) => row.aircraftModel && !["全部机型", "未指定机型"].includes(row.aircraftModel));
+    const productsById = analysisProductsById();
     const aircraftModels = [...new Set(concreteRows.map((row) => row.aircraftModel))].sort();
     const filteredRows = spareAircraftFilter
       ? concreteRows.filter((row) => row.aircraftModel === spareAircraftFilter)
       : concreteRows;
-    const sortedRows = spareDemandSort === "asc"
-      ? [...filteredRows].sort((left, right) => Number(left.demand || 0) - Number(right.demand || 0))
-      : spareDemandSort === "desc"
-        ? [...filteredRows].sort((left, right) => Number(right.demand || 0) - Number(left.demand || 0))
-        : filteredRows;
-    return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label><span>需求数量排序</span><button type="button" data-spare-demand-sort="asc" aria-pressed="${spareDemandSort === "asc"}">升序</button><button type="button" data-spare-demand-sort="desc" aria-pressed="${spareDemandSort === "desc"}">降序</button><button type="button" data-spare-demand-sort="default" aria-pressed="${spareDemandSort === "default"}">恢复默认</button></div><div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>机型</th><th>备件类别</th><th>需求数量</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>满足率</th><th>风险</th></tr></thead>
-      <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
+    const sortedRows = sortSpareShortfallRows(filteredRows);
+    return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>风险</th></tr></thead>
+      <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
     </table></div>`;
   }
   if (definition.analysisType === "carry_list") {
-    const visibleRows = rows.filter((row) => !carryHideZeroDemand || Number(row.demand || 0) > 0);
+    const productsById = analysisProductsById();
+    const aircraftModels = [...new Set(rows.map((row) => String(row.aircraftModel || "").trim()).filter(Boolean))].sort();
+    const activeAircraftFilter = aircraftModels.includes(carryAircraftFilter) ? carryAircraftFilter : "";
+    const filteredRows = rows.filter((row) => (
+      (!activeAircraftFilter || row.aircraftModel === activeAircraftFilter)
+      && (!carryHideZeroDemand || Number(row.demand || 0) > 0)
+    ));
+    const visibleRows = carryRecommendedSort === "default"
+      ? filteredRows
+      : filteredRows
+        .map((row, index) => ({ row, index }))
+        .sort((left, right) => {
+          const difference = Number(left.row.recommended || 0) - Number(right.row.recommended || 0);
+          return (carryRecommendedSort === "asc" ? difference : -difference) || left.index - right.index;
+        })
+        .map(({ row }) => row);
     return `
       <div class="toolbar-row">
+        <label>机型 <select data-carry-aircraft-filter><option value="">全部机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${activeAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label>
         <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
-        <span>有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span>
       </div>
       <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>机型</th><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>有寿件</th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
-        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="9">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
+        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="9">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
     `;
   }
@@ -17573,6 +17997,40 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     </table></div>
     ${renderLiteMesaDowntimeEventSnapshots(result.eventSnapshots || [])}
   `;
+}
+
+function analysisProductsById() {
+  return new Map((selectedExperimentPlanProjectJson().products || [])
+    .map((product) => [String(product?.id || "").trim(), product])
+    .filter(([productId]) => productId));
+}
+
+function analysisProductDisplayName(row, productsById) {
+  const productId = String(row?.productId || "").trim();
+  const product = productsById.get(productId);
+  return product ? productDisplayName(product) : (productId || "未关联产品");
+}
+
+function carryListProductDisplayName(row, productsById) {
+  return analysisProductDisplayName(row, productsById);
+}
+
+function sortSpareShortfallRows(rows) {
+  const { field, direction } = spareShortfallSort;
+  if (!field || !["asc", "desc"].includes(direction)) return rows;
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftValue = Number(field === "fillRate" ? (left.row.fillRate ?? left.row.satisfy ?? 0) : (left.row.demand ?? 0));
+      const rightValue = Number(field === "fillRate" ? (right.row.fillRate ?? right.row.satisfy ?? 0) : (right.row.demand ?? 0));
+      const difference = leftValue - rightValue;
+      return (direction === "asc" ? difference : -difference) || left.index - right.index;
+    })
+    .map(({ row }) => row);
+}
+
+function renderSpareShortfallSortHeading(label, field) {
+  return `<span class="analysis-sort-heading">${htmlEscape(label)}<span class="analysis-sort-controls" aria-label="${htmlEscape(label)}排序"><button type="button" data-spare-shortfall-sort="${field}" data-sort-direction="asc" aria-label="按${htmlEscape(label)}升序排列" aria-pressed="${spareShortfallSort.field === field && spareShortfallSort.direction === "asc"}">↑</button><button type="button" data-spare-shortfall-sort="${field}" data-sort-direction="desc" aria-label="按${htmlEscape(label)}降序排列" aria-pressed="${spareShortfallSort.field === field && spareShortfallSort.direction === "desc"}">↓</button></span></span>`;
 }
 
 function renderLiteMesaDowntimeFactorAnalysis(result) {
@@ -17610,17 +18068,17 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
   const primaryFactor = rows.find((row) => row.downtimeHours > 0)?.label || "--";
   const tableRows = rows.map((row, index) => {
     const contribution = totalHours > 0 ? row.downtimeHours / totalHours : 0;
-    return `<tr><td>${index + 1}</td><td>${htmlEscape(row.label)}</td><td>${row.eventCount}</td><td>${fixed(row.downtimeHours, 2)}</td><td>${pct(contribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), contribution >= 0.35 ? "red" : "blue")}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td>${htmlEscape(row.label)}</td><td>${row.eventCount}</td><td>${fixed(row.downtimeHours, 2)} 小时</td><td>${pct(contribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), contribution >= 0.35 ? "red" : "blue")}</td></tr>`;
   }).join("");
   return `
     <div class="toolbar-row downtime-factor-filter" aria-label="停机因素筛选"><strong>停机因素</strong>${filterControls}</div>
     <div class="kpi-strip downtime-factor-kpis">
       <div class="kpi-card"><span>停机事件次数</span><strong>${totalEvents}</strong></div>
-      <div class="kpi-card"><span>累计停机时长</span><strong>${fixed(totalHours, 2)} h</strong></div>
+      <div class="kpi-card"><span>累计停机时长</span><strong>${fixed(totalHours, 2)} 小时</strong></div>
       <div class="kpi-card"><span>首要停机因素</span><strong>${htmlEscape(primaryFactor)}</strong></div>
     </div>
     <div class="table-wrap"><table class="lite-mesa-stat-table downtime-factor-summary-table">
-      <thead><tr><th>排序</th><th>停机因素</th><th>事件次数</th><th>累计停机时长(h)</th><th>当前范围时长占比</th><th>图示</th></tr></thead>
+      <thead><tr><th>排序</th><th>停机因素</th><th>事件次数</th><th>累计停机时长（小时）</th><th>当前范围时长占比</th><th>图示</th></tr></thead>
       <tbody>${tableRows}</tbody>
     </table></div>
     ${renderLiteMesaDowntimeEventDetails(selectedEvents)}
@@ -17646,7 +18104,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
   return `
     <div class="section-head downtime-event-detail-head"><h3>停机事件明细</h3><span>${events.length} 条</span></div>
     <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table">
-      <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长(h)</th><th>事件说明</th><th>分类信息</th></tr></thead>
+      <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长（小时）</th><th>事件说明</th><th>分类信息</th></tr></thead>
       <tbody>${events.map((event) => `<tr>
         <td>${htmlEscape(downtimeFactorLabel(downtimeEventFactor(event)))}</td>
         <td>${htmlEscape(downtimeDisplayValue(event.equipment_name || event.aircraft_type || event.tail_number))}</td>
@@ -17654,7 +18112,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
         <td>${htmlEscape(downtimeDisplayValue(event.support_node_name || event.support_node_id))}</td>
         <td>${htmlEscape(downtimeTimeLabel(event.start_minute ?? event.start_time))}</td>
         <td>${htmlEscape(downtimeTimeLabel(event.end_minute ?? event.end_time))}</td>
-        <td>${fixed(downtimeEventDurationHours(event), 2)}</td>
+        <td>${fixed(downtimeEventDurationHours(event), 2)} 小时</td>
         <td>${htmlEscape(downtimeDisplayValue(event.description || event.message))}</td>
         <td>${renderDowntimeFactorSpecificDetails(event)}</td>
       </tr>`).join("")}</tbody>
@@ -17673,13 +18131,22 @@ function downtimeDisplayValue(value) {
 function downtimeTimeLabel(value) {
   if (value === null || value === undefined || value === "") return "--";
   const minute = Number(value);
-  return Number.isFinite(minute) ? `${fixed(minute, 0)} min` : "--";
+  return Number.isFinite(minute) ? `${fixed(minute, 0)} 分钟` : "--";
 }
 
 function downtimeTaskLabel(event) {
-  const mission = downtimeDisplayValue(event.mission_name || event.mission_id);
-  const phase = downtimeDisplayValue(event.mission_phase);
-  return mission === "--" && phase === "--" ? "--" : `${mission}${phase === "--" ? "" : ` / ${phase}`}`;
+  const mission = String(event?.mission_name || "").trim() || "未配置任务";
+  const phase = downtimeMissionPhaseLabel(event?.mission_phase);
+  return phase ? `${mission}；阶段：${phase}` : mission;
+}
+
+function downtimeMissionPhaseLabel(value) {
+  const phase = String(value || "").trim();
+  return {
+    repair: "修复性维修",
+    corrective: "修复性维修",
+    preventive: "预防性维修"
+  }[phase] || phase;
 }
 
 function renderDowntimeFactorSpecificDetails(event) {
@@ -17691,7 +18158,7 @@ function renderDowntimeFactorSpecificDetails(event) {
   } else if (factor === "failure") {
     rows = [["故障部件", details.component_name || details.component_id], ["故障模式", details.failure_mode], ["故障发生", downtimeTimeLabel(details.failure_minute)], ["修复完成", downtimeTimeLabel(details.repair_completed_minute)]];
   } else if (factor === "equipment_shortage") {
-    rows = [["保障设备", details.equipment_name || details.equipment_model], ["需求", details.required_quantity], ["可用", details.available_quantity], ["短缺", details.shortage_quantity], ["等待时长", details.wait_minutes === null || details.wait_minutes === undefined ? "--" : `${details.wait_minutes} min`]];
+    rows = [["保障设备", details.equipment_name || details.equipment_model], ["需求", details.required_quantity], ["可用", details.available_quantity], ["短缺", details.shortage_quantity], ["等待时长", details.wait_minutes === null || details.wait_minutes === undefined ? "--" : `${details.wait_minutes} 分钟`]];
   } else if (factor === "preventive") {
     rows = [["维修项目", details.maintenance_item || details.maintenance_type], ["触发条件", details.trigger_condition], ["计划开始", downtimeTimeLabel(details.planned_start_minute)], ["实际完成", downtimeTimeLabel(details.completed_minute)]];
   }
@@ -17749,7 +18216,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
     <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
       <summary>
         <strong>${htmlEscape(snapshot.event_label || snapshot.event_type || "停机事件")}</strong>
-        <span>seed ${htmlEscape(snapshot.seed ?? "-")} / t=${htmlEscape(snapshot.simulation_time ?? "-")} / ${htmlEscape(snapshot.result || "downtime_anomaly_recorded")}</span>
+        <span>随机种子 ${htmlEscape(snapshot.seed ?? "-")} / 仿真时刻 ${htmlEscape(downtimeTimeLabel(snapshot.simulation_time))} / ${htmlEscape(downtimeSnapshotResultLabel(snapshot.result))}</span>
       </summary>
       <div class="downtime-snapshot-grid">
         <section>
@@ -17759,7 +18226,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
             <tr><th>故障飞机</th><td>${htmlEscape(aircraftSummary.failed_count ?? "-")}</td></tr>
             <tr><th>维修中</th><td>${htmlEscape(aircraftSummary.repairing_count ?? "-")}</td></tr>
           </tbody></table>
-          <div class="snapshot-chip-row">${aircraft.slice(0, 8).map((item) => `<span>${htmlEscape(item.tail_number || item.name || "aircraft")}：${htmlEscape(item.state || "-")}</span>`).join("") || "<span>无飞机明细</span>"}</div>
+          <div class="snapshot-chip-row">${aircraft.slice(0, 8).map((item) => `<span>${htmlEscape(item.tail_number || item.name || "未命名飞机")}：${htmlEscape(downtimeAircraftStateLabel(item.state))}</span>`).join("") || "<span>无飞机明细</span>"}</div>
         </section>
         <section>
           <h4>保障资源占用</h4>
@@ -17786,6 +18253,28 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
       </div>
     </details>
   `;
+}
+
+function downtimeSnapshotResultLabel(value) {
+  const result = String(value || "");
+  return {
+    mission_delayed_by_spare_shortage: "任务因备件短缺延误",
+    mission_delayed_by_equipment_shortage: "任务因保障设备短缺延误",
+    aircraft_unavailable_for_preventive_maintenance: "飞机因预防性维修不可用",
+    aircraft_unavailable_after_failure: "飞机故障后不可用",
+    downtime_anomaly_recorded: "已记录停机异常"
+  }[result] || "已记录停机事件";
+}
+
+function downtimeAircraftStateLabel(value) {
+  const state = String(value || "");
+  return {
+    available: "可用",
+    maintenance: "维修中",
+    repairing: "修复中",
+    failed: "故障",
+    waiting: "等待中"
+  }[state] || (state || "未知状态");
 }
 
 function formatSnapshotInventory(inventory) {
@@ -17976,6 +18465,9 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
   projectJson.experiment.name ||= `${projectName} 仿真实验方案`;
   projectJson.experiment.steps = positiveExperimentNumber(projectJson.experiment.steps, defaults.steps || 24);
   projectJson.experiment.samples = positiveExperimentNumber(projectJson.experiment.samples, defaults.samples || 4);
+  if (projectJson.experiment.parallelCores === undefined || projectJson.experiment.parallelCores === null || projectJson.experiment.parallelCores === "") {
+    projectJson.experiment.parallelCores = normalizeMonteCarloParallelCores(defaults.parallelCores);
+  }
   const seed = Number(projectJson.experiment.seed);
   projectJson.experiment.seed = Number.isFinite(seed) ? seed : Number(defaults.seed || 20260621);
   if (!projectJson.seedPolicy || typeof projectJson.seedPolicy !== "object" || Array.isArray(projectJson.seedPolicy)) {
@@ -17997,6 +18489,15 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
     projectJson.scenarioComposition.overrides = [];
   }
   return projectJson;
+}
+
+function experimentPlanParallelCoresError(projectJson = experimentPlanDraft) {
+  try {
+    normalizeMonteCarloParallelCores(projectJson?.experiment?.parallelCores);
+    return "";
+  } catch (err) {
+    return err.message;
+  }
 }
 
 function positiveExperimentNumber(value, fallback) {

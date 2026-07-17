@@ -561,12 +561,20 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(permissionSource, /buildPermissionMenuTree/);
   assert.match(permissionSource, /PERMISSION_MENU_ROLES/);
   assert.match(permissionSource, /data-permission-menu-leaf/);
+  assert.match(permissionSource, /data-permission-menu-visibility/);
+  assert.match(permissionSource, /data-role-key/);
+  assert.match(permissionSource, /aria-pressed/);
   assert.match(permissionSource, /可见/);
   assert.match(permissionSource, /不可见/);
+  assert.doesNotMatch(permissionSource, /按左侧菜单的最小叶子项展示当前角色可见性/);
   assert.doesNotMatch(permissionSource, /新增权限项/);
   assert.doesNotMatch(permissionSource, /批量删除/);
+  assert.match(appSource, /permissionMenuVisibility: permissionMenuVisibilityRows\.map/);
+  assert.match(appSource, /Array\.isArray\(payload\.permissionMenuVisibility\)/);
   assert.match(eventSource, /const systemManagementButton = event\.target\.closest\("\[data-system-management-entry\]"\)/);
   assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
+  assert.match(eventSource, /const permissionMenuVisibilityButton = event\.target\.closest\("\[data-permission-menu-visibility\]"\)/);
+  assert.match(eventSource, /togglePermissionMenuVisibility/);
 });
 
 test("project data management exposes project list, template controls, and overview without raw json", async () => {
@@ -824,6 +832,32 @@ test("independent Mesa wrapper pages keep formal projection UI isolated", async 
   assert.doesNotMatch(mesaSource, /currentAnalysisResultForPage|formalProjectionFromCurrentResult|backendApi\.getCurrentAnalysisResult/);
   assert.doesNotMatch(mesaSource, /data-analysis-action="run-current"/);
   assert.doesNotMatch(mesaSource, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
+});
+
+test("spare shortfall page restores context and settings and sorts product rows from column headers", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const pageSource = appSource.slice(
+    appSource.indexOf("function renderSpareShortfallAnalysisPage"),
+    appSource.indexOf("function renderCarryListAnalysisPage")
+  );
+  const sessionSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisSessionBody"),
+    appSource.indexOf('if (definition.analysisType === "carry_list")', appSource.indexOf("function renderLiteMesaAnalysisSessionBody"))
+  );
+
+  assert.match(pageSource, /lite-mesa-hero/);
+  assert.match(pageSource, /<h3>\$\{htmlEscape\(definition\.title\)\}<\/h3>/);
+  assert.match(pageSource, /renderExperimentPlanContextDropdown\(page\)/);
+  assert.match(pageSource, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
+  assert.match(pageSource, /lite-mesa-analysis-settings|renderLiteMesaAnalysisSettings/);
+  assert.match(sessionSource, /data-spare-aircraft-filter/);
+  assert.match(sessionSource, /renderSpareShortfallSortHeading\("需求数量", "demand"\)/);
+  assert.match(sessionSource, /renderSpareShortfallSortHeading\("满足率", "fillRate"\)/);
+  assert.match(sessionSource, /analysisProductDisplayName\(row, productsById\)/);
+  assert.doesNotMatch(sessionSource, /row\.spareType/);
+  assert.doesNotMatch(appSource, /data-spare-demand-sort|需求数量排序|恢复默认/);
+  assert.match(styleSource, /\.analysis-sort-controls button\[aria-pressed="true"\]/);
 });
 
 test("M6.2 formal result boundary unlocks only compiler-provenanced analysis artifacts", async () => {
@@ -2148,7 +2182,10 @@ test("editable modeling lists expose page suggestion action entries", async () =
   );
   assert.match(experimentPlanEditorSource, /基本信息/);
   assert.match(experimentPlanEditorSource, /运行配置/);
-  assert.match(experimentPlanEditorSource, /分析配置/);
+  assert.doesNotMatch(experimentPlanEditorSource, /分析配置/);
+  assert.match(experimentPlanEditorSource, /停止分钟（min）/);
+  assert.match(experimentPlanEditorSource, /data-plan-list-link>返回</);
+  assert.match(experimentPlanEditorSource, /data-save-plan[^>]*>保存</);
   assert.doesNotMatch(experimentPlanEditorSource, /scenario-composition-workspace/);
   assert.match(appSource, /data-scenario-modeling-path/);
   assert.match(appSource, /data-scenario-selected-override-value/);
@@ -2476,9 +2513,13 @@ test("frontend tables do not use generic operation column headers", async () => 
 
 test("monte carlo settings submit lightweight Mesa analysis instead of formal run", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function syncLiteMesaSettingsFromMonteCarloExperiment")
+  );
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
   assert.match(appSource, /let \{ previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult \} = buildPreviewResultState\(scenario\)/);
-  assert.match(appSource, /data-lite-mesa-field="samples"/);
+  assert.doesNotMatch(renderSource, /data-lite-mesa-field="samples"|data-lite-mesa-field="seed"/);
   const runSource = appSource.slice(
     appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
     appSource.indexOf("function normalizeLiteMesaMonteCarloResult")
@@ -2510,7 +2551,7 @@ test("monte carlo experiment detail labels backend Mesa execution without formal
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
-    appSource.indexOf("function liteMesaMetricStatisticRows")
+    appSource.indexOf("function liteMesaBusinessMetricRows")
   );
 
   assert.match(renderSource, /蒙特卡洛分析/);
@@ -2618,14 +2659,13 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   assert.match(appSource, /let liteMesaMonteCarloResult =/);
   assert.doesNotMatch(renderSource, /前端建模 \+ 仿真分析/);
   assert.match(renderSource, /正在运行 Mesa 分析/);
-  assert.match(renderSource, /data-lite-mesa-field="samples"/);
-  assert.match(renderSource, /data-lite-mesa-field="seed"/);
+  assert.doesNotMatch(renderSource, /data-lite-mesa-field="samples"|data-lite-mesa-field="seed"/);
   assert.match(renderSource, /主要输出指标统计值/);
-  assert.match(renderSource, /均值/);
-  assert.match(renderSource, /最小值/);
-  assert.match(renderSource, /最大值/);
-  assert.match(renderSource, /标准差/);
-  assert.match(appSource, /mission_success_rate/);
+  assert.match(renderSource, /<th>业务指标<\/th><th>最终结果<\/th>/);
+  assert.doesNotMatch(renderSource, /样本量|随机种子|样本数|均值|最小值|最大值|标准差|均值\s*\/\s*n=|参数组/);
+  assert.match(appSource, /key: "mission_success_rate", label: "任务可靠度"/);
+  assert.match(appSource, /key: "spare_fill_rate", label: "备件满足率"/);
+  assert.match(appSource, /key: "spare_utilization", label: "备件利用率"/);
   assert.match(appSource, /ready_rate/);
   assert.match(appSource, /key: "mean_transport_delay", label: "平均备件延误时间"/);
   assert.doesNotMatch(appSource.slice(
@@ -2636,7 +2676,7 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   assert.doesNotMatch(renderSource, /非正式|预览|本地预览|正式后端结果/);
   const runSource = appSource.slice(
     appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
-    appSource.indexOf("function liteMesaMetricStatisticRows")
+    appSource.indexOf("function liteMesaBusinessMetricRows")
   );
   assert.match(runSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
   assert.doesNotMatch(runSource, /startMonteCarloRunThroughApi/);
@@ -2905,7 +2945,9 @@ test("experiment plan editor exposes one runtime configuration and removes Scena
   assert.match(editorSource, /data-experiment-stop-condition="specifiedTime"[\s\S]*data-experiment-stop-time-minute/);
   assert.match(editorSource, /基本信息/);
   assert.match(editorSource, /运行配置/);
-  assert.match(editorSource, /分析配置/);
+  assert.doesNotMatch(editorSource, /分析配置/);
+  assert.match(editorSource, /停止分钟（min）/);
+  assert.match(editorSource, /MAX_MONTE_CARLO_PARALLEL_CORES/);
   assert.doesNotMatch(editorSource, /data-scenario-override-add/);
   assert.match(experimentPlanChangeSource, /experimentPlanStopPolicy/);
   assert.match(experimentPlanChangeSource, /experimentPlanDraft/);
@@ -2926,7 +2968,7 @@ test("monte carlo launch uses Lite Mesa from the selected experiment plan", asyn
   assert.match(handlerSource, /runLiteMesaMonteCarloAnalysis\(\)/);
   assert.match(launchSource, /resolveSelectedExperimentPlanProjectJsonForRun\(\)/);
   assert.match(launchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
-  assert.match(launchSource, /samples,\s*seed/s);
+  assert.match(launchSource, /samples,\s*seed,\s*parallelCores/s);
   assert.doesNotMatch(handlerSource + launchSource, /startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
   assert.doesNotMatch(launchSource, /run_type: "single"|runType|modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun|backendApi\.startMonteCarloRun/);
@@ -3928,6 +3970,7 @@ test("lite Mesa spare shortfall page uses transport delay and repair cancellatio
 
 test("lite Mesa carry and downtime result detail hides requested setting-only fields", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const carryDefinitionSource = appSource.slice(
     appSource.indexOf("carry_list:"),
     appSource.indexOf("mission_reliability:")
@@ -3956,8 +3999,19 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
   assert.doesNotMatch(carryBodySource, /<th>置信度目标<\/th>|row\.confidenceTarget/);
   assert.match(carryBodySource, /data-carry-hide-zero/);
   assert.match(carryBodySource, /隐藏需求数值为 0 的备件/);
+  assert.match(carryBodySource, /data-carry-aircraft-filter/);
   assert.match(carryBodySource, /<th>机型<\/th>/);
-  assert.match(carryBodySource, /<th>有寿件<\/th><th>起落寿命<\/th><th>使用寿命\(h\)<\/th>/);
+  assert.match(carryBodySource, /data-carry-recommended-sort="asc"/);
+  assert.match(carryBodySource, /data-carry-recommended-sort="desc"/);
+  assert.match(carryBodySource, /aria-label="按建议携行数量升序排列"/);
+  assert.match(carryBodySource, /aria-label="按建议携行数量降序排列"/);
+  assert.match(carryBodySource, /aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip"/);
+  assert.match(carryBodySource, /class="carry-life-tooltip" role="tooltip"/);
+  assert.match(carryBodySource, /carryListProductDisplayName\(row, productsById\)/);
+  assert.doesNotMatch(carryBodySource, /row\.spareType/);
+  assert.doesNotMatch(carryBodySource, /<span>有寿件寿命在预防性维修中配置/);
+  assert.match(styleSource, /\.carry-life-help:hover \.carry-life-tooltip/);
+  assert.match(styleSource, /\.carry-life-help:focus-within \.carry-life-tooltip/);
 });
 
 test("downtime analysis exposes four-factor multi-select, linked summaries, and typed event details", async () => {
@@ -3989,7 +4043,13 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
   assert.match(changeSource, /selectedDowntimeFactorTypes\.delete/);
   assert.match(renderSource, /请选择至少一种停机因素/);
   assert.match(renderSource, /暂无该类型停机事件/);
-  assert.match(renderSource, /累计停机时长\(h\)/);
+  assert.match(renderSource, /累计停机时长（小时）/);
+  assert.match(renderSource, /持续时长（小时）/);
+  assert.match(renderSource, /分钟/);
+  assert.match(renderSource, /repair: "修复性维修"/);
+  assert.match(renderSource, /preventive: "预防性维修"/);
+  assert.match(renderSource, /未配置任务/);
+  assert.doesNotMatch(renderSource, /`\$\{fixed\(minute, 0\)\} min`|持续时长\(h\)|累计停机时长\(h\)/);
   assert.match(renderSource, /当前范围时长占比/);
   assert.match(renderSource, /\.sort\(\(left, right\) => right\.downtimeHours - left\.downtimeHours\)/);
   assert.match(renderSource, /停机事件明细/);
@@ -4003,7 +4063,7 @@ test("lite Mesa Monte Carlo detail uses decimal ratios and hides metadata chrome
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
-    appSource.indexOf("function liteMesaMetricStatisticRows")
+    appSource.indexOf("function liteMesaBusinessMetricRows")
   );
   const metricSource = appSource.slice(
     appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),
@@ -4037,10 +4097,18 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(appSource, /data-rms-equipment-root/);
   assert.match(appSource, /data-rms-equipment-node/);
   assert.match(appSource, /data-rms-equipment-field/);
+  assert.match(appSource, /data-rms-aircraft-model/);
   assert.match(appSource, /function updateRmsEquipmentField/);
+  assert.match(appSource, /function persistRmsAllocationDraftToScenario/);
+  assert.match(appSource, /rms-allocation-workbench-v1/);
+  assert.match(appSource, /rms-allocation-result-set-v1/);
   assert.match(appSource, /normalizeRmsEquipmentImportRows/);
   assert.match(appSource, /selectRmsAllocationEquipmentRoot/);
-  assert.match(appSource, /calculateRmsAllocation\(rmsAllocationPlan, rmsAllocationProject\)/);
+  assert.match(appSource, /calculateRmsAllocation\(planSnapshot, projectSnapshot\)/);
+  assert.match(appSource, /function invalidateCurrentRmsAllocationResult\(\)/);
+  assert.match(appSource, /state\.calculationStatus = "calculating"/);
+  assert.match(appSource, /state\.calculationStatus = completed \? "completed" : "not-calculated"/);
+  assert.match(appSource, /state\.calculationRunId !== calculationRunId/);
   assert.doesNotMatch(appSource, /publishRmsAllocation\(rmsAllocationProject, rmsAllocationResult\)/);
   assert.doesNotMatch(appSource, /function renderTopbarContext\(page\)/);
   assert.match(appSource, /<p>\$\{htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)\}<\/p>/);
@@ -4050,6 +4118,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(styleSource, /\.rms-method-panel/);
   assert.match(styleSource, /\.rms-installation-panel/);
   assert.match(styleSource, /\.rms-import-button\s*\{[^}]*width: 96px;[^}]*height: 34px;/s);
+  assert.match(styleSource, /\.rms-calculation-status/);
 
   const workbenchSource = await readFile(new URL("../front/rms-allocation-workbench.mjs", import.meta.url), "utf8");
   assert.match(workbenchSource, /装备 RMS 指标分配/);
@@ -4060,6 +4129,14 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /导入 15/);
   assert.match(workbenchSource, /导入安装数/);
   assert.match(workbenchSource, /装备结构树/);
+  assert.match(workbenchSource, /飞机型号与 RMS 输入/);
+  assert.match(workbenchSource, /data-rms-aircraft-model/);
+  assert.match(workbenchSource, /inputs\.missionReliability/);
+  assert.match(workbenchSource, /inputs\.missionHours/);
+  assert.match(workbenchSource, /inputs\.criticalFailureRatio/);
+  assert.match(workbenchSource, /inputs\.mttrHours/);
+  assert.match(workbenchSource, /请先选择飞机型号/);
+  assert.match(workbenchSource, /当前项目暂无飞机型号，请先完成装备系统建模/);
   assert.match(workbenchSource, /organization-layout equipment-layout rms-layout/);
   assert.match(workbenchSource, /tree-node-label root/);
   assert.match(workbenchSource, /<th>系统名称<\/th><th>型号<\/th><th>安装数<\/th><th>运行比<\/th>/);
@@ -4075,7 +4152,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /比例修正系数|相似修正系数/);
   assert.match(workbenchSource, /plan\.methods\.allocation === "similar"/);
   assert.match(workbenchSource, /基准机型/);
-  assert.match(workbenchSource, /data-rms-action="calculate"\$\{isCalculating \? " disabled" : ""\}/);
+  assert.match(workbenchSource, /data-rms-action="calculate"\$\{calculateDisabled \? " disabled" : ""\}/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="save-draft"/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="publish"/);
   assert.doesNotMatch(workbenchSource, /AGREE 分配法/);
@@ -4090,6 +4167,10 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
   assert.doesNotMatch(workbenchSource, /<th>结构<\/th>/);
   assert.match(workbenchSource, /计算完成。/);
+  assert.match(workbenchSource, /data-rms-calculation-status/);
+  assert.match(workbenchSource, /计算进行中/);
+  assert.match(workbenchSource, /未计算/);
+  assert.match(workbenchSource, /data-rms-action="export-excel"\$\{canExport \? "" : " disabled"\}/);
   assert.match(workbenchSource, /rms-calculation-overlay/);
   assert.match(appSource, /function startRmsAllocationCalculation\(\)/);
   assert.match(appSource, /globalThis\.setTimeout\([\s\S]*?\}, 2000\);/);
@@ -4098,6 +4179,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
     appSource.indexOf('const mcArrayInput = event.target.closest("[data-mc-array-path]")')
   );
   assert.match(rmsInputChangeSource, /setPath\(rmsAllocationPlan/);
+  assert.match(rmsInputChangeSource, /invalidateCurrentRmsAllocationResult\(\)/);
   assert.doesNotMatch(rmsInputChangeSource, /recalculateRmsAllocation\(\)/);
 });
 
@@ -4111,6 +4193,8 @@ test("RMS allocation workbench renders parameters for only the selected method",
       plan,
       result: calculateRmsAllocation(plan, project),
       importStatus: "",
+      aircraftModels: ["F16", "F15", "F18"],
+      selectedAircraftModel: "F16",
       htmlEscape: (value) => String(value ?? "")
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
@@ -4145,12 +4229,16 @@ test("RMS allocation workbench renders parameters for only the selected method",
     plan,
     result: calculateRmsAllocation(plan, project),
     importStatus: "",
-    isCalculating: true,
+    aircraftModels: ["F16", "F15", "F18"],
+    selectedAircraftModel: "F16",
+    calculationStatus: "calculating",
     htmlEscape: (value) => String(value ?? ""),
     fixed: (value, digits = 2) => Number(value || 0).toFixed(digits),
     pct: (value) => `${Math.round(Number(value || 0) * 100)}%`
   });
-  assert.match(calculatingHtml, /data-rms-action="calculate" disabled>计算中/);
+  assert.match(calculatingHtml, /data-rms-action="calculate" disabled>计算进行中/);
+  assert.match(calculatingHtml, /data-rms-calculation-status="calculating"[^>]*>计算进行中/);
+  assert.match(calculatingHtml, /data-rms-action="export-excel" disabled/);
   assert.match(calculatingHtml, /class="rms-calculation-overlay"/);
 });
 
@@ -4208,6 +4296,7 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /data-personnel-specialty-dictionary/);
   assert.match(appSource, /data-product-catalog-management/);
   assert.match(appSource, /产品列表/);
+  assert.equal(appSource.includes("仅保留保障人员专业字典与 ${timeUnitFieldCount} 个带时间单位的表单字段配置。"), false);
   assert.match(styleSource, /\.system-config-workbench/);
   assert.match(styleSource, /\.modeling-config-grid/);
   assert.match(styleSource, /\.modeling-form-config-grid/);
@@ -4617,6 +4706,40 @@ test("visual simulation places Solara refresh inside the iframe frame", async ()
   assert.ok(iframeIndex > -1, "Solara iframe should render");
   assert.ok(iframeIndex > reloadIndex, "Solara iframe should render after its refresh action");
   assert.doesNotMatch(visualSource, /mesa-control-deck|mesa-control-status/);
+});
+
+test("visualization event rendering uses localized copy and Chinese secondary metadata", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const solaraSource = await readFile(
+    new URL("../src/spare_mvp_abm/aircraft_support_v1/solara_app.py", import.meta.url),
+    "utf8"
+  );
+  const eventSource = appSource.slice(
+    appSource.indexOf("function renderVisualizationEventStream"),
+    appSource.indexOf("function mesaTab")
+  );
+  const logSource = appSource.slice(
+    appSource.indexOf("function buildSimulationLogStream"),
+    appSource.indexOf("function isStateFrameEvent")
+  );
+  const metricsSource = solaraSource.slice(
+    solaraSource.indexOf("def _metrics_rows"),
+    solaraSource.indexOf("def _frame")
+  );
+  const parameterSource = solaraSource.slice(
+    solaraSource.indexOf("def _model_parameter_rows"),
+    solaraSource.indexOf("def InformationPanel")
+  );
+
+  assert.match(eventSource, /displayEvent\.log_type/);
+  assert.match(eventSource, /displayEvent\.localized_message/);
+  assert.match(eventSource, /内部信息：采样帧/);
+  assert.doesNotMatch(eventSource, /<span>\$\{htmlEscape\(event\.message\)\}<\/span>/);
+  assert.doesNotMatch(eventSource, /<small>frame .* step .* run /);
+  assert.match(logSource, /localizeVisualizationEvent\(event\)/);
+  assert.match(logSource, /event\.localized_message/);
+  assert.doesNotMatch(metricsSource, /数据来源|后端项目/);
+  assert.doesNotMatch(parameterSource, /项目编号|数据来源|后端项目/);
 });
 
 test("M9.2 visual simulation keeps state stream support behind the simplified replay flow", async () => {

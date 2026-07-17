@@ -8,6 +8,16 @@ const DEFAULT_API_BASE = "/api";
 const DEFAULT_TIMEOUT_MS = 10000;
 const RUN_SUBMIT_TIMEOUT_MS = 180000;
 const DEFAULT_FORMAL_MODEL_FAMILY = "aircraft_support_v1";
+export const MAX_MONTE_CARLO_PARALLEL_CORES = 32;
+
+export function normalizeMonteCarloParallelCores(value, { fallback = 1 } = {}) {
+  const candidate = value === undefined || value === null || value === "" ? fallback : value;
+  const number = Number(candidate);
+  if (!Number.isInteger(number) || number < 1 || number > MAX_MONTE_CARLO_PARALLEL_CORES) {
+    throw new Error(`并行核心数必须是 1-${MAX_MONTE_CARLO_PARALLEL_CORES} 之间的正整数`);
+  }
+  return number;
+}
 
 export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, getAuthToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const request = wrapAuthTransport(transport || createFetchTransport(baseUrl, { timeoutMs }), getAuthToken);
@@ -1675,6 +1685,7 @@ export function buildExperimentPlanConfig(projectJson) {
   const seedPolicy = normalizedSeedPolicy(projectJson, experiment);
   const scenarioComposition = normalizedScenarioComposition(projectJson);
   const stopPolicy = normalizedStopPolicy(projectJson, experiment);
+  const parallelCores = normalizeMonteCarloParallelCores(experiment.parallelCores);
   const branchProjectJson = cloneJson(projectJson);
   applyScenarioCompositionOverrides(branchProjectJson, scenarioComposition);
   const config = {
@@ -1682,6 +1693,7 @@ export function buildExperimentPlanConfig(projectJson) {
     steps: Number(experiment.steps ?? 3),
     samples: Number(experiment.samples ?? 1),
     seed: seedPolicy.baseSeed,
+    parallelCores,
     seedPolicy,
     scenarioComposition,
     stopPolicy,

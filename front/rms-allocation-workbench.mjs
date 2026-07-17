@@ -4,26 +4,74 @@ const RELIABILITY_METHODS = [
   ["similar", "相似产品分配法"]
 ];
 
-export function renderRmsAllocationWorkbench({ project, plan, result, importStatus, selectedEquipmentNodeId = project.rootId, isCalculating = false, htmlEscape, fixed, pct }) {
+export function renderRmsAllocationWorkbench({
+  project,
+  plan,
+  result,
+  importStatus,
+  aircraftModels = [],
+  selectedAircraftModel = "",
+  selectedEquipmentNodeId = project.rootId,
+  validationMessage = "",
+  calculationStatus = "",
+  htmlEscape,
+  fixed,
+  pct
+}) {
   const equipmentRoots = project.equipmentNodes.filter((node) => !node.parentId);
+  const hasAircraftModels = aircraftModels.length > 0;
+  const hasSelectedAircraft = aircraftModels.includes(selectedAircraftModel);
+  const selectedRoot = equipmentRoots.find((node) => node.id === project.rootId);
+  const hasEquipmentTree = Boolean(selectedRoot && project.equipmentNodes.some((node) => node.parentId === selectedRoot.id));
+  const hasCompletedResult = result?.status === "calculated" && result.nodeResults?.length > 0;
+  const normalizedCalculationStatus = calculationStatus === "calculating"
+    ? "calculating"
+    : ((calculationStatus === "completed" || !calculationStatus) && hasCompletedResult ? "completed" : "not-calculated");
+  const isCalculating = normalizedCalculationStatus === "calculating";
+  const visibleResult = normalizedCalculationStatus === "completed" ? result : null;
+  const canExport = Boolean(hasSelectedAircraft && normalizedCalculationStatus === "completed" && hasCompletedResult);
+  const calculateDisabled = isCalculating || !hasSelectedAircraft;
   return `
     <div class="rms-allocation-workbench" aria-busy="${isCalculating ? "true" : "false"}">
       <div class="section-head section-context">
         <span>装备 RMS 指标分配 / 导入安装数</span>
-        <span>${htmlEscape(project.name)} / ${htmlEscape(result.algorithmVersion)}</span>
+        <span>${htmlEscape(project.name)}${result?.algorithmVersion ? ` / ${htmlEscape(result.algorithmVersion)}` : ""}</span>
       </div>
 
-      <section class="organization-layout equipment-layout rms-layout">
+      <section class="rms-aircraft-input-panel">
+        <div class="section-head"><h3>飞机型号与 RMS 输入</h3><span>按当前项目机型分别保存</span></div>
+        <div class="rms-aircraft-input-grid">
+          <label>飞机型号
+            <select data-rms-aircraft-model ${hasAircraftModels ? "" : "disabled"}>
+              <option value="">请选择飞机型号</option>
+              ${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${model === selectedAircraftModel ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}
+            </select>
+          </label>
+          ${input("任务可靠度", "inputs.missionReliability", plan.inputs?.missionReliability ?? "", "number", "0.01", htmlEscape, "0", "1", "", !hasSelectedAircraft)}
+          ${input("任务时长", "inputs.missionHours", plan.inputs?.missionHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
+          ${input("关键故障占比", "inputs.criticalFailureRatio", plan.inputs?.criticalFailureRatio ?? "", "number", "0.01", htmlEscape, "0", "1", "", !hasSelectedAircraft)}
+          ${input("MTTR", "inputs.mttrHours", plan.inputs?.mttrHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
+        </div>
+        <div class="rms-input-message" role="status" aria-live="polite">
+          ${validationMessage
+            ? htmlEscape(validationMessage)
+            : (!hasAircraftModels
+              ? "当前项目暂无飞机型号，请先完成装备系统建模。"
+              : (!hasSelectedAircraft ? "请先选择飞机型号。" : (!hasEquipmentTree ? "当前机型暂无装备结构，请先完成装备系统建模。" : "")))}
+        </div>
+      </section>
+
+      ${hasSelectedAircraft ? `<section class="organization-layout equipment-layout rms-layout">
         <aside class="tree-container rms-equipment-tree">
           <div class="tree-toolbar equipment-tree-toolbar">
             <h4>装备结构树</h4>
-            <span>独立导入数据</span>
+            <span>当前项目 / ${htmlEscape(selectedAircraftModel)}</span>
           </div>
-          ${renderEquipmentTree(project, result, selectedEquipmentNodeId, htmlEscape)}
+          ${renderEquipmentTree(project, visibleResult, selectedEquipmentNodeId, htmlEscape)}
         </aside>
         <section class="detail-panel equipment-system-table-panel rms-installation-panel">
           <div class="detail-card">
-            <div class="section-head"><h3>导入安装数</h3><span>${statusLabel(result.status)}</span></div>
+            <div class="section-head"><h3>导入安装数</h3><span>${calculationStatusLabel(normalizedCalculationStatus)}</span></div>
           <div class="equipment-import-row rms-installation-import-row">
             <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
             <label class="rms-file-button rms-import-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
@@ -32,10 +80,10 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
           ${renderInstallationTable(project, selectedEquipmentNodeId, htmlEscape)}
           </div>
         </section>
-      </section>
+      </section>` : ""}
 
       <section class="rms-method-panel">
-          <div class="section-head"><h3>计算方法</h3><span>选择节点份额分配规则</span></div>
+          <div class="section-head"><h3>计算方法</h3><span class="rms-calculation-status ${normalizedCalculationStatus}" data-rms-calculation-status="${normalizedCalculationStatus}" role="status" aria-live="polite">${calculationStatusLabel(normalizedCalculationStatus)}</span></div>
           <div class="rms-method-grid">
             <label>指标分配方法
               <select data-rms-path="methods.allocation">
@@ -45,21 +93,23 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
             ${renderMethodParameters(plan, equipmentRoots, project.rootId, htmlEscape)}
           </div>
           <div class="rms-method-actions">
-            <button type="button" class="btn-primary" data-rms-action="calculate"${isCalculating ? " disabled" : ""}>${isCalculating ? "计算中" : "计算"}</button>
+            <button type="button" class="btn-primary" data-rms-action="calculate"${calculateDisabled ? " disabled" : ""}>${isCalculating ? "计算进行中" : "计算"}</button>
           </div>
           <div class="rms-warning-list">
-            ${result.warnings.length
-              ? result.warnings.map((warning) => `<span>${htmlEscape(warning.code)}：${htmlEscape(warning.message)}</span>`).join("")
-              : "<span>计算完成。</span>"}
+            ${isCalculating
+              ? "<span>计算进行中，请勿重复提交。</span>"
+              : (result?.warnings?.length
+              ? result.warnings.map((warning) => `<span>${result.status === "calculated" ? "" : "计算失败："}${htmlEscape(warning.code)}：${htmlEscape(warning.message)}</span>`).join("")
+              : (normalizedCalculationStatus === "completed" ? "<span>计算完成。</span>" : "<span>尚未执行计算，输入、方法或装备节点变化后需重新计算。</span>"))}
           </div>
       </section>
 
       <section class="analysis-chart-panel rms-result-panel">
-        <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel">导出 Excel</button></div>
+        <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel"${canExport ? "" : " disabled"}>导出 Excel</button></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>层级</th><th>节点</th><th>型号</th><th>安装数</th><th>运行比</th><th>分配份额</th><th>状态</th></tr></thead>
-            <tbody>${result.nodeResults.map((row) => `
+            <tbody>${visibleResult?.nodeResults?.length ? visibleResult.nodeResults.map((row) => `
               <tr>
                 <td>${htmlEscape(row.level)}</td>
                 <td>${htmlEscape(row.nodeName)}</td>
@@ -69,11 +119,11 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
                 <td>${pct(row.allocationShare)}</td>
                 <td>${htmlEscape(row.status)}</td>
               </tr>
-            `).join("")}</tbody>
+            `).join("") : '<tr><td colspan="7">当前飞机型号暂无计算结果。</td></tr>'}</tbody>
           </table>
         </div>
       </section>
-      ${isCalculating ? '<div class="rms-calculation-overlay" role="status" aria-live="assertive"><span>计算中</span></div>' : ""}
+      ${isCalculating ? '<div class="rms-calculation-overlay" role="status" aria-live="assertive"><span>计算进行中</span></div>' : ""}
     </div>
   `;
 }
@@ -98,7 +148,7 @@ function renderInstallationTable(project, selectedNodeId, htmlEscape) {
 }
 
 function renderEquipmentTree(project, result, selectedNodeId, htmlEscape) {
-  const rootNodes = project.equipmentNodes.filter((node) => !node.parentId);
+  const rootNodes = project.equipmentNodes.filter((node) => !node.parentId && node.id === project.rootId);
   const childNodesByParent = project.equipmentNodes.reduce((acc, node) => {
     if (node.parentId) {
       acc[node.parentId] ||= [];
@@ -107,7 +157,7 @@ function renderEquipmentTree(project, result, selectedNodeId, htmlEscape) {
     return acc;
   }, {});
   const renderChildren = (parentId) => (childNodesByParent[parentId] || []).map((node) => {
-    const row = result.nodeResults.find((item) => item.nodeId === node.id);
+    const row = result?.nodeResults?.find((item) => item.nodeId === node.id);
     return `
       <div class="tree-node-item">
         <div class="tree-node-row">
@@ -169,9 +219,11 @@ function runningRatioForNode(node) {
   return node.missionUse?.runningRatio ?? node.missionUse?.dutyCycle ?? node.runningRatio ?? 1;
 }
 
-function input(label, path, value, type, step, htmlEscape) {
+function input(label, path, value, type, step, htmlEscape, min = "", max = "", unit = "", disabled = false) {
   const stepAttribute = type === "number" && step ? ` step="${htmlEscape(step)}"` : "";
-  return `<label>${label}<input data-rms-path="${path}" type="${type}"${stepAttribute} value="${htmlEscape(value)}"></label>`;
+  const minAttribute = min !== "" ? ` min="${htmlEscape(min)}"` : "";
+  const maxAttribute = max !== "" ? ` max="${htmlEscape(max)}"` : "";
+  return `<label>${label}${unit ? ` (${unit})` : ""}<input data-rms-path="${path}" type="${type}"${stepAttribute}${minAttribute}${maxAttribute} required value="${htmlEscape(value)}"${disabled ? " disabled" : ""}></label>`;
 }
 
 function select(label, path, value, options, htmlEscape) {
@@ -195,9 +247,10 @@ function renderMethodParameters(plan, equipmentRoots, currentRootId, htmlEscape)
   return "";
 }
 
-function statusLabel(status) {
-  if (status === "method_not_applicable") return "方法不适用";
-  return status === "calculated" ? "已计算" : "待计算";
+function calculationStatusLabel(status) {
+  if (status === "calculating") return "计算进行中";
+  if (status === "completed") return "计算完成";
+  return "未计算";
 }
 
 function compactNumber(value, digits = 2) {

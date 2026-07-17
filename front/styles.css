@@ -2346,6 +2346,39 @@ select[multiple].table-edit-select {
   background: #fbfcfd;
 }
 
+.rms-aircraft-input-panel {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.rms-aircraft-input-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.rms-aircraft-input-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rms-aircraft-input-grid input,
+.rms-aircraft-input-grid select {
+  min-width: 0;
+}
+
+.rms-input-message {
+  min-height: 18px;
+  margin-top: 8px;
+  color: #b45309;
+  font-size: 12px;
+}
+
 .rms-installation-panel {
   min-width: 0;
 }
@@ -2416,6 +2449,31 @@ select[multiple].table-edit-select {
 
 .rms-method-actions {
   justify-content: flex-end;
+}
+
+.rms-calculation-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rms-calculation-status.calculating {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.rms-calculation-status.completed {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #15803d;
 }
 
 .rms-file-button {
@@ -2783,6 +2841,90 @@ select[multiple].table-edit-select {
 
 .lite-mesa-analysis-detail .lite-mesa-metric-cards {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.downtime-topn-note {
+  flex: 1 1 420px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.carry-sort-heading,
+.carry-life-heading,
+.carry-sort-controls,
+.analysis-sort-heading,
+.analysis-sort-controls {
+  display: inline-flex;
+  align-items: center;
+}
+
+.carry-sort-heading,
+.carry-life-heading,
+.analysis-sort-heading {
+  gap: 6px;
+}
+
+.carry-sort-controls,
+.analysis-sort-controls {
+  gap: 2px;
+}
+
+.carry-sort-controls button,
+.analysis-sort-controls button,
+.carry-life-help .inline-help {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.carry-sort-controls button[aria-pressed="true"],
+.analysis-sort-controls button[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.carry-life-help {
+  position: relative;
+  display: inline-flex;
+}
+
+.carry-life-help .inline-help {
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.carry-life-tooltip {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: none;
+  width: 300px;
+  max-width: min(300px, 70vw);
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #111827;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.2);
+}
+
+.carry-life-help:hover .carry-life-tooltip,
+.carry-life-help:focus-within .carry-life-tooltip {
+  display: block;
 }
 
 .lite-mesa-source-grid {
@@ -5048,6 +5190,7 @@ tr.clickable-table-row.selected-table-row td {
   .preventive-rule-row,
   .kpi-strip,
   .scenario-grid,
+  .rms-aircraft-input-grid,
   .rms-method-grid,
   .lite-mesa-setting-grid,
   .lite-mesa-source-grid,

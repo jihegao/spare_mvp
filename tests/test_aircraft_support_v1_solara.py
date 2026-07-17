@@ -136,6 +136,50 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         ]:
             self.assertNotIn(retired_label, string_literals)
 
+    def test_visible_metrics_and_model_parameters_hide_project_metadata(self) -> None:
+        model = AircraftSupportV1Model(self.default_inputs)
+
+        metric_labels = [label for label, _value in solara_app._metrics_rows(model)]
+        parameter_labels = [label for label, _value in solara_app._model_parameter_rows(self.default_inputs)]
+
+        self.assertNotIn("数据来源", metric_labels)
+        self.assertNotIn("数据来源", parameter_labels)
+        self.assertNotIn("项目编号", parameter_labels)
+        self.assertEqual(metric_labels, ["仿真分钟", "任务成功率", "战备完好率", "可用飞机", "维修中", "缺件事件"])
+        self.assertEqual(parameter_labels, ["仿真时长", "随机种子"])
+
+    def test_event_stream_localizes_types_statuses_and_shortage_reasons(self) -> None:
+        label, message, internal_id = solara_app._event_display({
+            "time": 15,
+            "event": "spare_shortage",
+            "message": "job-0006 blocked by hyd-pump shortage at carrier-deck",
+            "details": {
+                "job_id": "job-0006",
+                "spare_type": "航电模块",
+                "resource_id": "基层",
+            },
+        })
+
+        self.assertEqual(label, "备件短缺")
+        self.assertEqual(internal_id, "job-0006")
+        self.assertTrue(message.startswith("航电模块库存不足，保障作业等待备件补给"))
+        self.assertIn("保障节点：基层", message)
+        self.assertNotRegex(message, r"blocked by|shortage at")
+        self.assertEqual(solara_app._job_state_label("blocked"), "受阻")
+        self.assertEqual(solara_app._job_state_label("future_state"), "未知状态")
+        self.assertEqual(solara_app._shortage_reason_label("equipment_capacity"), "保障设备可用数量不足")
+        self.assertEqual(solara_app._shortage_reason_label("spare:hyd-pump"), "备件（内部标识：hyd-pump）库存不足")
+
+        row = solara_app._event_row_html({
+            "time": 15,
+            "event": "spare_shortage",
+            "message": "job-0006 blocked by hyd-pump shortage at carrier-deck",
+            "details": {"job_id": "job-0006", "spare_type": "航电模块", "resource_id": "基层"},
+        })
+        self.assertIn("内部标识：job-0006", row)
+        self.assertNotIn("spare_shortage", row)
+        self.assertNotIn("blocked by", row)
+
 
 if __name__ == "__main__":
     unittest.main()

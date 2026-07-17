@@ -315,7 +315,7 @@ test("submitRunIntent sends user-edited Monte Carlo samples and seed in experime
   const { submitRunIntent } = await import("../front/run-intent.mjs");
   const projectJson = {
     project_id: "project-edited",
-    experiment: { name: "runtime MC edit", steps: 4, samples: 3, seed: 101 },
+    experiment: { name: "runtime MC edit", steps: 4, samples: 3, seed: 101, parallelCores: 2 },
     monteCarlo: {
       failureRates: [0.06],
       spareMultipliers: [1.0],
@@ -331,6 +331,7 @@ test("submitRunIntent sends user-edited Monte Carlo samples and seed in experime
   };
   applyDraftChange("experiment.samples", 17);
   applyDraftChange("experiment.seed", 909);
+  applyDraftChange("experiment.parallelCores", 4);
 
   await submitRunIntent(apiClient, {
     runType: "monte_carlo",
@@ -348,6 +349,7 @@ test("submitRunIntent sends user-edited Monte Carlo samples and seed in experime
   assert.notEqual(projectJson.experiment.seed, planProjectJson.experiment.seed);
   assert.equal(planCall.config.analysisRequests.largeSample.samples, 17);
   assert.equal(planCall.config.seed, 909);
+  assert.equal(planCall.config.parallelCores, 4);
   assert.equal("experiment" in planCall.config.projectJson, false);
   assert.equal("analysisRequests" in planCall.config.projectJson, false);
   assert.equal("monteCarlo" in planCall.config.projectJson, false);

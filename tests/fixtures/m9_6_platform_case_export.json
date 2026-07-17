@@ -3583,6 +3583,7 @@
   },
   "monte_carlo_config": {
     "mc_experiment_id": "mc-m9-6-platform-case",
+    "parallel_cores": 1,
     "sample_count": 24,
     "sweep": {
       "failureRates": [
