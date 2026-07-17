@@ -72,6 +72,7 @@ import {
   createDefaultRmsAllocationPlan,
   createRmsAllocationProjectForScenario,
   createRmsAllocationFailureResult,
+  normalizeRmsAllocationInputs,
   normalizeRmsEquipmentImportRows,
   rmsAllocationInputErrors,
   rmsEquipmentRoots,
@@ -13016,8 +13017,10 @@ function ensureRmsAllocationStateForScenario() {
     const plan = {
       ...defaultPlan,
       ...savedPlan,
+      schemaVersion: defaultPlan.schemaVersion,
+      algorithmVersion: defaultPlan.algorithmVersion,
       projectId: baseProject.projectId,
-      inputs: { ...defaultPlan.inputs, ...(savedPlan.inputs || {}) },
+      inputs: normalizeRmsAllocationInputs(savedPlan.inputs || {}),
       methods: {
         ...defaultPlan.methods,
         ...(savedPlan.methods || {}),
@@ -13072,7 +13075,7 @@ function rmsResultMatchesCurrentState(result, plan, project) {
   const selectedRoot = project.equipmentNodes.find((node) => node.id === project.rootId);
   const aircraftModel = selectedRoot?.aircraftModel || selectedRoot?.name || "";
   if (result.aircraftModel !== aircraftModel || result.method !== plan.methods.allocation) return false;
-  const inputKeys = ["missionReliability", "missionHours", "criticalFailureRatio", "mttrHours"];
+  const inputKeys = ["missionReliability", "missionHours", "mtbfHours", "mttrHours"];
   if (inputKeys.some((key) => Number(result.inputSnapshot?.[key]) !== Number(plan.inputs?.[key]))) return false;
   const expectedNodes = project.equipmentNodes.filter((node) => node.parentId === project.rootId);
   if (expectedNodes.length !== result.nodeResults.length) return false;

@@ -49,7 +49,7 @@ export function renderRmsAllocationWorkbench({
           </label>
           ${input("任务可靠度", "inputs.missionReliability", plan.inputs?.missionReliability ?? "", "number", "0.01", htmlEscape, "0", "1", "", !hasSelectedAircraft)}
           ${input("任务时长", "inputs.missionHours", plan.inputs?.missionHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
-          ${input("关键故障占比", "inputs.criticalFailureRatio", plan.inputs?.criticalFailureRatio ?? "", "number", "0.01", htmlEscape, "0", "1", "", !hasSelectedAircraft)}
+          ${input("MTBF", "inputs.mtbfHours", plan.inputs?.mtbfHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
           ${input("MTTR", "inputs.mttrHours", plan.inputs?.mttrHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
         </div>
         <div class="rms-input-message" role="status" aria-live="polite">

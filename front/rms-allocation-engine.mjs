@@ -1,11 +1,29 @@
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-3.1.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-4.0.0";
 
 export const DEFAULT_RMS_ALLOCATION_INPUTS = Object.freeze({
   missionReliability: 0.95,
   missionHours: 3,
-  criticalFailureRatio: 0.2,
+  mtbfHours: 1000,
   mttrHours: 2
 });
+
+export function normalizeRmsAllocationInputs(inputs = {}) {
+  const normalized = {
+    missionReliability: Object.hasOwn(inputs, "missionReliability")
+      ? inputs.missionReliability
+      : DEFAULT_RMS_ALLOCATION_INPUTS.missionReliability,
+    missionHours: Object.hasOwn(inputs, "missionHours")
+      ? inputs.missionHours
+      : DEFAULT_RMS_ALLOCATION_INPUTS.missionHours,
+    mtbfHours: Object.hasOwn(inputs, "mtbfHours")
+      ? inputs.mtbfHours
+      : legacyMtbfHours(inputs),
+    mttrHours: Object.hasOwn(inputs, "mttrHours")
+      ? inputs.mttrHours
+      : DEFAULT_RMS_ALLOCATION_INPUTS.mttrHours
+  };
+  return normalized;
+}
 
 export function createRmsAllocationProjectForScenario(scenario, selectedAircraftModel = "") {
   const aircraftModels = scenarioAircraftModels(scenario);
@@ -80,7 +98,7 @@ export function rmsAllocationInputErrors(inputs = {}) {
   const errors = [];
   validateRequiredRange(errors, inputs.missionReliability, "任务可靠度", { min: 0, max: 1, minExclusive: true });
   validateRequiredRange(errors, inputs.missionHours, "任务时长", { min: 0, minExclusive: true, unit: "h" });
-  validateRequiredRange(errors, inputs.criticalFailureRatio, "关键故障占比", { min: 0, max: 1 });
+  validateRequiredRange(errors, inputs.mtbfHours, "MTBF", { min: 0, minExclusive: true, unit: "h" });
   validateRequiredRange(errors, inputs.mttrHours, "MTTR", { min: 0, unit: "h" });
   return errors;
 }
@@ -91,7 +109,7 @@ export function validateRmsAllocationInputs(inputs = {}) {
   return {
     missionReliability: Number(inputs.missionReliability),
     missionHours: Number(inputs.missionHours),
-    criticalFailureRatio: Number(inputs.criticalFailureRatio),
+    mtbfHours: Number(inputs.mtbfHours),
     mttrHours: Number(inputs.mttrHours)
   };
 }
@@ -684,7 +702,7 @@ export function normalizeRmsEquipmentImportRows(input, { baseProject = createDem
 
 export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocationProject()) {
   return {
-    schemaVersion: "rms-allocation-plan-v3",
+    schemaVersion: "rms-allocation-plan-v4",
     planId: "RMS-PLAN-001",
     planVersion: 1,
     name: "近海巡逻任务RMS分配方案",
@@ -762,7 +780,7 @@ export function createRmsAllocationFailureResult(plan, error) {
     inputSnapshot: {
       missionReliability: Number(plan.inputs?.missionReliability) || 0,
       missionHours: Number(plan.inputs?.missionHours) || 0,
-      criticalFailureRatio: Number(plan.inputs?.criticalFailureRatio) || 0,
+      mtbfHours: Number(plan.inputs?.mtbfHours) || 0,
       mttrHours: Number(plan.inputs?.mttrHours) || 0
     },
     method: plan.methods.allocation,
@@ -775,6 +793,21 @@ export function createRmsAllocationFailureResult(plan, error) {
     }],
     assumptions: plan.assumptions || []
   };
+}
+
+function legacyMtbfHours(inputs) {
+  const missionReliability = Number(inputs.missionReliability);
+  const missionHours = Number(inputs.missionHours);
+  const criticalFailureRatio = Number(inputs.criticalFailureRatio);
+  if (
+    missionReliability > 0
+    && missionReliability < 1
+    && missionHours > 0
+    && criticalFailureRatio > 0
+  ) {
+    return Number((criticalFailureRatio * (-missionHours / Math.log(missionReliability))).toFixed(6));
+  }
+  return DEFAULT_RMS_ALLOCATION_INPUTS.mtbfHours;
 }
 
 export function rmsEquipmentRoots(project) {

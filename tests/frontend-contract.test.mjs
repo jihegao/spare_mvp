@@ -4133,8 +4133,13 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(workbenchSource, /data-rms-aircraft-model/);
   assert.match(workbenchSource, /inputs\.missionReliability/);
   assert.match(workbenchSource, /inputs\.missionHours/);
-  assert.match(workbenchSource, /inputs\.criticalFailureRatio/);
+  assert.match(workbenchSource, /inputs\.mtbfHours/);
+  assert.doesNotMatch(workbenchSource, /inputs\.criticalFailureRatio|关键故障占比/);
   assert.match(workbenchSource, /inputs\.mttrHours/);
+  assert.ok(workbenchSource.indexOf("飞机型号") < workbenchSource.indexOf('input("任务可靠度"'));
+  assert.ok(workbenchSource.indexOf('input("任务可靠度"') < workbenchSource.indexOf('input("任务时长"'));
+  assert.ok(workbenchSource.indexOf('input("任务时长"') < workbenchSource.indexOf('input("MTBF"'));
+  assert.ok(workbenchSource.indexOf('input("MTBF"') < workbenchSource.indexOf('input("MTTR"'));
   assert.match(workbenchSource, /请先选择飞机型号/);
   assert.match(workbenchSource, /当前项目暂无飞机型号，请先完成装备系统建模/);
   assert.match(workbenchSource, /organization-layout equipment-layout rms-layout/);
@@ -4161,7 +4166,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /暴露时间/);
   assert.doesNotMatch(workbenchSource, /R目标/);
   assert.doesNotMatch(workbenchSource, /反算 R/);
-  assert.doesNotMatch(workbenchSource, /目标 R|校核可靠度|MTBCF|MTBF|MTTR 裕度/);
+  assert.doesNotMatch(workbenchSource, /目标 R|校核可靠度|MTBCF|MTTR 裕度/);
   assert.ok(workbenchSource.indexOf("<h3>计算方法</h3>") < workbenchSource.indexOf("<h3>节点分配结果</h3>"));
   assert.match(workbenchSource, /运行比/);
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
@@ -4209,7 +4214,7 @@ test("RMS allocation workbench renders parameters for only the selected method",
   assert.doesNotMatch(equalHtml, /基准机型/);
   assert.doesNotMatch(equalHtml, /比例修正系数/);
   assert.doesNotMatch(equalHtml, /暴露时间/);
-  assert.doesNotMatch(equalHtml, /目标 R|校核可靠度|MTBCF|MTBF|MTTR 裕度/);
+  assert.doesNotMatch(equalHtml, /目标 R|校核可靠度|MTBCF|MTTR 裕度/);
   assert.match(equalHtml, /运行比<\/th>/);
   assert.match(equalHtml, /分配份额/);
   assert.match(equalHtml, /任务计算机LRU/);

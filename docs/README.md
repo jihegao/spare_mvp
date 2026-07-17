@@ -20,7 +20,7 @@
 2. 项目列表页从已标记的 Project 模板复制创建项目；旧的内置建模导入模板注册表、模板层级分类和模板下拉入口已退役。
 3. M5 建模导入 API 仍作为后台维护、导入转换和 `compile-scenario` 能力保留；普通项目数据管理页不展示已发布模板列表、模板预览、字段映射、v1/v2 分类或旧校验级别分类。
 4. 装备 RMS 指标分配是系统运行支持模块下的本地份额分配工作台。页面左侧展示装备结构树，右侧“导入安装数”表展示系统名称、型号、安装数和运行比；计算方法区块位于节点分配结果正上方。
-5. RMS 方法保留等分配法、比例分配法和相似产品分配法，结果以归一化分配份额表达并可导出真实 XLSX。导入只更新 RMS 工作台独立数据，不污染项目建模数据；当前契约不包含目标 R、可靠度校核、MTBCF、MTBF 或 MTTR 裕度，也不提供保存草稿或发布入口。
+5. RMS 页面按飞机型号维护任务可靠度、任务时长、MTBF 和 MTTR，关键故障占比不再作为输入；方法保留等分配法、比例分配法和相似产品分配法，结果以归一化分配份额表达并可导出真实 XLSX。导入只更新 RMS 工作台独立数据，不污染项目建模数据；当前契约不包含目标 R、可靠度校核、MTBCF 或 MTTR 裕度，也不提供保存草稿或发布入口。
 6. 可靠性框图只在任务可靠度评估模块下作为正式建模页展示，并作为 `reliabilityBlockDiagram` 建模输入保留在 clean Project。完整绘图与分析契约由 `reliability-block-diagram-contract.md` 维护。
 7. 当前用户可见分析主线为 `当前 Project 或已保存 ExperimentPlan -> POST /api/mesa-analysis-runs -> aircraft_support_v1 simulation inputs -> in-memory AircraftSupportV1Model -> lite Mesa 会话摘要`；运行上下文默认是明确标注的“当前项目”，下拉中的 ExperimentPlan 只来自后端且必须具有有效 `experiment_plan_id`。无已保存方案时，可视化、Monte Carlo 和分析直接使用当前 Project，不自动创建 ExperimentPlan；方案编辑器中的 `experimentPlanDraft` 只是内存分支，保存后才创建或更新 ExperimentPlan。可视化推演主线为平台管理的 Solara iframe 直接驱动 `AircraftSupportV1Model.step()`。旧 `/api/runs`、RunService、SimulationRun、ResultSummary 和 ArtifactManifest 运行账本路径保留为历史实现、内部治理能力或后续持久化运行治理候选；旧 contract provider、`independent-mesa` sidecar、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除。
    显式选择保存方案进行可视化时，`experiment_plan_id` 与经边界校验的 `steps/samples/seed` 通过 iframe 运行上下文传给 Solara sidecar，并以 `runtime_config` 进入 Scenario 编译，不写回 clean Project。

@@ -10,6 +10,7 @@ import {
   createRmsAllocationFailureResult,
   createRmsEquipmentImportFixture,
   normalizeRmsEquipmentImportRows,
+  normalizeRmsAllocationInputs,
   rmsAllocationInputErrors,
   rmsEquipmentRoots,
   rmsEquipmentSubtree,
@@ -22,7 +23,7 @@ test("equal allocation returns a normalized forward allocation contract", () => 
   const plan = createDefaultRmsAllocationPlan(project);
   const result = calculateRmsAllocation(plan, project);
 
-  assert.equal(plan.schemaVersion, "rms-allocation-plan-v3");
+  assert.equal(plan.schemaVersion, "rms-allocation-plan-v4");
   assert.equal(result.method, "equal");
   assert.equal(result.status, "calculated");
   assert.equal(result.aircraftModel, "F16");
@@ -48,8 +49,8 @@ test("RMS inputs fail closed for required and range violations", () => {
     ["missionReliability", 0, "任务可靠度必须大于 0"],
     ["missionReliability", 1.01, "任务可靠度必须小于等于 1"],
     ["missionHours", 0, "任务时长必须大于 0 h"],
-    ["criticalFailureRatio", -0.01, "关键故障占比必须大于等于 0"],
-    ["criticalFailureRatio", 1.01, "关键故障占比必须小于等于 1"],
+    ["mtbfHours", "", "MTBF不能为空"],
+    ["mtbfHours", 0, "MTBF必须大于 0 h"],
     ["mttrHours", -0.01, "MTTR必须大于等于 0 h"]
   ]) {
     plan.inputs = { ...plan.inputs, [field]: value };
@@ -57,6 +58,19 @@ test("RMS inputs fail closed for required and range violations", () => {
     assert.throws(() => calculateRmsAllocation(plan, project), /RMS_INPUT_INVALID/);
     plan.inputs = { ...createDefaultRmsAllocationPlan(project).inputs };
   }
+});
+
+test("legacy critical-failure-ratio drafts migrate to the v4 MTBF input", () => {
+  const migrated = normalizeRmsAllocationInputs({
+    missionReliability: 0.95,
+    missionHours: 3,
+    criticalFailureRatio: 0.2,
+    mttrHours: 2
+  });
+
+  assert.deepEqual(Object.keys(migrated), ["missionReliability", "missionHours", "mtbfHours", "mttrHours"]);
+  assert.ok(Math.abs(migrated.mtbfHours - 11.697435) < 1e-6);
+  assert.equal("criticalFailureRatio" in migrated, false);
 });
 
 test("project equipment modeling is projected into isolated aircraft RMS roots", () => {

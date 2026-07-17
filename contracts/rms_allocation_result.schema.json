@@ -16,11 +16,11 @@
     "inputSnapshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["missionReliability", "missionHours", "criticalFailureRatio", "mttrHours"],
+      "required": ["missionReliability", "missionHours", "mtbfHours", "mttrHours"],
       "properties": {
         "missionReliability": { "type": "number", "minimum": 0, "maximum": 1 },
         "missionHours": { "type": "number", "minimum": 0 },
-        "criticalFailureRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "mtbfHours": { "type": "number", "minimum": 0 },
         "mttrHours": { "type": "number", "minimum": 0 }
       }
     },

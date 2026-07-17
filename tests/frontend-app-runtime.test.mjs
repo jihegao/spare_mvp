@@ -2169,12 +2169,15 @@ test("RMS per-aircraft inputs, tree selection and saved results hydrate without 
     assert.doesNotMatch(runtime.appNode.innerHTML, /J-15 发动机/);
     assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
 
-    await runtime.change("[data-rms-path]", { rmsPath: "inputs.mttrHours" }, { value: "3.5", type: "number" });
+    await runtime.change("[data-rms-path]", { rmsPath: "inputs.mtbfHours" }, { value: "1250", type: "number" });
     await new Promise((resolve) => setTimeout(resolve, 850));
     const saved = projectSaveBodies(runtime).at(-1);
     assert.equal(saved.rmsAllocationPlan.selectedAircraftModel, "J-20");
     assert.equal(saved.rmsAllocationPlan.aircraftStates["J-15"].plan.inputs.missionReliability, 0.91);
-    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs.mttrHours, 3.5);
+    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs.mtbfHours, 1250);
+    assert.equal("criticalFailureRatio" in saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs, false);
+    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.schemaVersion, "rms-allocation-plan-v4");
+    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.algorithmVersion, "rms-engine-4.0.0");
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-15"].aircraftModel, "J-15");
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-20"], undefined);
   } finally {
@@ -2189,7 +2192,7 @@ test("RMS input changes clear only the current aircraft result and block empty e
   });
   try {
     assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
-    await runtime.change("[data-rms-path]", { rmsPath: "inputs.mttrHours" }, { value: "3.25", type: "number" });
+    await runtime.change("[data-rms-path]", { rmsPath: "inputs.mtbfHours" }, { value: "1325", type: "number" });
 
     assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
     assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /当前飞机型号暂无计算结果/);
