@@ -834,7 +834,7 @@ test("independent Mesa wrapper pages keep formal projection UI isolated", async 
   assert.doesNotMatch(mesaSource, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
 });
 
-test("spare shortfall page keeps loading in the result section and sorts product rows from column headers", async () => {
+test("spare shortfall page restores context and settings and sorts product rows from column headers", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const pageSource = appSource.slice(
@@ -846,10 +846,11 @@ test("spare shortfall page keeps loading in the result section and sorts product
     appSource.indexOf('if (definition.analysisType === "carry_list")', appSource.indexOf("function renderLiteMesaAnalysisSessionBody"))
   );
 
-  assert.match(pageSource, /analysis-result-loader/);
+  assert.match(pageSource, /lite-mesa-analysis-context-bar/);
   assert.match(pageSource, /renderExperimentPlanContextDropdown\(page\)/);
-  assert.match(pageSource, /data-lite-mesa-analysis-action="run">加载运行结果<\/button>/);
-  assert.doesNotMatch(pageSource, /lite-mesa-hero|lite-mesa-analysis-settings|renderLiteMesaAnalysisSettings/);
+  assert.match(pageSource, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
+  assert.match(pageSource, /lite-mesa-analysis-settings|renderLiteMesaAnalysisSettings/);
+  assert.doesNotMatch(pageSource, /lite-mesa-hero/);
   assert.match(sessionSource, /data-spare-aircraft-filter/);
   assert.match(sessionSource, /renderSpareShortfallSortHeading\("需求数量", "demand"\)/);
   assert.match(sessionSource, /renderSpareShortfallSortHeading\("满足率", "fillRate"\)/);

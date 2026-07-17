@@ -10891,7 +10891,7 @@ function selectCurrentExperimentPlan(planKey) {
     : `已切换运行来源：${selected.name}`;
   liteMesaAnalysisResults = {};
   aircraftMissionReliabilityState.result = null;
-  aircraftMissionReliabilityState.status = "运行上下文已更新，正在重新计算。";
+  aircraftMissionReliabilityState.status = "运行上下文已更新，请重新运行。";
   aircraftMissionReliabilityState.actionStatus = "";
   aircraftMissionReliabilityState.viewingHistoryId = "";
   const planRunSettings = selectedExperimentPlanRunSettings();
@@ -17297,7 +17297,7 @@ function createAircraftMissionReliabilityState() {
     missionProfileId: "",
     durationHours: "",
     result: null,
-    status: "请选择飞机型号和任务剖面。",
+    status: "等待运行：请选择飞机型号和任务剖面后运行分析。",
     actionStatus: "",
     viewingHistoryId: "",
     history: [],
@@ -17380,10 +17380,17 @@ function updateAircraftMissionReliabilityInput(field, value) {
   aircraftMissionReliabilityState.result = null;
   aircraftMissionReliabilityState.actionStatus = "";
   aircraftMissionReliabilityState.viewingHistoryId = "";
-  aircraftMissionReliabilityState.status = "分析输入已更新，正在重新计算。";
+  aircraftMissionReliabilityState.status = "分析输入已更新，请重新运行。";
 }
 
 async function handleAircraftMissionReliabilityAction(action, analysisId = "") {
+  if (action === "run") {
+    const result = calculateAircraftMissionReliability(aircraftMissionReliabilityContextProjectJson());
+    aircraftMissionReliabilityState.result = result?.ok ? result : null;
+    aircraftMissionReliabilityState.actionStatus = result?.ok ? "分析完成。" : "分析未完成，请检查输入与建模数据。";
+    aircraftMissionReliabilityState.viewingHistoryId = "";
+    return;
+  }
   if (action === "export") {
     exportAircraftMissionReliabilityDetails(aircraftMissionReliabilityState.result);
     return;
@@ -17445,9 +17452,7 @@ function renderAircraftMissionReliabilityAnalysis() {
   const projectJson = aircraftMissionReliabilityContextProjectJson();
   const options = normalizedAircraftMissionReliabilityOptions(projectJson);
   const missions = ensureAircraftMissionReliabilitySelection(options);
-  const result = aircraftMissionReliabilityState.viewingHistoryId
-    ? aircraftMissionReliabilityState.result
-    : calculateAircraftMissionReliability(projectJson);
+  const result = aircraftMissionReliabilityState.result;
   ensureAircraftMissionReliabilityHistoryLoaded();
   return `
     <div class="lite-mesa-workbench aircraft-mission-reliability-page">
@@ -17469,6 +17474,10 @@ function renderAircraftMissionReliabilityAnalysis() {
             ${missions.length ? missions.map((item) => `<option value="${htmlEscape(item.id)}"${item.id === aircraftMissionReliabilityState.missionProfileId ? " selected" : ""}>${htmlEscape(item.name)}</option>`).join("") : `<option value="">无可用任务剖面</option>`}
           </select></label>
           <label class="readonly-field"><span>任务时长（小时）</span><input data-aircraft-reliability-field="durationHours" aria-label="任务时长" type="number" min="0.000001" step="0.1" value="${htmlEscape(aircraftMissionReliabilityState.durationHours)}"></label>
+        </div>
+        <div class="lite-mesa-analysis-action-line">
+          <button type="button" class="btn-primary" data-aircraft-reliability-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(aircraftMissionReliabilityState.status)}</p>
         </div>
       </section>
       ${renderAircraftMissionReliabilityResult(result)}
@@ -17536,7 +17545,11 @@ function renderLiteMesaAnalysisPage(page) {
         : "等待运行";
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page">
-      ${definition.analysisType === "mission_reliability" ? "" : `
+      ${definition.analysisType === "mission_reliability" ? `
+        <section class="toolbar-row lite-mesa-analysis-context-bar">
+          ${renderExperimentPlanContextDropdown(page)}
+        </section>
+      ` : `
         <section class="lite-mesa-hero">
           <div>
             <h3>${htmlEscape(definition.title)}</h3>
@@ -17549,7 +17562,6 @@ function renderLiteMesaAnalysisPage(page) {
       <section class="lite-mesa-settings lite-mesa-analysis-settings">
         <div class="section-head">
           <h3>分析设定</h3>
-          <span>样本量 / 随机种子只读</span>
         </div>
         ${renderLiteMesaAnalysisSettings(definition, settings, result)}
         <div class="lite-mesa-analysis-action-line">
@@ -17570,13 +17582,22 @@ function renderLiteMesaAnalysisPage(page) {
 }
 
 function renderSpareShortfallAnalysisPage(page, definition, result) {
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
+  const statusText = liteMesaAnalysisStatusText(definition, result);
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page spare-shortfall-analysis-page">
-      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
-        <div class="toolbar-row analysis-result-loader">
-          ${renderExperimentPlanContextDropdown(page)}
-          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">加载运行结果</button>
+      <section class="toolbar-row lite-mesa-analysis-context-bar">
+        ${renderExperimentPlanContextDropdown(page)}
+      </section>
+      <section class="lite-mesa-settings lite-mesa-analysis-settings">
+        <div class="section-head"><h3>分析设定</h3></div>
+        ${renderLiteMesaAnalysisSettings(definition, settings, result)}
+        <div class="lite-mesa-analysis-action-line">
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(statusText)}</p>
         </div>
+      </section>
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
         <div class="section-head">
           <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
@@ -17589,13 +17610,22 @@ function renderSpareShortfallAnalysisPage(page, definition, result) {
 }
 
 function renderCarryListAnalysisPage(page, definition, result) {
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
+  const statusText = liteMesaAnalysisStatusText(definition, result);
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page carry-list-analysis-page">
-      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
-        <div class="toolbar-row carry-list-result-loader">
-          ${renderExperimentPlanContextDropdown(page)}
-          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">加载运行结果</button>
+      <section class="toolbar-row lite-mesa-analysis-context-bar">
+        ${renderExperimentPlanContextDropdown(page)}
+      </section>
+      <section class="lite-mesa-settings lite-mesa-analysis-settings">
+        <div class="section-head"><h3>分析设定</h3></div>
+        ${renderLiteMesaAnalysisSettings(definition, settings, result)}
+        <div class="lite-mesa-analysis-action-line">
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(statusText)}</p>
         </div>
+      </section>
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
         <div class="section-head">
           <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
@@ -17615,23 +17645,24 @@ function renderDowntimeFactorAnalysisPage(page, definition, settings, result) {
       ? result.message
       : result?.status === "running"
         ? "分析运行中"
-        : "等待加载运行结果";
+        : "等待运行";
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page downtime-factor-analysis-page">
+      <section class="lite-mesa-hero">
+        <div><h3>停机因素分析</h3></div>
+        <div class="lite-mesa-hero-actions">${renderExperimentPlanContextDropdown(page)}</div>
+      </section>
       <section class="lite-mesa-settings lite-mesa-analysis-settings downtime-factor-analysis-settings">
         <div class="section-head">
           <h3>分析设定</h3>
         </div>
         ${renderLiteMesaAnalysisSettings(definition, settings, result)}
+        <div class="lite-mesa-analysis-action-line">
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(statusText)}</p>
+        </div>
       </section>
       <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
-        <div class="toolbar-row downtime-factor-result-loader">
-          ${renderExperimentPlanContextDropdown(page)}
-          <div class="lite-mesa-analysis-action-line">
-            <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">加载运行结果</button>
-            <p class="inline-status">${htmlEscape(statusText)}</p>
-          </div>
-        </div>
         <div class="section-head">
           <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
@@ -17646,6 +17677,15 @@ function renderDowntimeFactorAnalysisPage(page, definition, settings, result) {
 function liteMesaAnalysisResultHeader(_definition, result) {
   if (result?.status === "session_complete") return "分析完成";
   if (result?.status === "running") return "运行中";
+  return "等待运行";
+}
+
+function liteMesaAnalysisStatusText(definition, result) {
+  if (result?.status === "session_complete") {
+    return `分析结果已生成：${result.sampleCount || 0} 个样本`;
+  }
+  if (result?.status === "blocked") return result.message;
+  if (result?.status === "running") return "分析运行中";
   return "等待运行";
 }
 
