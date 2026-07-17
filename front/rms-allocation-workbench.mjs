@@ -67,17 +67,19 @@ export function renderRmsAllocationWorkbench({
             <h4>装备结构树</h4>
             <span>当前项目 / ${htmlEscape(selectedAircraftModel)}</span>
           </div>
+          <div class="rms-tree-import-block">
+            <h4>导入安装数</h4>
+            <div class="equipment-import-row rms-installation-import-row">
+              <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
+              <label class="rms-file-button rms-import-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
+            </div>
+            ${importStatus ? `<p class="rms-import-status">${htmlEscape(importStatus)}</p>` : ""}
+          </div>
           ${renderEquipmentTree(project, visibleResult, selectedEquipmentNodeId, htmlEscape)}
         </aside>
         <section class="detail-panel equipment-system-table-panel rms-installation-panel">
           <div class="detail-card">
-            <div class="section-head"><h3>导入安装数</h3><span>${calculationStatusLabel(normalizedCalculationStatus)}</span></div>
-          <div class="equipment-import-row rms-installation-import-row">
-            <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
-            <label class="rms-file-button rms-import-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
-            <p class="rms-import-status">${htmlEscape(importStatus || "当前安装数为 RMS 分配工作台独立数据。")}</p>
-          </div>
-          ${renderInstallationTable(project, selectedEquipmentNodeId, htmlEscape)}
+            ${renderInstallationTable(project, selectedEquipmentNodeId, htmlEscape)}
           </div>
         </section>
       </section>` : ""}

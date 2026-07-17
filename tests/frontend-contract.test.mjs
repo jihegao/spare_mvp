@@ -4117,6 +4117,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(styleSource, /\.rms-equipment-tree/);
   assert.match(styleSource, /\.rms-method-panel/);
   assert.match(styleSource, /\.rms-installation-panel/);
+  assert.match(styleSource, /\.rms-tree-import-block/);
   assert.match(styleSource, /\.rms-import-button\s*\{[^}]*width: 96px;[^}]*height: 34px;/s);
   assert.match(styleSource, /\.rms-calculation-status/);
 
@@ -4129,6 +4130,23 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /导入 15/);
   assert.match(workbenchSource, /导入安装数/);
   assert.match(workbenchSource, /装备结构树/);
+  assert.doesNotMatch(appSource, /当前装备树来自项目装备系统建模，RMS 编辑值按飞机型号独立保存/);
+  assert.doesNotMatch(workbenchSource, /当前安装数为 RMS 分配工作台独立数据/);
+  const equipmentTreePanelSource = workbenchSource.slice(
+    workbenchSource.indexOf('<aside class="tree-container rms-equipment-tree">'),
+    workbenchSource.indexOf('<section class="detail-panel equipment-system-table-panel rms-installation-panel">')
+  );
+  assert.ok(equipmentTreePanelSource.indexOf("装备结构树") < equipmentTreePanelSource.indexOf("导入安装数"));
+  assert.ok(equipmentTreePanelSource.indexOf("导入安装数") < equipmentTreePanelSource.indexOf("下载模板"));
+  assert.ok(equipmentTreePanelSource.indexOf("下载模板") < equipmentTreePanelSource.indexOf("上传文件"));
+  assert.match(equipmentTreePanelSource, /data-rms-action="download-template"/);
+  assert.match(equipmentTreePanelSource, /data-rms-equipment-import-file/);
+  const installationPanelSource = workbenchSource.slice(
+    workbenchSource.indexOf('<section class="detail-panel equipment-system-table-panel rms-installation-panel">'),
+    workbenchSource.indexOf('<section class="rms-method-panel">')
+  );
+  assert.doesNotMatch(installationPanelSource, /导入安装数|下载模板|上传文件/);
+  assert.match(installationPanelSource, /renderInstallationTable/);
   assert.match(workbenchSource, /飞机型号与 RMS 输入/);
   assert.match(workbenchSource, /data-rms-aircraft-model/);
   assert.match(workbenchSource, /inputs\.missionReliability/);

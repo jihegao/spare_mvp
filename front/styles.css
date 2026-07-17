@@ -2415,6 +2415,25 @@ select[multiple].table-edit-select {
   font-size: 12px;
 }
 
+.rms-tree-import-block {
+  margin: 0 0 12px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rms-tree-import-block h4 {
+  margin: 0 0 10px;
+}
+
+.rms-tree-import-block .rms-installation-import-row {
+  margin: 0 0 8px;
+}
+
+.rms-tree-import-block .rms-import-status {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .rms-method-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(150px, 1fr));
