@@ -91,6 +91,7 @@ _MISSION_PROFILE_FIELDS = {
     "durationMinutes",
     "combatUnit",
     "compositeTasks",
+    "periodicProfileLists",
     "periodicTasks",
 }
 _MISSION_PROFILE_TASK_ITEM_FIELDS = (
@@ -792,6 +793,58 @@ def _validate_clean_mission_profile(profile: dict[str, Any], target: str) -> Non
         if not isinstance(profile["periodicTasks"], list):
             raise ValueError(f"clean Project JSON failed {target} schema at missionProfile.periodicTasks: expected array")
         _validate_clean_periodic_tasks(profile["periodicTasks"], target)
+    if "periodicProfileLists" in profile:
+        _validate_clean_periodic_profile_lists(profile["periodicProfileLists"], target)
+
+
+def _validate_clean_periodic_profile_lists(value: Any, target: str) -> None:
+    path = "missionProfile.periodicProfileLists"
+    if not isinstance(value, dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+    extra = sorted(field for field in value if field not in {"week", "month", "year"})
+    if extra:
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+    for profile_type in ("week", "month", "year"):
+        profiles = value.get(profile_type)
+        if not isinstance(profiles, list):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.{profile_type}: expected array")
+        for index, profile in enumerate(profiles):
+            profile_path = f"{path}.{profile_type}.{index}"
+            if not isinstance(profile, dict):
+                raise ValueError(f"clean Project JSON failed {target} schema at {profile_path}: expected object")
+            allowed_fields = {"id", "name"}
+            if profile_type == "month":
+                allowed_fields.add("weekProfileIds")
+            elif profile_type == "year":
+                allowed_fields.add("monthProfileIds")
+            unexpected = sorted(field for field in profile if field not in allowed_fields)
+            if unexpected:
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at {profile_path}: unexpected field {unexpected[0]}"
+                )
+            _require_clean_non_empty_string(profile, "id", f"{profile_path}.id", target)
+            _require_clean_non_empty_string(profile, "name", f"{profile_path}.name", target)
+            if profile_type == "month":
+                refs = profile.get("weekProfileIds")
+                if not isinstance(refs, list) or not 4 <= len(refs) <= 5:
+                    raise ValueError(
+                        f"clean Project JSON failed {target} schema at {profile_path}.weekProfileIds: expected 4 to 5 items"
+                    )
+                ref_path = f"{profile_path}.weekProfileIds"
+            elif profile_type == "year":
+                refs = profile.get("monthProfileIds")
+                if not isinstance(refs, list) or len(refs) != 12:
+                    raise ValueError(
+                        f"clean Project JSON failed {target} schema at {profile_path}.monthProfileIds: expected 12 items"
+                    )
+                ref_path = f"{profile_path}.monthProfileIds"
+            else:
+                continue
+            for ref_index, ref in enumerate(refs):
+                if not isinstance(ref, str):
+                    raise ValueError(
+                        f"clean Project JSON failed {target} schema at {ref_path}.{ref_index}: expected string"
+                    )
 
 
 def _validate_clean_composite_tasks(values: list[Any], target: str) -> None:

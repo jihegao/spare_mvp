@@ -97,7 +97,57 @@
         "durationMinutes": { "type": "integer", "minimum": 1 },
         "combatUnit": { "$ref": "#/$defs/combatUnit" },
         "compositeTasks": { "type": "array", "items": { "$ref": "#/$defs/compositeTask" } },
+        "periodicProfileLists": { "$ref": "#/$defs/periodicProfileLists" },
         "periodicTasks": { "type": "array", "items": { "$ref": "#/$defs/periodicTask" } }
+      }
+    },
+    "periodicProfileLists": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["week", "month", "year"],
+      "properties": {
+        "week": { "type": "array", "items": { "$ref": "#/$defs/periodicWeekProfile" } },
+        "month": { "type": "array", "items": { "$ref": "#/$defs/periodicMonthProfile" } },
+        "year": { "type": "array", "items": { "$ref": "#/$defs/periodicYearProfile" } }
+      }
+    },
+    "periodicWeekProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "periodicMonthProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "weekProfileIds"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "weekProfileIds": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 5,
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "periodicYearProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "monthProfileIds"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "monthProfileIds": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": { "type": "string" }
+        }
       }
     },
     "compositeTask": {

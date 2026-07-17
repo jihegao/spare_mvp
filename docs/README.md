@@ -30,6 +30,7 @@
 11. 轻量 Mesa 指标口径：`出动架次率 = 起飞总架次 / 飞机总数 / 仿真总天数`，展示为小数；`仿真总天数` 来自编译后的仿真窗口，周期任务有显式星期排程时按最后有任务日停止，没有显式任务日时才回退整周期/重复次数或 `durationHours`；`整周期任务可靠度 = 全部计划任务均已评估且成功的实验数 / 已执行实验总数`，未评估或失败的任一计划任务都会使该次实验判为整周期失败，周期支持天、周、月等由 Project 实际配置形成的任意长度；`战备完好率 = 每天 14:00 的可用飞机数量 / 总飞机数量`，多天结果取日采样均值；`平均备件延误时间(h) = 总调运延误时间(分钟) / 60 / 备件调运次数`，用于备件短板页替代原先会被误读为缺件次数的分钟累计值。备件短板明细按“机型 + 备件类别”聚合，需求/满足/缺件数量来自对应事件数量，并允许直接从需求数量或满足率列头选择升序、降序；携行清单可从建议携行数量列头排序，有寿件说明放在列头悬浮提示中。
 12. 阶段 6P 仿真分析验收数据包保留在 `tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`，用于验证平台标准建模导入案例可以通过 validation 并编译为 `aircraft_support_v1` Scenario；不再要求 6P canonical 生成正式分析产物。
 13. 任务字段按单一归属保存：`basicMissions[].minRequiredSorties` 是最小装备数量唯一来源，复合任务项只读继承；`compositeTasks[].priority` 是任务优先级唯一来源。基本任务与复合任务项中的旧 `priority`、以及 task item 的旧 `minRequiredSystems` 都只在迁移时读取后删除。修改该边界时必须同步更新 contract、后台 Project 迁移、canonical/M9.6/clean Project 导出 JSON，并运行两条 fixture drift check；已发布 import 和历史 run/snapshot 不得原地覆盖，应发布新版本后创建新 Project。
+14. 周期性任务的月、年剖面组合保存在 `missionProfile.periodicProfileLists`。月剖面的 4 个固定周坑位和可选第 5 周、年剖面的 12 个月均允许以空字符串表示“未配置”，新建时默认全空；保存、重新打开、删除被引用剖面和汇总时不得静默回退为首个周/月剖面。月汇总只统计非空周引用，年汇总只统计非空月引用及其非空周引用；仿真编译仍由 `periodicTasks[]` 周级计划驱动并忽略这些空槽。
 
 ## 文档地图
 
