@@ -846,11 +846,11 @@ test("spare shortfall page restores context and settings and sorts product rows 
     appSource.indexOf('if (definition.analysisType === "carry_list")', appSource.indexOf("function renderLiteMesaAnalysisSessionBody"))
   );
 
-  assert.match(pageSource, /lite-mesa-analysis-context-bar/);
+  assert.match(pageSource, /lite-mesa-hero/);
+  assert.match(pageSource, /<h3>\$\{htmlEscape\(definition\.title\)\}<\/h3>/);
   assert.match(pageSource, /renderExperimentPlanContextDropdown\(page\)/);
   assert.match(pageSource, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
   assert.match(pageSource, /lite-mesa-analysis-settings|renderLiteMesaAnalysisSettings/);
-  assert.doesNotMatch(pageSource, /lite-mesa-hero/);
   assert.match(sessionSource, /data-spare-aircraft-filter/);
   assert.match(sessionSource, /renderSpareShortfallSortHeading\("需求数量", "demand"\)/);
   assert.match(sessionSource, /renderSpareShortfallSortHeading\("满足率", "fillRate"\)/);

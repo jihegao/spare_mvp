@@ -2776,18 +2776,6 @@ select[multiple].table-edit-select {
   padding: 12px 14px;
 }
 
-.lite-mesa-analysis-context-bar {
-  justify-content: flex-end;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.lite-mesa-analysis-context-bar .experiment-plan-context-select {
-  min-width: min(360px, 100%);
-}
-
 .lite-mesa-analysis-setting-line {
   display: flex;
   align-items: center;

@@ -17545,20 +17545,14 @@ function renderLiteMesaAnalysisPage(page) {
         : "等待运行";
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page">
-      ${definition.analysisType === "mission_reliability" ? `
-        <section class="toolbar-row lite-mesa-analysis-context-bar">
+      <section class="lite-mesa-hero">
+        <div>
+          <h3>${htmlEscape(definition.title)}</h3>
+        </div>
+        <div class="lite-mesa-hero-actions">
           ${renderExperimentPlanContextDropdown(page)}
-        </section>
-      ` : `
-        <section class="lite-mesa-hero">
-          <div>
-            <h3>${htmlEscape(definition.title)}</h3>
-          </div>
-          <div class="lite-mesa-hero-actions">
-            ${renderExperimentPlanContextDropdown(page)}
-          </div>
-        </section>
-      `}
+        </div>
+      </section>
       <section class="lite-mesa-settings lite-mesa-analysis-settings">
         <div class="section-head">
           <h3>分析设定</h3>
@@ -17586,8 +17580,9 @@ function renderSpareShortfallAnalysisPage(page, definition, result) {
   const statusText = liteMesaAnalysisStatusText(definition, result);
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page spare-shortfall-analysis-page">
-      <section class="toolbar-row lite-mesa-analysis-context-bar">
-        ${renderExperimentPlanContextDropdown(page)}
+      <section class="lite-mesa-hero">
+        <div><h3>${htmlEscape(definition.title)}</h3></div>
+        <div class="lite-mesa-hero-actions">${renderExperimentPlanContextDropdown(page)}</div>
       </section>
       <section class="lite-mesa-settings lite-mesa-analysis-settings">
         <div class="section-head"><h3>分析设定</h3></div>
@@ -17614,8 +17609,9 @@ function renderCarryListAnalysisPage(page, definition, result) {
   const statusText = liteMesaAnalysisStatusText(definition, result);
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page carry-list-analysis-page">
-      <section class="toolbar-row lite-mesa-analysis-context-bar">
-        ${renderExperimentPlanContextDropdown(page)}
+      <section class="lite-mesa-hero">
+        <div><h3>${htmlEscape(definition.title)}</h3></div>
+        <div class="lite-mesa-hero-actions">${renderExperimentPlanContextDropdown(page)}</div>
       </section>
       <section class="lite-mesa-settings lite-mesa-analysis-settings">
         <div class="section-head"><h3>分析设定</h3></div>

@@ -1052,15 +1052,10 @@ test("configurable result analysis pages omit Mesa from visible copy", async () 
       for (const hiddenLabel of ["项目", "当前项目", "分析对象", "结果内容"]) {
         assert.doesNotMatch(settingsPanel, new RegExp(`<span>${hiddenLabel}<\\/span>`), `${featureId} should hide ${hiddenLabel} from its analysis settings`);
       }
-      if (featureId === "mission-reliability-task-reliability") {
-        assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
-        assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan|运行上下文/);
-      } else {
-        const contextPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-        assert.match(contextPanel, /运行上下文/);
-        assert.match(contextPanel, /data-current-experiment-plan/);
-        assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
-      }
+      const contextPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+      assert.match(contextPanel, /运行上下文/);
+      assert.match(contextPanel, /data-current-experiment-plan/);
+      assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
       assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
       for (const removedCopy of [
         "前端建模 + Mesa 分析",
@@ -1186,7 +1181,7 @@ test("spare shortfall analysis restores context and settings while preserving re
   });
 
   try {
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">|<h3>备件短板分析<\/h3>/);
+    assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">[\s\S]*<h3>备件短板分析<\/h3>[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">/);
     assert.match(runtime.appNode.innerHTML, /<h3>分析设定<\/h3>[\s\S]*运行状态[\s\S]*样本量[\s\S]*随机种子/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /样本量 \/ 随机种子只读/);
@@ -1383,7 +1378,7 @@ test("carry list analysis restores context and complete settings while preservin
   });
 
   try {
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">|<h3>飞机转场携行清单分析<\/h3>/);
+    assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">[\s\S]*<h3>飞机转场携行清单分析<\/h3>[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">/);
     assert.match(runtime.appNode.innerHTML, /运行状态[\s\S]*样本量[\s\S]*随机种子[\s\S]*优化方向[\s\S]*备件满足率下限/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /样本量 \/ 随机种子只读/);
@@ -1404,17 +1399,16 @@ test("carry list analysis restores context and complete settings while preservin
   }
 });
 
-test("task reliability analysis restores its project context while keeping the title frame removed", async () => {
+test("task reliability analysis restores its title and project context", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson()
   });
 
   try {
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<h3>任务可靠度评估<\/h3>/);
+    assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">[\s\S]*<h3>任务可靠度评估<\/h3>[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan|运行上下文|当前项目：Runtime 项目/);
-    assert.match(runtime.appNode.innerHTML, /lite-mesa-analysis-context-bar[\s\S]*lite-mesa-settings lite-mesa-analysis-settings/);
+    assert.match(runtime.appNode.innerHTML, /lite-mesa-hero[\s\S]*lite-mesa-settings lite-mesa-analysis-settings/);
     assert.match(runtime.appNode.innerHTML, /<h3>分析设定<\/h3>/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /样本量 \/ 随机种子只读/);
     assert.match(runtime.appNode.innerHTML, /<h3>分析结果明细<\/h3>/);
@@ -3642,7 +3636,7 @@ test("run context defaults to current Project and excludes unsaved or invalid ex
 
     await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
 
-    const contextBar = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-context-bar");
+    const contextBar = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     assert.match(contextBar, /运行上下文/);
     assert.match(contextBar, /当前项目：运行来源项目/);
     assert.match(contextBar, /0 个已保存方案/);
@@ -3702,7 +3696,7 @@ test("experiment plan list selection editing and saving do not change the run co
     await runtime.click("[data-save-plan]");
     await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
 
-    const contextBar = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-context-bar");
+    const contextBar = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     assert.match(contextBar, /当前项目：Runtime 项目/);
     assert.doesNotMatch(contextBar, /<option value="plan-management" selected/);
 
@@ -3908,17 +3902,12 @@ test("mission reliability and downtime analysis keep current Project as default 
       await runtime.flush();
 
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-      if (featureId === "mission-reliability-task-reliability") {
-        assert.doesNotMatch(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
-        assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan|运行上下文|当前项目：Runtime 项目/);
-      } else {
-        const contextPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-        assert.match(contextPanel, /运行上下文/);
-        assert.match(contextPanel, /当前项目：Runtime 项目/);
-        assert.match(contextPanel, /data-current-experiment-plan/);
-        assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
-        assert.match(settingsPanel, /运行分析/);
-      }
+      const contextPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+      assert.match(contextPanel, /运行上下文/);
+      assert.match(contextPanel, /当前项目：Runtime 项目/);
+      assert.match(contextPanel, /data-current-experiment-plan/);
+      assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">/);
+      assert.match(settingsPanel, /运行分析/);
       assert.doesNotMatch(settingsPanel, /<span>当前项目<\/span>/);
       assert.match(settingsPanel, new RegExp(`样本量[\\s\\S]*<strong>${defaultSamples}<\\/strong>`));
       assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
