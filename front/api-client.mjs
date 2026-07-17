@@ -7,6 +7,10 @@ import { normalizeProjectProducts } from "./product-catalog.mjs";
 const DEFAULT_API_BASE = "/api";
 const DEFAULT_TIMEOUT_MS = 10000;
 const RUN_SUBMIT_TIMEOUT_MS = 180000;
+const LITE_MESA_SAMPLE_TIMEOUT_SECONDS = 60;
+const LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS = 180;
+const LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS = 900;
+const LITE_MESA_RESPONSE_GRACE_MS = 30000;
 const DEFAULT_FORMAL_MODEL_FAMILY = "aircraft_support_v1";
 export const MAX_MONTE_CARLO_PARALLEL_CORES = 32;
 
@@ -17,6 +21,40 @@ export function normalizeMonteCarloParallelCores(value, { fallback = 1 } = {}) {
     throw new Error(`并行核心数必须是 1-${MAX_MONTE_CARLO_PARALLEL_CORES} 之间的正整数`);
   }
   return number;
+}
+
+export function liteMesaAnalysisRequestTimeoutMs(settings = {}) {
+  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(settings.samples) || 4)));
+  const parallelCores = normalizeMonteCarloParallelCores(settings.parallelCores, { fallback: 1 });
+  const workerCount = Math.min(samples, parallelCores);
+  const executionWaves = Math.ceil(samples / workerCount);
+  const sampleTimeoutValue = settings.sampleTimeoutSeconds;
+  const parsedSampleTimeout = sampleTimeoutValue === null || sampleTimeoutValue === "" || typeof sampleTimeoutValue === "boolean"
+    ? Number.NaN
+    : Math.trunc(Number(sampleTimeoutValue));
+  const sampleTimeoutSeconds = Math.max(
+    1,
+    Math.min(300, Number.isFinite(parsedSampleTimeout) ? parsedSampleTimeout : LITE_MESA_SAMPLE_TIMEOUT_SECONDS)
+  );
+  const defaultSessionTimeoutSeconds = Math.min(
+    LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS,
+    Math.max(
+      LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS,
+      executionWaves * sampleTimeoutSeconds + sampleTimeoutSeconds
+    )
+  );
+  const sessionTimeoutValue = settings.sessionTimeoutSeconds;
+  const parsedSessionTimeout = sessionTimeoutValue === null || sessionTimeoutValue === "" || typeof sessionTimeoutValue === "boolean"
+    ? Number.NaN
+    : Math.trunc(Number(sessionTimeoutValue));
+  const sessionTimeoutSeconds = Math.max(
+    1,
+    Math.min(
+      LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS,
+      Number.isFinite(parsedSessionTimeout) ? parsedSessionTimeout : defaultSessionTimeoutSeconds
+    )
+  );
+  return sessionTimeoutSeconds * 1000 + LITE_MESA_RESPONSE_GRACE_MS;
 }
 
 export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, getAuthToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
@@ -152,7 +190,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
           settings,
           model_family: modelFamily
         },
-        timeoutMs: RUN_SUBMIT_TIMEOUT_MS
+        timeoutMs: liteMesaAnalysisRequestTimeoutMs(settings)
       });
     },
     startSimulationRun(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {

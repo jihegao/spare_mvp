@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any
 import unittest
@@ -23,6 +24,7 @@ from src.spare_mvp_backend.api import (
     _lite_mesa_mission_reliability_result,
     _lite_mesa_spare_shortfall_result,
     _normalize_lite_mesa_analysis_settings,
+    _run_lite_mesa_analysis_sample_worker,
 )
 from src.spare_mvp_backend.http_server import create_backend_server
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
@@ -234,7 +236,36 @@ class BackendApiContractTest(unittest.TestCase):
         self.tempdir.cleanup()
 
     def test_lite_mesa_analysis_defaults_to_four_samples(self) -> None:
-        self.assertEqual(_normalize_lite_mesa_analysis_settings({})["samples"], 4)
+        settings = _normalize_lite_mesa_analysis_settings({})
+        self.assertEqual(settings["samples"], 4)
+        self.assertEqual(settings["parallelCores"], 1)
+        self.assertEqual(settings["sampleTimeoutSeconds"], 60)
+        self.assertEqual(settings["sessionTimeoutSeconds"], 300)
+
+    def test_lite_mesa_session_budget_scales_with_execution_waves_and_stays_bounded(self) -> None:
+        parallel = _normalize_lite_mesa_analysis_settings({"samples": 24, "parallelCores": 4})
+        serial = _normalize_lite_mesa_analysis_settings({"samples": 24, "parallelCores": 1})
+        very_large = _normalize_lite_mesa_analysis_settings({"samples": 1000, "parallelCores": 1})
+
+        self.assertEqual(parallel["sessionTimeoutSeconds"], 420)
+        self.assertEqual(serial["sessionTimeoutSeconds"], 900)
+        self.assertEqual(very_large["sessionTimeoutSeconds"], 900)
+
+    def test_lite_mesa_sample_worker_reports_hard_timeout_diagnostics(self) -> None:
+        def slow_sample(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            time.sleep(0.05)
+            return {"metrics": {}}
+
+        with mock.patch(
+            "src.spare_mvp_backend.api._run_aircraft_support_v1_analysis_sample",
+            side_effect=slow_sample,
+        ):
+            outcome = _run_lite_mesa_analysis_sample_worker(({}, 20260718, 3, False, 0.01))
+
+        self.assertEqual(outcome["status"], "failed")
+        self.assertEqual(outcome["failure"]["error"]["code"], "sample_timeout")
+        self.assertEqual(outcome["failure"]["error"]["details"]["phase"], "model_execution")
+        self.assertEqual(outcome["failure"]["error"]["details"]["timeout_seconds"], 0.01)
 
     def test_periodic_profile_empty_slots_survive_project_round_trip_and_compile(self) -> None:
         project = small_aircraft_support_project("project-periodic-profile-empty-slots")
@@ -2477,7 +2508,18 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["analysis_type"], "mission_reliability")
         self.assertEqual(payload["project_id"], "project-lite-mesa-contract")
         self.assertEqual(payload["sample_count"], 2)
+        self.assertEqual(payload["requested_sample_count"], 2)
+        self.assertEqual(payload["completed_sample_count"], 2)
+        self.assertEqual(payload["failed_sample_count"], 0)
         self.assertEqual(payload["seed_list"], [20260705, 20260706])
+        self.assertEqual(payload["sample_timeout_seconds"], 60)
+        self.assertEqual(payload["session_timeout_seconds"], 180)
+        self.assertEqual([item["status"] for item in payload["sample_diagnostics"]], ["ok", "ok"])
+        self.assertGreaterEqual(payload["timings"]["compile_seconds"], 0)
+        self.assertGreater(payload["timings"]["sample_execution_seconds"], 0)
+        self.assertGreaterEqual(payload["timings"]["aggregation_seconds"], 0)
+        self.assertGreaterEqual(payload["timings"]["projection_seconds"], 0)
+        self.assertGreater(payload["timings"]["total_seconds"], 0)
         self.assertTrue(payload["rows"])
         self.assertEqual(payload["rows"], payload["wave_rows"])
         self.assertEqual(payload["wave_rows"][0]["dayIndex"], 1)
