@@ -1003,7 +1003,9 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.doesNotMatch(supportOrgSource, /保障层级/);
   assert.doesNotMatch(supportOrgSource, /保障策略/);
   assert.doesNotMatch(supportOrgSource, /横向保障组织/);
-  assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(activeResourceType, selectedSupportOrgNode\)/);
+  assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(/);
+  assert.match(supportOrgSource, /spareSelection \? \{ orgNodes: spareSelection\.resourceOrgNodes \} : undefined/);
+  assert.match(supportOrgSource, /function resolveSpareSupportOrganizationSelection/);
   assert.doesNotMatch(supportOrgSource, /if \(!orgTree\.length\)/);
   assert.match(supportOrgSource, /function buildSupportResourceRows/);
   assert.match(supportOrgSource, /scope: orgNode\.name/);
@@ -1131,7 +1133,8 @@ test("support organization fourth-level pages render matching resource panels", 
     appSource.indexOf("function renderOrgTreeNode")
   );
   assert.match(supportOrgSource, /const activeResourceType =/);
-  assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(activeResourceType, selectedSupportOrgNode\)/);
+  assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(/);
+  assert.match(supportOrgSource, /spareSelection \? \{ orgNodes: spareSelection\.resourceOrgNodes \} : undefined/);
   assert.match(supportOrgSource, /page\.name\.includes\("人员"\) \? "保障人员"/);
   assert.match(supportOrgSource, /page\.name\.includes\("设备"\) \? "保障设备"/);
   assert.match(supportOrgSource, /page\.name\.includes\("备件"\) \? "备件"/);

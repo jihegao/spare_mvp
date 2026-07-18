@@ -1176,6 +1176,7 @@ function bindEvents() {
     const supportOrgNode = event.target.closest("[data-select-support-org-node]");
     if (supportOrgNode && !clickedTreeToggleIcon) {
       selectedSupportOrgNodeId = supportOrgNode.dataset.selectSupportOrgNode;
+      selectedSupportResourceKeys = new Set();
       render();
       return;
     }
@@ -2479,12 +2480,12 @@ function bindEvents() {
 
     const supportResourceField = event.target.closest("[data-support-resource-field]");
     if (supportResourceField) {
-      updateSupportResourceOverride(
+      const updated = updateSupportResourceOverride(
         supportResourceField.dataset.supportResourceKey,
         supportResourceField.dataset.supportResourceField,
         parseInput(supportResourceField)
       );
-      markProjectDraftChanged();
+      if (updated) markProjectDraftChanged();
       render();
       return;
     }
@@ -7246,12 +7247,28 @@ function renderSupportOrganizationWorkbench(page) {
   const locked = currentModelingPageLocked(page);
   const lockedAttr = modelingLockDisabledAttr(locked);
   const orgTree = supportOrganizationTree();
-  const selectedSupportOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
-  const selectedIsLeaf = !(selectedSupportOrgNode?.children || []).length;
-  const visibleResourceRows = buildSupportResourceRows(activeResourceType, selectedSupportOrgNode).filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const spareSelection = activeResourceType === "备件"
+    ? resolveSpareSupportOrganizationSelection(orgTree, locked)
+    : null;
+  const selectedSupportOrgNode = spareSelection?.selectedNode
+    || findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree)
+    || orgTree[0];
+  const selectedIsLeaf = spareSelection
+    ? spareSelection.selectedIsEditableLeaf
+    : !(selectedSupportOrgNode?.children || []).length;
+  const visibleResourceRows = buildSupportResourceRows(
+    activeResourceType,
+    selectedSupportOrgNode,
+    spareSelection ? { orgNodes: spareSelection.resourceOrgNodes } : undefined
+  ).filter((row) => !supportResourceDeletedKeySet().has(row.key));
   const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
   const resourceColumns = supportResourceDataColumns(activeResourceType);
+  const spareSummaryReadOnly = activeResourceType === "备件" && !selectedIsLeaf;
+  const resourceControlsDisabled = locked || spareSummaryReadOnly;
+  const resourceControlsDisabledAttr = resourceControlsDisabled
+    ? ` disabled title="${htmlEscape(locked ? MODELING_PAGE_LOCK_MESSAGE : "请选择具体叶子组织节点后编辑备件资源。")}"`
+    : "";
   return `
     <div class="ship-front-workbench">
       ${modelingLockNotice(page)}
@@ -7279,17 +7296,18 @@ function renderSupportOrganizationWorkbench(page) {
             ` : `
               <div class="toolbar-row">
                 <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}" ${selectedIsLeaf && !locked ? "" : "disabled"}>新增</button>
-                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"${lockedAttr}></label>
-                <button type="button" class="btn-danger" data-support-resource-batch-delete${lockedAttr}>批量删除</button>
+                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></label>
+                <button type="button" class="btn-danger" data-support-resource-batch-delete${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}>批量删除</button>
                 <input value="" placeholder="请输入关键词进行搜索"${lockedAttr}>
-                <span class="badge">${locked ? "当前颗粒度只读" : selectedIsLeaf ? "叶子节点可编辑" : "根节点汇总显示"}</span>
+                <span class="badge">${locked ? "当前颗粒度只读" : selectedIsLeaf ? "叶子节点可编辑" : "汇总视图只读"}</span>
               </div>
+              ${spareSelection ? renderSpareSupportOrganizationGuidance(spareSelection, locked) : ""}
               <p class="rms-import-status">${htmlEscape(supportResourceImportStatus)}</p>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${lockedAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
+                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
                   <tbody>${visibleResourceRows.map((row, index) => `
-                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${lockedAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, !selectedIsLeaf || locked)}</td>`).join("")}</tr>
+                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, !selectedIsLeaf || locked)}</td>`).join("")}</tr>
                   `).join("") || `<tr><td colspan="${resourceColumns.length + 3}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
@@ -7299,6 +7317,42 @@ function renderSupportOrganizationWorkbench(page) {
       </div>
     </div>
   `;
+}
+
+function resolveSpareSupportOrganizationSelection(orgTree, locked) {
+  const root = orgTree[0] || null;
+  const editableLeafNodes = flattenSupportOrgTreeNodes(orgTree)
+    .filter((node) => node !== root && !(node.children || []).length);
+  let selectedNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree);
+  if (!selectedNode) {
+    selectedNode = !locked && editableLeafNodes.length === 1 ? editableLeafNodes[0] : root;
+    selectedSupportOrgNodeId = selectedNode?.id || "";
+  }
+  const selectedIsEditableLeaf = editableLeafNodes.some((node) => node === selectedNode);
+  const selectedDescendants = selectedNode
+    ? flattenSupportOrgTreeNodes([selectedNode]).filter((node) => editableLeafNodes.includes(node))
+    : [];
+  return {
+    root,
+    editableLeafNodes,
+    selectedNode,
+    selectedIsEditableLeaf,
+    resourceOrgNodes: selectedIsEditableLeaf ? [selectedNode] : selectedDescendants
+  };
+}
+
+function renderSpareSupportOrganizationGuidance(selection, locked) {
+  let message = "";
+  if (locked) {
+    message = "当前建模颗粒度为只读，备件数量不可编辑。";
+  } else if (selection.selectedIsEditableLeaf) {
+    message = `正在编辑叶子组织节点“${selection.selectedNode?.name || "未命名节点"}”的备件数量。`;
+  } else if (!selection.editableLeafNodes.length) {
+    message = "当前保障组织没有可编辑叶子节点；请先在保障组织结构建模中创建具体叶节点。";
+  } else {
+    message = "请选择具体叶子组织节点后编辑备件数量；当前为汇总视图，所有资源字段只读。";
+  }
+  return `<p class="inline-status support-spare-edit-guidance" role="status">${htmlEscape(message)}</p>`;
 }
 
 function renderOrgTreeNode(node, depth = 0) {
@@ -7315,10 +7369,12 @@ function orgTreeNode(node, depth = 0) {
   };
 }
 
-function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
+function buildSupportResourceRows(activeResourceType, selectedOrgNode, options = {}) {
   const orgTree = supportOrganizationTree();
   const leafNodes = flattenSupportOrgTreeNodes(selectedOrgNode ? [selectedOrgNode] : orgTree).filter((node) => !(node.children || []).length);
-  const orgNodes = (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
+  const orgNodes = Array.isArray(options.orgNodes)
+    ? options.orgNodes
+    : (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
   if (activeResourceType === "备件") {
     syncSupportSpareResourcesFromHardwareTree(orgNodes);
   }
@@ -7415,13 +7471,21 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
       resource.equipment || resource.equipmentId
     );
     if (!existingSpareByKey.has(key)) existingSpareByKey.set(key, resource);
+    const fallbackKey = supportSpareResourceIdentityKey(
+      resource.supportNodeName,
+      resource.name,
+      resource.model,
+      ""
+    );
+    if (!existingSpareByKey.has(fallbackKey)) existingSpareByKey.set(fallbackKey, resource);
   }
 
   const nextTargetSpares = targetOrgNodes.flatMap((orgNode, orgIndex) => {
     const nodeName = String(orgNode.name || orgNode.id || "保障节点").trim();
     return hardwareSpares.map((spare, spareIndex) => {
       const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.aircraft);
-      const existing = existingSpareByKey.get(key);
+      const fallbackKey = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, "");
+      const existing = existingSpareByKey.get(key) || existingSpareByKey.get(fallbackKey);
       return {
         id: String(existing?.id || `support-resource-${orgIndex + 1}-spare-${spareIndex + 1}`),
         supportNodeName: nodeName,
@@ -7626,10 +7690,11 @@ function supportOrganizationSelect(key, selectedNodeId, disabled = false) {
 }
 
 function updateSupportResourceOverride(key, fieldName, value) {
-  if (!key || !fieldName) return;
+  if (!key || !fieldName) return false;
   if (!Array.isArray(scenario.supportResources)) scenario.supportResources = [];
   const resource = scenario.supportResources.find((item) => item && item.id === key);
-  if (!resource) return;
+  if (!resource) return false;
+  if (isSpareSupportResource(resource) && !selectedSpareResourceIsEditable(resource)) return false;
   const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : value;
   if (fieldName === "organizationNodeId") {
     const orgNode = findSupportOrgTreeNode(nextValue);
@@ -7644,6 +7709,21 @@ function updateSupportResourceOverride(key, fieldName, value) {
     if (autofill.name) resource.name = autofill.name;
   }
   updatePreviewResultsThroughApiClient();
+  return true;
+}
+
+function selectedSpareResourceIsEditable(resource) {
+  const page = getFeaturePageById(selectedFeatureId);
+  if (!page?.name?.includes("备件") || currentModelingPageLocked(page)) return false;
+  const orgTree = supportOrganizationTree();
+  const root = orgTree[0] || null;
+  const selectedNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree);
+  return Boolean(
+    selectedNode
+    && selectedNode !== root
+    && !(selectedNode.children || []).length
+    && supportResourceBelongsToOrg(resource, selectedNode)
+  );
 }
 
 function supportSpareAutofillByModel(model) {
@@ -11537,6 +11617,7 @@ async function handleEnterWorkbench(projectId) {
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
+  resetSupportOrganizationWorkbenchSelection();
   aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
   liteMesaMonteCarloStatus = "项目已切换，请重新运行 Mesa 分析。";
   location.hash = `feature=${selectedFeatureId}`;
@@ -12091,6 +12172,7 @@ async function hydrateCurrentProjectDraftFromApi() {
     const projectJson = normalizeProjectJsonForClientDraft(rawProjectJson);
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(projectJson);
+    resetSupportOrganizationWorkbenchSelection();
     const sourceImportId = projectJson.missionProfile?.sourceImportId || "";
     if (sourceImportId && currentProject) {
       currentProject = {
@@ -12112,6 +12194,11 @@ async function hydrateCurrentProjectDraftFromApi() {
   } catch (err) {
     projectDraftHydrateStatus = `未读取到 Project draft：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
+}
+
+function resetSupportOrganizationWorkbenchSelection() {
+  selectedSupportOrgNodeId = "";
+  selectedSupportResourceKeys = new Set();
 }
 
 async function saveCurrentProjectDraftThroughApi() {
