@@ -12,6 +12,7 @@ const LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS = 180;
 const LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS = 900;
 const LITE_MESA_RESPONSE_GRACE_MS = 30000;
 const DEFAULT_FORMAL_MODEL_FAMILY = "aircraft_support_v1";
+const SUPPORT_SPARE_TOMBSTONE_ID_PREFIX = "support-spare-tombstone:";
 export const MAX_MONTE_CARLO_PARALLEL_CORES = 32;
 
 export function normalizeMonteCarloParallelCores(value, { fallback = 1 } = {}) {
@@ -617,7 +618,7 @@ function normalizeSupportModelTables(projectJson) {
     ? organization.supportNodeNames
     : supportNodeNamesFromSupportNodes(projectJson.supportNodes);
   normalizeSupportResourcePersonnelModels(projectJson);
-  normalizeSupportResourceSpareRows(projectJson, supportNodeNames);
+  normalizeSupportResourceSpareRows(projectJson, supportNodeNames, organization.nameByRef);
   projectJson.supportNodes = supportNodeNames.map((name, index) => ({
     id: `support-node-${index + 1}`,
     name,
@@ -760,13 +761,22 @@ function isPersonnelSupportResource(resource) {
     && cleanText(resource.type).toLowerCase() === "personnel";
 }
 
-function normalizeSupportResourceSpareRows(projectJson, supportNodeNames) {
+function normalizeSupportResourceSpareRows(projectJson, supportNodeNames, organizationNameByRef = new Map()) {
   if (!Array.isArray(projectJson.supportResources)) return;
   const hardwareSpares = projectHardwareSpareRows(projectJson);
   if (!hardwareSpares.length || !Array.isArray(supportNodeNames) || !supportNodeNames.length) return;
+  const tombstones = projectJson.supportResources
+    .filter((resource) => isDeletedSupportSpareResource(resource))
+    .map((resource) => {
+      const organizationId = supportSpareTombstoneOrganizationId(resource);
+      return {
+        ...resource,
+        supportNodeName: cleanText(organizationNameByRef.get(organizationId) || resource.supportNodeName)
+      };
+    });
   const existingSpareByKey = new Map();
   for (const resource of projectJson.supportResources) {
-    if (!isSpareSupportResource(resource)) continue;
+    if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
     const key = supportSpareResourceIdentityKey(
       resource.supportNodeName,
       resource.name,
@@ -779,21 +789,23 @@ function normalizeSupportResourceSpareRows(projectJson, supportNodeNames) {
   }
   const nonSpareResources = projectJson.supportResources.filter((resource) => !isSpareSupportResource(resource));
   const nextSpareResources = supportNodeNames.flatMap((nodeName, nodeIndex) => {
-    return hardwareSpares.map((spare, spareIndex) => {
+    return hardwareSpares.flatMap((spare, spareIndex) => {
+      if (tombstones.some((resource) => supportSpareTombstoneMatches(resource, nodeName, spare))) return [];
       const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.equipment);
       const fallbackKey = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, "");
       const existing = existingSpareByKey.get(key) || existingSpareByKey.get(fallbackKey);
-      return {
+      return [{
         id: cleanText(existing?.id) || `support-resource-${nodeIndex + 1}-spare-${spareIndex + 1}`,
         supportNodeName: nodeName,
         type: "spare",
+        productId: cleanText(existing?.productId || spare.productId),
         name: spare.name,
         model: spare.model,
         quantity: nonNegativeInteger(existing?.quantity ?? 0)
-      };
+      }];
     });
   });
-  projectJson.supportResources = [...nonSpareResources, ...nextSpareResources];
+  projectJson.supportResources = [...nonSpareResources, ...tombstones, ...nextSpareResources];
 }
 
 function stripModelingImportValidationNonModelFields(projectJson) {
@@ -820,6 +832,7 @@ function projectHardwareSpareRows(projectJson) {
       return productType === "LRU";
     })
     .map((component, index) => ({
+      productId: cleanText(component.productId),
       name: cleanText(component.name || component.id) || `未命名LRU${index + 1}`,
       model: cleanText(component.model || component.partNo || component.id || component.name) || "LRU",
       equipment: cleanText(component.aircraftModel || component.equipment || component.equipmentType)
@@ -836,6 +849,26 @@ function isSpareSupportResource(resource) {
   const type = cleanText(resource?.type);
   return resource && typeof resource === "object" && !Array.isArray(resource)
     && (type.toLowerCase() === "spare" || type === "备件");
+}
+
+function isDeletedSupportSpareResource(resource) {
+  return isSpareSupportResource(resource)
+    && cleanText(resource.id).startsWith(SUPPORT_SPARE_TOMBSTONE_ID_PREFIX);
+}
+
+function supportSpareTombstoneOrganizationId(resource) {
+  const encoded = cleanText(resource?.id).slice(SUPPORT_SPARE_TOMBSTONE_ID_PREFIX.length).split(":", 1)[0];
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return "";
+  }
+}
+
+function supportSpareTombstoneMatches(resource, nodeName, spare) {
+  return isDeletedSupportSpareResource(resource)
+    && cleanText(resource.supportNodeName) === cleanText(nodeName)
+    && cleanText(resource.productId) === cleanText(spare.productId);
 }
 
 function supportSpareResourceIdentityKey(nodeName, name, model, equipment) {
