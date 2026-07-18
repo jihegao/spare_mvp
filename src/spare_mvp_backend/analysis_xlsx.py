@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import io
 import re
+import unicodedata
 from typing import Any
 
 from openpyxl import Workbook
@@ -26,6 +27,7 @@ MAX_CELL_TEXT = 32_000
 _UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _ILLEGAL_XML_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 _FORMULA_PREFIXES = ("=", "+", "-", "@")
+MAX_COLUMN_WIDTH = 40
 
 
 class AnalysisXlsxError(ValueError):
@@ -117,7 +119,13 @@ def _pair_rows(value: Any, label: str) -> list[list[Any]]:
     for row in value:
         if not isinstance(row, list) or len(row) != 2:
             raise AnalysisXlsxError(f"{label}格式无效。")
-        rows.append([_safe_cell_value(row[0]), _safe_cell_value(row[1])])
+        row_label = _safe_cell_value(row[0])
+        row_value = _safe_cell_value(row[1])
+        if row_label == "parallelCoresError":
+            if str(row_value).strip():
+                rows.append(["导出说明", f"并行核心数配置异常：{row_value}"])
+            continue
+        rows.append([row_label, row_value])
     return rows
 
 
@@ -175,10 +183,18 @@ def _write_table(sheet, columns: list[Any], rows: list[list[Any]], *, start_row:
         cell = sheet.cell(row=start_row, column=column_index, value=_safe_cell_value(value))
         cell.font = Font(bold=True)
         cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    sheet.row_dimensions[start_row].height = max(sheet.row_dimensions[start_row].height or 0, 30)
     for row_index, row in enumerate(rows, start=start_row + 1):
+        needs_extra_height = False
         for column_index, value in enumerate(row, start=1):
-            sheet.cell(row=row_index, column=column_index, value=_safe_cell_value(value))
+            cell = sheet.cell(row=row_index, column=column_index, value=_safe_cell_value(value))
+            visual_width = _text_display_width(cell.value)
+            should_wrap = "\n" in str(cell.value or "") or visual_width > MAX_COLUMN_WIDTH
+            cell.alignment = Alignment(vertical="top", wrap_text=should_wrap)
+            needs_extra_height = needs_extra_height or should_wrap
+        if needs_extra_height:
+            sheet.row_dimensions[row_index].height = 45
     sheet.freeze_panes = sheet.freeze_panes or f"A{start_row + 1}"
     _fit_columns(sheet)
     return start_row + len(rows) + 1
@@ -187,10 +203,24 @@ def _write_table(sheet, columns: list[Any], rows: list[list[Any]], *, start_row:
 def _fit_columns(sheet) -> None:
     for column_index in range(1, sheet.max_column + 1):
         width = max(
-            (len(str(sheet.cell(row=row_index, column=column_index).value or "")) for row_index in range(1, sheet.max_row + 1)),
+            (_text_display_width(sheet.cell(row=row_index, column=column_index).value) for row_index in range(1, sheet.max_row + 1)),
             default=8,
         )
-        sheet.column_dimensions[get_column_letter(column_index)].width = min(48, max(12, width + 2))
+        sheet.column_dimensions[get_column_letter(column_index)].width = min(MAX_COLUMN_WIDTH, max(12, width + 2))
+
+
+def _text_display_width(value: Any) -> int:
+    """Approximate Excel's visible width, counting full-width CJK glyphs twice."""
+    lines = str(value or "").expandtabs(4).splitlines() or [""]
+    return max(
+        sum(
+            0
+            if unicodedata.combining(character)
+            else 2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
+            for character in line
+        )
+        for line in lines
+    )
 
 
 def _safe_cell_value(value: Any) -> str | int | float:
