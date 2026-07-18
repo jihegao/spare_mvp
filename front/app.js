@@ -765,10 +765,14 @@ let visualizationStreamState = {
 };
 let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
 let visualSupportAirportId = "";
-let solaraVisualizationReloadNonce = 0;
 let solaraVisualizationProjectIdOverride = "";
 let solaraVisualizationProjectIdOverrideContextKey = "";
 let solaraVisualizationProjectIdOverrideParentProjectId = "";
+let solaraVisualizationProjectIdOverrideFingerprint = "";
+let solaraVisualizationProjectSyncInFlightKey = "";
+let solaraVisualizationProjectSyncError = "";
+let solaraVisualizationProjectSyncErrorKey = "";
+let solaraVisualizationProjectSyncRequestId = 0;
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -11425,20 +11429,20 @@ async function resolveSelectedExperimentPlanProjectJsonForRun() {
   return buildBackendProjectJson(hydratedProjectJson, currentProject);
 }
 
-async function saveSelectedProjectJsonForSolaraVisualization() {
-  const contextKey = selectedRunContextKey;
-  const parentProjectId = currentBackendProjectId();
+async function syncSelectedProjectJsonForSolaraVisualization({ contextKey, parentProjectId, fingerprint }) {
   const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
   const saved = await backendApi.saveProject(projectJson);
-  savedProject = saved || savedProject;
-  if (selectedRunContextKey === contextKey && currentBackendProjectId() === parentProjectId) {
-    solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || parentProjectId || "").trim();
-    solaraVisualizationProjectIdOverrideContextKey = contextKey;
-    solaraVisualizationProjectIdOverrideParentProjectId = parentProjectId;
+  if (!visualSimulationSyncRequestMatches({ contextKey, parentProjectId, fingerprint })) {
+    return { saved, applied: false };
   }
+  savedProject = saved || savedProject;
+  solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || parentProjectId || "").trim();
+  solaraVisualizationProjectIdOverrideContextKey = contextKey;
+  solaraVisualizationProjectIdOverrideParentProjectId = parentProjectId;
+  solaraVisualizationProjectIdOverrideFingerprint = fingerprint;
   projectDraftSaveStatus = "已保存";
   projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-  return saved;
+  return { saved, applied: true };
 }
 
 function selectedExperimentPlanRunSettings() {
@@ -11474,6 +11478,9 @@ function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
   solaraVisualizationProjectIdOverride = "";
   solaraVisualizationProjectIdOverrideContextKey = "";
   solaraVisualizationProjectIdOverrideParentProjectId = "";
+  solaraVisualizationProjectIdOverrideFingerprint = "";
+  solaraVisualizationProjectSyncError = "";
+  solaraVisualizationProjectSyncErrorKey = "";
   if (persist) persistSelectedRunContextKey();
 }
 
@@ -11516,7 +11523,7 @@ function selectCurrentExperimentPlan(planKey) {
   if (!selected) {
     if (!isVisualSimulationPage(page)) return;
     replaceSelectedRunContextKey("", { persist: true });
-    visualizationReplayStatus = "请选择实验方案后刷新推演";
+    visualizationReplayStatus = "请选择实验方案后开始推演";
     return;
   }
   replaceSelectedRunContextKey(selected.key, { persist: true });
@@ -15011,38 +15018,6 @@ function issueStatusForDisplayIssues(issues) {
 }
 
 async function handleMesaControl(action) {
-  if (action === "reload-solara") {
-    const page = getFeaturePageById(selectedFeatureId);
-    const visualContext = isVisualSimulationPage(page)
-      ? selectedVisualSimulationExperimentPlanContext(page)
-      : null;
-    if (isVisualSimulationPage(page) && !visualContext) {
-      visualizationReplayStatus = backendExperimentPlansLoadError
-        ? `实验方案列表加载失败：${backendExperimentPlansLoadError}`
-        : backendExperimentPlansLoaded && visualSimulationExperimentPlanOptions(page).length === 0
-        ? "暂无实验方案，请先在实验方案管理中创建并保存方案"
-        : "请选择实验方案后刷新推演";
-      return;
-    }
-    const contextKey = visualContext?.key || selectedRunContextKey;
-    const parentProjectId = currentBackendProjectId();
-    visualizationReplayStatus = "Solara 正在保存当前建模数据并刷新内嵌页";
-    try {
-      await saveSelectedProjectJsonForSolaraVisualization();
-      if (
-        selectedRunContextKey !== contextKey
-        || currentBackendProjectId() !== parentProjectId
-      ) {
-        visualizationReplayStatus = "实验方案已切换，请按当前方案重新刷新推演";
-        return;
-      }
-      solaraVisualizationReloadNonce += 1;
-      visualizationReplayStatus = "Solara 已保存当前建模数据，将从后端项目重新编译推演输入";
-    } catch (err) {
-      visualizationReplayStatus = `Solara 刷新失败：当前建模数据未保存（${err && err.message ? err.message : "后端接口不可用"}）`;
-    }
-    return;
-  }
   if (action === "refresh-runs") {
     await refreshVisualizationRunList();
     return;
@@ -15183,26 +15158,32 @@ function renderVisualSimulation(page) {
       }
     : {};
   const contextProjectId = String(context?.projectJson?.project_id || "").trim();
-  const contextOverrideProjectId = (
+  const contextFingerprint = context ? visualSimulationPlanFingerprint(context) : "";
+  const contextOverrideProjectId = context && (
     solaraVisualizationProjectIdOverrideContextKey === context?.key
     && solaraVisualizationProjectIdOverrideParentProjectId === currentBackendProjectId()
+    && solaraVisualizationProjectIdOverrideFingerprint === contextFingerprint
   ) ? solaraVisualizationProjectIdOverride : "";
-  const solaraUrl = context ? buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
+  ensureSelectedVisualSimulationProjectSynced(page);
+  const solaraUrl = contextOverrideProjectId ? buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
     projectId: contextOverrideProjectId || contextProjectId || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
     projectName,
     featureId: page.id,
     experimentPlanName,
-    ...planRuntimeContext,
-    reload: solaraVisualizationReloadNonce
+    ...planRuntimeContext
   }) : "";
   const availablePlanCount = visualSimulationExperimentPlanOptions(page).length;
   const emptyMessage = backendExperimentPlansLoadError
     ? `实验方案列表加载失败：${backendExperimentPlansLoadError}`
     : backendExperimentPlansLoaded
     ? availablePlanCount
-      ? "请选择实验方案后刷新推演"
+      ? "请选择实验方案后开始推演"
       : "暂无实验方案，请先在实验方案管理中创建并保存方案"
     : "实验方案列表加载中";
+  const syncKey = context ? visualSimulationProjectSyncKey(context) : "";
+  const syncMessage = solaraVisualizationProjectSyncErrorKey === syncKey && solaraVisualizationProjectSyncError
+    ? `实验方案数据准备失败：${solaraVisualizationProjectSyncError}。请重新选择方案后重试。`
+    : "正在准备实验方案数据，完成后将自动加载推演页面。";
   return `
     <div class="mesa-visual-shell">
       <section class="mesa-visual-toolbar">
@@ -15212,10 +15193,7 @@ function renderVisualSimulation(page) {
         </div>
       </section>
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
-        <div class="visual-frame-toolbar">
-          <button type="button" class="btn-primary" data-mesa-control="reload-solara" ${context ? "" : "disabled"}>刷新推演</button>
-        </div>
-        ${context ? `<iframe
+        ${solaraUrl ? `<iframe
           class="solara-visualization-frame"
           title="Solara 可视化推演"
           src="${htmlEscape(solaraUrl)}"
@@ -15223,12 +15201,97 @@ function renderVisualSimulation(page) {
           loading="eager"
           referrerpolicy="no-referrer"
         ></iframe>` : `<div class="visual-simulation-plan-empty" data-visual-simulation-plan-empty>
-          <strong>${htmlEscape(emptyMessage)}</strong>
-          ${backendExperimentPlansLoaded && !backendExperimentPlansLoadError && availablePlanCount === 0 ? `<button type="button" class="btn-secondary" data-plan-list-link>前往实验方案管理</button>` : ""}
+          <strong>${htmlEscape(context ? syncMessage : emptyMessage)}</strong>
+          ${!context && backendExperimentPlansLoaded && !backendExperimentPlansLoadError && availablePlanCount === 0 ? `<button type="button" class="btn-secondary" data-plan-list-link>前往实验方案管理</button>` : ""}
         </div>`}
       </div>
     </div>
   `;
+}
+
+function visualSimulationPlanFingerprint(context) {
+  const config = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+    ? context.plan.config
+    : {};
+  const projectJson = context?.projectJson && typeof context.projectJson === "object" && !Array.isArray(context.projectJson)
+    ? context.projectJson
+    : {};
+  return stableVisualizationPlanStringify({
+    projectJson,
+    steps: config.steps ?? null,
+    samples: config.samples ?? null,
+    seed: config.seed ?? null
+  });
+}
+
+function stableVisualizationPlanStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableVisualizationPlanStringify(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${stableVisualizationPlanStringify(value[key])}`
+    )).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function visualSimulationProjectSyncKey(context, parentProjectId = currentBackendProjectId()) {
+  return `${parentProjectId}::${context?.key || ""}::${visualSimulationPlanFingerprint(context)}`;
+}
+
+function visualSimulationSyncRequestMatches({ contextKey, parentProjectId, fingerprint }) {
+  if (selectedRunContextKey !== contextKey || currentBackendProjectId() !== parentProjectId) return false;
+  const context = experimentPlanContextOptions().find((option) => (
+    option.kind === "experiment-plan" && option.key === contextKey
+  ));
+  return Boolean(context) && visualSimulationPlanFingerprint(context) === fingerprint;
+}
+
+function ensureSelectedVisualSimulationProjectSynced(page) {
+  const context = selectedVisualSimulationExperimentPlanContext(page);
+  if (!context) return;
+  const parentProjectId = currentBackendProjectId();
+  const fingerprint = visualSimulationPlanFingerprint(context);
+  if (
+    solaraVisualizationProjectIdOverride
+    && solaraVisualizationProjectIdOverrideContextKey === context.key
+    && solaraVisualizationProjectIdOverrideParentProjectId === parentProjectId
+    && solaraVisualizationProjectIdOverrideFingerprint === fingerprint
+  ) return;
+  if (solaraVisualizationProjectSyncInFlightKey) return;
+  const syncKey = visualSimulationProjectSyncKey(context, parentProjectId);
+  if (
+    solaraVisualizationProjectSyncErrorKey === syncKey && solaraVisualizationProjectSyncError
+  ) return;
+  const requestId = ++solaraVisualizationProjectSyncRequestId;
+  solaraVisualizationProjectSyncInFlightKey = syncKey;
+  solaraVisualizationProjectSyncError = "";
+  solaraVisualizationProjectSyncErrorKey = "";
+  visualizationReplayStatus = `正在准备实验方案：${context.name}`;
+  syncSelectedProjectJsonForSolaraVisualization({
+    contextKey: context.key,
+    parentProjectId,
+    fingerprint
+  })
+    .then(({ applied }) => {
+      if (requestId !== solaraVisualizationProjectSyncRequestId || !applied) return;
+      visualizationReplayStatus = `实验方案已就绪：${context.name}`;
+    })
+    .catch((err) => {
+      if (
+        requestId !== solaraVisualizationProjectSyncRequestId
+        || !visualSimulationSyncRequestMatches({ contextKey: context.key, parentProjectId, fingerprint })
+      ) return;
+      solaraVisualizationProjectSyncError = err && err.message ? err.message : "后端接口不可用";
+      solaraVisualizationProjectSyncErrorKey = syncKey;
+      visualizationReplayStatus = `实验方案数据准备失败：${solaraVisualizationProjectSyncError}`;
+    })
+    .finally(() => {
+      if (requestId !== solaraVisualizationProjectSyncRequestId) return;
+      solaraVisualizationProjectSyncInFlightKey = "";
+      render();
+    });
 }
 
 function visualizationStreamEventClass() {
@@ -15258,7 +15321,7 @@ function renderVisualizationEventStream(events, activeFrameIndex) {
                   <em>${htmlEscape(displayEvent.log_type)}</em>
                 </span>
                 <span>${htmlEscape(displayEvent.localized_message)}</span>
-                <small>内部信息：采样帧 ${htmlEscape(Number(event.frame_index) + 1)} / 推演步 ${htmlEscape(event.step)}${displayEvent.internal_id ? ` / 标识 ${htmlEscape(displayEvent.internal_id)}` : ""}</small>
+                <small>第 ${htmlEscape(Number(event.frame_index) + 1)} 条状态记录</small>
               </button>
             `;}).join("")}
           </div>
@@ -15447,12 +15510,11 @@ function buildSimulationLogStream(series = {}) {
 
 function simulationLogDisplayEvent(event = {}) {
   const localized = localizeVisualizationEvent(event);
-  const hasChineseMessage = /[^\x00-\x7F]/.test(String(event.message || ""));
   return {
     ...event,
     event_label: localized.event_label,
     log_type: event.log_type || localized.event_label,
-    localized_message: event.localized_message || (hasChineseMessage ? String(event.message) : localized.localized_message),
+    localized_message: event.display_safe ? (event.localized_message || event.message) : localized.localized_message,
     internal_id: event.internal_id || localized.internal_id
   };
 }
@@ -15482,14 +15544,15 @@ function deriveMissionLogs(logs, previousState, state, frame, frameIndex, runId)
     const previous = previousMissions.get(missionId) || {};
     const assigned = Array.isArray(mission.assignedTailNumbers) ? mission.assignedTailNumbers : [];
     const previousAssigned = Array.isArray(previous.assignedTailNumbers) ? previous.assignedTailNumbers : [];
+    const taskContext = visualMissionBusinessLabel(mission);
     if (assigned.length && assigned.join("|") !== previousAssigned.join("|")) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_assigned", "任务成员分配", `已完成任务成员分配；执行飞机：${assigned.join(" / ")}；任务标识：${missionId}`, "info", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_assigned", "任务成员分配", `${taskContext}已完成成员分配；执行飞机：${assigned.join(" / ")}`, "info", missionId);
     }
     if (["launched", "flying"].includes(String(mission.status)) && !["launched", "flying"].includes(String(previous.status))) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_started", "任务启动", `任务已启动；执行飞机：${assigned.join(" / ") || "-"}；任务标识：${missionId}`, "success", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_started", "任务启动", `${taskContext}已启动；执行飞机：${assigned.join(" / ") || "-"}`, "success", missionId);
     }
     if (["completed", "succeeded", "failed", "cancelled"].includes(String(mission.status)) && String(mission.status) !== String(previous.status)) {
-      pushSimulationLog(logs, frame, frameIndex, runId, "mission_finished", "任务结束", `任务状态：${missionStatusLabel(mission.status)}；执行飞机：${assigned.join(" / ") || "-"}；任务标识：${missionId}`, mission.status === "completed" || mission.status === "succeeded" ? "success" : "warning", missionId);
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_finished", "任务结束", `${taskContext}状态：${missionStatusLabel(mission.status)}；执行飞机：${assigned.join(" / ") || "-"}`, mission.status === "completed" || mission.status === "succeeded" ? "success" : "warning", missionId);
     }
   }
 }
@@ -15508,8 +15571,7 @@ function deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, run
     const reasonText = shortageReason
       ? `；原因：${visualizationShortageReasonLabel(shortageReason)}`
       : "";
-    const rawTask = String(job.task || supportJobKindLabel(job.kind));
-    const taskLabel = /[^\x00-\x7F]/.test(rawTask) ? rawTask : `保障作业（内部标识：${rawTask}）`;
+    const taskLabel = visualSupportJobTaskName(job);
     const aircraftSuffix = job.tailNumber ? `；飞机编号：${job.tailNumber}` : "";
     const message = `${taskLabel} / ${supportJobStateLabel(job.state)}${reasonText} / 剩余 ${Number(job.remaining || 0)} 分钟${aircraftSuffix}`;
     pushSimulationLog(logs, frame, frameIndex, runId, `support_job_${job.kind || "job"}`, label, message, job.kind === "repair" ? "warning" : "info", jobId);
@@ -15543,6 +15605,8 @@ function pushSimulationLog(logs, frame, frameIndex, runId, eventType, logType, m
     event_type: eventType,
     log_type: logType,
     message,
+    localized_message: message,
+    display_safe: true,
     severity,
     metric_refs: []
   });
@@ -15585,6 +15649,58 @@ function supportJobStateLabel(state) {
   return visualizationJobStateLabel(state);
 }
 
+function visualMissionTaskName(mission = {}) {
+  const internalIds = new Set([
+    mission.id,
+    mission.missionId,
+    mission.periodicTaskId,
+    mission.compositeTaskId,
+    mission.basicTaskId,
+    mission.taskId,
+    mission.waveId
+  ].map((value) => String(value || "").trim()).filter(Boolean));
+  const missionId = String(mission.id || mission.missionId || "").trim();
+  for (const value of [mission.basicTaskName, mission.taskName, mission.name, mission.compositeTaskName, mission.periodicTaskName]) {
+    const candidate = String(value || "").trim();
+    if (!candidate || internalIds.has(candidate)) continue;
+    if (missionId && missionId.startsWith(`${candidate}-d`)) continue;
+    return candidate;
+  }
+  return "未命名任务";
+}
+
+function visualMissionHierarchyName(mission, nameKey, idKey, fallback) {
+  const candidate = String(mission?.[nameKey] || "").trim();
+  const internalId = String(mission?.[idKey] || "").trim();
+  return candidate && candidate !== internalId ? candidate : fallback;
+}
+
+function visualMissionBusinessContext(mission = {}) {
+  return [
+    Number(mission.dayIndex) > 0 ? `第${Number(mission.dayIndex)}天` : "",
+    Number(mission.waveIndex) > 0 ? `第${Number(mission.waveIndex)}波` : "",
+    String(mission.requiredAircraftType || "").trim()
+  ].filter(Boolean).join(" / ") || "任务计划";
+}
+
+function visualMissionBusinessLabel(mission = {}) {
+  return `${visualMissionTaskName(mission)}（${visualMissionBusinessContext(mission)}）`;
+}
+
+function visualMissionTaskNameForId(missionId, missions = []) {
+  const normalizedId = String(missionId || "").trim();
+  if (!normalizedId) return "无";
+  const mission = missions.find((item) => String(item?.id || item?.missionId || "") === normalizedId);
+  return visualMissionTaskName(mission || { id: normalizedId });
+}
+
+function visualSupportJobTaskName(job = {}) {
+  const task = String(job.task || "").trim();
+  const jobId = String(job.id || job.jobId || "").trim();
+  if (task && task !== jobId && /[^\x00-\x7F]/.test(task)) return task;
+  return supportJobKindLabel(job.kind);
+}
+
 function renderMesaStage(activeView, state) {
   if (activeView === "mission") return renderMesaMissionStage(state);
   if (activeView === "support") return renderMesaSupportStage(state);
@@ -15604,7 +15720,7 @@ function renderMesaAircraftStage(state) {
               <span>${htmlEscape(lane.aircraft.length)} 架</span>
             </div>
             <div class="aircraft-state-lane-body">
-              ${lane.aircraft.length ? lane.aircraft.map((aircraft) => renderAircraftStateNode(aircraft, selectedAircraft?.id)).join("") : `<span class="empty-state">暂无飞机</span>`}
+              ${lane.aircraft.length ? lane.aircraft.map((aircraft) => renderAircraftStateNode(aircraft, selectedAircraft?.id, state.missions)).join("") : `<span class="empty-state">暂无飞机</span>`}
             </div>
           </section>
         `).join("")}
@@ -15639,9 +15755,9 @@ function aircraftStateLanes(aircraftList) {
   return lanes;
 }
 
-function renderAircraftStateNode(aircraft, selectedAircraftId = "") {
+function renderAircraftStateNode(aircraft, selectedAircraftId = "", missions = []) {
   const meta = [
-    aircraft.currentMissionId ? `任务 ${aircraft.currentMissionId}` : "",
+    aircraft.currentMissionId ? `任务 ${visualMissionTaskNameForId(aircraft.currentMissionId, missions)}` : "",
     aircraft.failedLru ? `故障 ${aircraft.failedLru}` : "",
     aircraft.postflightRequired ? "需航后检查" : "",
   ].filter(Boolean).join(" / ");
@@ -15707,9 +15823,9 @@ function buildMissionScheduleRows(missions) {
     return {
       id: mission.id,
       type: mission.taskCategory,
-      periodicName: mission.periodicTaskName,
-      compositeName: mission.compositeTaskName,
-      basicTaskName: mission.basicTaskName,
+      periodicName: visualMissionHierarchyName(mission, "periodicTaskName", "periodicTaskId", "周期性任务"),
+      compositeName: visualMissionHierarchyName(mission, "compositeTaskName", "compositeTaskId", "复合任务"),
+      basicTaskName: visualMissionTaskName(mission),
       groupName: mission.groupName || "",
       waveIndex: mission.waveIndex,
       requiredAircraftType: mission.requiredAircraftType,
@@ -15791,7 +15907,7 @@ function renderMissionScheduleRow(row) {
   ].filter(Boolean).join(" / ");
   return `
     <div class="mission-schedule-row" role="row">
-      <div><strong>${htmlEscape(attrs)}</strong><small>${htmlEscape(row.id)}</small></div>
+      <div><strong>${htmlEscape(attrs)}</strong></div>
       <div><strong>${htmlEscape(row.basicTaskName)}</strong><small>${htmlEscape(row.compositeName || "基本任务")}</small></div>
       <div>${htmlEscape(requirement)}</div>
       <div>${assigned}</div>
@@ -16456,7 +16572,6 @@ function failedComponentsForAircraft(aircraft) {
 function renderAircraftSupportJobStatus(job) {
   const detail = supportJobStatusLine(job);
   const meta = [
-    job.id ? `作业 ${job.id}` : "",
     job.remaining == null ? "" : `剩余 ${Number(job.remaining || 0)}min`
   ].filter(Boolean).join(" / ");
   return `
@@ -16468,11 +16583,11 @@ function renderAircraftSupportJobStatus(job) {
 }
 
 function supportJobStatusLine(job) {
-  return [
+  return [...new Set([
     supportJobKindLabel(job.kind),
-    job.task || "",
+    visualSupportJobTaskName(job),
     supportJobStateLabel(job.state)
-  ].filter(Boolean).join(" / ") || "保障作业";
+  ].filter(Boolean))].join(" / ") || "保障作业";
 }
 
 function renderAircraftFailureStatus(item) {
@@ -16506,7 +16621,7 @@ function supportPanelLogRows(state) {
   const jobRows = (state.jobs || []).map((job) => ({
     severity: String(job.state || "").toLowerCase() === "waiting" ? "warning" : "info",
     title: job.tailNumber || "保障作业",
-    message: [supportJobKindLabel(job.kind), job.task, supportJobStateLabel(job.state)].filter(Boolean).join(" / "),
+    message: [supportJobKindLabel(job.kind), visualSupportJobTaskName(job), supportJobStateLabel(job.state)].filter(Boolean).join(" / "),
     meta: `剩余 ${Number(job.remaining || 0)}min`
   }));
   const eventRows = (state.events || [])
@@ -16514,7 +16629,7 @@ function supportPanelLogRows(state) {
     .map((event) => ({
       severity: "success",
       title: `T+${event.time}`,
-      message: event.message || simulationLogTypeLabel(event.event),
+      message: localizeVisualizationEvent(event).localized_message,
       meta: simulationLogTypeLabel(event.event)
     }));
   return [...jobRows, ...eventRows].slice(-16);

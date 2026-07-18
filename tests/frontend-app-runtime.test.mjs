@@ -1646,7 +1646,7 @@ test("visual Mesa page renders Solara iframe shell", async () => {
       { value: "plan-visual-shell" }
     );
 
-    assert.match(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"|刷新推演|visual-frame-toolbar/);
     const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "mesa-visual-toolbar");
     assert.match(visualHero, /<strong>可视化推演<\/strong>/);
     assert.match(visualHero, /data-current-experiment-plan/);
@@ -5102,7 +5102,7 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
   }
 });
 
-test("visual simulation shows a plan-only empty state and blocks refresh without a saved plan", async () => {
+test("visual simulation shows a plan-only empty state without saving or mounting an iframe", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson()
@@ -5116,7 +5116,7 @@ test("visual simulation shows a plan-only empty state and blocks refresh without
     assert.match(visualShell, /data-plan-list-link>前往实验方案管理<\/button>/);
     assert.doesNotMatch(visualShell, /运行上下文|当前项目|已保存实验方案|<optgroup/);
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
-    assert.match(visualShell, /data-mesa-control="reload-solara" disabled/);
+    assert.doesNotMatch(visualShell, /data-mesa-control="reload-solara"|刷新推演|visual-frame-toolbar/);
     assert.doesNotMatch(visualShell, /title="Solara 可视化推演"|<iframe/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
     assert.equal(
@@ -5124,8 +5124,6 @@ test("visual simulation shows a plan-only empty state and blocks refresh without
       false,
       "visual page load should not auto-start retired formal visualization"
     );
-
-    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
 
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST"),
@@ -5150,7 +5148,7 @@ test("visual simulation shows a plan-only empty state and blocks refresh without
       false,
       "current Project visualization must not auto-create an ExperimentPlan"
     );
-    assert.doesNotMatch(runtime.appNode.innerHTML, /reload=1/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /reload=/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Solara Mesa iframe|iframe:/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /mesa-control-deck|mesa-control-status|仿真状态|推演由 Solara/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /启动回放|data-mesa-timeline|Lite Mesa 仿真未返回 run_id/);
@@ -5178,9 +5176,7 @@ test("visual simulation does not depend on lite Mesa run id", async () => {
       { value: "plan-no-run-id" }
     );
     assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-no-run-id/);
-    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
-
-    assert.match(runtime.appNode.innerHTML, /reload=1/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /reload=/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /后端项目重新编译推演输入|后端 Project 重新编译推演输入/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Lite Mesa 仿真未返回 run_id/);
     assert.equal(
@@ -5229,7 +5225,6 @@ test("visual simulation applies saved plan runtime settings without changing cur
     );
     assert.match(runtime.appNode.innerHTML, /<option value="plan-visual" selected>可视化保存方案<\/option>/);
     assert.match(runtime.appNode.innerHTML, /project_id=project-visual-plan/);
-    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
     const planProjectSave = runtime.requests
       .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
       .map((request) => JSON.parse(request.options.body || "{}"))
@@ -5248,6 +5243,94 @@ test("visual simulation applies saved plan runtime settings without changing cur
       false,
       "visualization refresh must not create an ExperimentPlan"
     );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual simulation resyncs an updated stable plan fingerprint and skips unchanged refreshes", async () => {
+  const planProjectJson = createRuntimeProjectJson({
+    project_id: "project-visual-fingerprint",
+    supportResources: [{
+      id: "spare-fingerprint",
+      supportNodeName: "基层",
+      type: "spare",
+      name: "航电模块",
+      model: "AV-1",
+      productId: "product-av-1",
+      quantity: 2
+    }]
+  });
+  delete planProjectJson.experiment;
+  const experimentPlans = [{
+    experiment_plan_id: "plan-stable-fingerprint",
+    status: "draft",
+    config: {
+      name: "稳定标识方案",
+      steps: 12,
+      samples: 3,
+      seed: 1203,
+      projectJson: planProjectJson
+    }
+  }];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans
+  });
+  const branchProjectSaves = () => runtime.requests
+    .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
+    .map((request) => JSON.parse(request.options.body || "{}"))
+    .filter((body) => body.project_id === "project-visual-fingerprint");
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-stable-fingerprint" }
+    );
+    assert.equal(branchProjectSaves().length, 1);
+    assert.equal(branchProjectSaves()[0].supportResources[0].quantity, 2);
+    assert.match(runtime.appNode.innerHTML, /plan_steps=12/);
+
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click(
+      "[data-experiment-plan-edit]",
+      { experimentPlanEdit: "plan-stable-fingerprint", experimentPlanName: "稳定标识方案" }
+    );
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.steps" },
+      { value: "24", type: "number" }
+    );
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "supportResources.0.quantity" },
+      { value: "9", type: "number" }
+    );
+    await runtime.click("[data-save-plan]");
+
+    const updateRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans/plan-stable-fingerprint"
+      && (request.options.method || "GET") === "PUT"
+    ));
+    assert.ok(updateRequest);
+    const updateBody = JSON.parse(updateRequest.options.body || "{}");
+    assert.equal(updateBody.config.steps, 24);
+    assert.equal(updateBody.config.projectJson.supportResources[0].quantity, 9);
+
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+    assert.equal(branchProjectSaves().length, 2, "same-ID changed content must save the branch Project again");
+    assert.equal(branchProjectSaves()[1].supportResources[0].quantity, 9);
+    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-stable-fingerprint/);
+    assert.match(runtime.appNode.innerHTML, /plan_steps=24/);
+    assert.match(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
+
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+    assert.equal(branchProjectSaves().length, 2, "unchanged force refresh must reuse the matching fingerprint");
+    assert.match(runtime.appNode.innerHTML, /plan_steps=24/);
   } finally {
     runtime.restore();
   }
@@ -5296,7 +5379,6 @@ test("visual simulation distinguishes duplicate plan names by stable IDs and swi
     assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-b/);
     assert.match(runtime.appNode.innerHTML, /project_id=project-duplicate-b/);
     assert.match(runtime.appNode.innerHTML, /plan_steps=22/);
-    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
     let saved = runtime.requests
       .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
       .map((request) => JSON.parse(request.options.body || "{}"))
@@ -5311,7 +5393,6 @@ test("visual simulation distinguishes duplicate plan names by stable IDs and swi
     assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-a/);
     assert.match(runtime.appNode.innerHTML, /project_id=project-duplicate-a/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-b/);
-    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
     saved = runtime.requests
       .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
       .map((request) => JSON.parse(request.options.body || "{}"))
@@ -5356,7 +5437,6 @@ test("visual simulation clears a saved Project override when shared context chan
       { currentExperimentPlan: "" },
       { value: "plan-cross-page-a" }
     );
-    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
     assert.match(runtime.appNode.innerHTML, /project_id=project-cross-page-a/);
 
     await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
@@ -5479,7 +5559,7 @@ test("visual experiment plan list keeps a stored plan through HTTP 500 and resto
     const failedVisualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
     assert.match(failedVisualShell, /实验方案列表加载失败/);
     assert.doesNotMatch(failedVisualShell, /暂无实验方案，请先在实验方案管理中创建并保存方案/);
-    assert.match(failedVisualShell, /data-mesa-control="reload-solara" disabled/);
+    assert.doesNotMatch(failedVisualShell, /data-mesa-control="reload-solara"|刷新推演|visual-frame-toolbar/);
     assert.doesNotMatch(failedVisualShell, /title="Solara 可视化推演"|<iframe/);
     assert.equal(
       JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
@@ -5499,7 +5579,6 @@ test("visual experiment plan list keeps a stored plan through HTTP 500 and resto
     assert.match(recoveredVisualShell, /plan_samples=4/);
     assert.match(recoveredVisualShell, /plan_seed=303/);
 
-    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
     assert.ok(runtime.requests.some((request) => (
       request.url === "/api/projects"
       && (request.options.method || "GET") === "POST"
@@ -6422,11 +6501,14 @@ async function setupRuntimeApp({
     const experimentPlanItemMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)$/);
     if (experimentPlanItemMatch && method === "PUT") {
       const body = JSON.parse(options.body || "{}");
-      return jsonResponse({
+      const updatedPlan = {
         project_id: decodeURIComponent(experimentPlanItemMatch[1]),
         experiment_plan_id: decodeURIComponent(experimentPlanItemMatch[2]),
         config: body.config || {}
-      });
+      };
+      const index = experimentPlans.findIndex((plan) => plan.experiment_plan_id === updatedPlan.experiment_plan_id);
+      if (index >= 0) experimentPlans[index] = updatedPlan;
+      return jsonResponse(updatedPlan);
     }
     if (experimentPlanItemMatch && method === "DELETE") {
       const experimentPlanId = decodeURIComponent(experimentPlanItemMatch[2]);
