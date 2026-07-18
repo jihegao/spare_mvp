@@ -4951,7 +4951,7 @@ test("mission reliability and downtime analysis keep current Project as default 
   }
 });
 
-test("Monte Carlo detail hides statistical chrome and renders three normalized business results", async () => {
+test("Monte Carlo detail renders canonical moments, units, valid n, and mixed execution counts", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
     projectJson: createRuntimeProjectJson({
@@ -4978,6 +4978,24 @@ test("Monte Carlo detail hides statistical chrome and renders three normalized b
         sortie_rate: 0.82,
         mean_transport_delay: 7.5,
         repair_backlog: 1.25
+      },
+      metric_moments: {
+        schema_version: "monte-carlo-metric-moments-v0",
+        variance_method: "unbiased_sample_variance",
+        variance_denominator: "n-1",
+        total_sample_count: 4,
+        successful_sample_count: 3,
+        failed_sample_count: 1,
+        metrics: [
+          { metric_id: "mission_success_rate", mean: 0.73, sample_variance: 0.0123, valid_sample_count: 3 },
+          { metric_id: "spare_fill_rate", mean: 0.64, sample_variance: 0.02, valid_sample_count: 2 },
+          { metric_id: "spare_utilization", mean: 0.29, sample_variance: null, valid_sample_count: 1 },
+          { metric_id: "ready_rate", mean: 0, sample_variance: null, valid_sample_count: 2, invalid_reason: "sample_variance_not_finite" },
+          { metric_id: "sortie_rate", mean: 0.82, sample_variance: 0.0025, valid_sample_count: 3 },
+          { metric_id: "mean_transport_delay", mean: 7.5, sample_variance: 4, valid_sample_count: 3 },
+          { metric_id: "repair_backlog", mean: 1.25, sample_variance: 0.5, valid_sample_count: 3 },
+          { metric_id: "sample_id", mean: 999, sample_variance: 1, valid_sample_count: 3 }
+        ]
       },
       samples: [{
         sample_id: "sample-render-fallback-check",
@@ -5021,19 +5039,20 @@ test("Monte Carlo detail hides statistical chrome and renders three normalized b
     );
     const resultCards = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-results");
     const metricTable = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-stat-section");
-    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
-    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64<\/strong>/);
-    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29<\/strong>/);
-    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>/);
-    assert.match(metricTable, /<td>备件满足率<\/td>\s*<td>0\.64<\/td>/);
-    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>/);
+    assert.match(resultCards, /总样本[\s\S]*<strong>4<\/strong>/);
+    assert.match(resultCards, /成功样本[\s\S]*<strong>3<\/strong>/);
+    assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
+    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73 比例<\/strong>/);
+    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64 比例<\/strong>/);
+    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29 比例<\/strong>/);
+    assert.match(metricTable, /<th>均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>1<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>2<\/td>/);
     for (const label of ["任务可靠度", "备件满足率", "备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }
-    assert.doesNotMatch(
-      runtime.appNode.innerHTML,
-      /样本量|随机种子|样本数|均值|最小值|最大值|标准差|均值\s*\/\s*n=|\d+\s*样本\s*\/|\d+\s*参数组|mean_transport_delay|mission_success_rate|spare_fill_rate|spare_utilization/
-    );
+    assert.doesNotMatch(runtime.appNode.innerHTML, /sample_id|mean_transport_delay|mission_success_rate|spare_fill_rate|spare_utilization/);
     assert.match(runtime.appNode.innerHTML, new RegExp("Mesa 分析完成：3/4 个样本，失败 1 个，总耗时 70\\.9 秒。"));
   } finally {
     runtime.restore();
@@ -5065,7 +5084,11 @@ test("Monte Carlo detail renders backend sample timeout as an actionable blocked
       runtime.appNode.innerHTML,
       /Mesa 分析未完成：Mesa 分析样本全部超时；请减少样本数、提高并行核心数，或检查模型输入。/
     );
-    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /成功样本[\s\S]*<strong>0<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /失败样本[\s\S]*<strong>4<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /无有效样本/);
+    assert.match(runtime.appNode.innerHTML, /不可计算/);
   } finally {
     runtime.restore();
   }
