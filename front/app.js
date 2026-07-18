@@ -120,6 +120,14 @@ import {
   projectProductById
 } from "./product-catalog.mjs";
 import {
+  equipmentStructureExportCsv,
+  equipmentStructureImportRowIsExplicitJson,
+  equipmentStructureProductId,
+  equipmentStructureTemplateCsv,
+  parseEquipmentStructureImportText,
+  validateEquipmentStructureProductReferences
+} from "./equipment-structure-transfer.mjs";
+import {
   DOWNTIME_FACTOR_OPTIONS,
   downtimeAircraftStateLabel,
   downtimeDisplayValue,
@@ -722,6 +730,8 @@ let backendExperimentPlans = [];
 let backendExperimentPlansProjectId = "";
 let backendExperimentPlansLoaded = false;
 let backendExperimentPlansLoadInFlight = false;
+let backendExperimentPlansLoadError = "";
+let backendExperimentPlansRequestEpoch = 0;
 let experimentPlanListStatus = "仿真实验方案列表尚未加载";
 let experimentPlanManagementMode = "list";
 let projectDraftSaveStatus = "未保存";
@@ -759,6 +769,8 @@ let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
 let visualSupportAirportId = "";
 let solaraVisualizationReloadNonce = 0;
 let solaraVisualizationProjectIdOverride = "";
+let solaraVisualizationProjectIdOverrideContextKey = "";
+let solaraVisualizationProjectIdOverrideParentProjectId = "";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -2093,6 +2105,13 @@ function bindEvents() {
       return;
     }
 
+    const equipmentExportButton = event.target.closest("[data-equipment-export-data]");
+    if (equipmentExportButton) {
+      downloadEquipmentStructureData();
+      render();
+      return;
+    }
+
     const supportJobsTemplateButton = event.target.closest("[data-support-jobs-download-template]");
     if (supportJobsTemplateButton) {
       downloadSupportActivityJobsTemplate();
@@ -3375,11 +3394,16 @@ function shouldEmbedExperimentPlanContextInComponent(page) {
 
 function renderExperimentPlanContextDropdown(page) {
   ensureExperimentPlanListLoaded();
+  if (isVisualSimulationPage(page)) {
+    return renderVisualSimulationExperimentPlanDropdown(page);
+  }
   const options = experimentPlanContextOptions(page);
   const selectedKey = selectedExperimentPlanContextKey(options);
   const currentProjectOption = options.find((option) => option.kind === "current-project");
   const savedPlanOptions = options.filter((option) => option.kind === "experiment-plan");
-  const status = backendExperimentPlansLoaded
+  const status = backendExperimentPlansLoadError
+    ? "方案列表加载失败"
+    : backendExperimentPlansLoaded
     ? `${savedPlanOptions.length} 个已保存方案`
     : "方案列表加载中";
   return `
@@ -3390,6 +3414,33 @@ function renderExperimentPlanContextDropdown(page) {
         ${savedPlanOptions.length ? `<optgroup label="已保存实验方案">${savedPlanOptions.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}</optgroup>` : ""}
       </select>
       <small>${htmlEscape(status)}</small>
+    </label>
+  `;
+}
+
+function visualSimulationExperimentPlanOptions(page = getFeaturePageById(selectedFeatureId)) {
+  return experimentPlanContextOptions(page).filter((option) => option.kind === "experiment-plan");
+}
+
+function selectedVisualSimulationExperimentPlanContext(page = getFeaturePageById(selectedFeatureId)) {
+  return visualSimulationExperimentPlanOptions(page).find((option) => option.key === selectedRunContextKey) || null;
+}
+
+function renderVisualSimulationExperimentPlanDropdown(page) {
+  const options = visualSimulationExperimentPlanOptions(page);
+  const selected = selectedVisualSimulationExperimentPlanContext(page);
+  const placeholder = backendExperimentPlansLoadError
+    ? "实验方案列表加载失败"
+    : backendExperimentPlansLoaded
+    ? options.length ? "请选择实验方案" : "暂无实验方案"
+    : "实验方案列表加载中";
+  return `
+    <label class="page-head-current-context experiment-plan-context-select">
+      <span>实验方案</span>
+      <select data-current-experiment-plan aria-label="实验方案" ${options.length ? "" : "disabled"}>
+        <option value="" ${selected ? "" : "selected"}>${placeholder}</option>
+        ${options.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selected?.key ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}
+      </select>
     </label>
   `;
 }
@@ -6381,6 +6432,7 @@ function renderEquipmentModeling(page) {
           </div>
           <div class="equipment-import-row">
             <button type="button" class="equipment-template-action" data-equipment-download-template>下载模板</button>
+            <button type="button" class="equipment-template-action" data-equipment-export-data>导出当前机型</button>
             <label class="equipment-template-action">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
             <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
@@ -10874,10 +10926,16 @@ async function resolveSelectedExperimentPlanProjectJsonForRun() {
 }
 
 async function saveSelectedProjectJsonForSolaraVisualization() {
+  const contextKey = selectedRunContextKey;
+  const parentProjectId = currentBackendProjectId();
   const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
   const saved = await backendApi.saveProject(projectJson);
   savedProject = saved || savedProject;
-  solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || currentBackendProjectId() || "").trim();
+  if (selectedRunContextKey === contextKey && currentBackendProjectId() === parentProjectId) {
+    solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || parentProjectId || "").trim();
+    solaraVisualizationProjectIdOverrideContextKey = contextKey;
+    solaraVisualizationProjectIdOverrideParentProjectId = parentProjectId;
+  }
   projectDraftSaveStatus = "已保存";
   projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
   return saved;
@@ -10911,9 +10969,19 @@ function selectedExperimentPlanRunSettings() {
   };
 }
 
+function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
+  selectedRunContextKey = String(nextKey || "").trim();
+  solaraVisualizationProjectIdOverride = "";
+  solaraVisualizationProjectIdOverrideContextKey = "";
+  solaraVisualizationProjectIdOverrideParentProjectId = "";
+  if (persist) persistSelectedRunContextKey();
+}
+
 function resetRunContextToCurrentProject() {
-  selectedRunContextKey = experimentPlanContextOptions().find((option) => option.kind === "current-project")?.key || "";
-  persistSelectedRunContextKey();
+  replaceSelectedRunContextKey(
+    experimentPlanContextOptions().find((option) => option.kind === "current-project")?.key || "",
+    { persist: true }
+  );
   const projectJson = currentProjectJsonForExperimentContext();
   const experiment = projectJson?.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
     ? projectJson.experiment
@@ -10939,11 +11007,21 @@ function resetMissingRunContextAfterPlanRefresh() {
 }
 
 function selectCurrentExperimentPlan(planKey) {
-  const options = experimentPlanContextOptions();
-  const selected = options.find((option) => option.key === planKey) || options[0];
-  if (!selected) return;
-  selectedRunContextKey = selected.key;
-  persistSelectedRunContextKey();
+  const page = getFeaturePageById(selectedFeatureId);
+  const options = isVisualSimulationPage(page)
+    ? visualSimulationExperimentPlanOptions(page)
+    : experimentPlanContextOptions(page);
+  const selected = options.find((option) => option.key === planKey) || null;
+  if (!selected) {
+    if (!isVisualSimulationPage(page)) return;
+    replaceSelectedRunContextKey("", { persist: true });
+    visualizationReplayStatus = "请选择实验方案后刷新推演";
+    return;
+  }
+  replaceSelectedRunContextKey(selected.key, { persist: true });
+  if (isVisualSimulationPage(page)) {
+    visualizationReplayStatus = `已选择实验方案：${selected.name}`;
+  }
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = selected.kind === "experiment-plan"
     ? `已绑定实验方案：${selected.name}`
@@ -11523,7 +11601,7 @@ async function restoreStoredBackendSessionOnBoot() {
     await hydrateProjectCatalogFromBackend();
     if (selectedRoute === "workbench" && currentProject) {
       await hydrateCurrentProjectDraftFromApi();
-      selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
+      replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
     }
   } catch (err) {
     backendAuthToken = "";
@@ -11550,13 +11628,9 @@ async function handleEnterWorkbench(projectId) {
   selectedRoute = "workbench";
   selectedFeatureId = defaultFeaturePageIdForCurrentUser();
   isProjectMenuOpen = false;
-  backendExperimentPlans = [];
-  backendExperimentPlansProjectId = "";
-  backendExperimentPlansLoaded = false;
-  backendExperimentPlansLoadInFlight = false;
-  experimentPlanListStatus = "仿真实验方案列表尚未加载";
+  resetExperimentPlanListLoadState();
   selectedExperimentPlanKeys = new Set();
-  selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
+  replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
@@ -11565,7 +11639,7 @@ async function handleEnterWorkbench(projectId) {
   location.hash = `feature=${selectedFeatureId}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
-  selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
+  replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
   if (!selectedRunContextKey) resetRunContextToCurrentProject();
 }
 
@@ -11591,11 +11665,7 @@ async function createProjectFromProjectTemplate(templateProject) {
     experimentPlanDraft = cloneScenario(projectJson);
     experimentPlanBranchActive = false;
     resetRunContextToCurrentProject();
-    backendExperimentPlans = [];
-    backendExperimentPlansProjectId = "";
-    backendExperimentPlansLoaded = false;
-    backendExperimentPlansLoadInFlight = false;
-    experimentPlanListStatus = "仿真实验方案列表尚未加载";
+    resetExperimentPlanListLoadState();
     savedProject = saved || { project_id: projectJson.project_id, project_version: projectJson.project_version || "project-v0.1" };
     modelingSnapshot = null;
     await hydrateProjectCatalogFromBackend({ forceProjectId: project.id });
@@ -12012,48 +12082,65 @@ function currentBackendProjectId() {
   return currentProject?.id ? `project-${currentProject.id}` : `project-${scenario.scenarioId}`;
 }
 
+function resetExperimentPlanListLoadState(projectId = "") {
+  backendExperimentPlansRequestEpoch += 1;
+  backendExperimentPlans = [];
+  backendExperimentPlansProjectId = String(projectId || "").trim();
+  backendExperimentPlansLoaded = false;
+  backendExperimentPlansLoadInFlight = false;
+  backendExperimentPlansLoadError = "";
+  experimentPlanListStatus = "仿真实验方案列表尚未加载";
+}
+
 function ensureExperimentPlanListLoaded(projectId = currentBackendProjectId()) {
-  if (backendExperimentPlansProjectId !== projectId) {
-    backendExperimentPlans = [];
-    backendExperimentPlansLoaded = false;
-    backendExperimentPlansLoadInFlight = false;
-    backendExperimentPlansProjectId = projectId;
-    experimentPlanListStatus = "仿真实验方案列表尚未加载";
+  const normalizedProjectId = String(projectId || "").trim();
+  if (backendExperimentPlansProjectId !== normalizedProjectId) {
+    resetExperimentPlanListLoadState(normalizedProjectId);
   }
   if (backendExperimentPlansLoaded || backendExperimentPlansLoadInFlight) return;
   backendExperimentPlansLoadInFlight = true;
-  refreshExperimentPlanList(projectId)
+  refreshExperimentPlanList(normalizedProjectId)
     .finally(() => {
       render();
     });
 }
 
 async function refreshExperimentPlanList(projectId = currentBackendProjectId(), { force = false } = {}) {
-  if (!projectId) {
+  const normalizedProjectId = String(projectId || "").trim();
+  if (!normalizedProjectId) {
+    resetExperimentPlanListLoadState();
     backendExperimentPlans = [];
     backendExperimentPlansLoaded = true;
-    backendExperimentPlansLoadInFlight = false;
     experimentPlanListStatus = "尚未选择项目，无法读取后端方案列表";
     return;
   }
+  const requestEpoch = ++backendExperimentPlansRequestEpoch;
   if (force) {
     backendExperimentPlansLoaded = false;
   }
-  backendExperimentPlansProjectId = projectId;
+  backendExperimentPlansProjectId = normalizedProjectId;
   backendExperimentPlansLoadInFlight = true;
+  backendExperimentPlansLoadError = "";
+  const requestIsCurrent = () => (
+    requestEpoch === backendExperimentPlansRequestEpoch
+    && backendExperimentPlansProjectId === normalizedProjectId
+    && currentBackendProjectId() === normalizedProjectId
+  );
   try {
-    const response = await backendApi.listExperimentPlans(projectId);
+    const response = await backendApi.listExperimentPlans(normalizedProjectId);
+    if (!requestIsCurrent()) return;
     backendExperimentPlans = Array.isArray(response?.experiment_plans) ? response.experiment_plans : [];
     backendExperimentPlansLoaded = true;
     resetMissingRunContextAfterPlanRefresh();
     experimentPlanListStatus = `已加载后端方案 ${backendExperimentPlans.length} 条`;
   } catch (err) {
+    if (!requestIsCurrent()) return;
     backendExperimentPlans = [];
     backendExperimentPlansLoaded = true;
-    resetMissingRunContextAfterPlanRefresh();
-    experimentPlanListStatus = `后端方案列表读取失败：${formatBackendError(err)}`;
+    backendExperimentPlansLoadError = formatBackendError(err);
+    experimentPlanListStatus = `后端方案列表读取失败：${backendExperimentPlansLoadError}`;
   } finally {
-    backendExperimentPlansLoadInFlight = false;
+    if (requestIsCurrent()) backendExperimentPlansLoadInFlight = false;
   }
 }
 
@@ -13323,7 +13410,7 @@ async function importRmsEquipmentTableFile(file) {
     return;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     applyRmsEquipmentImport(parsed, `已导入 ${file.name}`);
   } catch (err) {
     rmsEquipmentImportStatus = `RMS 装备树导入失败：${err && err.message ? err.message : "文件无法解析"}`;
@@ -13379,8 +13466,8 @@ async function importEquipmentStructureTableFile(file) {
     return false;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
-    const imported = normalizeEquipmentStructureImport(parsed);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
+    const imported = normalizeEquipmentStructureImport(parsed, scenario.products);
     if (!imported.components.length && !imported.wholeMachineModels.length) {
       throw new Error("导入表格未包含有效装备节点");
     }
@@ -13391,6 +13478,7 @@ async function importEquipmentStructureTableFile(file) {
       quantity: imported.quantity || scenario.equipment?.quantity || 1
     };
     scenario.components = imported.components;
+    normalizeProjectProducts(scenario);
     selectedEquipmentNodeKey = imported.wholeMachineModels[0] ? `aircraft:${imported.wholeMachineModels[0]}` : "aircraft-list";
     selectedEquipmentComponentIndex = 0;
     equipmentImportStatus = `已导入 ${file.name}：${imported.wholeMachineModels.length} 个整机，${imported.components.length} 个组件。`;
@@ -13403,8 +13491,21 @@ async function importEquipmentStructureTableFile(file) {
 }
 
 function downloadEquipmentStructureTemplate() {
-  const content = "\uFEFF节点ID,父节点ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR,维修分布类型\naircraft-root,,示例整机,MODEL-A,装备,1,1,1000,1.5,固定\nsystem-1,aircraft-root,动力系统,SYS-001,系统,2,1,1200,2,正态分布\n";
-  downloadTextFile("装备系统建模导入模板.csv", content, "text/csv;charset=utf-8");
+  downloadTextFile("装备系统建模导入模板.csv", equipmentStructureTemplateCsv(), "text/csv;charset=utf-8");
+}
+
+function downloadEquipmentStructureData() {
+  try {
+    normalizeProjectProducts(scenario);
+    const selectedState = resolveSelectedEquipmentNode();
+    const aircraftModel = selectedState.aircraftModel || wholeMachineModels()[0] || scenario.equipment?.model || "";
+    const content = equipmentStructureExportCsv(scenario, { aircraftModel });
+    const safeModel = String(aircraftModel || "当前机型").replace(/[\\/:*?"<>|]/g, "-");
+    downloadTextFile(`装备系统建模-${safeModel}.csv`, content, "text/csv;charset=utf-8");
+    equipmentImportStatus = `已导出 ${aircraftModel} 装备结构，产品ID与当前 Project 产品目录保持关联。`;
+  } catch (err) {
+    equipmentImportStatus = `装备结构树导出失败：${err && err.message ? err.message : "数据无法导出"}`;
+  }
 }
 
 function downloadSupportActivityJobsTemplate() {
@@ -13416,7 +13517,7 @@ async function importSupportActivityJobsFile(tabKey, file) {
   const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity || !file) return;
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const rows = Array.isArray(parsed) ? parsed : (parsed.rows || parsed.supportActivityJobs || []);
     if (!Array.isArray(rows) || !rows.length) throw new Error("导入文件没有工作项目");
     const codes = new Set();
@@ -13446,43 +13547,78 @@ async function importSupportActivityJobsFile(tabKey, file) {
   }
 }
 
-function normalizeEquipmentStructureImport(input) {
+function normalizeEquipmentStructureImport(input, products = []) {
   const projectJson = input?.projectJson || input?.project_json || input?.scenario || input;
   if (projectJson && typeof projectJson === "object" && !Array.isArray(projectJson)) {
     const components = firstImportArray(projectJson, ["components", "equipmentComponents", "equipmentAssets"])
       || firstImportArray(projectJson.objects, ["components", "equipmentComponents", "equipmentAssets"]);
     if (components) {
+      validateEquipmentStructureProductReferences(components, products);
       const equipment = projectJson.equipment || projectJson.objects?.equipment || {};
       return normalizeEquipmentStructureRows(components, {
         defaultModel: equipment.model || equipment.aircraftModel || "",
         wholeMachineModels: equipment.wholeMachineModels || [],
-        quantity: equipment.quantity
+        quantity: equipment.quantity,
+        preserveSourceComponents: true
       });
     }
   }
-  return normalizeEquipmentStructureRows(Array.isArray(input) ? input : [input]);
+  const rows = Array.isArray(input) ? input : [input];
+  validateEquipmentStructureProductReferences(rows, products);
+  return normalizeEquipmentStructureRows(rows);
 }
 
 function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const rows = (Array.isArray(rawRows) ? rawRows : []).filter((row) => row && typeof row === "object");
   const wholeMachineModels = new Set((Array.isArray(options.wholeMachineModels) ? options.wholeMachineModels : []).map(String).filter(Boolean));
   const components = [];
+  const rootComponents = [];
+  let wholeMachineQuantity = Number(options.quantity || 0);
   rows.forEach((row, index) => {
     const explicitModel = pickImportText(row, ["aircraftModel", "aircraft_model", "整机", "整机名称", "飞机名称", "飞机型号", "装备型号", "targetProductModel"], "");
-    const productType = pickImportText(row, ["productType", "product_type", "组件属性", "产品类型", "节点类型", "type"], "");
+    const productType = pickImportText(row, ["productType", "product_type", "组件属性", "产品类型", "节点类型", "层级", "type"], "");
+    const productId = equipmentStructureProductId(row);
     const parentId = pickImportText(row, ["parentId", "parent_id", "父节点", "父节点ID", "上级节点", "parent"], "");
-    const name = pickImportText(row, ["name", "组件名称", "节点名称", "装备名称", "componentName"], "");
+    const name = pickImportText(row, ["name", "系统名称", "组件名称", "节点名称", "装备名称", "componentName"], "");
     const id = pickImportText(row, ["id", "componentId", "组件ID", "节点ID", "object_id"], "");
-    const isWholeMachine = /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
-    const aircraftModel = explicitModel || options.defaultModel || pickImportText(row, ["model", "型号"], "");
+    const isAircraftRoot = id === "aircraft-root";
+    const isWholeMachine = isAircraftRoot || /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
+    const rowModel = pickImportText(row, ["model", "型号"], "");
+    const explicitComponentRow = options.preserveSourceComponents
+      || equipmentStructureImportRowIsExplicitJson(row)
+      || Boolean(id && id !== "aircraft-root");
+    const knownAircraftModel = Array.from(wholeMachineModels)[0] || "";
+    const isSyntheticWholeMetadata = isWholeMachine && !productId && !explicitComponentRow;
+    const aircraftModel = explicitModel
+      || options.defaultModel
+      || (isSyntheticWholeMetadata ? rowModel || knownAircraftModel : knownAircraftModel || rowModel);
     if (isWholeMachine) {
       wholeMachineModels.add(aircraftModel || name || id || `导入整机${wholeMachineModels.size + 1}`);
+      wholeMachineQuantity = pickImportNumber(row, ["quantity", "安装数", "数量", "装机数量", "n"], wholeMachineQuantity || 1);
+      if (productId || explicitComponentRow) {
+        const componentId = id || `${String(aircraftModel || "whole-aircraft").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-import-${index + 1}`;
+        const rootComponent = {
+          ...row,
+          id: componentId,
+          name: name || aircraftModel || componentId,
+          model: rowModel,
+          productId,
+          productType: productType || row.productType || "whole",
+          level: pickImportText(row, ["level", "层级"], row.level || productType || "整机"),
+          quantity: Math.max(1, Math.floor(wholeMachineQuantity || 1))
+        };
+        if (parentId) rootComponent.parentId = parentId;
+        else delete rootComponent.parentId;
+        if (componentId === "aircraft-root") delete rootComponent.aircraftModel;
+        else rootComponent.aircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || "";
+        rootComponents.push(rootComponent);
+      }
       return;
     }
     const componentAircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || options.defaultModel || "导入整机";
     wholeMachineModels.add(componentAircraftModel);
     const componentId = id || `${componentAircraftModel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-import-${index + 1}`;
-    const quantity = Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "数量", "装机数量", "n"], row.quantity ?? 1)));
+    const quantity = Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "安装数", "数量", "装机数量", "n"], row.quantity ?? 1)));
     const importedKRaw = row.kOutOfN && typeof row.kOutOfN === "object" && !Array.isArray(row.kOutOfN)
       ? String(row.kOutOfN.k ?? "").trim()
       : pickImportText(row, ["kOutOfN", "k", "K值", "K值（n中取k）", "可用数量要求k", "n中取k"], "");
@@ -13491,14 +13627,26 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
       ...row,
       id: componentId,
       name: name || componentId,
+      model: pickImportText(row, ["componentModel", "component_model", "model", "型号"], rowModel),
       aircraftModel: componentAircraftModel,
       parentId: parentId || "aircraft-root",
+      productId,
       productType: /^(LRU|SRU)$/i.test(productType) ? productType.toUpperCase() : (productType && !/整机|whole|aircraft/i.test(productType) ? productType : ""),
+      level: pickImportText(row, ["level", "层级"], row.level || ""),
       quantity,
+      runningRatio: pickImportNumber(row, ["runningRatio", "running_ratio", "运行比"], row.runningRatio ?? row.missionUse?.runningRatio ?? 1),
       kOutOfN: { enabled: quantity > 1, n: quantity, k: importedK },
       connectionType: pickImportText(row, ["connectionType", "连接方式", "结构类型"], row.connectionType || "串联"),
       mtbfHours: pickImportNumber(row, ["mtbfHours", "MTBF", "mtbf", "平均故障间隔"], row.mtbfHours ?? 120),
-      meanRepairTimeMinutes: pickImportNumber(row, ["meanRepairTimeMinutes", "MTTR", "mttr", "平均修复时间"], row.meanRepairTimeMinutes ?? 120)
+      meanRepairTimeMinutes: pickImportNumber(row, ["meanRepairTimeMinutes", "MTTR", "mttr", "平均修复时间"], row.meanRepairTimeMinutes ?? 120),
+      repairDistribution: {
+        ...(row.repairDistribution && typeof row.repairDistribution === "object" ? row.repairDistribution : {}),
+        distributionType: pickImportText(
+          row,
+          ["repairDistributionType", "维修分布类型"],
+          row.repairDistribution?.distributionType || "固定值"
+        )
+      }
     };
     const kMessage = validateEquipmentComponentKOutOfN(nextComponent);
     if (kMessage) {
@@ -13509,8 +13657,8 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const models = Array.from(wholeMachineModels).filter(Boolean);
   return {
     wholeMachineModels: models,
-    components,
-    quantity: Math.max(1, Math.floor(Number(options.quantity || 1)))
+    components: [...rootComponents, ...components],
+    quantity: Math.max(1, Math.floor(Number(wholeMachineQuantity || 1)))
   };
 }
 
@@ -13525,7 +13673,7 @@ async function importSupportResourceTableFile(file, activeResourceType) {
     return false;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const rows = extractSupportResourceImportRows(parsed, resourceType);
     const importedCount = applySupportResourceImportRows(resourceType, rows);
     supportResourceImportStatus = `已导入 ${file.name}：${resourceType} ${importedCount} 行。`;
@@ -13773,48 +13921,6 @@ function pickImportNumber(row, keys, fallback = 0) {
   const matched = String(text).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
   const value = matched ? Number(matched[0]) : Number(text);
   return Number.isFinite(value) ? Math.max(0, value) : fallback;
-}
-
-function parseRmsEquipmentImportText(text, filename = "") {
-  const trimmed = String(text || "").trim();
-  if (!trimmed) throw new Error("文件为空");
-  const looksLikeJson = filename.toLowerCase().endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[");
-  if (looksLikeJson) return JSON.parse(trimmed);
-  return parseDelimitedTable(trimmed);
-}
-
-function parseDelimitedTable(text) {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) throw new Error("CSV 表格至少需要表头和一行数据");
-  const delimiter = lines[0].includes("\t") ? "\t" : ",";
-  const headers = parseDelimitedLine(lines[0], delimiter).map((header) => header.trim());
-  return lines.slice(1).map((line) => {
-    const values = parseDelimitedLine(line, delimiter);
-    return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-  });
-}
-
-function parseDelimitedLine(line, delimiter) {
-  const values = [];
-  let current = "";
-  let quoted = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    const nextChar = line[index + 1];
-    if (char === '"' && quoted && nextChar === '"') {
-      current += '"';
-      index += 1;
-    } else if (char === '"') {
-      quoted = !quoted;
-    } else if (char === delimiter && !quoted) {
-      values.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  values.push(current);
-  return values.map((value) => value.trim());
 }
 
 async function handleSystemUserAction(action) {
@@ -14381,9 +14487,30 @@ function issueStatusForDisplayIssues(issues) {
 
 async function handleMesaControl(action) {
   if (action === "reload-solara") {
+    const page = getFeaturePageById(selectedFeatureId);
+    const visualContext = isVisualSimulationPage(page)
+      ? selectedVisualSimulationExperimentPlanContext(page)
+      : null;
+    if (isVisualSimulationPage(page) && !visualContext) {
+      visualizationReplayStatus = backendExperimentPlansLoadError
+        ? `实验方案列表加载失败：${backendExperimentPlansLoadError}`
+        : backendExperimentPlansLoaded && visualSimulationExperimentPlanOptions(page).length === 0
+        ? "暂无实验方案，请先在实验方案管理中创建并保存方案"
+        : "请选择实验方案后刷新推演";
+      return;
+    }
+    const contextKey = visualContext?.key || selectedRunContextKey;
+    const parentProjectId = currentBackendProjectId();
     visualizationReplayStatus = "Solara 正在保存当前建模数据并刷新内嵌页";
     try {
       await saveSelectedProjectJsonForSolaraVisualization();
+      if (
+        selectedRunContextKey !== contextKey
+        || currentBackendProjectId() !== parentProjectId
+      ) {
+        visualizationReplayStatus = "实验方案已切换，请按当前方案重新刷新推演";
+        return;
+      }
       solaraVisualizationReloadNonce += 1;
       visualizationReplayStatus = "Solara 已保存当前建模数据，将从后端项目重新编译推演输入";
     } catch (err) {
@@ -14517,12 +14644,12 @@ function visualizationBlockedState() {
 
 function renderVisualSimulation(page) {
   const projectName = currentProject?.name || "当前项目";
-  const context = selectedExperimentPlanContext();
-  const experimentPlanName = selectedExperimentPlanName();
-  const planConfig = context?.kind === "experiment-plan" && context.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+  const context = selectedVisualSimulationExperimentPlanContext(page);
+  const experimentPlanName = context?.name || "";
+  const planConfig = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
     ? context.plan.config
     : {};
-  const planRuntimeContext = context?.kind === "experiment-plan"
+  const planRuntimeContext = context
     ? {
         experimentPlanId: context.plan.experiment_plan_id,
         planSteps: planConfig.steps,
@@ -14530,14 +14657,27 @@ function renderVisualSimulation(page) {
         planSeed: planConfig.seed
       }
     : {};
-  const solaraUrl = buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
-    projectId: solaraVisualizationProjectIdOverride || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
+  const contextProjectId = String(context?.projectJson?.project_id || "").trim();
+  const contextOverrideProjectId = (
+    solaraVisualizationProjectIdOverrideContextKey === context?.key
+    && solaraVisualizationProjectIdOverrideParentProjectId === currentBackendProjectId()
+  ) ? solaraVisualizationProjectIdOverride : "";
+  const solaraUrl = context ? buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
+    projectId: contextOverrideProjectId || contextProjectId || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
     projectName,
     featureId: page.id,
-    ...(context?.kind === "experiment-plan" ? { experimentPlanName } : {}),
+    experimentPlanName,
     ...planRuntimeContext,
     reload: solaraVisualizationReloadNonce
-  });
+  }) : "";
+  const availablePlanCount = visualSimulationExperimentPlanOptions(page).length;
+  const emptyMessage = backendExperimentPlansLoadError
+    ? `实验方案列表加载失败：${backendExperimentPlansLoadError}`
+    : backendExperimentPlansLoaded
+    ? availablePlanCount
+      ? "请选择实验方案后刷新推演"
+      : "暂无实验方案，请先在实验方案管理中创建并保存方案"
+    : "实验方案列表加载中";
   return `
     <div class="mesa-visual-shell">
       <section class="mesa-visual-toolbar">
@@ -14548,16 +14688,19 @@ function renderVisualSimulation(page) {
       </section>
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
         <div class="visual-frame-toolbar">
-          <button type="button" class="btn-primary" data-mesa-control="reload-solara">刷新推演</button>
+          <button type="button" class="btn-primary" data-mesa-control="reload-solara" ${context ? "" : "disabled"}>刷新推演</button>
         </div>
-        <iframe
+        ${context ? `<iframe
           class="solara-visualization-frame"
           title="Solara 可视化推演"
           src="${htmlEscape(solaraUrl)}"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           loading="eager"
           referrerpolicy="no-referrer"
-        ></iframe>
+        ></iframe>` : `<div class="visual-simulation-plan-empty" data-visual-simulation-plan-empty>
+          <strong>${htmlEscape(emptyMessage)}</strong>
+          ${backendExperimentPlansLoaded && !backendExperimentPlansLoadError && availablePlanCount === 0 ? `<button type="button" class="btn-secondary" data-plan-list-link>前往实验方案管理</button>` : ""}
+        </div>`}
       </div>
     </div>
   `;
