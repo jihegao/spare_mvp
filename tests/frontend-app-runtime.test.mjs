@@ -1648,7 +1648,9 @@ test("visual Mesa page renders Solara iframe shell", async () => {
 
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"|刷新推演|visual-frame-toolbar/);
     const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "mesa-visual-toolbar");
-    assert.match(visualHero, /<strong>可视化推演<\/strong>/);
+    assert.match(visualHero, /class="lite-mesa-hero mesa-visual-toolbar"/);
+    assert.match(visualHero, /<h3>可视化推演<\/h3>/);
+    assert.match(visualHero, /<p>Runtime 项目<\/p>/);
     assert.match(visualHero, /data-current-experiment-plan/);
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
     assert.match(runtime.appNode.innerHTML, /class="solara-visualization-frame"/);
@@ -6179,13 +6181,18 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(resultCards, /总样本[\s\S]*<strong>4<\/strong>/);
     assert.match(resultCards, /成功样本[\s\S]*<strong>3<\/strong>/);
     assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
-    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73 比例<\/strong>/);
-    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64 比例<\/strong>/);
-    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29 比例<\/strong>/);
+    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
+    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64<\/strong>/);
+    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29<\/strong>/);
+    assert.doesNotMatch(resultCards, /比例|架次\/机\/天|小时|项/);
     assert.match(metricTable, /<th>均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
-    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>1<\/td>/);
-    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>1<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
+    assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
+    assert.match(metricTable, /<td>维修积压<\/td>[\s\S]*?<td>项<\/td>/);
+    assert.doesNotMatch(metricTable, /比例²|\(架次\/机\/天\)²|小时²|项²/);
     for (const label of ["任务可靠度", "备件满足率", "备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }
