@@ -213,17 +213,19 @@ test("normalizes downtime factor projection payload for formal KPI and table ren
   assert.equal(view.snapshots.length, 1);
   assert.deepEqual(view.snapshots[0], {
     id: "downtime-run-ui-0001",
-    timeLabel: "60",
+    simulationTime: 60,
+    timeLabel: "DAY_1 01:00",
     eventType: "spare_shortage",
     eventLabel: "备件短缺",
-    result: "mission_delayed",
+    result: "已记录停机事件",
     activeJobs: 2,
     repairBacklog: 1,
     spareFillRate: 0.72,
     jobNodeId: "job-7",
     jobNodeLabel: "更换液压泵",
-    jobState: "waiting",
-    frameRef: "sample=0; sample_step=2; step=2"
+    jobState: "等待中",
+    frameRef: "sample=0; sample_step=2; step=2",
+    frameLabel: "第1个样本；采样步 2；仿真步 2"
   });
 });
 

@@ -1605,9 +1605,10 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
     assert.doesNotMatch(runtime.appNode.innerHTML, /正式 current-analysis/);
     assert.match(runtime.appNode.innerHTML, /停机事件一览/);
     assert.match(runtime.appNode.innerHTML, /备件短缺/);
-    assert.match(runtime.appNode.innerHTML, /repair-J15-101/);
+    assert.match(runtime.appNode.innerHTML, /保障作业/);
     assert.match(runtime.appNode.innerHTML, /任务因备件短缺延误/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /mission_delayed_by_spare_shortage|seed |t=/);
+    assert.match(runtime.appNode.innerHTML, /DAY_1 00:42/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /repair-J15-101|mission_delayed_by_spare_shortage|seed |t=/);
     assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>/);
   } finally {
     runtime.restore();
@@ -1615,12 +1616,13 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
 });
 
 test("downtime factor filters keep localized summaries, ranking, and complete event details without rerunning", async () => {
-  const event = (factor, durationHours, description, details = {}, phase = "") => ({
+  const event = (factor, durationHours, description, details = {}, phase = "", missionName = "") => ({
     event_id: `event-${factor}`,
     factor,
     tail_number: `AC-${factor}`,
     aircraft_type: "J-15",
-    mission_id: "mission-01",
+    mission_id: missionName ? `mission-${factor}` : null,
+    mission_name: missionName || null,
     mission_phase: phase,
     support_node_name: "前线保障点",
     start_minute: 60,
@@ -1641,9 +1643,9 @@ test("downtime factor filters keep localized summaries, ranking, and complete ev
         { label: "预防性维修", reason: "preventive", count: 1, event_count: 1, downtime_hours: 3, duration_contribution: 0.3 }
       ],
       event_details: [
-        event("spare_shortage", 2, "液压泵等待到货", { spare_name: "液压泵", required_quantity: 2, available_quantity: 0, shortage_quantity: 2, arrival_minute: 180 }),
-        event("failure", 4, "发动机控制器故障", { component_name: "发动机控制器", failure_mode: "随机故障", failure_minute: 60, repair_completed_minute: 300 }, "repair"),
-        event("equipment_shortage", 1, "检测仪被占用", { equipment_name: "综合检测仪", required_quantity: 1, available_quantity: 0, shortage_quantity: 1, wait_minutes: 60 }),
+        event("spare_shortage", 2, "液压泵等待到货", { spare_name: "液压泵", required_quantity: 2, available_quantity: 0, shortage_quantity: 2, arrival_minute: 180 }, "备件补给", "昼间制空任务"),
+        event("failure", 4, "发动机控制器故障", { component_name: "发动机控制器", failure_mode: "随机故障", failure_minute: 60, repair_completed_minute: 300 }, "repair", "昼间制空任务"),
+        event("equipment_shortage", 1, "检测仪被占用", { equipment_name: "综合检测仪", required_quantity: 1, available_quantity: 0, shortage_quantity: 1, wait_minutes: 60 }, "保障准备", "夜间巡逻任务"),
         event("preventive", 3, "定寿维修", { maintenance_item: "发动机定寿检查", trigger_condition: "使用寿命达到 240 小时", planned_start_minute: 60, completed_minute: null }, "preventive")
       ]
     }
@@ -1658,18 +1660,21 @@ test("downtime factor filters keep localized summaries, ranking, and complete ev
     assert.match(initial, /累计停机时长[\s\S]*<strong>10\.00 小时<\/strong>/);
     assert.match(initial, /累计停机时长（小时）/);
     assert.match(initial, /持续时长（小时）/);
-    assert.match(initial, /60 分钟[\s\S]*300 分钟/);
-    assert.match(initial, /未配置任务/);
+    assert.match(initial, /DAY_1 01:00[\s\S]*DAY_1 05:00/);
+    assert.match(initial, /昼间制空任务；阶段：备件补给/);
+    assert.match(initial, /夜间巡逻任务；阶段：保障准备/);
+    assert.match(initial, /任务外事件；阶段：预防性维修/);
     assert.match(initial, /阶段：修复性维修/);
     assert.match(initial, /阶段：预防性维修/);
     assert.doesNotMatch(initial, /<td>repair<\/td>|<td>preventive<\/td>|>\d+(?:\.\d+)? min<|持续时长\(h\)|累计停机时长\(h\)/);
     assert.ok(initial.indexOf("装备故障</td>") < initial.indexOf("预防性维修</td>"));
     assert.ok(initial.indexOf("预防性维修</td>") < initial.indexOf("备件短缺</td>"));
-    assert.match(initial, /液压泵等待到货/);
-    assert.match(initial, /发动机控制器故障/);
+    assert.match(initial, /所需备件短缺，当前作业正在等待补给/);
+    assert.match(initial, /装备发生故障，当前不可用并等待修复/);
     assert.match(initial, /综合检测仪/);
     assert.match(initial, /发动机定寿检查/);
-    assert.match(initial, /实际完成[\s\S]*--/);
+    assert.match(initial, /实际完成[\s\S]*暂无时间/);
+    assert.doesNotMatch(initial, /液压泵等待到货|发动机控制器故障|检测仪被占用|定寿维修|未配置任务|任务名称未解析/);
 
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false });
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "equipment_shortage", checked: false });
@@ -1677,20 +1682,20 @@ test("downtime factor filters keep localized summaries, ranking, and complete ev
     const failureOnly = runtime.appNode.innerHTML;
     assert.match(failureOnly, /停机事件次数[\s\S]*<strong>1<\/strong>/);
     assert.match(failureOnly, /累计停机时长[\s\S]*<strong>4\.00 小时<\/strong>/);
-    assert.match(failureOnly, /发动机控制器故障/);
-    assert.doesNotMatch(failureOnly, /液压泵等待到货|检测仪被占用|定寿维修/);
+    assert.match(failureOnly, /装备发生故障，当前不可用并等待修复/);
+    assert.doesNotMatch(failureOnly, /所需备件短缺，当前作业正在等待补给|保障设备不足，当前作业正在等待资源|装备正在执行预防性维修/);
 
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: true });
     const combined = runtime.appNode.innerHTML;
     assert.match(combined, /停机事件次数[\s\S]*<strong>2<\/strong>/);
     assert.match(combined, /累计停机时长[\s\S]*<strong>6\.00 小时<\/strong>/);
-    assert.match(combined, /液压泵等待到货/);
-    assert.match(combined, /发动机控制器故障/);
+    assert.match(combined, /所需备件短缺，当前作业正在等待补给/);
+    assert.match(combined, /装备发生故障，当前不可用并等待修复/);
 
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "failure", checked: false });
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false });
     assert.match(runtime.appNode.innerHTML, /请选择至少一种停机因素/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /downtime-factor-summary-table|液压泵等待到货|发动机控制器故障/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /downtime-factor-summary-table|所需备件短缺，当前作业正在等待补给|装备发生故障，当前不可用并等待修复/);
     assert.equal(runtime.requests.filter((request) => request.url === "/api/mesa-analysis-runs").length, initialRequestCount);
   } finally {
     runtime.restore();

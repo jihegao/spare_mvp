@@ -35,6 +35,7 @@ from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     period_completion_summary,
 )
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
+from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
 
 
 ANALYSIS_PROJECTION_ARTIFACT_KINDS = {
@@ -2459,7 +2460,7 @@ def _lite_mesa_downtime_event_details(samples: list[dict[str, Any]]) -> list[dic
             factor = str(event.get("factor") or "")
             if factor not in {"failure", "equipment_shortage", "spare_shortage", "preventive"}:
                 continue
-            item = copy.deepcopy(event)
+            item = normalize_downtime_event_for_analysis(event)
             item["sample_index"] = sample_index
             item["seed"] = seed
             item["source_event_id"] = str(event.get("event_id") or "")

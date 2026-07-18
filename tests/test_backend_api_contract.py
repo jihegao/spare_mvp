@@ -32,6 +32,7 @@ from src.spare_mvp_backend.project_payload import export_project_json, strip_pro
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_backend.run_service import RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
+from src.spare_mvp_contract.downtime import format_simulation_minute
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -472,6 +473,64 @@ class BackendApiContractTest(unittest.TestCase):
             sum(row["downtime_hours"] for row in event_backed["rows"]),
             sum(event["duration_minutes"] for event in event_backed["event_details"]) / 60,
         )
+
+    def test_downtime_event_contract_localizes_aliases_and_all_visible_times(self) -> None:
+        result = _lite_mesa_downtime_factors_result(
+            {"data": []},
+            {},
+            [
+                {
+                    "sample_index": 0,
+                    "seed": 17,
+                    "downtime_events": [
+                        {
+                            "event_id": "d-1",
+                            "factor": "failure",
+                            "tail_number": "J15-101",
+                            "taskId": "internal-task-id",
+                            "taskLabel": "昼间制空任务",
+                            "phaseId": "internal-phase-id",
+                            "phaseName": "故障诊断",
+                            "start_time": 1439,
+                            "end_time": 1505,
+                            "duration_minutes": 66,
+                            "description": "unavailable_after_failure",
+                            "details": {
+                                "failureTime": 1435,
+                                "repairCompletedTime": 1505,
+                            },
+                        },
+                        {
+                            "event_id": "d-2",
+                            "factor": "preventive",
+                            "start_minute": 0,
+                            "end_minute": 1,
+                            "duration_minutes": 1,
+                            "details": {},
+                        },
+                    ],
+                }
+            ],
+            {"topN": 10},
+        )
+
+        failure = next(event for event in result["event_details"] if event["factor"] == "failure")
+        task_external = next(event for event in result["event_details"] if event["factor"] == "preventive")
+        self.assertEqual(failure["mission_id"], "internal-task-id")
+        self.assertEqual(failure["mission_name"], "昼间制空任务")
+        self.assertEqual(failure["mission_phase_id"], "internal-phase-id")
+        self.assertEqual(failure["mission_phase_name"], "故障诊断")
+        self.assertEqual(failure["task_phase_label"], "昼间制空任务；阶段：故障诊断")
+        self.assertEqual(failure["start_time_label"], "DAY_1 23:59")
+        self.assertEqual(failure["end_time_label"], "DAY_2 01:05")
+        self.assertEqual(failure["details"]["failure_time_label"], "DAY_1 23:55")
+        self.assertEqual(failure["details"]["repair_completed_time_label"], "DAY_2 01:05")
+        self.assertEqual(failure["description"], "飞机J15-101装备发生故障，当前不可用并等待修复")
+        self.assertEqual(task_external["task_phase_label"], "不在任务阶段")
+        self.assertEqual(task_external["details"]["failure_time_label"], "暂无时间")
+        self.assertEqual(format_simulation_minute(0), "DAY_1 00:00")
+        self.assertEqual(format_simulation_minute(3905), "DAY_3 17:05")
+        self.assertEqual(format_simulation_minute(None), "暂无时间")
 
     def test_rms_export_is_a_real_xlsx_workbook(self) -> None:
         from openpyxl import load_workbook
