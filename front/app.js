@@ -23,6 +23,10 @@ import {
   projectionArtifactKindForAnalysisType
 } from "./analysis-projection-adapters.mjs";
 import {
+  formatMonteCarloMoment,
+  normalizeMonteCarloMetricMoments
+} from "./monte-carlo-moments.mjs";
+import {
   formatReliabilityPercent,
   normalizeTaskReliabilityResultFields,
   taskReliabilityMetricPairs
@@ -165,15 +169,6 @@ const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
   spareMultipliers: [1],
   supportCapacities: [1]
 });
-const LITE_MESA_MONTE_CARLO_METRICS = Object.freeze([
-  { key: "mission_success_rate", label: "任务可靠度", format: "ratio" },
-  { key: "spare_fill_rate", label: "备件满足率", format: "ratio" },
-  { key: "spare_utilization", label: "备件利用率", format: "ratio" },
-  { key: "ready_rate", label: "战备完好率", format: "ratio" },
-  { key: "sortie_rate", label: "出动架次率", format: "ratio" },
-  { key: "mean_transport_delay", label: "平均备件延误时间", format: "number" },
-  { key: "repair_backlog", label: "维修积压", format: "number" }
-]);
 const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
   spare_shortfall: {
     experimentId: "project_baseline_at_current_granularity",
@@ -16584,9 +16579,10 @@ function m7RunArtifactRows() {
 
 function renderLiteMesaMonteCarloAnalysis(page) {
   const result = liteMesaMonteCarloResult;
-  const runCount = result?.sampleCount || result?.runs?.length || 0;
+  const hasResult = Boolean(result);
   const metricRows = liteMesaBusinessMetricRows(result);
-  const topMetrics = metricRows.slice(0, 4);
+  const topMetrics = metricRows.filter((row) => row.validSampleCount > 0).slice(0, 4);
+  const counts = result?.metricMoments || {};
   const projectName = currentProject?.name || "当前项目";
   const experimentPlanName = selectedExperimentPlanName();
   return `
@@ -16612,12 +16608,17 @@ function renderLiteMesaMonteCarloAnalysis(page) {
           <div class="section-head">
             <h3>实验运行结果</h3>
           </div>
-          ${runCount ? `
+          ${hasResult ? `
+            <div class="lite-mesa-metric-cards">
+              <div class="metric-card"><span>总样本</span><strong>${htmlEscape(counts.totalSampleCount || 0)}</strong></div>
+              <div class="metric-card"><span>成功样本</span><strong>${htmlEscape(counts.successfulSampleCount || 0)}</strong></div>
+              <div class="metric-card"><span>失败样本</span><strong>${htmlEscape(counts.failedSampleCount || 0)}</strong></div>
+            </div>
             <div class="lite-mesa-metric-cards">
               ${topMetrics.map((row) => `
                 <div class="metric-card">
                   <span>${htmlEscape(row.label)}</span>
-                  <strong>${htmlEscape(row.resultLabel)}</strong>
+                  <strong>${htmlEscape(row.meanLabel)} ${htmlEscape(row.unit)}</strong>
                 </div>
               `).join("")}
             </div>
@@ -16634,13 +16635,16 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         </div>
         <div class="table-wrap">
           <table class="lite-mesa-stat-table">
-            <thead><tr><th>业务指标</th><th>最终结果</th></tr></thead>
-            <tbody>${runCount ? metricRows.map((row) => `
+            <thead><tr><th>业务指标</th><th>均值</th><th>样本方差（n-1）</th><th>单位</th><th>有效样本数</th></tr></thead>
+            <tbody>${hasResult ? metricRows.map((row) => `
               <tr>
                 <td>${htmlEscape(row.label)}</td>
-                <td>${htmlEscape(row.resultLabel)}</td>
+                <td>${htmlEscape(row.meanLabel)}</td>
+                <td>${htmlEscape(row.varianceLabel)}</td>
+                <td>${htmlEscape(row.unit)} / ${htmlEscape(row.varianceUnit)}</td>
+                <td>${htmlEscape(row.validSampleCount)}</td>
               </tr>
-            `).join("") : `<tr><td colspan="2">当前没有可展示的业务结果。</td></tr>`}</tbody>
+            `).join("") : `<tr><td colspan="5">当前没有可展示的业务结果。</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -16738,6 +16742,16 @@ function liteMesaMonteCarloFailureStatus(error, { samples, seed, parallelCores }
 
 function normalizeLiteMesaMonteCarloResult(payload) {
   if (!payload || payload.status === "blocked") {
+    const failedSamples = Array.isArray(payload?.failed_samples)
+      ? payload.failed_samples
+      : Array.isArray(payload?.errors) ? payload.errors : [];
+    const requestedSampleCount = Number(payload?.requested_sample_count || 0);
+    const failedSampleCount = Number(payload?.failed_sample_count || failedSamples.length || 0);
+    const metricMoments = normalizeMonteCarloMetricMoments(payload?.metric_moments, [], {
+      totalSampleCount: requestedSampleCount,
+      successfulSampleCount: 0,
+      failedSampleCount
+    });
     return {
       status: "blocked",
       sampleCount: 0,
@@ -16745,11 +16759,10 @@ function normalizeLiteMesaMonteCarloResult(payload) {
       runs: [],
       metrics: Array.isArray(payload?.metrics) ? payload.metrics : [],
       aggregateMetrics: payload?.aggregate_metrics || {},
-      requestedSampleCount: Number(payload?.requested_sample_count || 0),
-      failedSampleCount: Number(payload?.failed_sample_count || payload?.errors?.length || 0),
-      failedSamples: Array.isArray(payload?.failed_samples)
-        ? payload.failed_samples
-        : Array.isArray(payload?.errors) ? payload.errors : [],
+      requestedSampleCount,
+      failedSampleCount,
+      failedSamples,
+      metricMoments,
       parallelCores: Number(payload?.parallel_cores || 0),
       workerCount: Number(payload?.worker_count || 0),
       sampleDiagnostics: Array.isArray(payload?.sample_diagnostics) ? payload.sample_diagnostics : [],
@@ -16757,17 +16770,27 @@ function normalizeLiteMesaMonteCarloResult(payload) {
       message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
     };
   }
+  const runs = Array.isArray(payload.samples) ? payload.samples : [];
+  const sampleCount = Number(payload.sample_count || payload.sampleCount || 0);
+  const requestedSampleCount = Number(payload.requested_sample_count || sampleCount || 0);
+  const failedSampleCount = Number(payload.failed_sample_count || payload.failed_samples?.length || 0);
+  const metricMoments = normalizeMonteCarloMetricMoments(payload.metric_moments, runs, {
+    totalSampleCount: requestedSampleCount,
+    successfulSampleCount: sampleCount,
+    failedSampleCount
+  });
   return {
     status: payload.status === "session_complete" ? "session_complete" : "blocked",
-    sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
+    sampleCount,
     groups: [],
-    runs: Array.isArray(payload.samples) ? payload.samples : [],
+    runs,
     metrics: Array.isArray(payload.metrics) ? payload.metrics : [],
     aggregateMetrics: payload.aggregate_metrics || {},
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
-    requestedSampleCount: Number(payload.requested_sample_count || payload.sample_count || 0),
-    failedSampleCount: Number(payload.failed_sample_count || payload.failed_samples?.length || 0),
+    requestedSampleCount,
+    failedSampleCount,
     failedSamples: Array.isArray(payload.failed_samples) ? payload.failed_samples : [],
+    metricMoments,
     parallelCores: Number(payload.parallel_cores || 0),
     workerCount: Number(payload.worker_count || 0),
     sampleDiagnostics: Array.isArray(payload.sample_diagnostics) ? payload.sample_diagnostics : [],
@@ -16777,28 +16800,13 @@ function normalizeLiteMesaMonteCarloResult(payload) {
 }
 
 function liteMesaBusinessMetricRows(result) {
-  const runs = Array.isArray(result?.runs) ? result.runs : [];
-  return LITE_MESA_MONTE_CARLO_METRICS.map((metric) => {
-    const values = runs
-      .map((run) => Number(run.final?.[metric.key]))
-      .filter((value) => Number.isFinite(value));
-    const aggregateValue = Number(result?.aggregateMetrics?.[metric.key]);
-    const finalValue = Number.isFinite(aggregateValue)
-      ? aggregateValue
-      : values.length
-        ? values.reduce((sum, value) => sum + value, 0) / values.length
-        : 0;
-    return {
-      ...metric,
-      resultLabel: formatLiteMesaMetric(finalValue, metric.format)
-    };
-  });
-}
-
-function formatLiteMesaMetric(value, format) {
-  if (format === "ratio") return ratioFixed(value);
-  if (format === "pct") return ratioFixed(value);
-  return fixed(value, 2);
+  return (result?.metricMoments?.metrics || []).map((metric) => ({
+    ...metric,
+    meanLabel: metric.validSampleCount > 0 && metric.mean === null
+      ? "不可计算"
+      : formatMonteCarloMoment(metric.mean, metric.valueFormat),
+    varianceLabel: formatMonteCarloMoment(metric.sampleVariance, metric.valueFormat, { variance: true })
+  }));
 }
 
 function renderAnalysis(page) {
