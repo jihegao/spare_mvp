@@ -314,6 +314,7 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   const normalized = cloneJson(projectJson);
   normalizeProjectProducts(normalized);
   normalizeProjectJsonBasicMissions(normalized);
+  normalizeBasicMissionSupportActivityNames(normalized);
   ensureUniqueSupportActivityNames(normalized);
   normalizeMissionTaskFieldOwnership(normalized);
   syncCompositeTaskInheritedBasicFields(normalized);
@@ -328,6 +329,37 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   stripDeprecatedSupportActivityStrategyFields(normalized);
   normalizeProjectProducts(normalized);
   return normalized;
+}
+
+function normalizeBasicMissionSupportActivityNames(projectJson) {
+  const activities = Array.isArray(projectJson?.supportActivities) ? projectJson.supportActivities : [];
+  const basicMissions = Array.isArray(projectJson?.basicMissions) ? projectJson.basicMissions : [];
+  if (!activities.length || !basicMissions.length) return;
+
+  const canonicalNameCounts = new Map();
+  const activitiesByLegacyName = new Map();
+  for (const activity of activities) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    const canonicalName = String(activity.activityName || "").trim();
+    if (canonicalName) canonicalNameCounts.set(canonicalName, (canonicalNameCounts.get(canonicalName) || 0) + 1);
+    const legacyName = String(activity.name || "").trim();
+    if (!legacyName) continue;
+    const matches = activitiesByLegacyName.get(legacyName) || [];
+    matches.push(activity);
+    activitiesByLegacyName.set(legacyName, matches);
+  }
+
+  for (const mission of basicMissions) {
+    if (!mission || typeof mission !== "object" || Array.isArray(mission)) continue;
+    const reference = String(mission.supportActivityName || "").trim();
+    if (!reference || canonicalNameCounts.get(reference) === 1) continue;
+    const legacyMatches = activitiesByLegacyName.get(reference) || [];
+    if (legacyMatches.length !== 1) continue;
+    const canonicalName = String(legacyMatches[0].activityName || "").trim();
+    if (canonicalName && canonicalNameCounts.get(canonicalName) === 1) {
+      mission.supportActivityName = canonicalName;
+    }
+  }
 }
 
 export function normalizeProjectJsonBasicMissions(projectJson) {

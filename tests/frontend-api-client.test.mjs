@@ -6,7 +6,8 @@ import {
   buildBackendProjectJson,
   buildExperimentPlanConfig,
   createBackendApiClient,
-  liteMesaAnalysisRequestTimeoutMs
+  liteMesaAnalysisRequestTimeoutMs,
+  normalizeProjectJsonForClientDraft
 } from "../front/api-client.mjs";
 
 test("frontend API client exposes stable PR-F save run and result methods", async () => {
@@ -1041,6 +1042,56 @@ test("buildBackendProjectJson strips support activity plan-layer legacy fields",
   assert.deepEqual(projectJson.supportActivities[0].activityCodes, ["OPS-001"]);
   assert.deepEqual(projectJson.supportActivities[0].predecessors, { "OPS-001": [] });
   assert.equal(projectJson.supportActivityJobs[0].activityCode, "OPS-001");
+});
+
+test("legacy support activity display-name references are canonicalized when loaded and saved", () => {
+  const persistedProject = {
+    scenarioId: "legacy-support-activity-reference",
+    basicMissions: [
+      {
+        id: "mission-legacy-support",
+        name: "飞行训练",
+        equipmentType: "J16",
+        supportActivityName: "飞行前保障"
+      }
+    ],
+    supportActivities: [
+      {
+        id: "support-preflight",
+        name: "飞行前保障",
+        activityName: "J16直接准备方案",
+        activityType: "使用保障",
+        planType: "使用保障方案",
+        aircraftModel: "J16"
+      }
+    ]
+  };
+
+  const loadedDraft = normalizeProjectJsonForClientDraft(persistedProject);
+  const savedProject = buildBackendProjectJson(loadedDraft, { id: "legacy-support-activity-reference" });
+
+  assert.equal(loadedDraft.basicMissions[0].supportActivityName, "J16直接准备方案");
+  assert.equal(savedProject.basicMissions[0].supportActivityName, "J16直接准备方案");
+  assert.equal(savedProject.supportActivities[0].activityName, "J16直接准备方案");
+  assert.equal("name" in savedProject.supportActivities[0], false);
+  assert.equal(persistedProject.basicMissions[0].supportActivityName, "飞行前保障");
+});
+
+test("ambiguous legacy support activity display-name references are not silently reassigned", () => {
+  const persistedProject = {
+    scenarioId: "ambiguous-legacy-support-activity-reference",
+    basicMissions: [
+      { id: "mission-ambiguous-support", supportActivityName: "飞行前保障" }
+    ],
+    supportActivities: [
+      { id: "support-a", name: "飞行前保障", activityName: "J16直接准备方案" },
+      { id: "support-b", name: "飞行前保障", activityName: "J16再次出动准备方案" }
+    ]
+  };
+
+  const loadedDraft = normalizeProjectJsonForClientDraft(persistedProject);
+
+  assert.equal(loadedDraft.basicMissions[0].supportActivityName, "飞行前保障");
 });
 
 test("buildBackendProjectJson migrates duplicate operations activity names into stable mission references", () => {
