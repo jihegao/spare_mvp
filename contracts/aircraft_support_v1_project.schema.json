@@ -252,7 +252,11 @@
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
         "model": { "type": "string" },
-        "kind": { "type": "string" }
+        "kind": { "type": "string" },
+        "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
+        "meanRepairTimeMinutes": { "type": "number", "minimum": 0 },
+        "failureDistribution": { "$ref": "#/$defs/dictionary" },
+        "repairDistribution": { "$ref": "#/$defs/dictionary" }
       }
     },
     "component": {
@@ -267,6 +271,8 @@
         "aircraftModel": { "type": "string" },
         "productType": { "type": "string" },
         "quantity": { "type": "integer", "minimum": 0 },
+        "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
+        "meanRepairTimeMinutes": { "type": "number", "minimum": 0 },
         "failureDistribution": { "$ref": "#/$defs/dictionary" },
         "repairDistribution": { "$ref": "#/$defs/dictionary" },
         "kOutOfN": { "$ref": "#/$defs/dictionary" },

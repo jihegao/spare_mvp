@@ -543,6 +543,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
     "product-radar",
     "product-雷达备件"
   ]);
+  assert.equal(draft.objects.products.find((product) => product.id === "product-radar").mtbfHours, 120);
   assert.deepEqual(draft.objects.supportResources, projectJson.supportResources);
   assert.deepEqual(draft.objects.transportPolicies, [{
     id: "transport-deck",

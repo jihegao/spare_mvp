@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  componentsSharingProduct,
   createProjectProduct,
   findProjectProductConflicts,
   searchProjectProducts,
-  normalizeProjectProducts
+  normalizeProjectProducts,
+  updateSharedProductParameter
 } from "../front/product-catalog.mjs";
 
 test("legacy projects receive deterministic products and product references without spareType", () => {
@@ -96,4 +98,41 @@ test("product search keeps a 442-item catalog pure and returns only matching can
     ["product-442"]
   );
   assert.equal(JSON.stringify(project.products), before);
+});
+
+test("shared reliability parameters hydrate from the canonical exact product ID and update every exact reference", () => {
+  const project = {
+    products: [
+      { id: "product-engine", name: "发动机", mtbfHours: 1200, repairDistribution: { distributionType: "固定值" } },
+      { id: "PRODUCT-ENGINE", name: "大小写不同产品", mtbfHours: 300 }
+    ],
+    components: [
+      { id: "j15-engine", productId: "product-engine", mtbfHours: 1 },
+      { id: "j35-engine", productId: "product-engine" },
+      { id: "case-sensitive-engine", productId: "PRODUCT-ENGINE" }
+    ]
+  };
+  normalizeProjectProducts(project);
+  assert.deepEqual(componentsSharingProduct(project, "product-engine").map((item) => item.id), ["j15-engine", "j35-engine"]);
+  assert.equal(project.components[0].mtbfHours, 1200);
+  assert.equal(project.components[1].mtbfHours, 1200);
+  assert.equal(project.components[2].mtbfHours, 300);
+  assert.equal(updateSharedProductParameter(project, "product-engine", "repairDistribution.value", 90), true);
+  assert.equal(project.products[0].repairDistribution.value, 90);
+  assert.equal(project.components[0].repairDistribution.value, 90);
+  assert.equal(project.components[1].repairDistribution.value, 90);
+  assert.equal(project.components[2].repairDistribution, undefined);
+});
+
+test("legacy component parameters seed a product once and canonical product values win conflicts", () => {
+  const project = {
+    products: [{ id: "product-shared", name: "共享产品" }],
+    components: [
+      { id: "first", productId: "product-shared", failureDistribution: { distributionType: "指数分布", rate: 0.01 } },
+      { id: "second", productId: "product-shared", failureDistribution: { distributionType: "指数分布", rate: 0.02 } }
+    ]
+  };
+  normalizeProjectProducts(project);
+  assert.equal(project.products[0].failureDistribution.rate, 0.01);
+  assert.equal(project.components[1].failureDistribution.rate, 0.01);
 });

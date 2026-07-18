@@ -114,7 +114,48 @@ export function normalizeProjectProducts(project) {
   }
 
   project.products = [...byId.values()];
+  synchronizeProjectProductParameters(project);
   return project;
+}
+
+export const SHARED_PRODUCT_PARAMETER_FIELDS = Object.freeze([
+  "mtbfHours", "meanRepairTimeMinutes", "failureDistribution", "repairDistribution"
+]);
+
+export function synchronizeProjectProductParameters(project) {
+  if (!project || typeof project !== "object" || Array.isArray(project)) return project;
+  const products = Array.isArray(project.products) ? project.products : [];
+  const components = Array.isArray(project.components) ? project.components : [];
+  const productsById = new Map(products.map((product) => [cleanText(product?.id), product]));
+  for (const component of components) {
+    const product = productsById.get(cleanText(component?.productId));
+    if (!product) continue;
+    for (const field of SHARED_PRODUCT_PARAMETER_FIELDS) {
+      if (!Object.hasOwn(product, field) && Object.hasOwn(component, field)) product[field] = cloneValue(component[field]);
+    }
+  }
+  for (const component of components) {
+    const product = productsById.get(cleanText(component?.productId));
+    if (product) copySharedProductParameters(product, component);
+  }
+  return project;
+}
+
+export function updateSharedProductParameter(project, productId, parameterPath, value) {
+  const product = projectProductById(project, productId);
+  const path = String(parameterPath || "").split(".").filter(Boolean);
+  if (!product || !path.length || !SHARED_PRODUCT_PARAMETER_FIELDS.includes(path[0])) return false;
+  setNestedValue(product, path, cloneValue(value));
+  for (const component of project.components || []) {
+    if (cleanText(component?.productId) === cleanText(productId)) copySharedProductParameters(product, component);
+  }
+  return true;
+}
+
+export function componentsSharingProduct(project, productId) {
+  const exactId = cleanText(productId);
+  return (Array.isArray(project?.components) ? project.components : [])
+    .filter((component) => cleanText(component?.productId) === exactId);
 }
 
 export function ensureProductForComponent(project, component) {
@@ -176,12 +217,37 @@ export function productDisplayName(product) {
 }
 
 function productFromComponent(component, id) {
-  return {
+  const product = {
     id,
     name: cleanText(component.name) || id,
     model: cleanText(component.model) || cleanText(component.id),
     kind: cleanText(component.productType) || "非LRU"
   };
+  for (const field of SHARED_PRODUCT_PARAMETER_FIELDS) {
+    if (Object.hasOwn(component, field)) product[field] = cloneValue(component[field]);
+  }
+  return product;
+}
+
+function copySharedProductParameters(product, component) {
+  for (const field of SHARED_PRODUCT_PARAMETER_FIELDS) {
+    if (Object.hasOwn(product, field)) component[field] = cloneValue(product[field]);
+    else delete component[field];
+  }
+}
+
+function setNestedValue(target, path, value) {
+  let cursor = target;
+  for (const segment of path.slice(0, -1)) {
+    if (!cursor[segment] || typeof cursor[segment] !== "object" || Array.isArray(cursor[segment])) cursor[segment] = {};
+    cursor = cursor[segment];
+  }
+  cursor[path.at(-1)] = value;
+}
+
+function cloneValue(value) {
+  if (value === undefined || value === null || typeof value !== "object") return value;
+  return JSON.parse(JSON.stringify(value));
 }
 
 function productIdentityIndex(products) {
