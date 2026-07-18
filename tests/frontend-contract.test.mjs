@@ -4398,6 +4398,9 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.ok(workbenchSource.indexOf("装备结构树") < workbenchSource.indexOf("RMS 输入与指标分配计算"));
   assert.ok(workbenchSource.indexOf("RMS 输入与指标分配计算") < workbenchSource.indexOf("<h3>节点分配结果</h3>"));
   assert.match(workbenchSource, /运行比/);
+  assert.match(workbenchSource, /<th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th>/);
+  assert.match(workbenchSource, /compactNumber\(row\.mtbfHours\)/);
+  assert.match(workbenchSource, /compactNumber\(row\.mttrHours\)/);
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
   assert.doesNotMatch(workbenchSource, /<th>结构<\/th>/);
   assert.match(workbenchSource, /计算完成。/);

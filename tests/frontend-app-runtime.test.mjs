@@ -3619,6 +3619,8 @@ test("RMS method changes invalidate the current aircraft result until recalculat
     await new Promise((resolve) => setTimeout(resolve, 2050));
     const initialResultPanel = htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel");
     assert.match(initialResultPanel, /25%/);
+    assert.match(initialResultPanel, /<th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th>/);
+    assert.match(initialResultPanel, /<td>1000<\/td>\s*<td>2<\/td>\s*<td>25%<\/td>/);
 
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
 
@@ -3793,7 +3795,9 @@ test("RMS per-aircraft inputs, tree selection and saved results hydrate without 
     assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="completed"[^>]*>计算完成/);
     assert.match(runtime.appNode.innerHTML, /data-rms-path="inputs\.missionReliability"[^>]*value="0\.91"/);
     assert.match(runtime.appNode.innerHTML, /tree-node-label selected" data-rms-equipment-node="rms:J-15:j15-engine"/);
-    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+    const restoredResultPanel = htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel");
+    assert.match(restoredResultPanel, /40%/);
+    assert.match(restoredResultPanel, /<td>1000<\/td>\s*<td>2<\/td>\s*<td>40%<\/td>/);
 
     await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-20" });
     assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
@@ -3812,6 +3816,8 @@ test("RMS per-aircraft inputs, tree selection and saved results hydrate without 
     assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.schemaVersion, "rms-allocation-plan-v4");
     assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.algorithmVersion, "rms-engine-4.0.0");
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-15"].aircraftModel, "J-15");
+    assert.ok(saved.rmsAllocationResult.byAircraftModel["J-15"].nodeResults.every((row) => row.mtbfHours === 1000));
+    assert.ok(saved.rmsAllocationResult.byAircraftModel["J-15"].nodeResults.every((row) => row.mttrHours === 2));
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-20"], undefined);
   } finally {
     runtime.restore();
@@ -7189,10 +7195,15 @@ function createPersistedRmsRuntimeProjectJson() {
       }
     }
   };
+  const legacyJ15Result = calculateRmsAllocation(j15Plan, j15Project);
+  legacyJ15Result.nodeResults.forEach((row) => {
+    delete row.mtbfHours;
+    delete row.mttrHours;
+  });
   project.rmsAllocationResult = {
     schemaVersion: "rms-allocation-result-set-v1",
     byAircraftModel: {
-      "J-15": calculateRmsAllocation(j15Plan, j15Project)
+      "J-15": legacyJ15Result
     }
   };
   return project;

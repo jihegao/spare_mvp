@@ -31,12 +31,14 @@ test("equal allocation returns a normalized forward allocation contract", () => 
   assert.equal(result.nodeResults.length, 4);
   assert.ok(Math.abs(result.totals.allocationShare - 1) < 1e-12);
   assert.ok(result.nodeResults.every((row) => row.allocationShare === 0.25));
+  assert.ok(result.nodeResults.every((row) => row.mtbfHours === plan.inputs.mtbfHours));
+  assert.ok(result.nodeResults.every((row) => row.mttrHours === plan.inputs.mttrHours));
   for (const removedField of ["targetMetrics", "verification", "exposure"]) {
     assert.equal(removedField in result, false);
   }
   for (const row of result.nodeResults) {
     assert.deepEqual(Object.keys(row), [
-      "nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "allocationShare", "status"
+      "nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "mtbfHours", "mttrHours", "allocationShare", "status"
     ]);
   }
 });

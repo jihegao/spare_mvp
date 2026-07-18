@@ -742,6 +742,8 @@ export function calculateRmsAllocation(plan, project) {
       model: node.model || node.partNumber || "",
       installationCount: normalizedInstallationCount(node.quantity),
       runningRatio,
+      mtbfHours: inputSnapshot.mtbfHours,
+      mttrHours: inputSnapshot.mttrHours,
       allocationShare: weights[node.id],
       status: "已分配"
     };

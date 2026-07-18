@@ -627,6 +627,7 @@ class BackendApiContractTest(unittest.TestCase):
             "rows": [{
                 "level": "系统", "nodeName": "动力", "model": "SYS-001",
                 "installationCount": 2, "runningRatio": 0.8,
+                "mtbfHours": 1200, "mttrHours": 2.5,
                 "allocationShare": 0.625, "status": "已分配",
             }],
         })
@@ -634,12 +635,12 @@ class BackendApiContractTest(unittest.TestCase):
         workbook = load_workbook(BytesIO(download["body"]), read_only=True)
         sheet = workbook["RMS分配结果"]
         self.assertEqual(
-            [sheet.cell(5, column).value for column in range(1, 8)],
-            ["层级", "节点", "型号", "安装数", "运行比", "分配份额", "状态"],
+            [sheet.cell(5, column).value for column in range(1, 10)],
+            ["层级", "节点", "型号", "安装数", "运行比", "MTBF(h)", "MTTR(h)", "分配份额", "状态"],
         )
         self.assertEqual(
-            [sheet.cell(6, column).value for column in range(1, 8)],
-            ["系统", "动力", "SYS-001", 2, 0.8, 0.625, "已分配"],
+            [sheet.cell(6, column).value for column in range(1, 10)],
+            ["系统", "动力", "SYS-001", 2, 0.8, 1200, 2.5, 0.625, "已分配"],
         )
 
     def _fixture(self, name: str) -> dict:

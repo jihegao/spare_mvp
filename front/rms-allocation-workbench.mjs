@@ -118,7 +118,7 @@ export function renderRmsAllocationWorkbench({
         <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel"${canExport ? "" : " disabled"}>导出 Excel</button></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>层级</th><th>节点</th><th>型号</th><th>安装数</th><th>运行比</th><th>分配份额</th><th>状态</th></tr></thead>
+            <thead><tr><th>层级</th><th>节点</th><th>型号</th><th>安装数</th><th>运行比</th><th>MTBF(h)</th><th>MTTR(h)</th><th>分配份额</th><th>状态</th></tr></thead>
             <tbody>${visibleResult?.nodeResults?.length ? visibleResult.nodeResults.map((row) => `
               <tr>
                 <td>${htmlEscape(row.level)}</td>
@@ -126,10 +126,12 @@ export function renderRmsAllocationWorkbench({
                 <td>${htmlEscape(row.model || "-")}</td>
                 <td>${row.installationCount}</td>
                 <td>${compactNumber(row.runningRatio)}</td>
+                <td>${compactNumber(row.mtbfHours)}</td>
+                <td>${compactNumber(row.mttrHours)}</td>
                 <td>${pct(row.allocationShare)}</td>
                 <td>${htmlEscape(row.status)}</td>
               </tr>
-            `).join("") : '<tr><td colspan="7">当前飞机型号暂无计算结果。</td></tr>'}</tbody>
+            `).join("") : '<tr><td colspan="9">当前飞机型号暂无计算结果。</td></tr>'}</tbody>
           </table>
         </div>
       </section>

@@ -13673,7 +13673,9 @@ function ensureRmsAllocationStateForScenario() {
       ? savedState.selectedEquipmentNodeId
       : baseProject.rootId;
     const savedResult = savedResultEnvelope.byAircraftModel?.[aircraftModel];
-    const completedResult = rmsResultMatchesCurrentState(savedResult, plan, baseProject) ? savedResult : null;
+    const completedResult = rmsResultMatchesCurrentState(savedResult, plan, baseProject)
+      ? normalizeRmsResultMetricSnapshots(savedResult)
+      : null;
     rmsAircraftStates[aircraftModel] = {
       project: baseProject,
       plan,
@@ -13727,6 +13729,23 @@ function rmsResultMatchesCurrentState(result, plan, project) {
       && Number(row.installationCount) === Number(node.quantity)
       && Number(row.runningRatio) === Number(runningRatio);
   });
+}
+
+function normalizeRmsResultMetricSnapshots(result) {
+  const mtbfHours = Number(result?.inputSnapshot?.mtbfHours);
+  const mttrHours = Number(result?.inputSnapshot?.mttrHours);
+  return {
+    ...result,
+    nodeResults: (result?.nodeResults || []).map((row) => ({
+      ...row,
+      mtbfHours: Number.isFinite(Number(row.mtbfHours)) && Number(row.mtbfHours) > 0
+        ? Number(row.mtbfHours)
+        : mtbfHours,
+      mttrHours: Number.isFinite(Number(row.mttrHours)) && Number(row.mttrHours) >= 0
+        ? Number(row.mttrHours)
+        : mttrHours
+    }))
+  };
 }
 
 function selectRmsAircraftModel(aircraftModel) {
