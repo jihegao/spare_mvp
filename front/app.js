@@ -573,6 +573,7 @@ let modelingFormFieldUnits = createDefaultModelingFormFieldUnits();
 let personnelSpecialtyDraft = "";
 let productCatalogQuery = "";
 let productCatalogEditor = null;
+let isProductCatalogCollapsed = false;
 
 const SYSTEM_PERMISSION_ROWS = [
   { feature: "项目管理", admin: "编辑", data: "编辑", user: "只读" },
@@ -1827,6 +1828,13 @@ function bindEvents() {
     const personnelSpecialtyDeleteButton = event.target.closest("[data-personnel-specialty-delete]");
     if (personnelSpecialtyDeleteButton) {
       deletePersonnelSpecialty(personnelSpecialtyDeleteButton.dataset.personnelSpecialtyDelete);
+      render();
+      return;
+    }
+
+    const productCatalogCollapseButton = event.target.closest("[data-product-catalog-collapse-toggle]");
+    if (productCatalogCollapseButton) {
+      isProductCatalogCollapsed = !isProductCatalogCollapsed;
       render();
       return;
     }
@@ -5256,7 +5264,7 @@ function renderModelingFormManagementConfig() {
         </div>
       </section>
       ${renderProductCatalogManagement()}
-      <section class="modeling-config-card">
+      <section class="modeling-config-card modeling-form-time-unit-card" data-modeling-form-time-unit-fields>
         <div class="section-head">
           <div>
             <h4>带时间单位的表单字段</h4>
@@ -5304,32 +5312,47 @@ function renderProductCatalogManagement() {
   const products = (scenario.products || []).filter((product) => !query || [product.id, product.name, product.model, product.kind]
     .some((value) => String(value || "").toLocaleLowerCase().includes(query)));
   return `
-    <section class="modeling-config-card" data-product-catalog-management>
-      <div class="section-head">
+    <section class="modeling-config-card product-catalog-card ${isProductCatalogCollapsed ? "is-collapsed" : "is-expanded"}" data-product-catalog-management data-product-catalog-state="${isProductCatalogCollapsed ? "collapsed" : "expanded"}">
+      <div class="section-head product-catalog-section-head">
         <div>
           <h4>产品列表</h4>
           <p>Project 顶级 products[]。装备组成、保障备件和保障活动通过 productId 引用。</p>
         </div>
-        <span class="status-badge">${scenario.products.length} 项</span>
+        <div class="product-catalog-head-actions">
+          <span class="status-badge">${scenario.products.length} 项</span>
+          <button
+            type="button"
+            class="product-catalog-collapse-toggle"
+            data-product-catalog-collapse-toggle
+            aria-expanded="${String(!isProductCatalogCollapsed)}"
+            aria-controls="product-catalog-content"
+            aria-label="${isProductCatalogCollapsed ? "展开产品列表" : "折叠产品列表"}"
+          >
+            <span aria-hidden="true">${isProductCatalogCollapsed ? "▶" : "▼"}</span>
+            <span>${isProductCatalogCollapsed ? "展开列表" : "收起列表"}</span>
+          </button>
+        </div>
       </div>
-      <div class="toolbar-row">
-        <input value="${htmlEscape(productCatalogQuery)}" placeholder="搜索产品 ID、名称或型号" data-product-catalog-query>
-        <button type="button" data-product-catalog-add>新增产品</button>
-      </div>
-      ${productCatalogEditor ? renderProductCatalogEditor() : ""}
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>产品 ID</th><th>名称</th><th>型号</th><th>类型</th><th>产品维护</th></tr></thead>
-          <tbody>${products.map((product) => `
-            <tr>
-              <td>${htmlEscape(product.id)}</td>
-              <td>${htmlEscape(product.name)}</td>
-              <td>${htmlEscape(product.model || "-")}</td>
-              <td>${htmlEscape(product.kind || "-")}</td>
-              <td><button type="button" class="inline-action" data-product-catalog-edit="${htmlEscape(product.id)}">编辑</button><button type="button" class="btn-danger" data-product-catalog-delete="${htmlEscape(product.id)}">删除</button></td>
-            </tr>
-          `).join("") || '<tr><td colspan="5" class="muted">暂无匹配产品</td></tr>'}</tbody>
-        </table>
+      <div id="product-catalog-content" class="product-catalog-content" data-product-catalog-content ${isProductCatalogCollapsed ? "hidden" : ""}>
+        <div class="toolbar-row">
+          <input value="${htmlEscape(productCatalogQuery)}" placeholder="搜索产品 ID、名称或型号" data-product-catalog-query>
+          <button type="button" data-product-catalog-add>新增产品</button>
+        </div>
+        ${productCatalogEditor ? renderProductCatalogEditor() : ""}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>产品 ID</th><th>名称</th><th>型号</th><th>类型</th><th>产品维护</th></tr></thead>
+            <tbody>${products.map((product) => `
+              <tr>
+                <td>${htmlEscape(product.id)}</td>
+                <td>${htmlEscape(product.name)}</td>
+                <td>${htmlEscape(product.model || "-")}</td>
+                <td>${htmlEscape(product.kind || "-")}</td>
+                <td><button type="button" class="inline-action" data-product-catalog-edit="${htmlEscape(product.id)}">编辑</button><button type="button" class="btn-danger" data-product-catalog-delete="${htmlEscape(product.id)}">删除</button></td>
+              </tr>
+            `).join("") || '<tr><td colspan="5" class="muted">暂无匹配产品</td></tr>'}</tbody>
+          </table>
+        </div>
       </div>
     </section>
   `;
