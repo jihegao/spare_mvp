@@ -15186,8 +15186,11 @@ function renderVisualSimulation(page) {
     : "正在准备实验方案数据，完成后将自动加载推演页面。";
   return `
     <div class="mesa-visual-shell">
-      <section class="mesa-visual-toolbar">
-        <div><strong>可视化推演</strong><span>${htmlEscape(projectName)}</span></div>
+      <section class="lite-mesa-hero mesa-visual-toolbar">
+        <div>
+          <h3>可视化推演</h3>
+          <p>${htmlEscape(projectName)}</p>
+        </div>
         <div class="lite-mesa-hero-actions">
           ${renderExperimentPlanContextDropdown(page)}
         </div>
@@ -17200,7 +17203,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
               ${topMetrics.map((row) => `
                 <div class="metric-card">
                   <span>${htmlEscape(row.label)}</span>
-                  <strong>${htmlEscape(row.meanLabel)} ${htmlEscape(row.unit)}</strong>
+                  <strong>${htmlEscape(row.meanLabel)}</strong>
                 </div>
               `).join("")}
             </div>
@@ -17223,7 +17226,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
                 <td>${htmlEscape(row.label)}</td>
                 <td>${htmlEscape(row.meanLabel)}</td>
                 <td>${htmlEscape(row.varianceLabel)}</td>
-                <td>${htmlEscape(row.unit)} / ${htmlEscape(row.varianceUnit)}</td>
+                <td>${htmlEscape(row.unit)}</td>
                 <td>${htmlEscape(row.validSampleCount)}</td>
               </tr>
             `).join("") : `<tr><td colspan="5">当前没有可展示的业务结果。</td></tr>`}</tbody>
