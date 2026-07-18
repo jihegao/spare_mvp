@@ -2407,8 +2407,8 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
         ["高优先级备件", "1"]
       ],
       rows: [
-        { aircraftModel: "J-15", productId: "product-engine", spareType: "不得显示的旧发动机备件", recommended: 5, demand: 6, shortage: 1, riskLevel: "高", lifeLimited: true, lifeLandings: 120, lifeHours: 240 },
-        { aircraftModel: "J-35", productId: "product-radar", spareType: "不得显示的旧雷达备件", recommended: 2, demand: 2, shortage: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 },
+        { aircraftModel: "J-15", productId: "product-engine", spareType: "不得显示的旧发动机备件", recommended: 5, demand: 6, shortage: 1, utilization: 2, riskLevel: "高", lifeLimited: true, lifeLandings: 120, lifeHours: 240 },
+        { aircraftModel: "J-35", productId: "product-radar", spareType: "不得显示的旧雷达备件", recommended: 2, demand: 2, shortage: 0, utilization: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 },
         { aircraftModel: "J-15", productId: "product-zero", spareType: "不得显示的旧零需求备件", recommended: 0, demand: 0, shortage: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 }
       ]
     }
@@ -2419,6 +2419,9 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
 
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(detailPanel, /<th>机型<\/th><th>产品<\/th>/);
+    assert.match(detailPanel, /<th>备件利用率<\/th>/);
+    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>200\.00%<\/td>/);
+    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>0\.00%<\/td>/);
     assert.match(detailPanel, /隐藏需求数值为 0 的备件/);
     assert.match(detailPanel, /data-carry-hide-zero checked/);
     assert.match(detailPanel, /data-carry-aircraft-filter/);
@@ -2506,8 +2509,8 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     }),
     liteMesaAnalysisResponseOverrides: {
       rows: [
-        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, demand: 4, shortage: 1, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
-        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, demand: 3, shortage: 0, lifeLimited: false, riskLevel: "低" },
+        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, demand: 4, shortage: 1, utilization: 2, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
+        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, demand: 3, shortage: 0, utilization: null, lifeLimited: false, riskLevel: "低" },
         { aircraftModel: "J-15", productId: "carry-zero", recommended: 0, demand: 0, shortage: 0, lifeLimited: false, riskLevel: "低" },
         { aircraftModel: "J-16", productId: "carry-a", recommended: 1, demand: 1, shortage: 0, lifeLimited: false, riskLevel: "低" }
       ]
@@ -2523,9 +2526,10 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     const body = analysisExportBodies(runtime).at(-1);
     assert.equal(body.analysis_type, "carry_list");
     assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
-    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[5]]), [
-      ["J-15", "液压泵 / B-01", 2, "否"],
-      ["J-15", "航电模块 / A-01", 4, "是"]
+    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "需求次数", "短缺次数", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[5], row[6]]), [
+      ["J-15", "液压泵 / B-01", 2, "不可计算", "否"],
+      ["J-15", "航电模块 / A-01", 4, "200.00%", "是"]
     ]);
     assert.doesNotMatch(JSON.stringify(body), /J-16|零需求件/);
   } finally {

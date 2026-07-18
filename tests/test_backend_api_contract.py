@@ -3106,6 +3106,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(shortfall_row["filled_count"], 1)
         self.assertEqual(shortfall_row["shortage_count"], 1)
         self.assertEqual(carry_row["shortage_count"], 1)
+        self.assertAlmostEqual(carry_row["utilization"], 1 / 7)
 
     def test_aircraft_support_spare_projection_keeps_the_aircraft_model_for_each_spare(self) -> None:
         projections = self.adapter._aircraft_support_v1_analysis_projections(
@@ -3181,6 +3182,7 @@ class BackendApiContractTest(unittest.TestCase):
                     "components": [
                         {"id": "j15-engine", "aircraft_model": "J-15", "product_id": "product-j15-engine", "product_name": "发动机备件"},
                         {"id": "j35-radar", "aircraft_model": "J-35", "product_id": "product-j35-radar", "product_name": "雷达备件"},
+                        {"id": "j15-zero", "aircraft_model": "J-15", "product_id": "product-j15-zero", "product_name": "零库存备件"},
                     ],
                 },
                 "support_network": {
@@ -3196,13 +3198,17 @@ class BackendApiContractTest(unittest.TestCase):
         rows = projections["spare_shortfall"]["data"]
         self.assertEqual(
             [(row["aircraft_model"], row["spare_type"]) for row in rows],
-            [("J-15", "发动机备件"), ("J-35", "雷达备件")],
+            [("J-15", "发动机备件"), ("J-35", "雷达备件"), ("J-15", "零库存备件")],
         )
         self.assertEqual(
             [row["product_id"] for row in rows],
-            ["product-j15-engine", "product-j35-radar"],
+            ["product-j15-engine", "product-j35-radar", "product-j15-zero"],
         )
         self.assertNotIn("全部机型", {row["aircraft_model"] for row in rows})
+        carry_by_product = {row["product_id"]: row for row in projections["carry_list"]["data"]}
+        self.assertEqual(carry_by_product["product-j15-engine"]["utilization"], 0.0)
+        self.assertEqual(carry_by_product["product-j35-radar"]["utilization"], 0.0)
+        self.assertIsNone(carry_by_product["product-j15-zero"]["utilization"])
 
     def test_run_service_submits_aircraft_support_v1_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()

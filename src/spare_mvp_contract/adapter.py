@@ -2631,22 +2631,25 @@ class SimulationAdapter:
             demand_count = demand_quantity if demand_quantity > 0 else consumed_quantity + shortage_quantity
             filled_count = consumed_quantity
             fill_rate = filled_count / demand_count if demand_count > 0 else 1.0
-            utilization = min(1.0, consumed_quantity / max(1.0, float(baseline_quantity)))
             type_shortage_probability = min(1.0, shortage_count / planned_sorties)
             risk_level = self._aircraft_support_v1_spare_risk_level(fill_rate, type_shortage_probability)
             replenish_quantity = int(math.ceil(shortage_quantity / sample_count)) if shortage_quantity > 0 else 0
+            recommended_quantity = max(0, baseline_quantity + replenish_quantity)
+            carry_capacity = recommended_quantity * sample_count
+            carry_utilization = max(0.0, consumed_quantity / carry_capacity) if carry_capacity > 0 else None
             rows.append(
                 {
                     "aircraft_model": aircraft_model,
                     "product_id": product_id,
                     "spare_type": product_names.get(product_id, product_id),
                     "baseline_quantity": baseline_quantity,
-                    "recommended_quantity": max(0, baseline_quantity + replenish_quantity),
+                    "recommended_quantity": recommended_quantity,
                     "demand_count": demand_count,
                     "filled_count": filled_count,
                     "shortage_count": shortage_count,
                     "fill_rate": min(1.0, max(0.0, fill_rate)),
-                    "utilization": utilization,
+                    "utilization": min(1.0, consumed_quantity / max(1.0, float(baseline_quantity))),
+                    "carry_utilization": carry_utilization,
                     "shortage_probability": type_shortage_probability,
                     "mean_transport_delay": mean_transport_delay if shortage_count > 0 else 0.0,
                     "in_transit_count": 0,
@@ -3019,6 +3022,7 @@ class SimulationAdapter:
                         ),
                         "demand_count": row["demand_count"],
                         "shortage_count": row["shortage_count"],
+                        "utilization": row["carry_utilization"],
                         "risk_level": row["risk_level"],
                         "minimum_satisfaction_rate": 0.9,
                         "hide_zero_demand": True,

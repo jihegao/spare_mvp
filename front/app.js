@@ -18203,10 +18203,10 @@ function renderFormalProjectionBody(formalProjection) {
     return `
       <div class="toolbar-row"><label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求量为 0</label><span>满足率下限：${fixed(rows[0]?.minimumSatisfactionRate || 0.9, 2)}；满足约束后利用率越高越优</span></div><div class="table-wrap">
         <table>
-          <thead><tr><th>机型</th><th>备件</th><th>需求</th><th>推荐携行倍率</th><th>备件满足率</th><th>数量</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
+          <thead><tr><th>机型</th><th>备件</th><th>需求</th><th>推荐携行倍率</th><th>备件满足率</th><th>数量</th><th>备件利用率</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.qty}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
+              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.qty}</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
               <td><span class="status-badge ${row.priority === "高" ? "danger" : row.priority === "中" ? "warn" : "success"}">${htmlEscape(row.priority)}</span></td>
               <td class="bar-cell">${renderBar(row.qty, maxCarryQuantity, "blue")}</td>
             </tr>
@@ -18582,13 +18582,14 @@ function analysisXlsxPayloadForPage(page, result) {
       summary: liteMesaAnalysisVisibleMetrics(definition, result.metrics || []).map(([label, value]) => [label, value, ""]),
       detail_sections: [{
         title: "携行清单明细",
-        columns: ["机型", "产品", "建议携行数量", "需求次数", "短缺次数", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
+        columns: ["机型", "产品", "建议携行数量", "需求次数", "短缺次数", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
         rows: rows.map((row) => [
           row.aircraftModel || "未指定机型",
           carryListProductDisplayName(row, productsById),
           row.recommended,
           row.demand,
           row.shortage,
+          carryUtilizationDisplay(row.utilization),
           row.lifeLimited ? "是" : "否",
           row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-",
           row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-",
@@ -19269,6 +19270,12 @@ function visibleCarryListRows(result) {
     .map(({ row }) => row);
 }
 
+function carryUtilizationDisplay(value) {
+  if (value === null || value === undefined || value === "") return "不可计算";
+  const utilization = Number(value);
+  return Number.isFinite(utilization) ? `${(utilization * 100).toFixed(2)}%` : "不可计算";
+}
+
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
     return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存运行中生成分析摘要。</p></div>`;
@@ -19303,8 +19310,8 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
         <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
       </div>
       <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
-        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="9">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
+        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="10">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
     `;
   }

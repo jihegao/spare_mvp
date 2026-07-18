@@ -2319,6 +2319,7 @@ def _lite_mesa_carry_list_result(
                 ),
                 "demand": max(0, _metric_int(item.get("demand_count"), default=planned)),
                 "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
+                "utilization": max(0.0, _metric_float(item.get("utilization"), default=0)) if item.get("utilization") is not None else None,
                 "riskLevel": _risk_label(item.get("risk_level")),
                 "confidenceTarget": settings["missionConfidenceTarget"],
                 "minimumSatisfactionRate": settings["missionConfidenceTarget"],

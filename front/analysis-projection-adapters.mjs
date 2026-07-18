@@ -176,6 +176,9 @@ function normalizeCarryList(payload) {
     .map((row) => {
       const multiplier = Math.max(0, requireFiniteNumber(row.recommended_multiplier, "recommended_multiplier"));
       const priority = priorityLabel(row.risk_level);
+      const utilization = row.utilization === null || row.utilization === undefined
+        ? null
+        : Math.max(0, requireFiniteNumber(row.utilization, "utilization"));
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         productId: stringValue(row.product_id, ""),
@@ -186,6 +189,7 @@ function normalizeCarryList(payload) {
         qty: Math.max(1, priority === "高" ? Math.ceil(multiplier) : Math.round(multiplier)),
         priority,
         demand: Math.max(0, Math.round(numberOrZero(row.demand_count))),
+        utilization,
         minimumSatisfactionRate: clamp01(numberOrZero(row.minimum_satisfaction_rate) || 0.9),
         hideZeroDemand: row.hide_zero_demand !== false,
         lifeLimited: Boolean(row.life_limited),
