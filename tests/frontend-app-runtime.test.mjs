@@ -3948,6 +3948,75 @@ test("visual experiment plan list ignores a stale response from the previous Pro
   }
 });
 
+test("visual experiment plan list keeps a stored plan through HTTP 500 and restores it after retry", async () => {
+  const planProjectJson = createRuntimeProjectJson({ project_id: "project-retry-plan" });
+  let listRequestCount = 0;
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlanListsByProject: {
+      "project-runtime": () => {
+        listRequestCount += 1;
+        if (listRequestCount === 1) {
+          return jsonResponse(
+            { message: "方案服务暂时不可用" },
+            { ok: false, status: 500 }
+          );
+        }
+        return [{
+          experiment_plan_id: "plan-retry-stored",
+          config: {
+            name: "重试恢复方案",
+            steps: 33,
+            samples: 4,
+            seed: 303,
+            projectJson: planProjectJson
+          }
+        }];
+      }
+    },
+    storageEntries: [[
+      "spare-mvp:selectedRunContextByProject",
+      JSON.stringify({ "project-runtime": "plan-retry-stored" })
+    ]]
+  });
+
+  try {
+    await runtime.flush();
+    const failedVisualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.match(failedVisualShell, /实验方案列表加载失败/);
+    assert.doesNotMatch(failedVisualShell, /暂无实验方案，请先在实验方案管理中创建并保存方案/);
+    assert.match(failedVisualShell, /data-mesa-control="reload-solara" disabled/);
+    assert.doesNotMatch(failedVisualShell, /title="Solara 可视化推演"|<iframe/);
+    assert.equal(
+      JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
+      "plan-retry-stored",
+      "a transient list failure must not clear the persisted stable plan ID"
+    );
+
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+
+    const recoveredVisualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.match(recoveredVisualShell, /<option value="plan-retry-stored" selected>重试恢复方案<\/option>/);
+    assert.match(recoveredVisualShell, /experiment_plan_id=plan-retry-stored/);
+    assert.match(recoveredVisualShell, /project_id=project-retry-plan/);
+    assert.match(recoveredVisualShell, /plan_steps=33/);
+    assert.match(recoveredVisualShell, /plan_samples=4/);
+    assert.match(recoveredVisualShell, /plan_seed=303/);
+
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
+    assert.ok(runtime.requests.some((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "POST"
+      && JSON.parse(request.options.body || "{}").project_id === "project-retry-plan"
+    )));
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("visual simulation restores a saved plan ID and clears it after the plan is deleted", async () => {
   const experimentPlans = [
     {
@@ -4320,6 +4389,11 @@ test("refreshing away the selected saved plan resets the run context and Monte C
     assert.match(runtime.appNode.innerHTML, /当前项目：Runtime 项目/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /即将失效的方案/);
+    assert.equal(
+      JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
+      "current-project:project-runtime",
+      "an authoritative empty list must clear a persisted missing plan ID"
+    );
 
     await runtime.click("[data-lite-mesa-action='run']");
     const analysisBody = runtime.requests
@@ -4804,6 +4878,14 @@ async function setupRuntimeApp({
       const resolvedPlans = await (typeof configuredPlans === "function"
         ? configuredPlans({ projectId, requests })
         : configuredPlans);
+      if (
+        resolvedPlans
+        && typeof resolvedPlans === "object"
+        && typeof resolvedPlans.json === "function"
+        && typeof resolvedPlans.ok === "boolean"
+      ) {
+        return resolvedPlans;
+      }
       return jsonResponse({ project_id: projectId, experiment_plans: resolvedPlans });
     }
     const modelingSnapshotMatch = url.match(/^\/api\/projects\/([^/]+)\/modeling-snapshots$/);

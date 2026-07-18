@@ -12099,7 +12099,6 @@ async function refreshExperimentPlanList(projectId = currentBackendProjectId(), 
     backendExperimentPlans = [];
     backendExperimentPlansLoaded = true;
     backendExperimentPlansLoadError = formatBackendError(err);
-    resetMissingRunContextAfterPlanRefresh();
     experimentPlanListStatus = `后端方案列表读取失败：${backendExperimentPlansLoadError}`;
   } finally {
     if (requestIsCurrent()) backendExperimentPlansLoadInFlight = false;
