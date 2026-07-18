@@ -4393,12 +4393,49 @@ test("system management exposes project management and base configuration pages"
   assert.match(styleSource, /\.modeling-config-grid/);
   assert.match(styleSource, /\.modeling-form-config-grid/);
   assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*max-width:\s*1040px/s);
-  assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(320px,\s*1fr\)\)/s);
+  assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(styleSource, /\.field-checkbox-grid/);
   assert.match(styleSource, /\.granularity-check\s*\{[^}]*color:\s*var\(--primary\)/s);
   assert.match(styleSource, /\.granularity-field-checkbox\s*\{[^}]*appearance:\s*none[^}]*opacity:\s*1/s);
   assert.match(styleSource, /\.granularity-field-checkbox:checked::after\s*\{/);
   assert.match(styleSource, /\.granularity-field-checkbox:disabled\s*\{[^}]*opacity:\s*1/s);
+});
+
+test("modeling form product catalog collapse is accessible and does not reserve layout space", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const formSource = appSource.slice(
+    appSource.indexOf("function renderModelingFormManagementConfig"),
+    appSource.indexOf("function renderProductCatalogManagement")
+  );
+  const productSource = appSource.slice(
+    appSource.indexOf("function renderProductCatalogManagement"),
+    appSource.indexOf("function renderProductCatalogEditor")
+  );
+
+  assert.match(appSource, /let isProductCatalogCollapsed = false/);
+  assert.match(appSource, /const productCatalogCollapseButton = event\.target\.closest\("\[data-product-catalog-collapse-toggle\]"\)/);
+  assert.match(appSource, /isProductCatalogCollapsed = !isProductCatalogCollapsed;\s*render\(\);/s);
+  assert.match(productSource, /<button[\s\S]*?type="button"[\s\S]*?data-product-catalog-collapse-toggle/);
+  assert.match(productSource, /aria-expanded="\$\{String\(!isProductCatalogCollapsed\)\}"/);
+  assert.match(productSource, /aria-controls="product-catalog-content"/);
+  assert.match(productSource, /aria-label="\$\{isProductCatalogCollapsed \? "展开产品列表" : "折叠产品列表"\}"/);
+  assert.match(productSource, /isProductCatalogCollapsed \? "展开列表" : "收起列表"/);
+  assert.match(productSource, /id="product-catalog-content"[\s\S]*?data-product-catalog-content \$\{isProductCatalogCollapsed \? "hidden" : ""\}/);
+
+  const productIndex = formSource.indexOf("${renderProductCatalogManagement()}");
+  const timeUnitIndex = formSource.indexOf("data-modeling-form-time-unit-fields");
+  assert.ok(productIndex >= 0 && productIndex < timeUnitIndex, "time unit fields must follow the product catalog in DOM order");
+  assert.doesNotMatch(formSource, /class="[^"]*spacer|data-layout-spacer/i);
+
+  assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*align-content:\s*start/s);
+  assert.match(styleSource, /\.product-catalog-content\[hidden\]\s*\{[^}]*display:\s*none/s);
+  assert.match(styleSource, /\.modeling-form-time-unit-card\s*\{[^}]*scroll-margin-block-start:\s*12px/s);
+  assert.match(styleSource, /@media \(max-width:\s*760px\)[\s\S]*?\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(styleSource, /@media \(max-width:\s*760px\)[\s\S]*?\.product-catalog-section-head\s*\{[^}]*flex-direction:\s*column/s);
+  assert.doesNotMatch(styleSource, /\.modeling-form-config-grid\s*\{[^}]*(?:min-)?height\s*:/s);
+  assert.doesNotMatch(styleSource, /\.product-catalog-content\s*\{[^}]*min-height\s*:/s);
+  assert.doesNotMatch(styleSource, /\.modeling-form-time-unit-card\s*\{[^}]*min-height\s*:/s);
 });
 
 test("user management add and edit actions open an editable user form", async () => {
