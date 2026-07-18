@@ -141,6 +141,9 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     exportRmsAllocationXlsx(payload) {
       return request({ method: "POST", path: "/rms-allocation/export-xlsx", body: payload, responseType: "blob" });
     },
+    exportAnalysisXlsx(payload) {
+      return request({ method: "POST", path: "/analysis-results/export-xlsx", body: payload, responseType: "download" });
+    },
     deleteProject(projectId) {
       return request({ method: "DELETE", path: `/projects/${encodeURIComponent(projectId)}` });
     },
@@ -1893,8 +1896,15 @@ function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
       clearTimeout(timeoutId);
     }
 
-    if (responseType === "blob" && response.ok) {
-      return response.blob();
+    if (["blob", "download"].includes(responseType) && response.ok) {
+      const blob = await response.blob();
+      if (responseType === "download") {
+        return {
+          blob,
+          filename: downloadFilenameFromContentDisposition(response.headers?.get?.("content-disposition") || "")
+        };
+      }
+      return blob;
     }
 
     const payload = await response.json().catch(() => null);
@@ -1908,6 +1918,19 @@ function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
     }
     return payload;
   };
+}
+
+function downloadFilenameFromContentDisposition(value) {
+  const header = String(value || "");
+  const encoded = header.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  }
+  return header.match(/filename="([^"]+)"/i)?.[1] || header.match(/filename=([^;]+)/i)?.[1]?.trim() || "";
 }
 
 function cloneJson(value) {

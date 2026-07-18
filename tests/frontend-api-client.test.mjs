@@ -1824,6 +1824,40 @@ test("frontend API fetch transport preserves structured backend details", async 
   }
 });
 
+test("frontend API downloads analysis XLSX with the UTF-8 server filename", async () => {
+  const originalFetch = globalThis.fetch;
+  let observedRequest = null;
+  globalThis.fetch = async (url, init = {}) => {
+    observedRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      headers: {
+        get(name) {
+          return String(name).toLowerCase() === "content-disposition"
+            ? "attachment; filename=analysis.xlsx; filename*=UTF-8''Runtime%20%E9%A1%B9%E7%9B%AE-%E4%BB%BB%E5%8A%A1%E5%8F%AF%E9%9D%A0%E5%BA%A6%E8%AF%84%E4%BC%B0-20260718-120000.xlsx"
+            : "";
+        }
+      },
+      blob: async () => new Blob(["PK-analysis"], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      })
+    };
+  };
+  try {
+    const client = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => "session-export" });
+    const download = await client.exportAnalysisXlsx({ analysis_type: "mission_reliability" });
+
+    assert.equal(observedRequest.url, "/api/analysis-results/export-xlsx");
+    assert.equal(observedRequest.init.method, "POST");
+    assert.equal(observedRequest.init.headers.authorization, "Bearer session-export");
+    assert.equal(download.filename, "Runtime 项目-任务可靠度评估-20260718-120000.xlsx");
+    assert.equal(download.blob.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("frontend API fetch transport sends an abort signal for timeout control", async () => {
   const originalFetch = globalThis.fetch;
   let observedSignal = null;

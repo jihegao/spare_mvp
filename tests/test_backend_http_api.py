@@ -107,6 +107,88 @@ class BackendHttpApiTest(unittest.TestCase):
         )
         return {"created": created, "plan": plan, "run": submitted}
 
+    def test_http_analysis_xlsx_export_returns_authenticated_ooxml_and_utf8_filename(self) -> None:
+        from io import BytesIO
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                token = self._login_token(base_url, "data", "data")
+                payload = {
+                    "analysis_type": "mission_reliability",
+                    "project_name": "Runtime 项目",
+                    "analysis_name": "任务可靠度评估",
+                    "exported_at": "2026-07-18T12:00:00+08:00",
+                    "analysis_information": [
+                        ["运行来源", "项目历史记录"],
+                        ["历史项目 ID", "project-runtime"],
+                        ["历史记录 ID", "analysis-project-a-history"],
+                        ["样本量", 27],
+                    ],
+                    "summary": [["整周期任务可靠度", "66.7%", "%"]],
+                    "detail_sections": [{
+                        "title": "任务可靠度结果",
+                        "columns": ["整周期任务可靠度"],
+                        "rows": [["66.7%\u0001\u000b"]],
+                    }],
+                }
+                req = request.Request(
+                    f"{base_url}/analysis-results/export-xlsx",
+                    data=json.dumps(payload).encode("utf-8"),
+                    method="POST",
+                    headers={
+                        "content-type": "application/json",
+                        "authorization": f"Bearer {token}",
+                    },
+                )
+                opener = request.build_opener(request.ProxyHandler({}))
+                with opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
+                    body = response.read()
+                    self.assertEqual(
+                        response.headers["content-type"],
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                    self.assertIn("filename*=UTF-8''", response.headers["content-disposition"])
+                    self.assertIn("Runtime%20%E9%A1%B9%E7%9B%AE", response.headers["content-disposition"])
+                workbook = load_workbook(BytesIO(body), read_only=True)
+                self.assertEqual(workbook.sheetnames, ["分析信息", "结果摘要", "结果明细"])
+                self.assertEqual(workbook["结果摘要"]["B2"].value, "66.7%")
+                self.assertEqual(workbook["结果明细"]["A3"].value, "66.7%")
+                information = dict(workbook["分析信息"].iter_rows(min_row=2, values_only=True))
+                self.assertEqual(information["项目名称"], "Runtime 项目")
+                self.assertEqual(information["运行来源"], "项目历史记录")
+                self.assertEqual(information["历史项目 ID"], "project-runtime")
+                self.assertEqual(information["历史记录 ID"], "analysis-project-a-history")
+                self.assertNotIn("实验方案 ID", information)
+
+                with mock.patch(
+                    "src.spare_mvp_backend.analysis_xlsx.Workbook.save",
+                    side_effect=ValueError("openpyxl write failed"),
+                ):
+                    status, error = self._json_error_with_status(
+                        base_url,
+                        "POST",
+                        "/analysis-results/export-xlsx",
+                        payload,
+                        auth_token=token,
+                    )
+                self.assertEqual(status, 400)
+                self.assertEqual(error["code"], "analysis_export_invalid")
+                self.assertIn("无法写入 Excel", error["message"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_aircraft_mission_reliability_analysis_history_requires_auth(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
