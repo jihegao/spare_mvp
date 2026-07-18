@@ -1313,7 +1313,7 @@ test("equipment system modeling renders one tree plus flattened editable table",
   assert.match(appSource, /function wholeMachineModels\(\)/);
   assert.match(appSource, /scenario\.equipment\.wholeMachineModels/);
   assert.match(appSource, /装备系统建模表/);
-  assert.match(appSource, /function renderEquipmentSystemTable\(selectedState\)/);
+  assert.match(appSource, /function renderEquipmentSystemTable\(selectedState, productsById\)/);
   assert.match(appSource, /selectedState\.kind === "aircraft-list"/);
   assert.match(appSource, /wholeMachineModels\(\)\.map\(\(model\) => renderEquipmentAircraftTableRow\(model, \{ editable: false \}\)\)/);
   assert.match(appSource, /class="equipment-system-table"/);
@@ -1345,7 +1345,7 @@ test("equipment tree selection highlights the selected component row", async () 
   assert.match(appSource, /selectedEquipmentNodeKey = `component:\$\{equipmentComponentNode\.dataset\.selectEquipmentComponent\}`/);
   assert.match(appSource, /function clampEquipmentComponentIndex\(index\)/);
   assert.match(appSource, /const selectedState = resolveSelectedEquipmentNode\(\)/);
-  assert.match(appSource, /renderEquipmentSystemTable\(selectedState\)/);
+  assert.match(appSource, /renderEquipmentSystemTable\(selectedState, productsById\)/);
   assert.match(appSource, /selectedState\.kind === "component"/);
   assert.match(appSource, /equipmentComponentsForSelectionModel\(\{ scenario, selection: selectedState \}\)/);
   assert.match(appSource, /selected \? "selected-table-row" : ""/);
@@ -1568,6 +1568,14 @@ test("equipment product field is an exact-ID accessible combobox with explicit d
     behaviorSource.indexOf("function updateEquipmentProductComboboxQuery"),
     behaviorSource.indexOf("function handleEquipmentProductComboboxKeydown")
   );
+  const equipmentRenderSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function buildEquipmentTreeNodes")
+  );
+  const productCellSource = renderSource.slice(
+    renderSource.indexOf("function equipmentProductCell"),
+    renderSource.indexOf("function renderEquipmentProductEditor")
+  );
 
   assert.match(renderSource, /role="combobox"/);
   assert.match(renderSource, /aria-autocomplete="list"/);
@@ -1578,6 +1586,7 @@ test("equipment product field is an exact-ID accessible combobox with explicit d
   assert.match(renderSource, /aria-activedescendant/);
   assert.match(renderSource, /role="listbox" aria-label="产品候选项"/);
   assert.match(renderSource, /role="option"/);
+  assert.match(renderSource, /data-equipment-product-options>[\s\S]*<\/div>\s*<p class="muted equipment-product-empty"/);
   assert.match(renderSource, /型号：.*ID：/s);
   assert.match(renderSource, /role="status" aria-live="polite"/);
   assert.match(renderSource, /data-equipment-product-create-open/);
@@ -1589,16 +1598,29 @@ test("equipment product field is an exact-ID accessible combobox with explicit d
   assert.match(productSource, /function searchProjectProducts\(project, query = ""\)/);
   assert.match(productSource, /\[product\?\.id, product\?\.name, product\?\.model\]/);
   assert.match(appSource, /\["ArrowDown", "ArrowUp", "Enter", "Escape"\]/);
+  assert.match(appSource, /app\.addEventListener\("compositionstart"/);
+  assert.match(appSource, /app\.addEventListener\("compositionend"/);
+  assert.match(appSource, /event\.isComposing \|\| equipmentProductCompositionActive/);
   assert.match(behaviorSource, /const product = projectProductById\(scenario, productId\)/);
   assert.match(behaviorSource, /component\.productId = product\.id/);
   assert.doesNotMatch(querySource, /component\.productId|createProjectProduct/);
-  assert.match(behaviorSource, /findProjectProductConflicts\(scenario, equipmentProductDraft\)/);
+  assert.doesNotMatch(querySource, /render\(\)/);
+  assert.match(behaviorSource, /const normalizedDraft = normalizedEquipmentProductCreationDraft\(component\)/);
+  assert.match(behaviorSource, /findProjectProductConflicts\(scenario, normalizedDraft\)/);
+  assert.match(behaviorSource, /createProjectProduct\(scenario, normalizedDraft\)/);
+  assert.match(behaviorSource, /model: String\(draft\?\.model \|\| component\?\.id \|\| ""\)\.trim\(\)/);
   assert.match(behaviorSource, /conflicts\.nameMatches/);
   assert.match(behaviorSource, /conflicts\.modelMatches/);
   assert.match(behaviorSource, /请选择已有产品，未创建重复项/);
   assert.match(behaviorSource, /createProjectProduct\(scenario/);
   assert.match(productSource, /while \(byId\.has\(id\)\)/);
   assert.match(productSource, /id = `\$\{base\}-\$\{suffix\}`/);
+
+  assert.equal((equipmentRenderSource.match(/normalizeProjectProducts\(scenario\)/g) || []).length, 1);
+  assert.match(equipmentRenderSource, /const productsById = new Map/);
+  assert.match(appSource, /renderEquipmentSystemTable\(selectedState, productsById\)/);
+  assert.match(appSource, /equipmentProductCell\(component, productsById\)/);
+  assert.doesNotMatch(productCellSource, /normalizeProjectProducts|projectProductById|ensureProductForComponent/);
 
   assert.match(styleSource, /\.equipment-product-combobox-cell/);
   assert.match(styleSource, /\.equipment-product-options\s*\{[^}]*max-height:\s*280px[^}]*overflow:\s*auto/s);

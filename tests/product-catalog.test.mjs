@@ -80,3 +80,20 @@ test("product conflict checks block equal names or models and generated IDs stay
   assert.equal(created.id, "product-新雷达-2");
   assert.equal(project.products.find((product) => product.id === "product-新雷达").name, "占位目录项");
 });
+
+test("product search keeps a 442-item catalog pure and returns only matching candidates", () => {
+  const products = Array.from({ length: 442 }, (_, index) => ({
+    id: `product-${index + 1}`,
+    name: `产品 ${index + 1}`,
+    model: `MODEL-${String(index + 1).padStart(3, "0")}`,
+    kind: index % 2 ? "LRU" : "SRU"
+  }));
+  const project = { products };
+  const before = JSON.stringify(products);
+
+  assert.deepEqual(
+    searchProjectProducts(project, "MODEL-442").map((product) => product.id),
+    ["product-442"]
+  );
+  assert.equal(JSON.stringify(project.products), before);
+});

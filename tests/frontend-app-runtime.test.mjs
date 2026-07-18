@@ -2415,13 +2415,72 @@ test("equipment product combobox searches by ID, name, and model with keyboard a
   }
 });
 
-test("equipment product combobox rejects free text, empty creation, duplicates, and cancel without mutation", async () => {
+test("equipment product combobox waits for Chinese IME composition before filtering or selecting", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
       equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
       products: [
         { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" },
         { id: "product-radar", name: "雷达产品", model: "RADAR", kind: "LRU" }
+      ],
+      components: [
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" });
+    await runtime.compositionstart(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "l" }
+    );
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "雷", isComposing: true }
+    );
+    await runtime.keydown(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { key: "Enter", isComposing: true }
+    );
+    assert.match(runtime.appNode.innerHTML, /发动机产品/);
+    assert.match(runtime.appNode.innerHTML, /雷达产品/);
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-engine"/);
+
+    await runtime.compositionend(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "雷达" }
+    );
+    const editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /雷达产品/);
+    assert.doesNotMatch(editorHtml, /发动机产品/);
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-engine"/);
+
+    await runtime.keydown(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { key: "Enter" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-radar"/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment product combobox rejects free text, empty creation, duplicates, and cancel without mutation", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      products: [
+        { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" },
+        { id: "product-radar", name: "雷达产品", model: "RADAR", kind: "LRU" },
+        { id: "product-component-model", name: "组件型号占用产品", model: "engine-system", kind: "SRU" }
       ],
       components: [
         { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
@@ -2462,6 +2521,12 @@ test("equipment product combobox rejects free text, empty creation, duplicates, 
     await runtime.click("[data-equipment-product-create]");
     assert.match(runtime.appNode.innerHTML, /发现同型号产品/);
 
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "name" }, { value: "回填型号冲突产品" });
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "" });
+    await runtime.click("[data-equipment-product-create]");
+    assert.match(runtime.appNode.innerHTML, /发现同型号产品/);
+    assert.match(runtime.appNode.innerHTML, /组件型号占用产品 \/ engine-system \/ product-component-model/);
+
     await runtime.click("[data-equipment-product-create-cancel]");
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-equipment-product-create-panel/);
     await runtime.keydown("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" }, { key: "Escape" });
@@ -2473,7 +2538,8 @@ test("equipment product combobox rejects free text, empty creation, duplicates, 
     ), "cancelled or invalid product edits should preserve the original productId");
     assert.equal(savedProject.products.find((product) => product.id === "product-engine").name, "发动机产品");
     assert.equal(savedProject.products.find((product) => product.id === "product-radar").model, "RADAR");
-    assert.equal(savedProject.products.some((product) => /不存在的自由文本|新名称/.test(product.name)), false);
+    assert.equal(savedProject.products.find((product) => product.id === "product-component-model").model, "engine-system");
+    assert.equal(savedProject.products.some((product) => /不存在的自由文本|新名称|回填型号冲突产品/.test(product.name)), false);
   } finally {
     runtime.restore();
   }
@@ -5345,13 +5411,29 @@ async function setupRuntimeApp({
       await flushRuntimeTasks();
     },
     async input(selector, dataset = {}, props = {}) {
-      await appListeners.input?.({ target: eventTarget(selector, dataset, props) });
+      await appListeners.input?.({
+        isComposing: Boolean(props.isComposing),
+        target: eventTarget(selector, dataset, props)
+      });
       await flushRuntimeTasks();
     },
     async keydown(selector, dataset = {}, props = {}) {
       await appListeners.keydown?.({
         key: props.key || "",
+        isComposing: Boolean(props.isComposing),
         preventDefault: props.preventDefault || (() => {}),
+        target: eventTarget(selector, dataset, props)
+      });
+      await flushRuntimeTasks();
+    },
+    async compositionstart(selector, dataset = {}, props = {}) {
+      await appListeners.compositionstart?.({
+        target: eventTarget(selector, dataset, props)
+      });
+      await flushRuntimeTasks();
+    },
+    async compositionend(selector, dataset = {}, props = {}) {
+      await appListeners.compositionend?.({
         target: eventTarget(selector, dataset, props)
       });
       await flushRuntimeTasks();
