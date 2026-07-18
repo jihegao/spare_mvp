@@ -1,7 +1,6 @@
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-4.1.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-5.0.0";
 
 export const DEFAULT_RMS_ALLOCATION_INPUTS = Object.freeze({
-  missionReliability: 0.95,
   missionHours: 3,
   mtbfHours: 1000,
   mttrHours: 2
@@ -9,9 +8,6 @@ export const DEFAULT_RMS_ALLOCATION_INPUTS = Object.freeze({
 
 export function normalizeRmsAllocationInputs(inputs = {}) {
   const normalized = {
-    missionReliability: Object.hasOwn(inputs, "missionReliability")
-      ? inputs.missionReliability
-      : DEFAULT_RMS_ALLOCATION_INPUTS.missionReliability,
     missionHours: Object.hasOwn(inputs, "missionHours")
       ? inputs.missionHours
       : DEFAULT_RMS_ALLOCATION_INPUTS.missionHours,
@@ -97,7 +93,6 @@ export function createRmsAllocationProjectForScenario(scenario, selectedAircraft
 
 export function rmsAllocationInputErrors(inputs = {}) {
   const errors = [];
-  validateRequiredRange(errors, inputs.missionReliability, "任务可靠度", { min: 0, max: 1, minExclusive: true });
   validateRequiredRange(errors, inputs.missionHours, "任务时长", { min: 0, minExclusive: true, unit: "h" });
   validateRequiredRange(errors, inputs.mtbfHours, "MTBF", { min: 0, minExclusive: true, unit: "h" });
   validateRequiredRange(errors, inputs.mttrHours, "MTTR", { min: 0, unit: "h" });
@@ -108,7 +103,6 @@ export function validateRmsAllocationInputs(inputs = {}) {
   const errors = rmsAllocationInputErrors(inputs);
   if (errors.length) throw new Error(`RMS_INPUT_INVALID: ${errors.join("；")}`);
   return {
-    missionReliability: Number(inputs.missionReliability),
     missionHours: Number(inputs.missionHours),
     mtbfHours: Number(inputs.mtbfHours),
     mttrHours: Number(inputs.mttrHours)
@@ -703,7 +697,7 @@ export function normalizeRmsEquipmentImportRows(input, { baseProject = createDem
 
 export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocationProject()) {
   return {
-    schemaVersion: "rms-allocation-plan-v4",
+    schemaVersion: "rms-allocation-plan-v5",
     planId: "RMS-PLAN-001",
     planVersion: 1,
     name: "近海巡逻任务RMS分配方案",
@@ -800,7 +794,6 @@ export function createRmsAllocationFailureResult(plan, error) {
     algorithmVersion: plan.algorithmVersion || RMS_ALLOCATION_ALGORITHM_VERSION,
     aircraftModel: plan.methods?.similarProduct?.targetModel || "",
     inputSnapshot: {
-      missionReliability: Number(plan.inputs?.missionReliability) || 0,
       missionHours: Number(plan.inputs?.missionHours) || 0,
       mtbfHours: Number(plan.inputs?.mtbfHours) || 0,
       mttrHours: Number(plan.inputs?.mttrHours) || 0

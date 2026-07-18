@@ -12,8 +12,8 @@ The files here are draft JSON Schema contracts for the application-facing bounda
 - `artifact_manifest.schema.json`: versioned index of run artifacts.
 - `visualization_state_series.schema.json`: M9.1 offline visualization replay frames, event references, and run/result/artifact traceability; M9.2 online `state_frame` SSE events reuse the same frame fields.
 - `scenario_adapter_mapping.json`: evaluator-visible mapping from compiled Scenario JSON input fields to Mesa constructor inputs.
-- `rms_allocation_plan.schema.json`: local RMS allocation v3 plan boundary for the four required RMS inputs, allocation method selection, and algorithm versioning; it contains no reverse-calculation target fields.
-- `rms_allocation_result.schema.json`: RMS allocation v3 result boundary for the selected aircraft/input snapshot, node installation count, running ratio, normalized allocation share, status, warnings, and assumptions.
+- `rms_allocation_plan.schema.json`: local RMS allocation v5 plan boundary for the three required inputs (mission duration, equipment MTBF, and equipment MTTR), allocation method selection, and algorithm versioning; legacy mission reliability and reverse-calculation target fields are not accepted.
+- `rms_allocation_result.schema.json`: RMS allocation v5 result boundary for the selected aircraft/three-field input snapshot, node installation count, running ratio, normalized allocation share, status, warnings, and assumptions.
 - `modeling_import.schema.json`: M5 first-slice modeling data import and validation boundary for draft/published lifecycle, object collections, field-level validation issues, and run-reference overwrite protection.
 
 These schemas are not a replacement for the Mesa model or Claude-governed simulation semantics. They define the application data boundary that backend, database, frontend integration, and evaluator agents can consume. The earlier project ontology contract has been removed from active schema/runtime/test scope.

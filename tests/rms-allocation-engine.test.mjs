@@ -39,7 +39,9 @@ test("equal allocation returns a normalized forward allocation contract", () => 
   const plan = createDefaultRmsAllocationPlan(project);
   const result = calculateRmsAllocation(plan, project);
 
-  assert.equal(plan.schemaVersion, "rms-allocation-plan-v4");
+  assert.equal(plan.schemaVersion, "rms-allocation-plan-v5");
+  assert.equal(plan.algorithmVersion, "rms-engine-5.0.0");
+  assert.equal("missionReliability" in plan.inputs, false);
   assert.equal(result.method, "equal");
   assert.equal(result.status, "calculated");
   assert.equal(result.aircraftModel, "F16");
@@ -64,9 +66,6 @@ test("RMS inputs fail closed for required and range violations", () => {
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);
   for (const [field, value, label] of [
-    ["missionReliability", "", "任务可靠度不能为空"],
-    ["missionReliability", 0, "任务可靠度必须大于 0"],
-    ["missionReliability", 1.01, "任务可靠度必须小于等于 1"],
     ["missionHours", 0, "任务时长必须大于 0 h"],
     ["mtbfHours", "", "MTBF不能为空"],
     ["mtbfHours", 0, "MTBF必须大于 0 h"],
@@ -79,7 +78,7 @@ test("RMS inputs fail closed for required and range violations", () => {
   }
 });
 
-test("legacy critical-failure-ratio drafts migrate to the v4 MTBF input", () => {
+test("legacy RMS drafts migrate to the v5 three-input contract", () => {
   const migrated = normalizeRmsAllocationInputs({
     missionReliability: 0.95,
     missionHours: 3,
@@ -87,8 +86,9 @@ test("legacy critical-failure-ratio drafts migrate to the v4 MTBF input", () => 
     mttrHours: 2
   });
 
-  assert.deepEqual(Object.keys(migrated), ["missionReliability", "missionHours", "mtbfHours", "mttrHours"]);
+  assert.deepEqual(Object.keys(migrated), ["missionHours", "mtbfHours", "mttrHours"]);
   assert.ok(Math.abs(migrated.mtbfHours - 11.697435) < 1e-6);
+  assert.equal("missionReliability" in migrated, false);
   assert.equal("criticalFailureRatio" in migrated, false);
 });
 
