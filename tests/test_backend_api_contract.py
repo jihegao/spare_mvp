@@ -24,6 +24,7 @@ from src.spare_mvp_backend.api import (
     _lite_mesa_mission_reliability_result,
     _lite_mesa_spare_shortfall_result,
     _normalize_lite_mesa_analysis_settings,
+    _run_aircraft_support_v1_analysis_sample,
     _run_lite_mesa_analysis_sample_worker,
 )
 from src.spare_mvp_backend.http_server import create_backend_server
@@ -305,6 +306,43 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["metric_moments"]["failed_sample_count"], 2)
         self.assertTrue(all(metric["mean"] is None for metric in payload["metric_moments"]["metrics"]))
         self.assertTrue(all(metric["sample_variance"] is None for metric in payload["metric_moments"]["metrics"]))
+
+    def test_lite_mesa_finite_extremes_do_not_crash_the_api_or_emit_nonfinite_moments(self) -> None:
+        project = small_aircraft_support_project("project-lite-mesa-finite-extremes")
+
+        def extreme_samples(inputs, *, base_seed, settings):
+            samples = [
+                _run_aircraft_support_v1_analysis_sample(
+                    inputs,
+                    seed=base_seed + sample_index,
+                    sample_index=sample_index,
+                )
+                for sample_index in range(settings["samples"])
+            ]
+            samples[0]["metrics"]["repair_backlog"] = 1e308
+            samples[1]["metrics"]["repair_backlog"] = -1e308
+            return samples, [], 1, []
+
+        with mock.patch(
+            "src.spare_mvp_backend.api._run_lite_mesa_analysis_samples",
+            side_effect=extreme_samples,
+        ):
+            payload = self.api.run_lite_mesa_analysis(
+                project,
+                analysis_type="mission_reliability",
+                settings={"samples": 2, "seed": 20260718, "parallelCores": 1},
+            )
+
+        repair_backlog = next(
+            metric for metric in payload["metric_moments"]["metrics"]
+            if metric["metric_id"] == "repair_backlog"
+        )
+        self.assertEqual(payload["status"], "session_complete")
+        self.assertEqual(payload["aggregate_metrics"]["repair_backlog"], 0)
+        self.assertEqual(repair_backlog["mean"], 0)
+        self.assertIsNone(repair_backlog["sample_variance"])
+        self.assertEqual(repair_backlog["valid_sample_count"], 2)
+        self.assertEqual(repair_backlog["invalid_reason"], "sample_variance_not_finite")
 
     def test_periodic_profile_empty_slots_survive_project_round_trip_and_compile(self) -> None:
         project = small_aircraft_support_project("project-periodic-profile-empty-slots")

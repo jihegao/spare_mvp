@@ -78,3 +78,41 @@ test("n=0 and n=1 remain explicitly unavailable and payload strings are not norm
   assert.equal(normalized.metrics[0].mean, null);
   assert.equal(normalized.metrics[0].sampleVariance, null);
 });
+
+test("finite extremes keep finite means and mark unrepresentable variance unavailable", () => {
+  const sameSign = buildMonteCarloMetricMoments([
+    { metrics: { mission_success_rate: 1e308 } },
+    { metrics: { mission_success_rate: 1e308 } }
+  ]).metrics[0];
+  assert.equal(sameSign.mean, 1e308);
+  assert.equal(sameSign.sampleVariance, 0);
+  assert.equal(sameSign.invalidReason, null);
+
+  for (const magnitude of [1e154, 1e308]) {
+    const oppositeSign = buildMonteCarloMetricMoments([
+      { metrics: { mission_success_rate: magnitude } },
+      { metrics: { mission_success_rate: -magnitude } }
+    ]).metrics[0];
+    assert.equal(oppositeSign.mean, 0);
+    assert.equal(oppositeSign.sampleVariance, null);
+    assert.equal(oppositeSign.validSampleCount, 2);
+    assert.equal(oppositeSign.invalidReason, "sample_variance_not_finite");
+  }
+
+  const normalized = normalizeMonteCarloMetricMoments({
+    total_sample_count: 2,
+    successful_sample_count: 2,
+    failed_sample_count: 0,
+    metrics: [{
+      metric_id: "mission_success_rate",
+      mean: 0,
+      sample_variance: null,
+      valid_sample_count: 2,
+      invalid_reason: "sample_variance_not_finite"
+    }]
+  }).metrics[0];
+  assert.equal(normalized.mean, 0);
+  assert.equal(normalized.sampleVariance, null);
+  assert.equal(normalized.invalidReason, "sample_variance_not_finite");
+  assert.equal(formatMonteCarloMoment(normalized.sampleVariance, "ratio", { variance: true }), "不可计算");
+});

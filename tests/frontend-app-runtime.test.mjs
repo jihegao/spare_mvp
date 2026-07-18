@@ -4550,7 +4550,7 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
           { metric_id: "mission_success_rate", mean: 0.73, sample_variance: 0.0123, valid_sample_count: 3 },
           { metric_id: "spare_fill_rate", mean: 0.64, sample_variance: 0.02, valid_sample_count: 2 },
           { metric_id: "spare_utilization", mean: 0.29, sample_variance: null, valid_sample_count: 1 },
-          { metric_id: "ready_rate", mean: null, sample_variance: null, valid_sample_count: 0 },
+          { metric_id: "ready_rate", mean: 0, sample_variance: null, valid_sample_count: 2, invalid_reason: "sample_variance_not_finite" },
           { metric_id: "sortie_rate", mean: 0.82, sample_variance: 0.0025, valid_sample_count: 3 },
           { metric_id: "mean_transport_delay", mean: 7.5, sample_variance: 4, valid_sample_count: 3 },
           { metric_id: "repair_backlog", mean: 1.25, sample_variance: 0.5, valid_sample_count: 3 },
@@ -4608,7 +4608,7 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(metricTable, /<th>均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
     assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>3<\/td>/);
     assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>1<\/td>/);
-    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>无有效样本<\/td>\s*<td>不可计算<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>2<\/td>/);
     for (const label of ["任务可靠度", "备件满足率", "备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }

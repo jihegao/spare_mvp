@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import sys
 from typing import Any
 
 
@@ -70,6 +71,46 @@ def is_finite_json_number(value: Any) -> bool:
         return False
 
 
+def finite_mean(values: list[float]) -> float | None:
+    """Return a finite arithmetic mean without overflowing the intermediate sum."""
+
+    if not values:
+        return None
+    count = len(values)
+    try:
+        mean = math.fsum(value / count for value in values)
+    except (OverflowError, ValueError):
+        return None
+    return mean if math.isfinite(mean) else None
+
+
+def _finite_sample_variance(values: list[float], mean: float | None) -> tuple[float | None, str | None]:
+    if len(values) < 2 or mean is None:
+        return None, None
+    try:
+        direct_variance = math.fsum((value - mean) ** 2 for value in values) / (len(values) - 1)
+        if math.isfinite(direct_variance):
+            return direct_variance, None
+    except (OverflowError, ValueError):
+        pass
+    scale = max(abs(value) for value in values)
+    if scale == 0:
+        return 0.0, None
+    try:
+        scaled_mean = mean / scale
+        scaled_sum_squares = math.fsum((value / scale - scaled_mean) ** 2 for value in values)
+        scaled_variance = scaled_sum_squares / (len(values) - 1)
+        standard_deviation = scale * math.sqrt(scaled_variance)
+        if not math.isfinite(standard_deviation) or standard_deviation > math.sqrt(sys.float_info.max):
+            return None, "sample_variance_not_finite"
+        variance = standard_deviation * standard_deviation
+    except (OverflowError, ValueError):
+        return None, "sample_variance_not_finite"
+    if not math.isfinite(variance):
+        return None, "sample_variance_not_finite"
+    return variance, None
+
+
 def build_monte_carlo_metric_moments(
     samples: list[dict[str, Any]],
     *,
@@ -92,18 +133,17 @@ def build_monte_carlo_metric_moments(
             if is_finite_json_number(value)
         ]
         valid_sample_count = len(values)
-        mean = math.fsum(values) / valid_sample_count if valid_sample_count else None
-        sample_variance = (
-            math.fsum((value - mean) ** 2 for value in values) / (valid_sample_count - 1)
-            if valid_sample_count >= 2 and mean is not None
-            else None
-        )
+        mean = finite_mean(values)
+        sample_variance, invalid_reason = _finite_sample_variance(values, mean)
+        if valid_sample_count and mean is None:
+            invalid_reason = "mean_not_finite"
         metrics.append(
             {
                 **definition,
                 "mean": mean,
                 "sample_variance": sample_variance,
                 "valid_sample_count": valid_sample_count,
+                "invalid_reason": invalid_reason,
             }
         )
 

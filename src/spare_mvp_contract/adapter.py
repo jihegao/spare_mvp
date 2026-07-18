@@ -23,6 +23,7 @@ from src.spare_mvp_backend.project_payload import normalize_project_products
 from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
 from src.spare_mvp_contract.monte_carlo_moments import (
     build_monte_carlo_metric_moments,
+    finite_mean,
     is_finite_json_number,
 )
 
@@ -3554,8 +3555,9 @@ class SimulationAdapter:
                 for sample in samples
                 if is_finite_json_number(sample.get("metrics", {}).get(key))
             ]
-            if values:
-                aggregate[key] = math.fsum(values) / len(values)
+            mean = finite_mean(values)
+            if mean is not None:
+                aggregate[key] = mean
         aggregate["sample_count"] = len(samples)
         if "mission_success_rate" in aggregate:
             aggregate["mission_success_probability"] = aggregate["mission_success_rate"]

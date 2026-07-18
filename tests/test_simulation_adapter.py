@@ -1089,6 +1089,53 @@ class SimulationAdapterTest(unittest.TestCase):
         )
         self.assertEqual(sample_payload["failed_samples"][0]["error"]["code"], "sample_failed")
 
+    def test_aircraft_support_v1_monte_carlo_keeps_finite_extremes_json_safe(self) -> None:
+        class ExtremeFiniteSampleAdapter(SimulationAdapter):
+            def _run_aircraft_support_v1_monte_carlo_sample(self, *args, sample_index: int, **kwargs):
+                sample = super()._run_aircraft_support_v1_monte_carlo_sample(
+                    *args,
+                    sample_index=sample_index,
+                    **kwargs,
+                )
+                sample["metrics"]["repair_backlog"] = 1e308 if sample_index == 0 else -1e308
+                return sample
+
+        adapter = ExtremeFiniteSampleAdapter(REPO_ROOT)
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        scenario = adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = adapter.run_monte_carlo_scenario(
+                scenario,
+                output_dir=Path(tmp),
+                run_id="run-aircraft-v1-mc-finite-extremes",
+                monte_carlo_config={
+                    "sample_count": 2,
+                    "parallel_cores": 1,
+                    "sweep": {
+                        "failureRates": [0.01],
+                        "spareMultipliers": [1.0],
+                        "supportCapacities": [1],
+                    },
+                    "mc_experiment_id": "mc-aircraft-v1-finite-extremes",
+                },
+            )
+            base_artifact = next(
+                artifact for artifact in bundle["artifact_manifest"]["artifacts"]
+                if artifact["kind"] == "monte_carlo_base"
+            )
+            base_payload = json.loads((Path(tmp) / base_artifact["path"]).read_text(encoding="utf-8"))
+
+        repair_backlog = next(
+            metric for metric in base_payload["metric_moments"]["metrics"]
+            if metric["metric_id"] == "repair_backlog"
+        )
+        self.assertEqual(bundle["run"]["status"], "succeeded")
+        self.assertEqual(base_payload["aggregate_metrics"]["repair_backlog"], 0)
+        self.assertEqual(repair_backlog["mean"], 0)
+        self.assertIsNone(repair_backlog["sample_variance"])
+        self.assertEqual(repair_backlog["valid_sample_count"], 2)
+        self.assertEqual(repair_backlog["invalid_reason"], "sample_variance_not_finite")
+
     def test_aircraft_support_v1_single_run_metrics_change_when_behavior_fields_change(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportOrganization"] = {}

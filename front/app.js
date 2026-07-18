@@ -16608,7 +16608,9 @@ function normalizeLiteMesaMonteCarloResult(payload) {
 function liteMesaBusinessMetricRows(result) {
   return (result?.metricMoments?.metrics || []).map((metric) => ({
     ...metric,
-    meanLabel: formatMonteCarloMoment(metric.mean, metric.valueFormat),
+    meanLabel: metric.validSampleCount > 0 && metric.mean === null
+      ? "不可计算"
+      : formatMonteCarloMoment(metric.mean, metric.valueFormat),
     varianceLabel: formatMonteCarloMoment(metric.sampleVariance, metric.valueFormat, { variance: true })
   }));
 }

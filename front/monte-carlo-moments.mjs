@@ -16,6 +16,36 @@ function count(value, fallback = 0) {
   return isFiniteNumber(value) ? Math.max(0, Math.trunc(value)) : fallback;
 }
 
+function finiteMean(values) {
+  if (!values.length) return null;
+  const mean = values.reduce((sum, value) => sum + value / values.length, 0);
+  return isFiniteNumber(mean) ? mean : null;
+}
+
+function finiteSampleVariance(values, mean) {
+  if (values.length < 2 || !isFiniteNumber(mean)) return { value: null, invalidReason: null };
+  const directVariance = values.reduce(
+    (sum, value) => sum + ((value - mean) ** 2),
+    0
+  ) / (values.length - 1);
+  if (isFiniteNumber(directVariance)) return { value: directVariance, invalidReason: null };
+  const scale = Math.max(...values.map((value) => Math.abs(value)));
+  if (scale === 0) return { value: 0, invalidReason: null };
+  const scaledMean = mean / scale;
+  const scaledVariance = values.reduce(
+    (sum, value) => sum + ((value / scale - scaledMean) ** 2),
+    0
+  ) / (values.length - 1);
+  const standardDeviation = scale * Math.sqrt(scaledVariance);
+  if (!isFiniteNumber(standardDeviation) || standardDeviation > Math.sqrt(Number.MAX_VALUE)) {
+    return { value: null, invalidReason: "sample_variance_not_finite" };
+  }
+  const variance = standardDeviation * standardDeviation;
+  return isFiniteNumber(variance)
+    ? { value: variance, invalidReason: null }
+    : { value: null, invalidReason: "sample_variance_not_finite" };
+}
+
 export function buildMonteCarloMetricMoments(samples, counts = {}) {
   const safeSamples = Array.isArray(samples) ? samples : [];
   const metrics = MONTE_CARLO_METRIC_DEFINITIONS.map((definition) => {
@@ -23,13 +53,18 @@ export function buildMonteCarloMetricMoments(samples, counts = {}) {
       .map((sample) => sample?.metrics?.[definition.metricId] ?? sample?.final?.[definition.metricId])
       .filter(isFiniteNumber);
     const validSampleCount = values.length;
-    const mean = validSampleCount
-      ? values.reduce((sum, value) => sum + value, 0) / validSampleCount
-      : null;
-    const sampleVariance = validSampleCount >= 2
-      ? values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / (validSampleCount - 1)
-      : null;
-    return { ...definition, mean, sampleVariance, validSampleCount };
+    const mean = finiteMean(values);
+    const varianceResult = finiteSampleVariance(values, mean);
+    const invalidReason = validSampleCount > 0 && mean === null
+      ? "mean_not_finite"
+      : varianceResult.invalidReason;
+    return {
+      ...definition,
+      mean,
+      sampleVariance: varianceResult.value,
+      validSampleCount,
+      invalidReason
+    };
   });
   const successfulSampleCount = count(counts.successfulSampleCount, safeSamples.length);
   const failedSampleCount = count(counts.failedSampleCount);
@@ -54,13 +89,25 @@ export function normalizeMonteCarloMetricMoments(payload, samples = [], counts =
   const metrics = MONTE_CARLO_METRIC_DEFINITIONS.map((definition) => {
     const source = byId.get(definition.metricId) || {};
     const validSampleCount = count(source.valid_sample_count);
+    const mean = validSampleCount > 0 && isFiniteNumber(source.mean) ? source.mean : null;
+    const sampleVariance = validSampleCount >= 2
+      && isFiniteNumber(source.sample_variance)
+      && source.sample_variance >= 0
+      ? source.sample_variance
+      : null;
+    const invalidReason = typeof source.invalid_reason === "string" && source.invalid_reason
+      ? source.invalid_reason
+      : validSampleCount > 0 && mean === null
+        ? "mean_not_finite"
+        : validSampleCount >= 2 && sampleVariance === null
+          ? "sample_variance_not_finite"
+          : null;
     return {
       ...definition,
-      mean: validSampleCount > 0 && isFiniteNumber(source.mean) ? source.mean : null,
-      sampleVariance: validSampleCount >= 2 && isFiniteNumber(source.sample_variance)
-        ? source.sample_variance
-        : null,
-      validSampleCount
+      mean,
+      sampleVariance,
+      validSampleCount,
+      invalidReason
     };
   });
   const successfulSampleCount = count(

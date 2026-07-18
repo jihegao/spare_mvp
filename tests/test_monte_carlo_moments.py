@@ -84,6 +84,41 @@ class MonteCarloMomentsTest(unittest.TestCase):
         self.assertAlmostEqual(metrics["repair_backlog"]["mean"], 2.0)
         self.assertAlmostEqual(metrics["repair_backlog"]["sample_variance"], 2.0)
 
+    def test_extreme_finite_values_never_raise_or_emit_nonfinite_statistics(self) -> None:
+        same_sign = build_monte_carlo_metric_moments(
+            [{"metrics": {"mission_success_rate": 1e308}} for _ in range(2)],
+            total_sample_count=2,
+            failed_sample_count=0,
+        )["metrics"][0]
+        self.assertEqual(same_sign["mean"], 1e308)
+        self.assertEqual(same_sign["sample_variance"], 0.0)
+        self.assertIsNone(same_sign["invalid_reason"])
+
+        opposite_sign = build_monte_carlo_metric_moments(
+            [
+                {"metrics": {"mission_success_rate": 1e308}},
+                {"metrics": {"mission_success_rate": -1e308}},
+            ],
+            total_sample_count=2,
+            failed_sample_count=0,
+        )["metrics"][0]
+        self.assertEqual(opposite_sign["mean"], 0.0)
+        self.assertIsNone(opposite_sign["sample_variance"])
+        self.assertEqual(opposite_sign["valid_sample_count"], 2)
+        self.assertEqual(opposite_sign["invalid_reason"], "sample_variance_not_finite")
+
+        square_overflow = build_monte_carlo_metric_moments(
+            [
+                {"metrics": {"mission_success_rate": 1e154}},
+                {"metrics": {"mission_success_rate": -1e154}},
+            ],
+            total_sample_count=2,
+            failed_sample_count=0,
+        )["metrics"][0]
+        self.assertEqual(square_overflow["mean"], 0.0)
+        self.assertIsNone(square_overflow["sample_variance"])
+        self.assertEqual(square_overflow["invalid_reason"], "sample_variance_not_finite")
+
     def test_legacy_aggregate_does_not_zero_fill_or_coerce_strings_and_nonfinite_values(self) -> None:
         adapter = SimulationAdapter(Path(__file__).resolve().parents[1])
         aggregate = adapter._aggregate_sample_metrics(  # noqa: SLF001 - direct aggregation boundary regression.
@@ -104,6 +139,15 @@ class MonteCarloMomentsTest(unittest.TestCase):
         self.assertNotIn("mission_success_rate", invalid_only)
         self.assertNotIn("mission_success_probability", invalid_only)
         self.assertNotIn("spare_shortage_probability", invalid_only)
+
+        extreme = adapter._aggregate_sample_metrics(  # noqa: SLF001 - finite extreme regression.
+            [
+                {"metrics": {"mission_success_rate": 1e308}},
+                {"metrics": {"mission_success_rate": -1e308}},
+            ]
+        )
+        self.assertEqual(extreme["mission_success_rate"], 0.0)
+        self.assertEqual(extreme["mission_success_probability"], 0.0)
 
 
 if __name__ == "__main__":
