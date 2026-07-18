@@ -3829,6 +3829,125 @@ test("visual simulation distinguishes duplicate plan names by stable IDs and swi
   }
 });
 
+test("visual simulation clears a saved Project override when shared context changes on another analysis page", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [
+      {
+        experiment_plan_id: "plan-cross-page-a",
+        config: {
+          name: "跨页方案A",
+          steps: 11,
+          samples: 2,
+          seed: 101,
+          projectJson: createRuntimeProjectJson({ project_id: "project-cross-page-a" })
+        }
+      },
+      {
+        experiment_plan_id: "plan-cross-page-b",
+        config: {
+          name: "跨页方案B",
+          steps: 22,
+          samples: 3,
+          seed: 202,
+          projectJson: createRuntimeProjectJson({ project_id: "project-cross-page-b" })
+        }
+      }
+    ]
+  });
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-cross-page-a" }
+    );
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
+    assert.match(runtime.appNode.innerHTML, /project_id=project-cross-page-a/);
+
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-cross-page-b" }
+    );
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+
+    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.match(visualShell, /experiment_plan_id=plan-cross-page-b/);
+    assert.match(visualShell, /project_id=project-cross-page-b/);
+    assert.match(visualShell, /plan_steps=22/);
+    assert.match(visualShell, /plan_samples=3/);
+    assert.match(visualShell, /plan_seed=202/);
+    assert.doesNotMatch(visualShell, /project_id=project-cross-page-a|experiment_plan_id=plan-cross-page-a/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual experiment plan list ignores a stale response from the previous Project", async () => {
+  const projectAPlans = createRuntimeDeferred();
+  const projectBPlans = createRuntimeDeferred();
+  const projectA = createRuntimeProjectJson({ project_id: "project-race-a" });
+  const projectB = createRuntimeProjectJson({ project_id: "project-race-b" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: projectA,
+    backendProjects: [
+      {
+        project_id: "project-race-a",
+        experiment_name: "竞态项目A",
+        base_code: "RA",
+        summary: "runtime race A",
+        updated_at: "2026-07-18 00:00:00"
+      },
+      {
+        project_id: "project-race-b",
+        experiment_name: "竞态项目B",
+        base_code: "RB",
+        summary: "runtime race B",
+        updated_at: "2026-07-18 00:00:00"
+      }
+    ],
+    projectJsonById: {
+      "project-race-a": projectA,
+      "project-race-b": projectB
+    },
+    experimentPlanListsByProject: {
+      "project-race-a": projectAPlans.promise,
+      "project-race-b": projectBPlans.promise
+    }
+  });
+
+  try {
+    assert.ok(runtime.requests.some((request) => request.url === "/api/projects/project-race-a/experiment-plans"));
+    await runtime.click("[data-project-list]", { projectList: "" });
+    await runtime.click("[data-enter-workbench]", { projectId: "race-b" });
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+    assert.ok(runtime.requests.some((request) => request.url === "/api/projects/project-race-b/experiment-plans"));
+
+    projectBPlans.resolve([{
+      experiment_plan_id: "plan-race-b",
+      config: { name: "项目B方案", projectJson: projectB }
+    }]);
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-race-b"\s*>项目B方案<\/option>/);
+
+    projectAPlans.resolve([{
+      experiment_plan_id: "plan-race-a-stale",
+      config: { name: "项目A迟到方案", projectJson: projectA }
+    }]);
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-race-b"\s*>项目B方案<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /plan-race-a-stale|项目A迟到方案/);
+  } finally {
+    projectAPlans.resolve([]);
+    projectBPlans.resolve([]);
+    runtime.restore();
+  }
+});
+
 test("visual simulation restores a saved plan ID and clears it after the plan is deleted", async () => {
   const experimentPlans = [
     {
@@ -4526,6 +4645,8 @@ async function setupRuntimeApp({
   projectJson = createRuntimeProjectJson(),
   importFile = null,
   experimentPlans = [],
+  experimentPlanListsByProject = {},
+  projectJsonById = {},
   sessionUser = { username: "data", role: "数据管理员" },
   storageEntries = [],
   systemConfigPayload = {},
@@ -4545,7 +4666,10 @@ async function setupRuntimeApp({
   const downloads = [];
   const objectUrls = new Map();
   const backendProjectCatalog = [...backendProjects];
-  const projectPayloads = new Map([[projectJson.project_id || "project-runtime", projectJson]]);
+  const projectPayloads = new Map([
+    [projectJson.project_id || "project-runtime", projectJson],
+    ...Object.entries(projectJsonById)
+  ]);
   const runtimeRuns = new Map();
   const aircraftReliabilityHistory = [];
   let createProjectFromImportCount = 0;
@@ -4673,7 +4797,14 @@ async function setupRuntimeApp({
     }
     const experimentPlanListMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans$/);
     if (experimentPlanListMatch && method === "GET") {
-      return jsonResponse({ project_id: decodeURIComponent(experimentPlanListMatch[1]), experiment_plans: experimentPlans });
+      const projectId = decodeURIComponent(experimentPlanListMatch[1]);
+      const configuredPlans = Object.hasOwn(experimentPlanListsByProject, projectId)
+        ? experimentPlanListsByProject[projectId]
+        : experimentPlans;
+      const resolvedPlans = await (typeof configuredPlans === "function"
+        ? configuredPlans({ projectId, requests })
+        : configuredPlans);
+      return jsonResponse({ project_id: projectId, experiment_plans: resolvedPlans });
     }
     const modelingSnapshotMatch = url.match(/^\/api\/projects\/([^/]+)\/modeling-snapshots$/);
     if (modelingSnapshotMatch && method === "POST") {
@@ -5126,6 +5257,14 @@ function htmlSectionByClass(html, className) {
   const match = html.match(new RegExp(`<section class="[^"]*\\b${className}\\b[^"]*">[\\s\\S]*?<\\/section>`));
   assert.ok(match, `expected section with class ${className}`);
   return match[0];
+}
+
+function createRuntimeDeferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 async function flushRuntimeTasks() {

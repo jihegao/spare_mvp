@@ -3011,8 +3011,9 @@ test("lite Mesa run context separates the current Project from persisted Experim
     appSource.indexOf("function selectCurrentExperimentPlan"),
     appSource.indexOf("function toggleExperimentPlanSelection")
   );
-  assert.match(runContextSelectionSource, /selectedRunContextKey = selected\.key/);
-  assert.match(runContextSelectionSource, /persistSelectedRunContextKey\(\)/);
+  assert.match(runContextSelectionSource, /replaceSelectedRunContextKey\(selected\.key, \{ persist: true \}\)/);
+  assert.match(appSource, /function replaceSelectedRunContextKey/);
+  assert.match(appSource, /solaraVisualizationProjectIdOverrideContextKey = ""/);
   assert.doesNotMatch(runContextSelectionSource, /selectedExperimentPlanKeys|experimentPlan =/);
 });
 
@@ -3145,12 +3146,30 @@ test("visual simulation uses only persisted ExperimentPlan IDs and fails closed 
   assert.match(visualDropdownSource, /<option value="\$\{htmlEscape\(option\.key\)\}"/);
   assert.doesNotMatch(visualDropdownSource, /<optgroup|已保存实验方案|current-project:/);
   assert.match(visualDropdownSource, /暂无实验方案/);
-  assert.match(mesaControlSource, /!selectedVisualSimulationExperimentPlanContext\(page\)/);
+  assert.match(mesaControlSource, /!visualContext/);
+  assert.match(mesaControlSource, /selectedRunContextKey !== contextKey/);
+  assert.match(visualSource, /solaraVisualizationProjectIdOverrideContextKey === context\?\.key/);
   assert.match(visualSource, /data-visual-simulation-plan-empty/);
   assert.match(visualSource, /data-plan-list-link>前往实验方案管理<\/button>/);
   assert.match(visualSource, /context \? `<iframe/);
   assert.match(visualSource, /data-mesa-control="reload-solara" \$\{context \? "" : "disabled"\}/);
   assert.match(visualSource, /experimentPlanId: context\.plan\.experiment_plan_id/);
+});
+
+test("ExperimentPlan list refresh rejects stale responses from another Project or request epoch", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const refreshSource = appSource.slice(
+    appSource.indexOf("function resetExperimentPlanListLoadState"),
+    appSource.indexOf("async function deleteExperimentPlanFromList")
+  );
+
+  assert.match(refreshSource, /backendExperimentPlansRequestEpoch \+= 1/);
+  assert.match(refreshSource, /const requestEpoch = \+\+backendExperimentPlansRequestEpoch/);
+  assert.match(refreshSource, /requestEpoch === backendExperimentPlansRequestEpoch/);
+  assert.match(refreshSource, /backendExperimentPlansProjectId === normalizedProjectId/);
+  assert.match(refreshSource, /currentBackendProjectId\(\) === normalizedProjectId/);
+  assert.match(refreshSource, /if \(!requestIsCurrent\(\)\) return/);
+  assert.match(refreshSource, /if \(requestIsCurrent\(\)\) backendExperimentPlansLoadInFlight = false/);
 });
 
 test("M9.8 docs mark platform embedding complete without making independent-mesa a runtime entry", async () => {
