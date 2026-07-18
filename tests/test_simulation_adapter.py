@@ -883,6 +883,9 @@ class SimulationAdapterTest(unittest.TestCase):
             manifest = first["artifact_manifest"]
             kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
             base_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "monte_carlo_base")
+            aggregate_artifact = next(
+                artifact for artifact in manifest["artifacts"] if artifact["kind"] == "aggregate_result"
+            )
             projection_artifacts = [
                 artifact for artifact in manifest["artifacts"] if artifact["kind"].startswith("analysis_projection_")
             ]
@@ -896,6 +899,9 @@ class SimulationAdapterTest(unittest.TestCase):
                 artifact for artifact in manifest["artifacts"] if artifact["kind"] == "visualization_state_series"
             )
             base_payload = json.loads((Path(first_tmp) / base_artifact["path"]).read_text(encoding="utf-8"))
+            aggregate_payload = json.loads(
+                (Path(first_tmp) / aggregate_artifact["path"]).read_text(encoding="utf-8")
+            )
             spare_shortfall_payload = json.loads(
                 (Path(first_tmp) / spare_shortfall_artifact["path"]).read_text(encoding="utf-8")
             )
@@ -964,6 +970,15 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(base_payload["sample_count"], 4)
         self.assertEqual(base_payload["logs_summary"]["completed_samples"], 4)
         self.assertEqual(base_payload["logs_summary"]["failed_samples"], 0)
+        self.assertEqual(base_payload["metric_moments"]["variance_denominator"], "n-1")
+        self.assertEqual(base_payload["metric_moments"]["total_sample_count"], 4)
+        self.assertEqual(base_payload["metric_moments"]["successful_sample_count"], 4)
+        self.assertEqual(base_payload["metric_moments"]["failed_sample_count"], 0)
+        self.assertEqual(
+            first["result"]["analysis_outputs"]["monte_carlo_metric_moments"],
+            base_payload["metric_moments"],
+        )
+        self.assertEqual(aggregate_payload["metric_moments"], base_payload["metric_moments"])
         self.assertEqual(len(base_payload["samples"]), 4)
         self.assertEqual(
             {
@@ -1061,6 +1076,12 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(len(base_payload["failed_samples"]), 1)
         self.assertEqual(base_payload["failed_samples"][0]["sample_index"], 1)
         self.assertEqual(base_payload["aggregate_metrics"]["sample_count"], 1)
+        self.assertEqual(base_payload["metric_moments"]["total_sample_count"], 2)
+        self.assertEqual(base_payload["metric_moments"]["successful_sample_count"], 1)
+        self.assertEqual(base_payload["metric_moments"]["failed_sample_count"], 1)
+        self.assertTrue(
+            all(metric["sample_variance"] is None for metric in base_payload["metric_moments"]["metrics"])
+        )
         self.assertEqual(sample_payload["failed_samples"][0]["error"]["code"], "sample_failed")
 
     def test_aircraft_support_v1_single_run_metrics_change_when_behavior_fields_change(self) -> None:

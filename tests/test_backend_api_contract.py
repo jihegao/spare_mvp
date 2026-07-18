@@ -268,6 +268,39 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(outcome["failure"]["error"]["details"]["phase"], "model_execution")
         self.assertEqual(outcome["failure"]["error"]["details"]["timeout_seconds"], 0.01)
 
+    def test_lite_mesa_all_timeout_response_keeps_empty_moments_and_execution_counts(self) -> None:
+        failures = [
+            {
+                "sample_index": index,
+                "seed": 20260718 + index,
+                "error": {"code": "sample_timeout", "message": "synthetic timeout", "details": {}},
+            }
+            for index in range(2)
+        ]
+        diagnostics = [
+            {"sample_index": index, "seed": 20260718 + index, "status": "failed", "elapsed_seconds": 60.0}
+            for index in range(2)
+        ]
+        with mock.patch(
+            "src.spare_mvp_backend.api._run_lite_mesa_analysis_samples",
+            return_value=([], failures, 1, diagnostics),
+        ):
+            payload = self.api.run_lite_mesa_analysis(
+                small_aircraft_support_project("project-lite-mesa-all-timeout"),
+                analysis_type="mission_reliability",
+                settings={"samples": 2, "seed": 20260718},
+            )
+
+        self.assertEqual(payload["status"], "blocked")
+        self.assertEqual(payload["requested_sample_count"], 2)
+        self.assertEqual(payload["completed_sample_count"], 0)
+        self.assertEqual(payload["failed_sample_count"], 2)
+        self.assertEqual(payload["metric_moments"]["total_sample_count"], 2)
+        self.assertEqual(payload["metric_moments"]["successful_sample_count"], 0)
+        self.assertEqual(payload["metric_moments"]["failed_sample_count"], 2)
+        self.assertTrue(all(metric["mean"] is None for metric in payload["metric_moments"]["metrics"]))
+        self.assertTrue(all(metric["sample_variance"] is None for metric in payload["metric_moments"]["metrics"]))
+
     def test_periodic_profile_empty_slots_survive_project_round_trip_and_compile(self) -> None:
         project = small_aircraft_support_project("project-periodic-profile-empty-slots")
         project["missionProfile"]["periodicProfileLists"] = {
@@ -2570,6 +2603,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["requested_sample_count"], 2)
         self.assertEqual(payload["completed_sample_count"], 2)
         self.assertEqual(payload["failed_sample_count"], 0)
+        self.assertEqual(payload["metric_moments"]["variance_denominator"], "n-1")
+        self.assertEqual(payload["metric_moments"]["total_sample_count"], 2)
+        self.assertEqual(payload["metric_moments"]["successful_sample_count"], 2)
+        self.assertEqual(payload["metric_moments"]["failed_sample_count"], 0)
+        self.assertTrue(all("unit" in metric for metric in payload["metric_moments"]["metrics"]))
         self.assertEqual(payload["seed_list"], [20260705, 20260706])
         self.assertEqual(payload["sample_timeout_seconds"], 60)
         self.assertEqual(payload["session_timeout_seconds"], 180)

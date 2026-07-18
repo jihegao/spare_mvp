@@ -21,6 +21,10 @@ from typing import Any
 
 from src.spare_mvp_backend.project_payload import normalize_project_products
 from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
+from src.spare_mvp_contract.monte_carlo_moments import (
+    build_monte_carlo_metric_moments,
+    is_finite_json_number,
+)
 
 from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     mission_period_outcome,
@@ -1844,10 +1848,16 @@ class SimulationAdapter:
             )
 
         aggregate = self._aggregate_sample_metrics(samples)
-        self._coerce_result_integer_metrics(aggregate)
-        aggregate["mission_success_probability"] = aggregate.get(
-            "mission_success_rate", aggregate.get("sortie_completion_rate", 0)
+        metric_moments = build_monte_carlo_metric_moments(
+            samples,
+            total_sample_count=profile["sample_count"],
+            failed_sample_count=len(failed_samples),
         )
+        self._coerce_result_integer_metrics(aggregate)
+        if "mission_success_rate" in aggregate:
+            aggregate["mission_success_probability"] = aggregate["mission_success_rate"]
+        elif "sortie_completion_rate" in aggregate:
+            aggregate["mission_success_probability"] = aggregate["sortie_completion_rate"]
         base_artifact_id = f"monte_carlo_base-{run_id}"
         projections = self._aircraft_support_v1_analysis_projections(
             aggregate,
@@ -1876,6 +1886,7 @@ class SimulationAdapter:
             "samples": samples,
             "failed_samples": failed_samples,
             "aggregate_metrics": aggregate,
+            "metric_moments": metric_moments,
             "logs_summary": {
                 "completed_samples": len(samples),
                 "failed_samples": len(failed_samples),
@@ -1915,6 +1926,7 @@ class SimulationAdapter:
             "mc_experiment_id": mc_experiment_id,
             "model_family": "aircraft_support_v1",
             "aggregate_metrics": aggregate,
+            "metric_moments": metric_moments,
             "failed_sample_count": len(failed_samples),
         }
         metrics = {
@@ -1981,6 +1993,7 @@ class SimulationAdapter:
                 "carry_list": projections["carry_list"]["data"],
                 "mission_reliability": projections["mission_reliability"]["data"],
                 "downtime_factors": projections["downtime_factors"]["data"],
+                "monte_carlo_metric_moments": metric_moments,
             },
         }
         run = {
@@ -3517,16 +3530,37 @@ class SimulationAdapter:
         }
 
     def _aggregate_sample_metrics(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
-        keys = sorted({key for sample in samples for key in sample["metrics"] if self._is_number(sample["metrics"][key])})
-        aggregate = {
-            key: sum(float(sample["metrics"].get(key, 0)) for sample in samples) / max(1, len(samples))
-            for key in keys
-        }
-        aggregate["sample_count"] = len(samples)
-        aggregate["mission_success_probability"] = aggregate.get("mission_success_rate", 0)
-        aggregate["spare_shortage_probability"] = (
-            sum(1 for sample in samples if float(sample["metrics"].get("shortage_events", 0)) > 0) / max(1, len(samples))
+        keys = sorted(
+            {
+                key
+                for sample in samples
+                for key, value in sample.get("metrics", {}).items()
+                if is_finite_json_number(value)
+            }
         )
+        aggregate = {}
+        for key in keys:
+            values = [
+                float(sample["metrics"][key])
+                for sample in samples
+                if is_finite_json_number(sample.get("metrics", {}).get(key))
+            ]
+            if values:
+                aggregate[key] = math.fsum(values) / len(values)
+        aggregate["sample_count"] = len(samples)
+        if "mission_success_rate" in aggregate:
+            aggregate["mission_success_probability"] = aggregate["mission_success_rate"]
+        elif "sortie_completion_rate" in aggregate:
+            aggregate["mission_success_probability"] = aggregate["sortie_completion_rate"]
+        shortage_values = [
+            float(sample["metrics"]["shortage_events"])
+            for sample in samples
+            if is_finite_json_number(sample.get("metrics", {}).get("shortage_events"))
+        ]
+        if shortage_values:
+            aggregate["spare_shortage_probability"] = (
+                sum(1 for value in shortage_values if value > 0) / len(shortage_values)
+            )
         return aggregate
 
     def _visualization_state_series_payload(
