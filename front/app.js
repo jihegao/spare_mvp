@@ -4414,16 +4414,15 @@ function projectDataProjectBackendId(project) {
 }
 
 function isProjectDataTemplate(project = {}) {
-  return Boolean(
-    project.isTemplate
-    || project.is_template
-    || project.projectTemplate
-    || project.projectInfo?.isTemplate
-    || project.projectInfo?.is_template
-    || project.template === true
-    || project.template?.enabled
-    || project.metadata?.isTemplate
-  );
+  const explicitFlags = [
+    project.projectInfo?.isTemplate,
+    project.projectInfo?.is_template,
+    project.isTemplate,
+    project.is_template
+  ];
+  const explicitFlag = explicitFlags.find((value) => typeof value === "boolean");
+  if (explicitFlag !== undefined) return explicitFlag;
+  return Boolean(project.projectTemplate || project.template === true || project.template?.enabled || project.metadata?.isTemplate);
 }
 
 function isProjectJsonTemplate(projectJson = {}) {
@@ -4446,9 +4445,12 @@ function setProjectDataTemplateFlag(projectId, isTemplate) {
   if (selectedProjectDataProjectJson && selectedProjectDataProjectJsonId === projectId) {
     selectedProjectDataProjectJson = {
       ...selectedProjectDataProjectJson,
+      isTemplate,
+      is_template: isTemplate,
       projectInfo: {
         ...(selectedProjectDataProjectJson.projectInfo || {}),
-        isTemplate
+        isTemplate,
+        is_template: isTemplate
       }
     };
   }
@@ -4471,12 +4473,14 @@ async function handleProjectTemplateAction(action, projectId) {
     const projectJson = await backendApi.getProject(projectDataProjectBackendId(project));
     const nextProjectJson = {
       ...normalizeProjectJsonBasicMissions(cloneScenario(projectJson)),
+      isTemplate,
+      is_template: isTemplate,
       projectInfo: {
         ...(projectJson.projectInfo || {}),
-        isTemplate
+        isTemplate,
+        is_template: isTemplate
       }
     };
-    nextProjectJson.projectInfo.isTemplate = isTemplate;
     const backendProjectJson = buildBackendProjectJson(nextProjectJson, { id: projectDataProjectId(project), isTemplate });
     await backendApi.saveProject(backendProjectJson);
     selectedProjectDataProjectJson = cloneScenario(backendProjectJson);

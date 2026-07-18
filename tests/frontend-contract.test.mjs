@@ -627,7 +627,9 @@ test("project data management exposes project list, template controls, and overv
   assert.doesNotMatch(projectDataSource, /data-project-json-viewer/);
   assert.doesNotMatch(projectDataSource, /data-project-json-node/);
   assert.doesNotMatch(projectDataSource, /Project JSON 原始数据/);
-  assert.match(projectDataSource, /projectInfo\.isTemplate/);
+  assert.match(projectDataSource, /project\.projectInfo\?\.isTemplate/);
+  assert.match(projectDataSource, /project\.projectInfo\?\.is_template/);
+  assert.match(projectDataSource, /is_template: isTemplate/);
   assert.match(projectDataSource, /backendApi\.getProject/);
   assert.match(projectDataSource, /backendApi\.saveProject/);
   assert.doesNotMatch(projectDataSource, /data-project-data-config-module="modeling-data-source"/);

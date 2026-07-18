@@ -1307,6 +1307,73 @@ test("project data management omits raw JSON while keeping overview and replacem
   }
 });
 
+test("project template actions synchronize persisted flags, list labels, and template options", async () => {
+  const projectJson = createRuntimeProjectJson({
+    project_id: "project-runtime",
+    isTemplate: true,
+    is_template: true,
+    projectInfo: {
+      name: "Runtime 模板项目",
+      baseCode: "RT",
+      summary: "runtime template state",
+      isTemplate: true,
+      is_template: true
+    }
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-project-data-management",
+    projectJson,
+    backendProjects: [{
+      project_id: "project-runtime",
+      experiment_name: "Runtime 模板项目",
+      base_code: "RT",
+      summary: "runtime template state",
+      is_template: true,
+      updated_at: "2026-07-19 00:00:00"
+    }]
+  });
+
+  try {
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /已设为模板/);
+
+    await runtime.click("[data-project-template-action]", { projectTemplateAction: "unset", projectId: "runtime" });
+    assert.match(runtime.appNode.innerHTML, /普通项目/);
+
+    const unsetRequest = runtime.requests.filter((request) => (
+      request.url === "/api/projects" && (request.options.method || "GET") === "POST"
+    )).at(-1);
+    const unsetBody = JSON.parse(unsetRequest.options.body);
+    assert.equal(unsetBody.projectInfo.isTemplate, false);
+    assert.equal(unsetBody.projectInfo.is_template, false);
+    assert.equal(unsetBody.isTemplate, false);
+    assert.equal(unsetBody.is_template, false);
+
+    await runtime.click("[data-project-list]", { projectList: "" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Runtime 模板项目【模板】/);
+    assert.match(runtime.appNode.innerHTML, /暂无项目模板/);
+
+    await runtime.setHash("feature=system-management-project-data-management");
+    await runtime.click("[data-project-template-action]", { projectTemplateAction: "set", projectId: "runtime" });
+    assert.match(runtime.appNode.innerHTML, /已设为模板/);
+
+    const setRequest = runtime.requests.filter((request) => (
+      request.url === "/api/projects" && (request.options.method || "GET") === "POST"
+    )).at(-1);
+    const setBody = JSON.parse(setRequest.options.body);
+    assert.equal(setBody.projectInfo.isTemplate, true);
+    assert.equal(setBody.projectInfo.is_template, true);
+    assert.equal(setBody.isTemplate, true);
+    assert.equal(setBody.is_template, true);
+
+    await runtime.click("[data-project-list]", { projectList: "" });
+    assert.match(runtime.appNode.innerHTML, /Runtime 模板项目【模板】/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /暂无项目模板/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("project data replacement preserves the opaque backend version token", async () => {
   const replacement = createRuntimeProjectJson({
     project_id: "project-imported-replacement",

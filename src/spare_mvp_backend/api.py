@@ -2966,7 +2966,13 @@ def _project_list_entry(project: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(summary, str) or not summary.strip():
         summary = "后端持久化项目"
     project_info = payload.get("projectInfo") if isinstance(payload.get("projectInfo"), dict) else {}
-    is_template = bool(project_info.get("isTemplate") or project_info.get("is_template"))
+    template_flags = (
+        project_info.get("isTemplate"),
+        project_info.get("is_template"),
+        payload.get("isTemplate"),
+        payload.get("is_template"),
+    )
+    is_template = next((value for value in template_flags if isinstance(value, bool)), False)
 
     return {
         "project_id": project.get("project_id"),
