@@ -17,6 +17,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from src.spare_mvp_backend.analysis_xlsx import AnalysisXlsxError, export_analysis_snapshot_xlsx
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_parallel_cores
@@ -36,6 +37,7 @@ from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
 )
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
+from src.spare_mvp_contract.monte_carlo_moments import build_monte_carlo_metric_moments
 from src.spare_mvp_contract.task_reliability import (
     build_task_reliability_result_fields,
     task_reliability_metrics,
@@ -352,6 +354,12 @@ class BackendApi:
             "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "filename": "rms-allocation-result.xlsx",
         }
+
+    def export_analysis_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return export_analysis_snapshot_xlsx(payload)
+        except AnalysisXlsxError as exc:
+            raise BackendApiError("analysis_export_invalid", str(exc)) from exc
 
     def replace_project(
         self,
@@ -907,15 +915,25 @@ class BackendApi:
                 )
             )
             payload["failed_samples"] = copy.deepcopy(failed_samples)
+            payload["metric_moments"] = build_monte_carlo_metric_moments(
+                [],
+                total_sample_count=normalized_settings["samples"],
+                failed_sample_count=len(failed_samples),
+            )
             return payload
 
         aggregation_started = time.perf_counter()
         aggregate = self.adapter._aggregate_sample_metrics(samples)  # noqa: SLF001 - in-memory aggregation, no writes.
-        self.adapter._coerce_result_integer_metrics(aggregate)  # noqa: SLF001 - reuse canonical metric coercion.
-        aggregate["mission_success_probability"] = aggregate.get(
-            "mission_success_rate",
-            aggregate.get("sortie_completion_rate", 0),
+        metric_moments = build_monte_carlo_metric_moments(
+            samples,
+            total_sample_count=normalized_settings["samples"],
+            failed_sample_count=len(failed_samples),
         )
+        self.adapter._coerce_result_integer_metrics(aggregate)  # noqa: SLF001 - reuse canonical metric coercion.
+        if "mission_success_rate" in aggregate:
+            aggregate["mission_success_probability"] = aggregate["mission_success_rate"]
+        elif "sortie_completion_rate" in aggregate:
+            aggregate["mission_success_probability"] = aggregate["sortie_completion_rate"]
         aggregation_seconds = time.perf_counter() - aggregation_started
         projection_started = time.perf_counter()
         base_artifact_id = f"lite-mesa-analysis-base-{run_id}"
@@ -966,6 +984,7 @@ class BackendApi:
             "parallel_cores": normalized_settings["parallelCores"],
             "worker_count": worker_count,
             "aggregate_metrics": aggregate,
+            "metric_moments": metric_moments,
             "projection": projections[normalized_analysis_type],
             "metrics": page_result["metrics"],
             "result_fields": page_result.get("result_fields", []),
@@ -2754,6 +2773,11 @@ def _blocked_lite_mesa_analysis_payload(
         "wave_rows": [],
         "event_details": [],
         "event_snapshots": [],
+        "metric_moments": build_monte_carlo_metric_moments(
+            [],
+            total_sample_count=settings["samples"],
+            failed_sample_count=0,
+        ),
         "limitations": _lite_mesa_analysis_limitations(),
         "settings": copy.deepcopy(settings),
         "message": message,
