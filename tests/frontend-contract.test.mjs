@@ -4402,6 +4402,35 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(rmsActionClickSource, /startRmsAllocationCalculation\(\)/);
 });
 
+test("RMS outer groups stack across the narrow two-column workspace without changing the inner mobile grid", async () => {
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const intermediateStart = styleSource.indexOf("@media (max-width: 1085px)");
+  const narrowStart = styleSource.indexOf("@media (max-width: 900px)");
+  assert.ok(intermediateStart >= 0);
+  assert.ok(narrowStart > intermediateStart);
+
+  const intermediateMedia = styleSource.slice(intermediateStart, narrowStart);
+  assert.match(intermediateMedia, /\.rms-data-preparation-grid,\s*\.rms-calculation-flow\s*\{\s*grid-template-columns: 1fr;/);
+  assert.doesNotMatch(intermediateMedia, /\.rms-calculation-input-grid/);
+
+  const narrowMedia = styleSource.slice(narrowStart);
+  assert.match(narrowMedia, /\.rms-data-preparation-grid,[\s\S]*\.rms-calculation-flow,[\s\S]*\.rms-calculation-input-grid,[\s\S]*grid-template-columns: 1fr;/);
+  assert.match(styleSource, /\.rms-calculation-flow\s*\{\s*display: grid;\s*grid-template-columns: minmax\(270px, 2fr\) minmax\(210px, 1fr\) minmax\(170px, 0\.8fr\);/);
+
+  const twoColumnWorkspaceChrome = 32 + 16 + 280 + 2 + 36 + 2 + 28;
+  const stackedContentMinimum = 270;
+  for (const viewportWidth of [901, 945, 1085]) {
+    assert.ok(viewportWidth <= 1085, `${viewportWidth}px must use the intermediate single-column outer grids`);
+    assert.ok(
+      viewportWidth - twoColumnWorkspaceChrome >= stackedContentMinimum,
+      `${viewportWidth}px must fit the retained two-column RMS input grid after the outer groups stack`
+    );
+  }
+
+  const desktopFlowMinimum = 270 + 210 + 170 + (2 * 12);
+  assert.ok(1086 - twoColumnWorkspaceChrome >= desktopFlowMinimum);
+});
+
 test("RMS allocation workbench renders parameters for only the selected method", () => {
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);

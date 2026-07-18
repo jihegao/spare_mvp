@@ -2614,7 +2614,7 @@ select[multiple].table-edit-select {
 
 .rms-calculation-flow {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr) minmax(180px, 0.8fr);
+  grid-template-columns: minmax(270px, 2fr) minmax(210px, 1fr) minmax(170px, 0.8fr);
   gap: 12px;
   align-items: stretch;
 }
@@ -5318,6 +5318,13 @@ tr.clickable-table-row.selected-table-row td {
 @media (max-width: 1280px) {
   .workspace-shell {
     grid-template-columns: 280px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1085px) {
+  .rms-data-preparation-grid,
+  .rms-calculation-flow {
+    grid-template-columns: 1fr;
   }
 }
 
