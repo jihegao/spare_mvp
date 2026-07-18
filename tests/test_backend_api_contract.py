@@ -355,9 +355,9 @@ class BackendApiContractTest(unittest.TestCase):
     def test_periodic_profile_empty_slots_survive_project_round_trip_and_compile(self) -> None:
         project = small_aircraft_support_project("project-periodic-profile-empty-slots")
         project["missionProfile"]["periodicProfileLists"] = {
-            "week": [{"id": "week-a", "name": "常规周"}],
-            "month": [{"id": "month-a", "name": "常规月", "weekProfileIds": ["week-a", "", "", ""]}],
-            "year": [{"id": "year-a", "name": "基准年度", "monthProfileIds": ["month-a", *([""] * 11)]}],
+            "week": [],
+            "month": [{"id": "month-empty", "name": "空月", "weekProfileIds": [""] * 4}],
+            "year": [{"id": "year-empty", "name": "空年", "monthProfileIds": [""] * 12}],
         }
 
         saved = self.api.save_project(project)
