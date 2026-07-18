@@ -69,7 +69,6 @@ import {
 } from "./rbd-evaluator.mjs?v=20260628-rbd-child-selection-view";
 import {
   aircraftMissionReliabilityOptions,
-  aircraftMissionReliabilityResultToXlsx,
   evaluateAircraftMissionReliability
 } from "./aircraft-mission-reliability.mjs";
 import {
@@ -687,6 +686,7 @@ let liteMesaMonteCarloResult = null;
 let liteMesaMonteCarloStatus = "等待运行分析。";
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
 let liteMesaAnalysisResults = {};
+let analysisXlsxExportState = {};
 let aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
 let rmsAllocationProject = createRmsAllocationProjectForScenario(scenario);
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
@@ -1706,6 +1706,13 @@ function bindEvents() {
       return;
     }
 
+    const analysisXlsxExportButton = event.target.closest("[data-analysis-xlsx-export]");
+    if (analysisXlsxExportButton) {
+      exportCurrentAnalysisXlsx(getFeaturePageById(selectedFeatureId)).finally(() => render());
+      render();
+      return;
+    }
+
     const aircraftReliabilityAction = event.target.closest("[data-aircraft-reliability-action]");
     if (aircraftReliabilityAction) {
       handleAircraftMissionReliabilityAction(
@@ -2108,6 +2115,7 @@ function bindEvents() {
         field: spareSortButton.dataset.spareShortfallSort || "",
         direction: spareSortButton.dataset.sortDirection || ""
       };
+      setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
       render();
       return;
     }
@@ -2115,6 +2123,7 @@ function bindEvents() {
     const carrySortButton = event.target.closest("[data-carry-recommended-sort]");
     if (carrySortButton) {
       carryRecommendedSort = carrySortButton.dataset.carryRecommendedSort || "default";
+      setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
       render();
       return;
     }
@@ -2257,12 +2266,14 @@ function bindEvents() {
     const carryZeroFilter = event.target.closest("[data-carry-hide-zero]");
     if (carryZeroFilter) {
       carryHideZeroDemand = carryZeroFilter.checked;
+      setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
       render();
       return;
     }
     const carryAircraftFilterSelect = event.target.closest("[data-carry-aircraft-filter]");
     if (carryAircraftFilterSelect) {
       carryAircraftFilter = carryAircraftFilterSelect.value;
+      setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
       render();
       return;
     }
@@ -2271,12 +2282,14 @@ function bindEvents() {
       const factor = String(downtimeFactorFilter.value || "");
       if (downtimeFactorFilter.checked) selectedDowntimeFactorTypes.add(factor);
       else selectedDowntimeFactorTypes.delete(factor);
+      setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
       render();
       return;
     }
     const spareAircraftFilterSelect = event.target.closest("[data-spare-aircraft-filter]");
     if (spareAircraftFilterSelect) {
       spareAircraftFilter = spareAircraftFilterSelect.value;
+      setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
       render();
       return;
     }
@@ -10904,6 +10917,7 @@ function resetRunContextToCurrentProject() {
   };
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
+  analysisXlsxExportState = {};
   liteMesaMonteCarloStatus = "已切换运行来源：当前项目";
 }
 
@@ -10921,6 +10935,7 @@ function selectCurrentExperimentPlan(planKey) {
   if (!selected) return;
   selectedRunContextKey = selected.key;
   persistSelectedRunContextKey();
+  analysisXlsxExportState = {};
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = selected.kind === "experiment-plan"
     ? `已绑定实验方案：${selected.name}`
@@ -11537,6 +11552,7 @@ async function handleEnterWorkbench(projectId) {
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
+  analysisXlsxExportState = {};
   aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
   liteMesaMonteCarloStatus = "项目已切换，请重新运行 Mesa 分析。";
   location.hash = `feature=${selectedFeatureId}`;
@@ -17425,11 +17441,12 @@ function ensureAircraftMissionReliabilitySelection(options) {
 }
 
 function calculateAircraftMissionReliability(projectJson) {
-  const result = evaluateAircraftMissionReliability(projectJson, {
+  const evaluated = evaluateAircraftMissionReliability(projectJson, {
     aircraftModel: aircraftMissionReliabilityState.aircraftModel,
     missionProfileId: aircraftMissionReliabilityState.missionProfileId,
     durationHours: Number(aircraftMissionReliabilityState.durationHours)
   });
+  const result = evaluated?.ok ? { ...evaluated, analyzedAt: new Date().toISOString() } : evaluated;
   aircraftMissionReliabilityState.result = result;
   aircraftMissionReliabilityState.status = result?.message || (result?.ok ? "任务可靠度计算完成。" : "可靠度计算被阻止，请检查输入。");
   return result;
@@ -17453,18 +17470,16 @@ function updateAircraftMissionReliabilityInput(field, value) {
   aircraftMissionReliabilityState.actionStatus = "";
   aircraftMissionReliabilityState.viewingHistoryId = "";
   aircraftMissionReliabilityState.status = "分析输入已更新，请重新运行。";
+  setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
 }
 
 async function handleAircraftMissionReliabilityAction(action, analysisId = "") {
   if (action === "run") {
+    setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
     const result = calculateAircraftMissionReliability(aircraftMissionReliabilityContextProjectJson());
     aircraftMissionReliabilityState.result = result?.ok ? result : null;
     aircraftMissionReliabilityState.actionStatus = result?.ok ? "分析完成。" : "分析未完成，请检查输入与建模数据。";
     aircraftMissionReliabilityState.viewingHistoryId = "";
-    return;
-  }
-  if (action === "export") {
-    exportAircraftMissionReliabilityDetails(aircraftMissionReliabilityState.result);
     return;
   }
   if (action === "view-history") {
@@ -17503,20 +17518,253 @@ function ensureAircraftMissionReliabilityHistoryLoaded() {
     });
 }
 
-function exportAircraftMissionReliabilityDetails(result) {
-  if (!result?.ok) {
-    aircraftMissionReliabilityState.actionStatus = "暂无可导出的分析结果。";
+function analysisXlsxState(page = getFeaturePageById(selectedFeatureId)) {
+  return analysisXlsxExportState[page.id] || { status: "idle", message: "" };
+}
+
+function setAnalysisXlsxState(page, status, message) {
+  analysisXlsxExportState = {
+    ...analysisXlsxExportState,
+    [page.id]: { status, message }
+  };
+}
+
+function canExportAnalysisXlsx(page, result = null) {
+  if (analysisXlsxState(page).status === "exporting") return false;
+  if (page.component === "aircraft-mission-reliability-analysis") return Boolean(result?.ok);
+  if (result?.status !== "session_complete") return false;
+  if (analysisTypeForPage(page) === "spare_shortfall") return visibleSpareShortfallRows(result).length > 0;
+  if (analysisTypeForPage(page) === "carry_list") return visibleCarryListRows(result).length > 0;
+  if (analysisTypeForPage(page) === "downtime_factors") return selectedDowntimeFactorTypes.size > 0;
+  return (result.resultFields || normalizeTaskReliabilityResultFields(result)).length > 0;
+}
+
+function renderAnalysisXlsxExportControl(page, result) {
+  const state = analysisXlsxState(page);
+  const canExport = canExportAnalysisXlsx(page, result);
+  return `
+    <div class="toolbar-row compact-actions analysis-xlsx-export-controls">
+      <button type="button" class="btn-primary" data-analysis-xlsx-export="${htmlEscape(page.id)}" ${canExport ? "" : "disabled"}>${state.status === "exporting" ? "导出中…" : "导出 Excel"}</button>
+      <span class="inline-status">${htmlEscape(state.message)}</span>
+    </div>
+  `;
+}
+
+async function exportCurrentAnalysisXlsx(page) {
+  const result = page.component === "aircraft-mission-reliability-analysis"
+    ? aircraftMissionReliabilityState.result
+    : liteMesaAnalysisResults[analysisTypeForPage(page)] || null;
+  if (!canExportAnalysisXlsx(page, result)) {
+    if (analysisXlsxState(page).status !== "exporting") {
+      setAnalysisXlsxState(page, "error", "当前页面没有已完成且可导出的分析结果。");
+    }
     return;
   }
-  const workbook = aircraftMissionReliabilityResultToXlsx(result);
-  const blob = new Blob([workbook], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `aircraft-mission-reliability-${normalizeProjectFileSegment(result.aircraftModel || "aircraft")}.xlsx`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-  aircraftMissionReliabilityState.actionStatus = "已导出可靠性汇总结果。";
+  setAnalysisXlsxState(page, "exporting", "正在生成 Excel，请稍候…");
+  try {
+    const payload = analysisXlsxPayloadForPage(page, result);
+    const response = await backendApi.exportAnalysisXlsx(payload);
+    const blob = response?.blob || response;
+    if (!(blob instanceof Blob)) throw new Error("后端未返回有效的 Excel 文件");
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = response?.filename || fallbackAnalysisXlsxFilename(payload);
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setAnalysisXlsxState(page, "success", `已导出：${anchor.download}`);
+  } catch (err) {
+    setAnalysisXlsxState(page, "error", `导出失败：${formatBackendError(err)}。请确认后端可用并重试。`);
+  }
+}
+
+function analysisXlsxPayloadForPage(page, result) {
+  if (page.component === "aircraft-mission-reliability-analysis") {
+    return aircraftMissionReliabilityXlsxPayload(page, result);
+  }
+  const definition = liteMesaAnalysisDefinitionForPage(page);
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
+  const common = analysisXlsxCommonPayload(page, definition.title, result?.completedAt, settings);
+  if (definition.analysisType === "spare_shortfall") {
+    const productsById = analysisProductsById();
+    const rows = visibleSpareShortfallRows(result);
+    return {
+      ...common,
+      analysis_type: "spare_shortfall",
+      summary: liteMesaAnalysisVisibleMetrics(definition, result.metrics || []).map(([label, value]) => [label, value, ""]),
+      detail_sections: [{
+        title: "备件短板明细",
+        columns: ["机型", "产品", "需求数量", "满足数量", "平均备件延误时间(h)", "满足率", "风险"],
+        rows: rows.map((row) => [
+          row.aircraftModel,
+          analysisProductDisplayName(row, productsById),
+          row.demand,
+          row.filled,
+          fixed(row.meanTransportDelayHours, 2),
+          pct(row.fillRate),
+          row.riskLevel
+        ])
+      }]
+    };
+  }
+  if (definition.analysisType === "carry_list") {
+    const productsById = analysisProductsById();
+    const rows = visibleCarryListRows(result);
+    return {
+      ...common,
+      analysis_type: "carry_list",
+      summary: liteMesaAnalysisVisibleMetrics(definition, result.metrics || []).map(([label, value]) => [label, value, ""]),
+      detail_sections: [{
+        title: "携行清单明细",
+        columns: ["机型", "产品", "建议携行数量", "需求次数", "短缺次数", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
+        rows: rows.map((row) => [
+          row.aircraftModel || "未指定机型",
+          carryListProductDisplayName(row, productsById),
+          row.recommended,
+          row.demand,
+          row.shortage,
+          row.lifeLimited ? "是" : "否",
+          row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-",
+          row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-",
+          row.riskLevel
+        ])
+      }]
+    };
+  }
+  if (definition.analysisType === "downtime_factors") {
+    const snapshot = visibleDowntimeAnalysisSnapshot(result);
+    return {
+      ...common,
+      analysis_type: "downtime_factors",
+      summary: [
+        ["停机事件次数", snapshot.totalEvents, "次"],
+        ["累计停机时长", fixed(snapshot.totalHours, 2), "小时"],
+        ["首要停机因素", snapshot.primaryFactor, ""]
+      ],
+      detail_sections: [
+        {
+          title: "停机因素排行",
+          columns: ["排序", "停机因素", "事件次数", "累计停机时长（小时）", "当前范围时长占比"],
+          rows: snapshot.rows.map((row, index) => [
+            index + 1,
+            row.label,
+            row.eventCount,
+            fixed(row.downtimeHours, 2),
+            pct(snapshot.totalHours > 0 ? row.downtimeHours / snapshot.totalHours : 0)
+          ])
+        },
+        {
+          title: "停机事件明细",
+          columns: ["停机因素类型", "装备/产品名称", "任务/阶段", "保障组织节点", "开始时间", "结束时间", "持续时长（小时）", "事件说明", "分类信息"],
+          rows: snapshot.selectedEvents.map((event) => {
+            const row = downtimeEventDisplayRow(event);
+            return [
+              row.factorLabel,
+              row.equipmentName,
+              row.taskPhaseLabel,
+              row.supportNodeName,
+              row.startTimeLabel,
+              row.endTimeLabel,
+              fixed(row.durationHours, 2),
+              row.description,
+              row.specificDetails.map(([label, value]) => `${label}：${downtimeDisplayValue(value)}`).join("；")
+            ];
+          })
+        }
+      ]
+    };
+  }
+  const fields = result.resultFields || normalizeTaskReliabilityResultFields(result);
+  return {
+    ...common,
+    analysis_type: "mission_reliability",
+    summary: fields.map((field) => [field.label, field.displayValue, field.unit || ""]),
+    detail_sections: [{
+      title: "任务可靠度结果",
+      columns: fields.map((field) => field.label),
+      rows: [fields.map((field) => field.displayValue)]
+    }]
+  };
+}
+
+function aircraftMissionReliabilityXlsxPayload(page, result) {
+  const reliability = Number(result.aircraftReliability ?? result.reliability ?? 0);
+  const failureProbability = Number(result.failureProbability ?? (1 - reliability));
+  const common = analysisXlsxCommonPayload(page, "飞机任务可靠性评估", result.analyzedAt, {
+    aircraftModel: result.aircraftModel,
+    missionProfile: result.missionProfile?.name || result.missionProfileName || "",
+    durationHours: result.durationHours
+  });
+  return {
+    ...common,
+    analysis_type: "aircraft_mission_reliability",
+    summary: [
+      ["整机任务可靠度", reliability.toFixed(3), ""],
+      ["整机任务可靠度百分比", `${(reliability * 100).toFixed(3)}%`, ""],
+      ["整机失效概率", failureProbability.toFixed(3), ""],
+      ["整机失效概率百分比", `${(failureProbability * 100).toFixed(3)}%`, ""],
+      ["任务时长", result.durationHours, "小时"],
+      ["计算节点", Array.isArray(result.rows) ? result.rows.length : 0, "个"]
+    ],
+    detail_sections: [{
+      title: "可靠性汇总结果",
+      columns: ["飞机型号", "任务剖面", "任务时长（小时）", "整机任务可靠度", "整机失效概率", "计算节点"],
+      rows: [[
+        result.aircraftModel,
+        result.missionProfile?.name || result.missionProfileName || "",
+        result.durationHours,
+        reliability.toFixed(3),
+        failureProbability.toFixed(3),
+        Array.isArray(result.rows) ? result.rows.length : 0
+      ]]
+    }]
+  };
+}
+
+function analysisXlsxCommonPayload(page, analysisName, analysisTime, settings = {}) {
+  const context = selectedExperimentPlanContext();
+  const projectJson = selectedExperimentPlanProjectJson();
+  const projectName = String(projectJson.projectInfo?.name || currentProject?.name || "未命名项目").trim();
+  const exportedAt = new Date().toISOString();
+  const information = [
+    ["分析时间", analysisTime || exportedAt],
+    ["运行来源", context?.kind === "experiment-plan" ? "已保存实验方案" : "当前项目"],
+    ...Object.entries(settings).map(([key, value]) => [analysisSettingExportLabel(key), value ?? ""])
+  ];
+  if (context?.kind === "experiment-plan") {
+    information.splice(2, 0,
+      ["实验方案名称", context.name || "未命名方案"],
+      ["实验方案 ID", context.key]
+    );
+  }
+  return {
+    project_name: projectName,
+    analysis_name: analysisName,
+    exported_at: exportedAt,
+    analysis_information: information
+  };
+}
+
+function analysisSettingExportLabel(key) {
+  return ({
+    samples: "样本量",
+    seed: "随机种子",
+    parallelCores: "并行核心数",
+    missionConfidenceTarget: "备件满足率下限",
+    topN: "排序范围",
+    aircraftModel: "飞机型号",
+    missionProfile: "基本任务",
+    durationHours: "任务时长（小时）"
+  })[key] || key;
+}
+
+function fallbackAnalysisXlsxFilename(payload) {
+  const safe = (value, fallback) => String(value || fallback)
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .trim()
+    .slice(0, 60) || fallback;
+  const stamp = String(payload.exported_at || "").replace(/\D/g, "").slice(0, 14) || "export";
+  return `${safe(payload.project_name, "项目")}-${safe(payload.analysis_name, "分析结果")}-${stamp}.xlsx`;
 }
 
 function renderAircraftMissionReliabilityAnalysis() {
@@ -17560,7 +17808,7 @@ function renderAircraftMissionReliabilityAnalysis() {
 
 function renderAircraftMissionReliabilityResult(result) {
   if (!result?.ok) {
-    return `<section class="lite-mesa-stat-section"><div class="empty-state"><strong>尚未生成分析结果</strong><p>${htmlEscape(aircraftMissionReliabilityState.status)}</p></div></section>`;
+    return `<section class="lite-mesa-stat-section"><div class="empty-state"><strong>尚未生成分析结果</strong><p>${htmlEscape(aircraftMissionReliabilityState.status)}</p></div>${renderAnalysisXlsxExportControl(getFeaturePageById(selectedFeatureId), result)}</section>`;
   }
   const reliability = Number(result.aircraftReliability ?? result.reliability ?? 0);
   const failureProbability = Number(result.failureProbability ?? (1 - reliability));
@@ -17573,10 +17821,7 @@ function renderAircraftMissionReliabilityResult(result) {
         <div class="metric-card"><span>任务时长</span><strong>${htmlEscape(result.durationHours)} h</strong><em>任务剖面</em></div>
         <div class="metric-card"><span>计算节点</span><strong>${Array.isArray(result.rows) ? result.rows.length : 0}</strong><em>整机 / 系统 / 分系统 / 产品</em></div>
       </div>
-      <div class="toolbar-row compact-actions">
-        <button type="button" class="btn-primary" data-aircraft-reliability-action="export">导出</button>
-        <span class="inline-status">${htmlEscape(aircraftMissionReliabilityState.actionStatus)}</span>
-      </div>
+      ${renderAnalysisXlsxExportControl(getFeaturePageById(selectedFeatureId), result)}
     </section>
   `;
 }
@@ -17641,6 +17886,7 @@ function renderLiteMesaAnalysisPage(page) {
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
         </div>
         ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderAnalysisXlsxExportControl(page, result)}
         ${renderLiteMesaAnalysisSessionBody(definition, result)}
       </section>
     </div>
@@ -17670,6 +17916,7 @@ function renderSpareShortfallAnalysisPage(page, definition, result) {
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
         </div>
         ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderAnalysisXlsxExportControl(page, result)}
         ${renderLiteMesaAnalysisSessionBody(definition, result)}
       </section>
     </div>
@@ -17699,6 +17946,7 @@ function renderCarryListAnalysisPage(page, definition, result) {
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
         </div>
         ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderAnalysisXlsxExportControl(page, result)}
         ${renderLiteMesaAnalysisSessionBody(definition, result)}
       </section>
     </div>
@@ -17736,6 +17984,7 @@ function renderDowntimeFactorAnalysisPage(page, definition, settings, result) {
           <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
         </div>
         ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        ${renderAnalysisXlsxExportControl(page, result)}
         ${renderLiteMesaAnalysisSessionBody(definition, result)}
       </section>
     </div>
@@ -17870,6 +18119,7 @@ async function runLiteMesaAnalysisPage(page) {
   if (definition.analysisType === "mission_reliability") {
     delete normalizedSettings.maxTimeWindow;
   }
+  setAnalysisXlsxState(page, "idle", "");
   liteMesaAnalysisResults = {
     ...liteMesaAnalysisResults,
     [definition.analysisType]: {
@@ -17886,7 +18136,10 @@ async function runLiteMesaAnalysisPage(page) {
     const response = await backendApi.runLiteMesaAnalysis(projectJson, definition.analysisType, normalizedSettings);
     liteMesaAnalysisResults = {
       ...liteMesaAnalysisResults,
-      [definition.analysisType]: normalizeLiteMesaAnalysisResult(definition, response)
+      [definition.analysisType]: {
+        ...normalizeLiteMesaAnalysisResult(definition, response),
+        completedAt: new Date().toISOString()
+      }
     };
   } catch (err) {
     liteMesaAnalysisResults = {
@@ -17988,6 +18241,33 @@ function liteMesaAnalysisVisibleMetrics(definition, metrics) {
   return (metrics || []).filter(([label]) => !hiddenLabels.has(String(label)));
 }
 
+function visibleSpareShortfallRows(result) {
+  const rows = Array.isArray(result?.rows) ? result.rows : [];
+  const concreteRows = rows.filter((row) => row.aircraftModel && !["全部机型", "未指定机型"].includes(row.aircraftModel));
+  const filteredRows = spareAircraftFilter
+    ? concreteRows.filter((row) => row.aircraftModel === spareAircraftFilter)
+    : concreteRows;
+  return sortSpareShortfallRows(filteredRows);
+}
+
+function visibleCarryListRows(result) {
+  const rows = Array.isArray(result?.rows) ? result.rows : [];
+  const aircraftModels = [...new Set(rows.map((row) => String(row.aircraftModel || "").trim()).filter(Boolean))].sort();
+  const activeAircraftFilter = aircraftModels.includes(carryAircraftFilter) ? carryAircraftFilter : "";
+  const filteredRows = rows.filter((row) => (
+    (!activeAircraftFilter || row.aircraftModel === activeAircraftFilter)
+    && (!carryHideZeroDemand || Number(row.demand || 0) > 0)
+  ));
+  if (carryRecommendedSort === "default") return filteredRows;
+  return filteredRows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const difference = Number(left.row.recommended || 0) - Number(right.row.recommended || 0);
+      return (carryRecommendedSort === "asc" ? difference : -difference) || left.index - right.index;
+    })
+    .map(({ row }) => row);
+}
+
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
     return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存运行中生成分析摘要。</p></div>`;
@@ -18005,10 +18285,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     const concreteRows = rows.filter((row) => row.aircraftModel && !["全部机型", "未指定机型"].includes(row.aircraftModel));
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(concreteRows.map((row) => row.aircraftModel))].sort();
-    const filteredRows = spareAircraftFilter
-      ? concreteRows.filter((row) => row.aircraftModel === spareAircraftFilter)
-      : concreteRows;
-    const sortedRows = sortSpareShortfallRows(filteredRows);
+    const sortedRows = visibleSpareShortfallRows(result);
     return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>风险</th></tr></thead>
       <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
@@ -18018,19 +18295,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(rows.map((row) => String(row.aircraftModel || "").trim()).filter(Boolean))].sort();
     const activeAircraftFilter = aircraftModels.includes(carryAircraftFilter) ? carryAircraftFilter : "";
-    const filteredRows = rows.filter((row) => (
-      (!activeAircraftFilter || row.aircraftModel === activeAircraftFilter)
-      && (!carryHideZeroDemand || Number(row.demand || 0) > 0)
-    ));
-    const visibleRows = carryRecommendedSort === "default"
-      ? filteredRows
-      : filteredRows
-        .map((row, index) => ({ row, index }))
-        .sort((left, right) => {
-          const difference = Number(left.row.recommended || 0) - Number(right.row.recommended || 0);
-          return (carryRecommendedSort === "asc" ? difference : -difference) || left.index - right.index;
-        })
-        .map(({ row }) => row);
+    const visibleRows = visibleCarryListRows(result);
     return `
       <div class="toolbar-row">
         <label>机型 <select data-carry-aircraft-filter><option value="">全部机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${activeAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label>
@@ -18098,6 +18363,34 @@ function renderSpareShortfallSortHeading(label, field) {
   return `<span class="analysis-sort-heading">${htmlEscape(label)}<span class="analysis-sort-controls" aria-label="${htmlEscape(label)}排序"><button type="button" data-spare-shortfall-sort="${field}" data-sort-direction="asc" aria-label="按${htmlEscape(label)}升序排列" aria-pressed="${spareShortfallSort.field === field && spareShortfallSort.direction === "asc"}">↑</button><button type="button" data-spare-shortfall-sort="${field}" data-sort-direction="desc" aria-label="按${htmlEscape(label)}降序排列" aria-pressed="${spareShortfallSort.field === field && spareShortfallSort.direction === "desc"}">↓</button></span></span>`;
 }
 
+function visibleDowntimeAnalysisSnapshot(result) {
+  const selectedEvents = (result?.eventDetails || [])
+    .filter((event) => selectedDowntimeFactorTypes.has(downtimeEventFactor(event)))
+    .sort((left, right) => Number(left.start_minute ?? left.start_time ?? 0) - Number(right.start_minute ?? right.start_time ?? 0));
+  const sourceRows = (result?.rows || []).filter((row) => selectedDowntimeFactorTypes.has(String(row.reason || row.factor || "")));
+  const rows = DOWNTIME_FACTOR_OPTIONS
+    .filter((option) => selectedDowntimeFactorTypes.has(option.value))
+    .map((option) => {
+      const source = sourceRows.find((row) => String(row.reason || row.factor || "") === option.value) || {};
+      const factorEvents = selectedEvents.filter((event) => downtimeEventFactor(event) === option.value);
+      const eventCount = result?.eventDetailsComplete ? factorEvents.length : Number(source.event_count ?? source.count ?? 0);
+      const downtimeHours = result?.eventDetailsComplete
+        ? factorEvents.reduce((sum, event) => sum + downtimeEventDurationHours(event), 0)
+        : Number(source.downtime_hours ?? source.downtimeHours ?? 0);
+      return { factor: option.value, label: option.label, eventCount, downtimeHours };
+    })
+    .sort((left, right) => right.downtimeHours - left.downtimeHours);
+  const totalEvents = rows.reduce((sum, row) => sum + row.eventCount, 0);
+  const totalHours = rows.reduce((sum, row) => sum + row.downtimeHours, 0);
+  return {
+    selectedEvents,
+    rows,
+    totalEvents,
+    totalHours,
+    primaryFactor: rows.find((row) => row.downtimeHours > 0)?.label || "--"
+  };
+}
+
 function renderLiteMesaDowntimeFactorAnalysis(result) {
   const selected = selectedDowntimeFactorTypes;
   const filterControls = DOWNTIME_FACTOR_OPTIONS.map((option) => `
@@ -18112,25 +18405,7 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
       <div class="empty-state"><strong>请选择至少一种停机因素</strong><p>当前未选择停机因素，不展示历史筛选结果。</p></div>
     `;
   }
-  const selectedEvents = (result.eventDetails || [])
-    .filter((event) => selected.has(downtimeEventFactor(event)))
-    .sort((left, right) => Number(left.start_minute ?? left.start_time ?? 0) - Number(right.start_minute ?? right.start_time ?? 0));
-  const sourceRows = (result.rows || []).filter((row) => selected.has(String(row.reason || row.factor || "")));
-  const rows = DOWNTIME_FACTOR_OPTIONS
-    .filter((option) => selected.has(option.value))
-    .map((option) => {
-      const source = sourceRows.find((row) => String(row.reason || row.factor || "") === option.value) || {};
-      const factorEvents = selectedEvents.filter((event) => downtimeEventFactor(event) === option.value);
-      const eventCount = result.eventDetailsComplete ? factorEvents.length : Number(source.event_count ?? source.count ?? 0);
-      const downtimeHours = result.eventDetailsComplete
-        ? factorEvents.reduce((sum, event) => sum + downtimeEventDurationHours(event), 0)
-        : Number(source.downtime_hours ?? source.downtimeHours ?? 0);
-      return { factor: option.value, label: option.label, eventCount, downtimeHours };
-    })
-    .sort((left, right) => right.downtimeHours - left.downtimeHours);
-  const totalEvents = rows.reduce((sum, row) => sum + row.eventCount, 0);
-  const totalHours = rows.reduce((sum, row) => sum + row.downtimeHours, 0);
-  const primaryFactor = rows.find((row) => row.downtimeHours > 0)?.label || "--";
+  const { selectedEvents, rows, totalEvents, totalHours, primaryFactor } = visibleDowntimeAnalysisSnapshot(result);
   const tableRows = rows.map((row, index) => {
     const contribution = totalHours > 0 ? row.downtimeHours / totalHours : 0;
     return `<tr><td>${index + 1}</td><td>${htmlEscape(row.label)}</td><td>${row.eventCount}</td><td>${fixed(row.downtimeHours, 2)} 小时</td><td>${pct(contribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), contribution >= 0.35 ? "red" : "blue")}</td></tr>`;
