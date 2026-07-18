@@ -1883,7 +1883,9 @@ test("visual Mesa page renders Solara iframe shell", async () => {
 
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"|刷新推演|visual-frame-toolbar/);
     const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "mesa-visual-toolbar");
-    assert.match(visualHero, /<strong>可视化推演<\/strong>/);
+    assert.match(visualHero, /class="lite-mesa-hero mesa-visual-toolbar"/);
+    assert.match(visualHero, /<h3>可视化推演<\/h3>/);
+    assert.match(visualHero, /<p>Runtime 项目<\/p>/);
     assert.match(visualHero, /data-current-experiment-plan/);
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
     assert.match(runtime.appNode.innerHTML, /class="solara-visualization-frame"/);
@@ -2500,6 +2502,8 @@ test("task reliability Excel export preserves the canonical four result_fields d
 
     const body = analysisExportBodies(runtime)[0];
     assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
+    assert.equal(new Map(body.analysis_information).has("parallelCoresError"), false);
+    assert.doesNotMatch(JSON.stringify(body.analysis_information), /parallelCoresError/);
     assert.deepEqual(body.summary.map((row) => [row[0], row[1]]), [
       ["出动架次率", "0.502"],
       ["波次成功率", "12.2%"],
@@ -5959,6 +5963,172 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
   }
 });
 
+test("editing the selected saved plan resyncs Monte Carlo settings and invalidates cross-page results", async () => {
+  const experimentPlans = [{
+    experiment_plan_id: "plan-edited-runtime",
+    status: "draft",
+    config: {
+      name: "待编辑运行方案",
+      samples: 4,
+      seed: 404,
+      parallelCores: 2,
+      projectJson: createRuntimeProjectJson({ project_id: "project-edited-runtime" })
+    }
+  }];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans
+  });
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-edited-runtime" }
+    );
+    await runtime.click("[data-lite-mesa-action='run']");
+    assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
+
+    await runtime.setHash("feature=mission-reliability-task-reliability");
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    assert.match(
+      runtime.appNode.innerHTML,
+      /data-analysis-xlsx-export="mission-reliability-task-reliability"\s*>导出 Excel<\/button>/
+    );
+
+    experimentPlans[0] = {
+      ...experimentPlans[0],
+      status: "completed",
+      run_count: 3,
+      runs: [{ run_id: "run-status-only" }]
+    };
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
+    await runtime.setHash("feature=mission-reliability-task-reliability");
+    assert.match(
+      runtime.appNode.innerHTML,
+      /data-analysis-xlsx-export="mission-reliability-task-reliability"\s*>导出 Excel<\/button>/
+    );
+
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click(
+      "[data-experiment-plan-edit]",
+      { experimentPlanEdit: "plan-edited-runtime", experimentPlanName: "待编辑运行方案" }
+    );
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.samples" },
+      { value: "7", type: "number" }
+    );
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.parallelCores" },
+      { value: "5", type: "number" }
+    );
+    await runtime.change("[data-experiment-seed-policy]", {}, { value: "fixed" });
+    await runtime.change("[data-experiment-seed-base]", {}, { value: "707", type: "number" });
+    await runtime.click("[data-save-plan]");
+
+    const updateBody = JSON.parse(runtime.requests.findLast((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans/plan-edited-runtime"
+      && (request.options.method || "GET") === "PUT"
+    )).options.body || "{}");
+    assert.equal(updateBody.config.samples, 7);
+    assert.equal(updateBody.config.seed, 707);
+    assert.equal(updateBody.config.parallelCores, 5);
+
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
+    await runtime.click("[data-lite-mesa-action='run']");
+
+    const monteCarloBody = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .filter((body) => body.analysis_type === "mission_reliability")
+      .at(-1);
+    assert.equal(monteCarloBody.settings.samples, 7);
+    assert.equal(monteCarloBody.settings.seed, 707);
+    assert.equal(monteCarloBody.settings.parallelCores, 5);
+    assert.equal(monteCarloBody.project.experiment.samples, 7);
+    assert.equal(monteCarloBody.project.experiment.seed, 707);
+    assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>7<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /成功样本[\s\S]*<strong>7<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /失败样本[\s\S]*<strong>0<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /<td>任务可靠度<\/td>[\s\S]*<td>7<\/td>/);
+
+    await runtime.setHash("feature=mission-reliability-task-reliability");
+    assert.match(
+      runtime.appNode.innerHTML,
+      /data-analysis-xlsx-export="mission-reliability-task-reliability" disabled>导出 Excel<\/button>/
+    );
+    assert.doesNotMatch(runtime.appNode.innerHTML, /分析结果已生成：4 个样本/);
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const analysisBody = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .filter((body) => body.analysis_type === "mission_reliability")
+      .at(-1);
+    assert.equal(analysisBody.settings.samples, 7);
+    assert.equal(analysisBody.settings.seed, 707);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("an in-flight Monte Carlo response cannot restore results from an edited plan fingerprint", async () => {
+  const experimentPlans = [{
+    experiment_plan_id: "plan-inflight-edit",
+    status: "draft",
+    config: {
+      name: "运行中编辑方案",
+      samples: 3,
+      seed: 303,
+      parallelCores: 1,
+      projectJson: createRuntimeProjectJson({ project_id: "project-inflight-edit" })
+    }
+  }];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans,
+    liteMesaAnalysisResponseDelayMs: 40
+  });
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-inflight-edit" }
+    );
+    await runtime.click("[data-lite-mesa-action='run']");
+
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click(
+      "[data-experiment-plan-edit]",
+      { experimentPlanEdit: "plan-inflight-edit", experimentPlanName: "运行中编辑方案" }
+    );
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.samples" },
+      { value: "6", type: "number" }
+    );
+    await runtime.click("[data-save-plan]");
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await runtime.flush();
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>3<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /实验方案配置已更新/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("saved run context survives a cold workbench restore", async () => {
   const projectJson = createRuntimeProjectJson({ project_id: "project-runtime" });
   const runtime = await setupRuntimeApp({
@@ -6414,13 +6584,18 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(resultCards, /总样本[\s\S]*<strong>4<\/strong>/);
     assert.match(resultCards, /成功样本[\s\S]*<strong>3<\/strong>/);
     assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
-    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73 比例<\/strong>/);
-    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64 比例<\/strong>/);
-    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29 比例<\/strong>/);
+    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
+    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64<\/strong>/);
+    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29<\/strong>/);
+    assert.doesNotMatch(resultCards, /比例|架次\/机\/天|小时|项/);
     assert.match(metricTable, /<th>均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
-    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>1<\/td>/);
-    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例 \/ 比例²<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>1<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
+    assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
+    assert.match(metricTable, /<td>维修积压<\/td>[\s\S]*?<td>项<\/td>/);
+    assert.doesNotMatch(metricTable, /比例²|\(架次\/机\/天\)²|小时²|项²/);
     for (const label of ["任务可靠度", "备件满足率", "备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }

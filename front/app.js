@@ -693,8 +693,10 @@ let liteMesaMonteCarloSettings = {
 };
 let liteMesaMonteCarloResult = null;
 let liteMesaMonteCarloStatus = "等待运行分析。";
+let liteMesaMonteCarloRequestEpoch = 0;
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
 let liteMesaAnalysisResults = {};
+let liteMesaAnalysisRequestEpoch = 0;
 let analysisXlsxExportState = {};
 let aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
 let rmsAllocationProject = createRmsAllocationProjectForScenario(scenario);
@@ -804,6 +806,7 @@ let collapsedTreeNodes = new Set();
 let experimentRunStatus = "当前";
 let selectedExperimentPlanKeys = new Set();
 let selectedRunContextKey = "";
+let selectedRunContextFingerprint = "";
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
 let selectedPeriodicWeekIndex = 1;
@@ -11515,6 +11518,7 @@ function selectedExperimentPlanRunSettings() {
 
 function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
   selectedRunContextKey = String(nextKey || "").trim();
+  selectedRunContextFingerprint = "";
   solaraVisualizationProjectIdOverride = "";
   solaraVisualizationProjectIdOverrideContextKey = "";
   solaraVisualizationProjectIdOverrideParentProjectId = "";
@@ -11546,6 +11550,60 @@ function resetRunContextToCurrentProject() {
   liteMesaMonteCarloStatus = "已切换运行来源：当前项目";
 }
 
+function experimentPlanRunContextFingerprint(context) {
+  if (context?.kind !== "experiment-plan") return "";
+  const config = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+    ? context.plan.config
+    : {};
+  return stableVisualizationPlanStringify(config);
+}
+
+function invalidateSelectedRunContextResults(message) {
+  liteMesaMonteCarloRequestEpoch += 1;
+  liteMesaAnalysisRequestEpoch += 1;
+  liteMesaMonteCarloResult = null;
+  liteMesaAnalysisResults = {};
+  analysisXlsxExportState = {};
+  aircraftMissionReliabilityState.result = null;
+  aircraftMissionReliabilityState.status = message;
+  aircraftMissionReliabilityState.actionStatus = "";
+  aircraftMissionReliabilityState.viewingHistoryId = "";
+}
+
+function selectedRunContextRequestFingerprint() {
+  const context = selectedExperimentPlanContext();
+  return context?.kind === "experiment-plan"
+    ? experimentPlanRunContextFingerprint(context)
+    : stableVisualizationPlanStringify({ key: context?.key || "", projectJson: context?.projectJson || {} });
+}
+
+function runContextRequestStillCurrent(contextKey, fingerprint) {
+  return selectedExperimentPlanContextKey() === contextKey
+    && selectedRunContextRequestFingerprint() === fingerprint;
+}
+
+function syncSelectedRunContextAfterPlanRefresh() {
+  const context = selectedExperimentPlanContext();
+  if (context?.kind !== "experiment-plan") return;
+  const nextFingerprint = experimentPlanRunContextFingerprint(context);
+  if (selectedRunContextFingerprint === nextFingerprint) return;
+  const contentChanged = Boolean(selectedRunContextFingerprint);
+  selectedRunContextFingerprint = nextFingerprint;
+  const planRunSettings = selectedExperimentPlanRunSettings();
+  liteMesaMonteCarloSettings = {
+    samples: Number(planRunSettings.samples) > 0 ? Number(planRunSettings.samples) : 4,
+    seed: Number(planRunSettings.seed) > 0 ? Number(planRunSettings.seed) : 20260621,
+    parallelCores: planRunSettings.parallelCores
+  };
+  if (contentChanged) {
+    invalidateSelectedRunContextResults("实验方案配置已更新，请重新运行。");
+    liteMesaMonteCarloStatus = `实验方案配置已更新：${context.name}，请重新运行 Mesa 分析。`;
+  }
+  if (planRunSettings.parallelCoresError) {
+    liteMesaMonteCarloStatus = `无法运行：${planRunSettings.parallelCoresError}`;
+  }
+}
+
 function resetMissingRunContextAfterPlanRefresh() {
   if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) return;
   const selectedPlanStillExists = backendExperimentPlans.some((plan) => (
@@ -11570,6 +11628,8 @@ function selectCurrentExperimentPlan(planKey) {
   if (isVisualSimulationPage(page)) {
     visualizationReplayStatus = `已选择实验方案：${selected.name}`;
   }
+  liteMesaMonteCarloRequestEpoch += 1;
+  liteMesaAnalysisRequestEpoch += 1;
   analysisXlsxExportState = {};
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = selected.kind === "experiment-plan"
@@ -11589,6 +11649,7 @@ function selectCurrentExperimentPlan(planKey) {
   if (planRunSettings.parallelCoresError) {
     liteMesaMonteCarloStatus = `无法运行：${planRunSettings.parallelCoresError}`;
   }
+  selectedRunContextFingerprint = experimentPlanRunContextFingerprint(selected);
 }
 
 function toggleExperimentPlanSelection(planKey, checked) {
@@ -12717,6 +12778,7 @@ async function refreshExperimentPlanList(projectId = currentBackendProjectId(), 
     backendExperimentPlans = Array.isArray(response?.experiment_plans) ? response.experiment_plans : [];
     backendExperimentPlansLoaded = true;
     resetMissingRunContextAfterPlanRefresh();
+    syncSelectedRunContextAfterPlanRefresh();
     experimentPlanListStatus = `已加载后端方案 ${backendExperimentPlans.length} 条`;
   } catch (err) {
     if (!requestIsCurrent()) return;
@@ -15298,8 +15360,11 @@ function renderVisualSimulation(page) {
     : "正在准备实验方案数据，完成后将自动加载推演页面。";
   return `
     <div class="mesa-visual-shell">
-      <section class="mesa-visual-toolbar">
-        <div><strong>可视化推演</strong><span>${htmlEscape(projectName)}</span></div>
+      <section class="lite-mesa-hero mesa-visual-toolbar">
+        <div>
+          <h3>可视化推演</h3>
+          <p>${htmlEscape(projectName)}</p>
+        </div>
         <div class="lite-mesa-hero-actions">
           ${renderExperimentPlanContextDropdown(page)}
         </div>
@@ -17312,7 +17377,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
               ${topMetrics.map((row) => `
                 <div class="metric-card">
                   <span>${htmlEscape(row.label)}</span>
-                  <strong>${htmlEscape(row.meanLabel)} ${htmlEscape(row.unit)}</strong>
+                  <strong>${htmlEscape(row.meanLabel)}</strong>
                 </div>
               `).join("")}
             </div>
@@ -17335,7 +17400,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
                 <td>${htmlEscape(row.label)}</td>
                 <td>${htmlEscape(row.meanLabel)}</td>
                 <td>${htmlEscape(row.varianceLabel)}</td>
-                <td>${htmlEscape(row.unit)} / ${htmlEscape(row.varianceUnit)}</td>
+                <td>${htmlEscape(row.unit)}</td>
                 <td>${htmlEscape(row.validSampleCount)}</td>
               </tr>
             `).join("") : `<tr><td colspan="5">当前没有可展示的业务结果。</td></tr>`}</tbody>
@@ -17374,6 +17439,9 @@ function updateLiteMesaMonteCarloSetting(field, value) {
 }
 
 async function runLiteMesaMonteCarloAnalysis() {
+  const requestEpoch = ++liteMesaMonteCarloRequestEpoch;
+  const requestContextKey = selectedExperimentPlanContextKey();
+  const requestContextFingerprint = selectedRunContextRequestFingerprint();
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(liteMesaMonteCarloSettings.samples) || 1)));
   const seed = Math.trunc(Number(liteMesaMonteCarloSettings.seed) || 1);
   let parallelCores;
@@ -17385,9 +17453,14 @@ async function runLiteMesaMonteCarloAnalysis() {
     return;
   }
   liteMesaMonteCarloSettings = { samples, seed, parallelCores };
+  liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = `正在运行 Mesa 分析（样本 ${samples}，Base seed ${seed}，并行核心 ${parallelCores}）`;
   try {
     const selectedProjectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
+    if (
+      requestEpoch !== liteMesaMonteCarloRequestEpoch
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+    ) return;
     const projectJson = {
       ...selectedProjectJson,
       experiment: {
@@ -17401,12 +17474,20 @@ async function runLiteMesaMonteCarloAnalysis() {
       seed,
       parallelCores
     });
+    if (
+      requestEpoch !== liteMesaMonteCarloRequestEpoch
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+    ) return;
     liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response);
     const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
     liteMesaMonteCarloStatus = liteMesaMonteCarloResult.status === "blocked"
       ? `Mesa 分析未完成：${liteMesaMonteCarloResult.message}`
       : liteMesaMonteCarloCompletionStatus(liteMesaMonteCarloResult, { samples, seed, parallelCores, runCount });
   } catch (err) {
+    if (
+      requestEpoch !== liteMesaMonteCarloRequestEpoch
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+    ) return;
     liteMesaMonteCarloResult = null;
     liteMesaMonteCarloStatus = liteMesaMonteCarloFailureStatus(err, { samples, seed, parallelCores });
   }
@@ -18661,7 +18742,7 @@ function analysisXlsxCommonPayload(page, analysisName, analysisTime, settings = 
   const information = [
     ["分析时间", analysisTime || exportedAt],
     ...analysisXlsxSourceInformation(source),
-    ...Object.entries(settings).map(([key, value]) => [analysisSettingExportLabel(key), value ?? ""])
+    ...analysisSettingExportRows(settings)
   ];
   return {
     project_name: projectName,
@@ -18669,6 +18750,17 @@ function analysisXlsxCommonPayload(page, analysisName, analysisTime, settings = 
     exported_at: exportedAt,
     analysis_information: information
   };
+}
+
+function analysisSettingExportRows(settings) {
+  return Object.entries(settings).flatMap(([key, value]) => {
+    if (key === "parallelCoresError") {
+      const message = String(value || "").trim();
+      return message ? [["导出说明", `并行核心数配置异常：${message}`]] : [];
+    }
+    const label = analysisSettingExportLabel(key);
+    return label ? [[label, value ?? ""]] : [];
+  });
 }
 
 function analysisXlsxSourceInformation(source) {
@@ -18702,7 +18794,7 @@ function analysisSettingExportLabel(key) {
     aircraftModel: "飞机型号",
     missionProfile: "基本任务",
     durationHours: "任务时长（小时）"
-  })[key] || key;
+  })[key] || "";
 }
 
 function fallbackAnalysisXlsxFilename(payload) {
@@ -19053,6 +19145,9 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
 }
 
 async function runLiteMesaAnalysisPage(page) {
+  const requestEpoch = ++liteMesaAnalysisRequestEpoch;
+  const requestContextKey = selectedExperimentPlanContextKey();
+  const requestContextFingerprint = selectedRunContextRequestFingerprint();
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const analysisSource = captureAnalysisSourceIdentity();
   const settings = liteMesaAnalysisEffectiveSettings(definition);
@@ -19081,7 +19176,15 @@ async function runLiteMesaAnalysisPage(page) {
   };
   try {
     const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
+    if (
+      requestEpoch !== liteMesaAnalysisRequestEpoch
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+    ) return;
     const response = await backendApi.runLiteMesaAnalysis(projectJson, definition.analysisType, normalizedSettings);
+    if (
+      requestEpoch !== liteMesaAnalysisRequestEpoch
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+    ) return;
     liteMesaAnalysisResults = {
       ...liteMesaAnalysisResults,
       [definition.analysisType]: {
@@ -19091,6 +19194,10 @@ async function runLiteMesaAnalysisPage(page) {
       }
     };
   } catch (err) {
+    if (
+      requestEpoch !== liteMesaAnalysisRequestEpoch
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+    ) return;
     liteMesaAnalysisResults = {
       ...liteMesaAnalysisResults,
       [definition.analysisType]: {
