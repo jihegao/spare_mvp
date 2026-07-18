@@ -5324,6 +5324,8 @@ test("five result analysis pages share backend XLSX export without a Monte Carlo
   assert.match(exportSource, /visibleDowntimeAnalysisSnapshot\(result\)/);
   assert.match(exportSource, /result\.resultFields \|\| normalizeTaskReliabilityResultFields\(result\)/);
   assert.match(exportSource, /downtimeEventDisplayRow\(event\)/);
+  assert.match(exportSource, /并行核心数配置异常/);
+  assert.doesNotMatch(exportSource, /\[analysisSettingExportLabel\(key\), value \?\? ""\]/);
   assert.match(exportSource, /导出失败：/);
   assert.match(apiSource, /path: "\/analysis-results\/export-xlsx"[\s\S]*responseType: "download"/);
   assert.doesNotMatch(monteCarloSource, /data-analysis-xlsx-export|exportAnalysisXlsx/);

@@ -18552,7 +18552,7 @@ function analysisXlsxCommonPayload(page, analysisName, analysisTime, settings = 
   const information = [
     ["分析时间", analysisTime || exportedAt],
     ...analysisXlsxSourceInformation(source),
-    ...Object.entries(settings).map(([key, value]) => [analysisSettingExportLabel(key), value ?? ""])
+    ...analysisSettingExportRows(settings)
   ];
   return {
     project_name: projectName,
@@ -18560,6 +18560,17 @@ function analysisXlsxCommonPayload(page, analysisName, analysisTime, settings = 
     exported_at: exportedAt,
     analysis_information: information
   };
+}
+
+function analysisSettingExportRows(settings) {
+  return Object.entries(settings).flatMap(([key, value]) => {
+    if (key === "parallelCoresError") {
+      const message = String(value || "").trim();
+      return message ? [["导出说明", `并行核心数配置异常：${message}`]] : [];
+    }
+    const label = analysisSettingExportLabel(key);
+    return label ? [[label, value ?? ""]] : [];
+  });
 }
 
 function analysisXlsxSourceInformation(source) {
@@ -18593,7 +18604,7 @@ function analysisSettingExportLabel(key) {
     aircraftModel: "飞机型号",
     missionProfile: "基本任务",
     durationHours: "任务时长（小时）"
-  })[key] || key;
+  })[key] || "";
 }
 
 function fallbackAnalysisXlsxFilename(payload) {

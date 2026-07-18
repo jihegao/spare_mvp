@@ -10,11 +10,20 @@ from src.spare_mvp_backend.analysis_xlsx import (
     AnalysisXlsxError,
     MAX_DETAIL_ROWS,
     SUPPORTED_ANALYSIS_TYPES,
+    _text_display_width,
     export_analysis_snapshot_xlsx,
 )
 
 
 class AnalysisXlsxExportTest(unittest.TestCase):
+    CRITICAL_HEADERS_BY_ANALYSIS_TYPE = {
+        "spare_shortfall": "平均备件延误时间(h)",
+        "carry_list": "建议携行数量",
+        "aircraft_mission_reliability": "整机任务可靠度",
+        "mission_reliability": "整周期任务可靠度",
+        "downtime_factors": "累计停机时长（小时）",
+    }
+
     def _payload(self, analysis_type: str) -> dict:
         return {
             "analysis_type": analysis_type,
@@ -82,6 +91,28 @@ class AnalysisXlsxExportTest(unittest.TestCase):
             ["0.502", "12.2%", "66.7%", "21.25 天"],
         )
 
+    def test_all_five_analysis_types_keep_critical_chinese_headers_visible_and_wrapped(self) -> None:
+        for analysis_type, critical_header in self.CRITICAL_HEADERS_BY_ANALYSIS_TYPE.items():
+            with self.subTest(analysis_type=analysis_type):
+                payload = self._payload(analysis_type)
+                payload["detail_sections"] = [{
+                    "title": "关键结果",
+                    "columns": [critical_header, "说明"],
+                    "rows": [["正常", "很长的结果内容" * 200]],
+                }]
+
+                workbook = load_workbook(io.BytesIO(export_analysis_snapshot_xlsx(payload)["body"]), data_only=False)
+                sheet = workbook["结果明细"]
+                header_cell = sheet["A2"]
+
+                self.assertGreater(sheet.column_dimensions["A"].width, 12)
+                self.assertLessEqual(sheet.column_dimensions["B"].width, 40)
+                self.assertTrue(header_cell.alignment.wrap_text)
+                self.assertGreaterEqual(sheet.row_dimensions[2].height, 30)
+
+    def test_display_width_handles_cjk_ascii_newlines_and_combining_marks(self) -> None:
+        self.assertEqual(_text_display_width("A中e\u0301\n飞机-X"), 6)
+
     def test_downtime_export_keeps_localized_day_time_and_excludes_internal_ids(self) -> None:
         payload = self._payload("downtime_factors")
         payload["detail_sections"] = [{
@@ -103,6 +134,18 @@ class AnalysisXlsxExportTest(unittest.TestCase):
         self.assertEqual(workbook["结果明细"]["A3"].value, "'=HYPERLINK(\"bad\")")
         self.assertEqual(workbook["结果明细"]["B3"].value, "'+1+1")
         self.assertEqual(workbook["结果明细"]["A3"].data_type, "s")
+
+    def test_parallel_core_debug_field_is_omitted_or_localized_as_an_actionable_note(self) -> None:
+        payload = self._payload("mission_reliability")
+        payload["analysis_information"].append(["parallelCoresError", ""])
+        workbook = load_workbook(io.BytesIO(export_analysis_snapshot_xlsx(payload)["body"]), data_only=False)
+        self.assertNotIn("parallelCoresError", [cell.value for row in workbook["分析信息"] for cell in row])
+
+        payload["analysis_information"][-1][1] = "并行核心数必须为 1 到 8 的整数"
+        workbook = load_workbook(io.BytesIO(export_analysis_snapshot_xlsx(payload)["body"]), data_only=False)
+        information = list(workbook["分析信息"].values)
+        self.assertIn(("导出说明", "并行核心数配置异常：并行核心数必须为 1 到 8 的整数"), information)
+        self.assertNotIn("parallelCoresError", [cell.value for row in workbook["分析信息"] for cell in row])
 
     def test_illegal_xml_controls_are_removed_but_tab_newline_and_carriage_return_remain(self) -> None:
         payload = self._payload("spare_shortfall")

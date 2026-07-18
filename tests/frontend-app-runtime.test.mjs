@@ -2267,6 +2267,8 @@ test("task reliability Excel export preserves the canonical four result_fields d
 
     const body = analysisExportBodies(runtime)[0];
     assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
+    assert.equal(new Map(body.analysis_information).has("parallelCoresError"), false);
+    assert.doesNotMatch(JSON.stringify(body.analysis_information), /parallelCoresError/);
     assert.deepEqual(body.summary.map((row) => [row[0], row[1]]), [
       ["出动架次率", "0.502"],
       ["波次成功率", "12.2%"],
