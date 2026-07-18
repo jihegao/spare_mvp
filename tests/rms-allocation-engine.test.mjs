@@ -18,6 +18,22 @@ import {
 } from "../front/rms-allocation-engine.mjs";
 import { validateSchema } from "./schema-test-utils.mjs";
 
+function assertRmsFormulaInvariants(result) {
+  const activeRows = result.nodeResults.filter((row) => row.failureRate > 0);
+  assert.ok(activeRows.length > 0);
+  const allocatedEquipmentFailureRate = result.nodeResults.reduce(
+    (sum, row) => sum + row.runningRatio * row.failureRate,
+    0
+  );
+  assert.ok(Math.abs(allocatedEquipmentFailureRate - (1 / result.inputSnapshot.mtbfHours)) < 1e-9);
+  const failureRateSum = activeRows.reduce((sum, row) => sum + row.failureRate, 0);
+  const weightedMttr = activeRows.reduce(
+    (sum, row) => sum + row.failureRate * row.mttrHours,
+    0
+  ) / failureRateSum;
+  assert.ok(Math.abs(weightedMttr - result.inputSnapshot.mttrHours) < 1e-9);
+}
+
 test("equal allocation returns a normalized forward allocation contract", () => {
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);
@@ -31,12 +47,15 @@ test("equal allocation returns a normalized forward allocation contract", () => 
   assert.equal(result.nodeResults.length, 4);
   assert.ok(Math.abs(result.totals.allocationShare - 1) < 1e-12);
   assert.ok(result.nodeResults.every((row) => row.allocationShare === 0.25));
+  assertRmsFormulaInvariants(result);
+  assert.notEqual(result.nodeResults[0].mtbfHours, plan.inputs.mtbfHours);
+  assert.ok(new Set(result.nodeResults.map((row) => row.mttrHours)).size > 1);
   for (const removedField of ["targetMetrics", "verification", "exposure"]) {
     assert.equal(removedField in result, false);
   }
   for (const row of result.nodeResults) {
     assert.deepEqual(Object.keys(row), [
-      "nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "allocationShare", "status"
+      "nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "failureRate", "mtbfHours", "allocationShare", "status", "mttrHours"
     ]);
   }
 });
@@ -172,6 +191,9 @@ test("proportional allocation uses imported installation count and running ratio
   assert.equal(engine.installationCount, 2);
   assert.equal(radar.runningRatio, 0.5);
   assert.ok(engine.allocationShare > radar.allocationShare);
+  assert.ok(engine.failureRate > radar.failureRate);
+  assert.notEqual(engine.mtbfHours, radar.mtbfHours);
+  assertRmsFormulaInvariants(result);
   assert.ok(Math.abs(result.totals.allocationShare - 1) < 1e-12);
 });
 
@@ -195,6 +217,31 @@ test("similar product allocation uses matching baseline installation exposure", 
     result.nodeResults.find((row) => row.nodeId === "f16-engine").allocationShare
       > result.nodeResults.find((row) => row.nodeId === "f16-radar").allocationShare
   );
+  assert.notEqual(
+    result.nodeResults.find((row) => row.nodeId === "f16-engine").mtbfHours,
+    result.nodeResults.find((row) => row.nodeId === "f16-radar").mtbfHours
+  );
+  assertRmsFormulaInvariants(result);
+});
+
+test("all three allocation rules produce rule-specific RMS results through the shared formula", () => {
+  const project = selectRmsAllocationEquipmentRoot(createDemoRmsAllocationProject(), "aircraft-root");
+  const results = ["equal", "proportional", "similar"].map((method) => {
+    const plan = createDefaultRmsAllocationPlan(project);
+    plan.methods.allocation = method;
+    const result = calculateRmsAllocation(plan, project);
+    assertRmsFormulaInvariants(result);
+    return result;
+  });
+  const shareVectors = results.map((result) => result.nodeResults.map((row) => row.allocationShare));
+  const mtbfVectors = results.map((result) => result.nodeResults.map((row) => row.mtbfHours));
+
+  assert.notDeepEqual(shareVectors[0], shareVectors[1]);
+  assert.notDeepEqual(shareVectors[0], shareVectors[2]);
+  assert.notDeepEqual(shareVectors[1], shareVectors[2]);
+  assert.notDeepEqual(mtbfVectors[0], mtbfVectors[1]);
+  assert.notDeepEqual(mtbfVectors[0], mtbfVectors[2]);
+  assert.notDeepEqual(mtbfVectors[1], mtbfVectors[2]);
 });
 
 test("demo and fixture imports remain independent and selectable by equipment root", () => {
@@ -230,6 +277,23 @@ test("allocation fails closed for an empty equipment root and zero proportional 
   const plan = createDefaultRmsAllocationPlan(zeroProject);
   plan.methods.allocation = "proportional";
   assert.throws(() => calculateRmsAllocation(plan, zeroProject), /RMS_ALLOCATION_ZERO_WEIGHT/);
+});
+
+test("zero-running nodes do not consume risk budget or receive synthetic RMS metrics", () => {
+  const project = normalizeRmsEquipmentImportRows([
+    { id: "root", name: "测试整机", level: "装备", quantity: 1, runningRatio: 1 },
+    { id: "active", name: "活动系统", parentId: "root", level: "系统", quantity: 1, runningRatio: 1 },
+    { id: "inactive", name: "停用系统", parentId: "root", level: "系统", quantity: 1, runningRatio: 0 }
+  ]);
+  const result = calculateRmsAllocation(createDefaultRmsAllocationPlan(project), project);
+  const inactive = result.nodeResults.find((row) => row.nodeId === "inactive");
+
+  assert.equal(inactive.allocationShare, 0);
+  assert.equal(inactive.failureRate, 0);
+  assert.equal(inactive.mtbfHours, null);
+  assert.equal(inactive.mttrHours, null);
+  assert.equal(inactive.status, "未参与");
+  assertRmsFormulaInvariants(result);
 });
 
 test("similar allocation rejects missing source, target-as-source and unmatched nodes", () => {

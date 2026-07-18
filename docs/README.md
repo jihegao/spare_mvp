@@ -20,7 +20,7 @@
 2. 项目列表页从已标记的 Project 模板复制创建项目；旧的内置建模导入模板注册表、模板层级分类和模板下拉入口已退役。
 3. M5 建模导入 API 仍作为后台维护、导入转换和 `compile-scenario` 能力保留；普通项目数据管理页不展示已发布模板列表、模板预览、字段映射、v1/v2 分类或旧校验级别分类。
 4. 装备 RMS 指标分配是系统运行支持模块下的本地份额分配工作台。页面先在“机型选择与数据准备”区块集中展示飞机型号选择、下载模板和上传文件；当前机型的装备结构树与选中子树表格仅承载结构浏览和安装数编辑，不混放数据准备按钮。
-5. RMS 页面在同一“RMS 输入与指标分配计算”面板内按“RMS 输入参数 -> 指标分配方法 -> 执行计算”维护任务可靠度、任务时长、MTBF 和 MTTR、选择方法并显示计算状态，关键故障占比不再作为输入；方法保留等分配法、比例分配法和相似产品分配法，结果以归一化分配份额表达并可导出真实 XLSX。导入只更新 RMS 工作台独立数据，不污染项目建模数据；当前契约不包含目标 R、可靠度校核、MTBCF 或 MTTR 裕度，也不提供保存草稿或发布入口。装备系统建模页的模板下载、当前机型导出和文件上传集中在左侧装备结构树面板，右侧只展示建模详情。
+5. RMS 页面在同一“RMS 输入与指标分配计算”面板内维护任务可靠度、任务时长、整机 MTBF 和 MTTR；等分配法、比例分配法和相似产品分配法先确定节点权重，再统一换算失效率、MTBF 和 MTTR。节点结果与真实 XLSX 均展示层级、节点、运行比、失效率、MTBF、MTTR 六列。导入只更新 RMS 工作台独立数据，不污染项目建模数据；当前契约不包含目标 R、可靠度校核、MTBCF 或 MTTR 裕度，也不提供保存草稿或发布入口。装备系统建模页的模板下载、当前机型导出和文件上传集中在左侧装备结构树面板，右侧只展示建模详情。
 6. 可靠性框图只在任务可靠度评估模块下作为正式建模页展示，并作为 `reliabilityBlockDiagram` 建模输入保留在 clean Project。完整绘图与分析契约由 `reliability-block-diagram-contract.md` 维护。
 7. 当前用户可见分析主线为 `当前 Project 或已保存 ExperimentPlan -> POST /api/mesa-analysis-runs -> aircraft_support_v1 simulation inputs -> in-memory AircraftSupportV1Model -> lite Mesa 会话摘要`；Monte Carlo 和结果分析页继续保留该 Project/plan 数据边界。方案编辑器中的 `experimentPlanDraft` 只是内存分支，保存后才创建或更新 ExperimentPlan。可视化推演页单独收敛为“实验方案”选择：下拉只列当前 Project 已保存且具有稳定 `experiment_plan_id` 的 ExperimentPlan，不提供“当前项目”或未保存草稿回退；没有方案、尚未选择或已选方案失效时不加载 Solara iframe，也不发出 Project 保存请求，并提供实验方案管理入口。旧 `/api/runs`、RunService、SimulationRun、ResultSummary 和 ArtifactManifest 运行账本路径保留为历史实现、内部治理能力或后续持久化运行治理候选；旧 contract provider、`independent-mesa` sidecar、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除。
    选择保存方案进行可视化时，页面自动同步该 ExperimentPlan 的分支 Project JSON，成功后将 `experiment_plan_id` 与经边界校验的 `steps/samples/seed` 通过 iframe 方案上下文传给 Solara sidecar，并以 `runtime_config` 进入 Scenario 编译；父页不再提供“刷新推演”，运行控制位于 Solara 内容区顶部，Solara 也不再重复渲染默认页面标题。任务时间线、提示、详情、状态与日志仅显示任务名称和天/波次/机型等业务上下文，缺名显示“未命名任务”，内部任务/波次实例/保障作业 ID 只用于数据关联和调试。同步过程不把运行配置写回 clean Project。重名方案始终以 `experiment_plan_id` 区分，页面刷新可恢复仍有效的选择，删除或失效后必须清空选择。
@@ -43,7 +43,7 @@
 | [`lite-mesa-formal-runtime.md`](lite-mesa-formal-runtime.md) | lite Mesa 作为当前用户可见运行路径的边界说明。 |
 | [`archive/deprecated/README.md`](archive/deprecated/README.md) | 过期文档归档入口，包含历史计划、阶段规格、原始概要设计和运行边界审计。 |
 | [`../contracts/README.md`](../contracts/README.md) | Project / Scenario / Run / Result / ArtifactManifest schema bundle 与运行契约说明。 |
-| [`../front/rms-allocation-engine.mjs`](../front/rms-allocation-engine.mjs) | RMS 分配本地计算入口，按方法将独立导入的节点数据归一化为分配份额。 |
+| [`../front/rms-allocation-engine.mjs`](../front/rms-allocation-engine.mjs) | RMS 分配本地计算入口，按规则归一化节点权重并换算失效率、MTBF 和 MTTR。 |
 | [`../front/rms-allocation-workbench.mjs`](../front/rms-allocation-workbench.mjs) | RMS 分配页面渲染模块。 |
 | [`../src/spare_mvp_backend/http_server.py`](../src/spare_mvp_backend/http_server.py) | 本地标准库 HTTP facade，同源服务 `/api` 与 `front/` 静态文件。 |
 | [`../src/spare_mvp_backend/simulation_analysis_cases.py`](../src/spare_mvp_backend/simulation_analysis_cases.py) | 阶段 6P 仿真分析验收数据包生成器。 |

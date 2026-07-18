@@ -118,18 +118,17 @@ export function renderRmsAllocationWorkbench({
         <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel"${canExport ? "" : " disabled"}>导出 Excel</button></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>层级</th><th>节点</th><th>型号</th><th>安装数</th><th>运行比</th><th>分配份额</th><th>状态</th></tr></thead>
+            <thead><tr><th>层级</th><th>节点</th><th>运行比</th><th>失效率</th><th>MTBF(h)</th><th>MTTR(h)</th></tr></thead>
             <tbody>${visibleResult?.nodeResults?.length ? visibleResult.nodeResults.map((row) => `
               <tr>
                 <td>${htmlEscape(row.level)}</td>
                 <td>${htmlEscape(row.nodeName)}</td>
-                <td>${htmlEscape(row.model || "-")}</td>
-                <td>${row.installationCount}</td>
                 <td>${compactNumber(row.runningRatio)}</td>
-                <td>${pct(row.allocationShare)}</td>
-                <td>${htmlEscape(row.status)}</td>
+                <td>${compactNumber(row.failureRate, 8)}</td>
+                <td>${compactNumber(row.mtbfHours)}</td>
+                <td>${compactNumber(row.mttrHours)}</td>
               </tr>
-            `).join("") : '<tr><td colspan="7">当前飞机型号暂无计算结果。</td></tr>'}</tbody>
+            `).join("") : '<tr><td colspan="6">当前飞机型号暂无计算结果。</td></tr>'}</tbody>
           </table>
         </div>
       </section>
@@ -264,6 +263,6 @@ function calculationStatusLabel(status) {
 }
 
 function compactNumber(value, digits = 2) {
-  if (!Number.isFinite(Number(value))) return "-";
+  if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return "-";
   return Number(value).toFixed(digits).replace(/\.?0+$/, "");
 }

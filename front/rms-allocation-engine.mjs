@@ -1,4 +1,4 @@
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-4.0.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-4.1.0";
 
 export const DEFAULT_RMS_ALLOCATION_INPUTS = Object.freeze({
   missionReliability: 0.95,
@@ -733,19 +733,40 @@ export function calculateRmsAllocation(plan, project) {
   }
   for (const node of childNodes) validateAllocationNode(node);
   const weights = allocationWeights(plan, project, childNodes);
-  const nodeResults = childNodes.map((node) => {
+  const totalRiskBudget = inputSnapshot.missionHours / inputSnapshot.mtbfHours;
+  const reliabilityRows = childNodes.map((node) => {
     const runningRatio = runningRatioForNode(node);
+    const allocationShare = weights[node.id];
+    const productIntensityHours = inputSnapshot.missionHours * runningRatio;
+    const nodeRiskBudget = totalRiskBudget * allocationShare;
+    const mtbfHours = productIntensityHours > 0 && nodeRiskBudget > 0
+      ? roundRmsMetric(productIntensityHours / nodeRiskBudget)
+      : null;
     return {
+      node,
       nodeId: node.id,
       nodeName: node.name,
       level: node.level,
       model: node.model || node.partNumber || "",
       installationCount: normalizedInstallationCount(node.quantity),
       runningRatio,
-      allocationShare: weights[node.id],
-      status: "已分配"
+      failureRate: mtbfHours === null ? 0 : roundRmsMetric(1 / mtbfHours),
+      mtbfHours,
+      allocationShare,
+      status: mtbfHours === null ? "未参与" : "已分配"
     };
   });
+  const failureRateSum = reliabilityRows.reduce((sum, row) => sum + row.failureRate, 0);
+  const mttrDenominator = reliabilityRows.reduce((sum, row) => (
+    sum + (failureRateSum > 0 ? row.failureRate / failureRateSum : 0) * repairDifficultyForNode(row.node)
+  ), 0);
+  const mttrScale = mttrDenominator > 0 ? inputSnapshot.mttrHours / mttrDenominator : 0;
+  const nodeResults = reliabilityRows.map(({ node, ...row }) => ({
+    ...row,
+    mttrHours: row.failureRate > 0
+      ? roundRmsMetric(mttrScale * repairDifficultyForNode(node))
+      : null
+  }));
   const warnings = methodWarnings(plan, project);
   const selectedRoot = project.equipmentNodes.find((node) => node.id === project.rootId);
 
@@ -871,7 +892,9 @@ function allocationWeights(plan, project, childNodes) {
 }
 
 function rawAllocationFactor(plan, project, node) {
-  const installationExposure = normalizedInstallationCount(node.quantity) * runningRatioForNode(node);
+  const runningRatio = runningRatioForNode(node);
+  if (runningRatio === 0) return 0;
+  const installationExposure = normalizedInstallationCount(node.quantity) * runningRatio;
   if (plan.methods.allocation === "proportional") {
     const engineeringFactor = Number(node.importance || 1) * Number(node.complexity || 1);
     return installationExposure * engineeringFactor;
@@ -922,9 +945,25 @@ function runningRatioForNode(node) {
   return number;
 }
 
+function roundRmsMetric(value, digits = 12) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return number;
+  return Number(number.toFixed(digits));
+}
+
 function validateAllocationNode(node) {
   normalizedInstallationCount(node.quantity);
   runningRatioForNode(node);
+  repairDifficultyForNode(node);
+}
+
+function repairDifficultyForNode(node) {
+  const value = node.repairDifficulty ?? 1;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new Error(`RMS_REPAIR_DIFFICULTY_INVALID: 维修难度必须为有限正数，收到 ${String(value)}`);
+  }
+  return number;
 }
 
 function scenarioAircraftModels(scenario) {
