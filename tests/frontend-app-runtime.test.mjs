@@ -990,7 +990,7 @@ test("equipment RMS granularity locks excluded modeling pages while keeping equi
   }
 });
 
-test("modeling form management only renders personnel dictionary and time unit fields", async () => {
+test("modeling form management renders the dictionary, product catalog, and adjacent time unit fields", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=system-management-modeling-form-management",
     sessionUser: { username: "admin", role: "系统管理员" },
@@ -1011,6 +1011,17 @@ test("modeling form management only renders personnel dictionary and time unit f
     assert.match(runtime.appNode.innerHTML, /data-modeling-form-management/);
     assert.match(runtime.appNode.innerHTML, /class="modeling-field-config modeling-form-config-grid" data-modeling-form-management/);
     assert.match(runtime.appNode.innerHTML, /<section class="modeling-config-card" data-personnel-specialty-dictionary>/);
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-management data-product-catalog-state="expanded"/);
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-collapse-toggle[\s\S]*?aria-expanded="true"[\s\S]*?aria-controls="product-catalog-content"/);
+    assert.match(runtime.appNode.innerHTML, /aria-label="折叠产品列表"/);
+    assert.match(runtime.appNode.innerHTML, /<span>收起列表<\/span>/);
+    assert.match(runtime.appNode.innerHTML, /id="product-catalog-content" class="product-catalog-content" data-product-catalog-content >/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-time-unit-fields/);
+    assert.ok(
+      runtime.appNode.innerHTML.indexOf("data-product-catalog-management")
+        < runtime.appNode.innerHTML.indexOf("data-modeling-form-time-unit-fields"),
+      "time unit fields should immediately follow the product catalog in DOM order"
+    );
     assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:mtbfHours"/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:mttrMinutes"/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="basic-mission:durationMinutes"/);
@@ -1025,6 +1036,104 @@ test("modeling form management only renders personnel dictionary and time unit f
     assert.doesNotMatch(runtime.appNode.innerHTML, /最小装备数量/);
   } finally {
     runtime.restore();
+  }
+});
+
+test("product catalog collapse preserves query and unsaved editor state across rerenders", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-modeling-form-management",
+    sessionUser: { username: "admin", role: "系统管理员" },
+    projectJson: createRuntimeProjectJson({
+      products: [{ id: "product-one", name: "单一产品", model: "M-1", kind: "LRU" }],
+      components: [],
+      supportResources: [],
+      supportNodes: [],
+      supportActivities: [],
+      supportActivityJobs: [],
+      transportPolicies: []
+    })
+  });
+
+  try {
+    await runtime.input("[data-product-catalog-query]", {}, { value: "单一" });
+    await runtime.click("[data-product-catalog-edit]", { productCatalogEdit: "product-one" });
+    await runtime.input(
+      "[data-product-catalog-field]",
+      { productCatalogField: "name" },
+      { value: "未保存编辑名称" }
+    );
+    await runtime.click("[data-product-catalog-collapse-toggle]");
+
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-state="collapsed"/);
+    assert.match(runtime.appNode.innerHTML, /aria-expanded="false"/);
+    assert.match(runtime.appNode.innerHTML, /aria-label="展开产品列表"/);
+    assert.match(runtime.appNode.innerHTML, /<span>展开列表<\/span>/);
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-content hidden/);
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-field="name" value="未保存编辑名称"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-time-unit-fields/);
+
+    await runtime.change(
+      "[data-modeling-form-unit]",
+      { modelingFormUnit: "equipment-system:mtbfHours" },
+      { value: "分钟" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-state="collapsed"/);
+
+    await runtime.setHash("feature=system-management-user-management");
+    await runtime.setHash("feature=system-management-modeling-form-management");
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-state="collapsed"/);
+
+    await runtime.click("[data-product-catalog-collapse-toggle]");
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-state="expanded"/);
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-query value="单一"|value="单一" placeholder="搜索产品 ID、名称或型号" data-product-catalog-query/);
+    assert.match(runtime.appNode.innerHTML, /data-product-catalog-field="name" value="未保存编辑名称"/);
+    assert.match(runtime.appNode.innerHTML, /product-one/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("product catalog collapse handles zero, one, and multiple products", async () => {
+  const cases = [
+    { products: [], expectedCount: 0, expectedContent: /暂无匹配产品/ },
+    { products: [{ id: "product-one", name: "单一产品", model: "M-1", kind: "LRU" }], expectedCount: 1, expectedContent: /单一产品/ },
+    {
+      products: [
+        { id: "product-one", name: "产品一", model: "M-1", kind: "LRU" },
+        { id: "product-two", name: "产品二", model: "M-2", kind: "SRU" },
+        { id: "product-three", name: "产品三", model: "M-3", kind: "非LRU" }
+      ],
+      expectedCount: 3,
+      expectedContent: /产品三/
+    }
+  ];
+
+  for (const testCase of cases) {
+    const runtime = await setupRuntimeApp({
+      hash: "feature=system-management-modeling-form-management",
+      sessionUser: { username: "admin", role: "系统管理员" },
+      projectJson: createRuntimeProjectJson({
+        products: testCase.products,
+        components: [],
+        supportResources: [],
+        supportNodes: [],
+        supportActivities: [],
+        supportActivityJobs: [],
+        transportPolicies: []
+      })
+    });
+
+    try {
+      assert.match(runtime.appNode.innerHTML, new RegExp(`${testCase.expectedCount} 项`));
+      assert.match(runtime.appNode.innerHTML, testCase.expectedContent);
+      await runtime.click("[data-product-catalog-collapse-toggle]");
+      assert.match(runtime.appNode.innerHTML, /data-product-catalog-content hidden/);
+      assert.match(runtime.appNode.innerHTML, /data-modeling-form-time-unit-fields/);
+      await runtime.click("[data-product-catalog-collapse-toggle]");
+      assert.match(runtime.appNode.innerHTML, testCase.expectedContent);
+    } finally {
+      runtime.restore();
+    }
   }
 });
 
