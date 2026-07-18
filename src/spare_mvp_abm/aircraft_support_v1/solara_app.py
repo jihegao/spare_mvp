@@ -27,7 +27,6 @@ SOLARA_DURATION_MINUTES_ENV = "SPARE_MVP_SOLARA_DURATION_MINUTES"
 SOLARA_SEED_ENV = "SPARE_MVP_SOLARA_SEED"
 DEFAULT_BACKEND_API_BASE = "http://127.0.0.1:4173/api"
 LOCAL_BACKEND_OPENER = build_opener(ProxyHandler({}))
-APP_TITLE = "可视化推演"
 METRICS_PANEL_TITLE = "指标"
 VISUAL_TAB_LABELS = ["飞机视图", "任务视图", "保障视图"]
 CONTROL_PANEL_TITLE = "运行控制"
@@ -77,6 +76,13 @@ JOB_STATE_LABELS = {
     "succeeded": "已完成",
     "failed": "失败",
     "cancelled": "已取消",
+}
+JOB_KIND_LABELS = {
+    "preflight": "飞行前保障",
+    "postflight": "航后保障",
+    "repair": "修复性维修",
+    "preventive": "预防性维修",
+    "transport": "备件调运",
 }
 SHORTAGE_REASON_LABELS = {
     "personnel_capacity": "保障人员数量不足",
@@ -301,6 +307,56 @@ def _status_label(status: Any) -> str:
     return labels.get(str(status or "").lower(), "未知状态")
 
 
+def _mission_task_name(item: dict[str, Any] | None) -> str:
+    mission = item if isinstance(item, dict) else {}
+    internal_ids = {
+        str(mission.get(key) or "").strip()
+        for key in ("mission_id", "periodic_task_id", "composite_task_id", "basic_task_id", "task_id", "wave_id")
+        if str(mission.get(key) or "").strip()
+    }
+    mission_id = str(mission.get("mission_id") or "").strip()
+    for key in ("task_name", "basic_task_name", "name", "composite_task_name", "periodic_task_name"):
+        candidate = str(mission.get(key) or "").strip()
+        if not candidate or candidate in internal_ids:
+            continue
+        if mission_id and mission_id.startswith(f"{candidate}-d"):
+            continue
+        return candidate
+    return "未命名任务"
+
+
+def _mission_business_context(item: dict[str, Any] | None) -> str:
+    mission = item if isinstance(item, dict) else {}
+    parts = []
+    day_index = int(mission.get("day_index") or 0)
+    wave_index = int(mission.get("wave_index") or 0)
+    aircraft_type = str(mission.get("required_aircraft_type") or "").strip()
+    if day_index > 0:
+        parts.append(f"第{day_index}天")
+    if wave_index > 0:
+        parts.append(f"第{wave_index}波")
+    if aircraft_type:
+        parts.append(aircraft_type)
+    return " / ".join(parts) or "任务计划"
+
+
+def _current_mission_task_name(mission_id: Any, missions: list[dict[str, Any]]) -> str:
+    normalized_id = str(mission_id or "").strip()
+    if not normalized_id:
+        return "无"
+    mission = next((item for item in missions if str(item.get("mission_id") or "") == normalized_id), None)
+    return _mission_task_name(mission or {"mission_id": normalized_id})
+
+
+def _support_job_task_name(item: dict[str, Any] | None) -> str:
+    job = item if isinstance(item, dict) else {}
+    task_name = str(job.get("task") or "").strip()
+    job_id = str(job.get("job_id") or "").strip()
+    if task_name and task_name != job_id and any(ord(character) > 127 for character in task_name):
+        return task_name
+    return JOB_KIND_LABELS.get(str(job.get("kind") or "").strip().lower(), "保障作业")
+
+
 def _job_state_label(state: Any) -> str:
     return JOB_STATE_LABELS.get(str(state or "").strip().lower(), "未知状态")
 
@@ -321,7 +377,7 @@ def _display_entity(value: Any, fallback: str) -> str:
         return fallback
     if any(ord(character) > 127 for character in text):
         return text
-    return f"{fallback}（内部标识：{text}）"
+    return fallback
 
 
 def _event_type_label(event_type: Any) -> str:
@@ -451,12 +507,13 @@ def ResourceOverviewPanel(model: AircraftSupportV1Model) -> None:
 def AircraftPanel(model: AircraftSupportV1Model) -> None:
     update_counter.get()
     frame = _frame(model)
+    missions = frame.get("missions", [])
     rows = "".join(
         "<tr>"
         f"<td>{html.escape(str(item.get('tail_number') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('type') or '-'))}</td>"
         f"<td><span class=\"sim-state {html.escape(_state_class(item.get('state')))}\">{html.escape(_state_label(item.get('state')))}</span></td>"
-        f"<td>{html.escape(str(item.get('current_mission_id') or '-'))}</td>"
+        f"<td>{html.escape(_current_mission_task_name(item.get('current_mission_id'), missions))}</td>"
         "</tr>"
         for item in frame.get("aircraft", [])
     ) or "<tr><td colspan=\"4\">当前没有飞机对象。</td></tr>"
@@ -482,13 +539,12 @@ def EventPanel(model: AircraftSupportV1Model) -> None:
 
 
 def _event_row_html(event: dict[str, Any]) -> str:
-    label, message, internal_id = _event_display(event)
-    secondary = f"<small>内部标识：{html.escape(internal_id)}</small>" if internal_id else ""
+    label, message, _internal_id = _event_display(event)
     return (
         '<div class="sim-event">'
         f"<span>T+{html.escape(str(event.get('time', 0)))}</span>"
         f"<strong>{html.escape(label)}</strong>"
-        f"<p>{html.escape(message)}</p>{secondary}"
+        f"<p>{html.escape(message)}</p>"
         "</div>"
     )
 
@@ -534,37 +590,41 @@ def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: d
 
     solara.lab.use_task(play_loop, dependencies=[playing.value], prefer_threaded=True)
 
-    with solara.Card(CONTROL_PANEL_TITLE):
-        solara.SliderInt(
-            label=PLAY_INTERVAL_LABEL,
-            value=play_interval,
-            on_value=play_interval.set,
-            min=1,
-            max=500,
-            step=10,
-        )
-        solara.SliderInt(
-            label=RENDER_INTERVAL_LABEL,
-            value=render_interval,
-            on_value=render_interval.set,
-            min=1,
-            max=100,
-            step=1,
-        )
-        with solara.Row(justify="space-between"):
-            solara.Button(label=RESET_BUTTON_LABEL, color="primary", on_click=reset_model)
-            solara.Button(
-                label="暂停" if playing.value else "推演",
-                color="primary",
-                on_click=toggle_playing,
-                disabled=not model_state.value.running,
-            )
-            solara.Button(
-                label=STEP_BUTTON_LABEL,
-                color="primary",
-                on_click=step_once,
-                disabled=playing.value or not model_state.value.running,
-            )
+    with solara.Column(classes=["sim-control-panel"], gap="0px", style="width:100%;"):
+        with solara.Card(CONTROL_PANEL_TITLE, margin=0):
+            with solara.Row(classes=["sim-control-content"], gap="16px", style="width:100%; flex-wrap:wrap; align-items:flex-end;"):
+                with solara.Column(gap="0px", style="flex:1 1 220px; min-width:180px;"):
+                    solara.SliderInt(
+                        label=PLAY_INTERVAL_LABEL,
+                        value=play_interval,
+                        on_value=play_interval.set,
+                        min=1,
+                        max=500,
+                        step=10,
+                    )
+                with solara.Column(gap="0px", style="flex:1 1 220px; min-width:180px;"):
+                    solara.SliderInt(
+                        label=RENDER_INTERVAL_LABEL,
+                        value=render_interval,
+                        on_value=render_interval.set,
+                        min=1,
+                        max=100,
+                        step=1,
+                    )
+                with solara.Row(classes=["sim-control-actions"], gap="8px", style="flex:0 1 auto; flex-wrap:wrap;"):
+                    solara.Button(label=RESET_BUTTON_LABEL, color="primary", on_click=reset_model)
+                    solara.Button(
+                        label="暂停" if playing.value else "推演",
+                        color="primary",
+                        on_click=toggle_playing,
+                        disabled=not model_state.value.running,
+                    )
+                    solara.Button(
+                        label=STEP_BUTTON_LABEL,
+                        color="primary",
+                        on_click=step_once,
+                        disabled=playing.value or not model_state.value.running,
+                    )
 
 
 @solara.component
@@ -631,44 +691,50 @@ def AircraftStage(model: AircraftSupportV1Model, selected_tail: solara.Reactive[
 def MissionTimeline(model: AircraftSupportV1Model) -> None:
     update_counter.get()
     missions = _frame(model).get("missions", [])
+    solara.HTML(unsafe_innerHTML=_mission_timeline_html(missions), classes=["sim-html"])
+
+
+def _mission_timeline_html(missions: list[dict[str, Any]]) -> str:
     cards = "".join(
         "<div class=\"sim-mission\">"
-        f"<span>{html.escape(str(item.get('mission_id') or '任务'))}</span>"
-        f"<strong>{html.escape(str(item.get('task_name') or item.get('name') or '任务计划'))}</strong>"
+        f"<span>{html.escape(_mission_business_context(item))}</span>"
+        f"<strong>{html.escape(_mission_task_name(item))}</strong>"
         f"<small>{html.escape(_time_label(item.get('planned_start')))} / {html.escape(str(item.get('required_aircraft', 0)))} 架</small>"
         f"<em class=\"{html.escape(str(item.get('status') or 'scheduled'))}\">{html.escape(_status_label(item.get('status')))}</em>"
         "</div>"
         for item in missions
     ) or '<div class="sim-empty">当前没有任务计划。</div>'
-    solara.HTML(
-        unsafe_innerHTML=f'<div class="sim-timeline"><div class="sim-timeline-title">任务时间线</div><div class="sim-mission-list">{cards}</div></div>',
-        classes=["sim-html"],
-    )
+    return f'<div class="sim-timeline"><div class="sim-timeline-title">任务时间线</div><div class="sim-mission-list">{cards}</div></div>'
 
 
 @solara.component
 def MissionStage(model: AircraftSupportV1Model) -> None:
     update_counter.get()
     missions = _frame(model).get("missions", [])
+    rows = _mission_stage_rows_html(missions)
+    solara.HTML(
+        unsafe_innerHTML=(
+            '<div class="sim-stage-heading"><div><span>任务视图</span><strong>任务计划与执行进度</strong></div></div>'
+            '<div class="sim-table-wrap"><table class="sim-table"><thead><tr><th>任务名称</th><th>业务上下文</th><th>计划时间</th>'
+            f"<th>需求</th><th>状态</th></tr></thead><tbody>{rows}</tbody></table></div>"
+        ),
+        classes=["sim-html"],
+    )
+    MissionTimeline(model)
+
+
+def _mission_stage_rows_html(missions: list[dict[str, Any]]) -> str:
     rows = "".join(
         "<tr>"
-        f"<td>{html.escape(str(item.get('mission_id') or '-'))}</td>"
-        f"<td>{html.escape(str(item.get('task_name') or item.get('name') or '-'))}</td>"
+        f"<td>{html.escape(_mission_task_name(item))}</td>"
+        f"<td>{html.escape(_mission_business_context(item))}</td>"
         f"<td>{html.escape(_time_label(item.get('planned_start')))}</td>"
         f"<td>{html.escape(str(item.get('required_aircraft', 0)))}</td>"
         f"<td><span class=\"sim-state mission\">{html.escape(_status_label(item.get('status')))}</span></td>"
         "</tr>"
         for item in missions
     ) or "<tr><td colspan=\"5\">当前没有任务计划。</td></tr>"
-    solara.HTML(
-        unsafe_innerHTML=(
-            '<div class="sim-stage-heading"><div><span>任务视图</span><strong>任务计划与执行进度</strong></div></div>'
-            '<div class="sim-table-wrap"><table class="sim-table"><thead><tr><th>任务</th><th>内容</th><th>计划时间</th>'
-            f"<th>需求</th><th>状态</th></tr></thead><tbody>{rows}</tbody></table></div>"
-        ),
-        classes=["sim-html"],
-    )
-    MissionTimeline(model)
+    return rows
 
 
 @solara.component
@@ -718,10 +784,10 @@ def AircraftDetailPanel(model: AircraftSupportV1Model, selected_tail: solara.Rea
     failed = str(item.get("failed_lru") or "无")
     rows = [
         ("当前状态", _state_label(item.get("state"))),
-        ("当前任务", item.get("current_mission_id") or "无"),
+        ("当前任务", _current_mission_task_name(item.get("current_mission_id"), frame.get("missions", []))),
         ("累计飞行时间", f"{float(item.get('flight_hours') or 0):.1f} h"),
         ("起降次数", f"{item.get('takeoff_count', 0)} / {item.get('landing_count', 0)}"),
-        ("当前保障作业", next((str(job.get("task") or job.get("kind") or "保障作业") for job in frame.get("jobs", []) if job.get("tail_number") == item.get("tail_number")), "无")),
+        ("当前保障作业", next((_support_job_task_name(job) for job in frame.get("jobs", []) if job.get("tail_number") == item.get("tail_number")), "无")),
         ("故障件", failed),
     ]
     detail_rows = "".join(
@@ -735,15 +801,20 @@ def AircraftDetailPanel(model: AircraftSupportV1Model, selected_tail: solara.Rea
 def MissionDetailPanel(model: AircraftSupportV1Model) -> None:
     update_counter.get()
     missions = _frame(model).get("missions", [])
+    cards = _mission_detail_cards_html(missions)
+    solara.HTML(unsafe_innerHTML=f'<div class="sim-detail-title">执行进度</div><div class="sim-detail-list">{cards}</div>', classes=["sim-html"])
+
+
+def _mission_detail_cards_html(missions: list[dict[str, Any]]) -> str:
     cards = "".join(
         "<div class=\"sim-detail-row\">"
-        f"<span>{html.escape(str(item.get('mission_id') or '任务'))}</span>"
+        f"<span>{html.escape(_mission_task_name(item))}</span>"
         f"<strong>{html.escape(_status_label(item.get('status')))}</strong>"
-        f"<small>{html.escape(str(item.get('assigned_aircraft', 0)))} / {html.escape(str(item.get('required_aircraft', 0)))} 架</small>"
+        f"<small>{html.escape(_mission_business_context(item))} / {html.escape(str(item.get('assigned_aircraft', 0)))} / {html.escape(str(item.get('required_aircraft', 0)))} 架</small>"
         "</div>"
         for item in missions
     ) or '<div class="sim-empty">暂无任务执行状态。</div>'
-    solara.HTML(unsafe_innerHTML=f'<div class="sim-detail-title">执行进度</div><div class="sim-detail-list">{cards}</div>', classes=["sim-html"])
+    return cards
 
 
 @solara.component
@@ -757,10 +828,11 @@ def SupportDetailPanel(model: AircraftSupportV1Model) -> None:
 
 def _support_job_row_html(item: dict[str, Any]) -> str:
     reason = f" / 原因：{_shortage_reason_label(item.get('shortage_reason'))}" if item.get("shortage_reason") else ""
+    task_name = _support_job_task_name(item)
     return (
         "<div class=\"sim-detail-row\">"
         f"<span>{html.escape(str(item.get('tail_number') or '保障作业'))}</span>"
-        f"<strong>{html.escape(_display_entity(item.get('task') or item.get('kind'), '保障作业'))}</strong>"
+        f"<strong>{html.escape(task_name)}</strong>"
         f"<small>{html.escape(_job_state_label(item.get('state')))}{html.escape(reason)}"
         f" / 剩余 {html.escape(str(item.get('remaining', 0)))} 分钟</small>"
         "</div>"
@@ -801,8 +873,12 @@ def VisualPanelTabs(model: AircraftSupportV1Model) -> None:
 
 
 VISUAL_SIMULATION_STYLE = """
-.visual-simulation-page { min-height: calc(100vh - 68px); padding: 14px; background: #f3f7fb; color: #172033; }
+.visual-simulation-page { min-height: 100vh; padding: 14px; background: #f3f7fb; color: #172033; }
 .visual-simulation-page .v-sheet, .visual-simulation-page .v-card, .visual-simulation-page .v-card__text { background: transparent; color: inherit; }
+.visual-simulation-page .sim-control-panel { width: 100%; }
+.visual-simulation-page .sim-control-panel .v-card { background: #ffffff !important; }
+.visual-simulation-page .sim-control-content { align-items: flex-end; }
+.visual-simulation-page .sim-control-actions { align-items: center; padding-bottom: 4px; }
 .visual-simulation-page .sim-left-rail, .visual-simulation-page .sim-detail-card, .visual-simulation-page .sim-stage-card { background: #ffffff !important; border: 1px solid #d8e2ed; border-radius: 8px; padding: 12px; }
 .visual-simulation-page .sim-left-rail { flex: 0 1 310px; min-width: 270px; }
 .visual-simulation-page .sim-main { flex: 1 1 0; min-width: 0; }
@@ -839,7 +915,7 @@ VISUAL_SIMULATION_STYLE = """
 .visual-simulation-page .sim-table-wrap { overflow-x: auto; }.visual-simulation-page .sim-table { width: 100%; border-collapse: collapse; font-size: 13px; }.visual-simulation-page .sim-table th, .visual-simulation-page .sim-table td { padding: 8px; border-bottom: 1px solid #d8e2ed; text-align: left; }.visual-simulation-page .sim-table th { color: #52677f; background: #f3f7fb; font-weight: 700; }.visual-simulation-page .sim-state { display: inline-block; padding: 2px 6px; border-radius: 99px; font-size: 12px; }.visual-simulation-page .sim-state.available { color: #475569; background: #e2e8f0; }.visual-simulation-page .sim-state.support { color: #a16207; background: #fef3c7; }.visual-simulation-page .sim-state.mission { color: #1d4ed8; background: #dbeafe; }.visual-simulation-page .sim-state.maintenance { color: #b91c1c; background: #fee2e2; }
 .visual-simulation-page .sim-support-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 14px; }.visual-simulation-page .sim-support-card { padding: 10px; border: 1px solid #d8e2ed; border-radius: 6px; background: #fbfdff; }.visual-simulation-page .sim-support-card strong, .visual-simulation-page .sim-support-card span { display: block; }.visual-simulation-page .sim-support-card span { margin-top: 5px; color: #64748b; font-size: 12px; }
 .visual-simulation-page .sim-event span, .visual-simulation-page .sim-event p { color: #64748b; font-size: 12px; }.visual-simulation-page .sim-event strong { display: block; margin: 3px 0; color: #0f766e; font-size: 12px; }.visual-simulation-page .sim-event p { margin: 0; line-height: 1.4; }.visual-simulation-page .sim-empty { padding: 10px; color: #64748b; border: 1px dashed #cbd7e6; border-radius: 6px; font-size: 13px; }
-@media (max-width: 840px) { .visual-simulation-page { padding: 8px; }.visual-simulation-page .sim-left-rail, .visual-simulation-page .sim-detail-card { flex-basis: 100%; }.visual-simulation-page .sim-content-row { flex-wrap: wrap !important; }.visual-simulation-page .sim-aircraft-board { min-height: 160px; }.visual-simulation-page .sim-stage-heading { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 840px) { .visual-simulation-page { padding: 8px; }.visual-simulation-page .sim-control-actions { flex-basis: 100% !important; padding-bottom: 0; }.visual-simulation-page .sim-left-rail, .visual-simulation-page .sim-detail-card { flex-basis: 100%; }.visual-simulation-page .sim-content-row { flex-wrap: wrap !important; }.visual-simulation-page .sim-aircraft-board { min-height: 160px; }.visual-simulation-page .sim-stage-heading { align-items: flex-start; flex-direction: column; } }
 """
 
 
@@ -862,12 +938,10 @@ def Page() -> None:
         .v-main__wrap { padding-bottom: 0; background: #f3f7fb; }
     """)
     model_state = solara.use_reactive(_new_model(inputs))  # noqa: SH101
-    with solara.AppBar():
-        solara.AppBarTitle(APP_TITLE)
     with solara.Column(classes=["visual-simulation-page"], gap="12px", style="width:100%;"):
+        ControlPanel(model_state, inputs)
         with solara.Row(classes=["sim-layout"], gap="12px", style="width:100%; flex-wrap:wrap;"):
             with solara.Column(classes=["sim-left-rail"], gap="12px"):
-                ControlPanel(model_state, inputs)
                 MetricsPanel(model_state.value)
                 ResourceOverviewPanel(model_state.value)
                 with solara.Card(MODEL_PARAMETERS_TITLE, margin=0):

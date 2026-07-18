@@ -166,23 +166,21 @@ function localizedVisualizationEventMessage(eventType, event, details, eventLabe
   const type = normalizedKey(eventType);
   const rawMessage = String(event.message || "");
   const identifiers = parseEventMessage(rawMessage);
-  const jobId = details.job_id || identifiers.first;
-  const missionId = details.mission_id || event.mission_id || (type === "mission_launched" ? identifiers.first : "");
   const aircraftId = details.tail_number || event.tail_number || identifiers.first;
   const resource = displayEntity(details.resource_name || details.resource_id || identifiers.last, "保障节点");
   const spare = displayEntity(details.spare_name || details.spare_type || identifiers.middle, "备件");
   const quantity = finiteDisplay(details.quantity ?? details.required_quantity ?? identifiers.quantity);
-  const jobSuffix = identifierSuffix("作业标识", jobId);
-  const missionSuffix = identifierSuffix("任务标识", missionId);
   const aircraftSuffix = identifierSuffix("飞机编号", aircraftId);
+  const taskName = displayTaskName(details.task_name || details.basic_task_name || event.task_name);
+  const taskPrefix = taskName ? `${taskName}：` : "";
 
   if (type === "run_started") return "推演已开始。";
   if (type === "simulation_stopped") return `推演已结束；停止条件：${stopReasonLabel(details.reason)}。`;
-  if (type === "spare_shortage") return `${spare}库存不足，保障作业等待备件补给；保障节点：${resource}。${jobSuffix}`;
-  if (type === "equipment_shortage") return `保障设备可用数量不足，保障作业等待设备；保障节点：${resource}。${jobSuffix}`;
-  if (type === "personnel_delay") return `保障人员数量不足，保障作业等待人员；保障节点：${resource}。${jobSuffix}`;
-  if (type === "job_started") return `保障作业已开始${identifiers.middle ? `：${displayEntity(identifiers.middle, "作业内容")}` : ""}。${jobSuffix}`;
-  if (type === "spare_consumed") return `保障作业已消耗 ${quantity || "所需"} 件${spare}。${jobSuffix}`;
+  if (type === "spare_shortage") return `${spare}库存不足，保障作业等待备件补给；保障节点：${resource}。`;
+  if (type === "equipment_shortage") return `保障设备可用数量不足，保障作业等待设备；保障节点：${resource}。`;
+  if (type === "personnel_delay") return `保障人员数量不足，保障作业等待人员；保障节点：${resource}。`;
+  if (type === "job_started") return `保障作业已开始${identifiers.middle ? `：${displayEntity(identifiers.middle, "作业内容")}` : ""}。`;
+  if (type === "spare_consumed") return `保障作业已消耗 ${quantity || "所需"} 件${spare}。`;
   if (type === "transport_dispatched") return `${quantity || "所需"} 件${spare}已发起调运。`;
   if (type === "transport_arrived") return `${quantity || "所需"} 件${spare}已到达${resource}。`;
   if (type === "transport_replenished") return `${quantity || "所需"} 件${spare}已完成库存补充。`;
@@ -192,13 +190,13 @@ function localizedVisualizationEventMessage(eventType, event, details, eventLabe
   if (type === "mission_failed_after_return") return `飞机返场后判定任务失败并转入维修。${aircraftSuffix}`;
   if (type === "mission_returned_with_component_failure") return `飞机返场后发现部件故障，已转入维修。${aircraftSuffix}`;
   if (type === "mission_returned") return `飞机已完成返场并进入航后保障。${aircraftSuffix}`;
-  if (type === "mission_failed_minimum_aircraft") return `可用飞机数量低于最低要求，任务判定失败。${missionSuffix}`;
-  if (type === "mission_launched" || type === "mission_started") return `任务已启动${quantity ? `，投入 ${quantity} 架飞机` : ""}。${missionSuffix}`;
+  if (type === "mission_failed_minimum_aircraft") return `${taskPrefix}可用飞机数量低于最低要求，任务判定失败。`;
+  if (type === "mission_launched" || type === "mission_started") return `${taskPrefix}任务已启动${quantity ? `，投入 ${quantity} 架飞机` : ""}。`;
   if (type === "mission_launch") return `任务已启动。${aircraftSuffix}`;
-  if (type === "mission_cancelled") return `就绪飞机数量不足，任务已取消。${missionSuffix}`;
-  if (type === "mission_success_point_succeeded") return `任务在成功判定点达到要求，判定成功。${missionSuffix}`;
-  if (type === "mission_success_point_failed") return `任务在成功判定点未达到要求，判定失败。${missionSuffix}`;
-  if (type === "preflight_created") return `已创建飞行前保障作业。${missionSuffix}`;
+  if (type === "mission_cancelled") return `${taskPrefix}就绪飞机数量不足，任务已取消。`;
+  if (type === "mission_success_point_succeeded") return `${taskPrefix}任务在成功判定点达到要求，判定成功。`;
+  if (type === "mission_success_point_failed") return `${taskPrefix}任务在成功判定点未达到要求，判定失败。`;
+  if (type === "preflight_created") return `${taskPrefix}已创建飞行前保障作业。`;
   if (type === "preflight_completed") return `飞机已完成飞行前保障。${aircraftSuffix}`;
   if (type === "postflight_completed") return `飞机已完成航后保障。${aircraftSuffix}`;
   if (type === "preventive_created") return `飞机已进入预防性维修。${aircraftSuffix}`;
@@ -223,7 +221,12 @@ function displayEntity(value, fallback) {
   const text = String(value || "").trim();
   if (!text) return fallback;
   if (/[^\x00-\x7F]/.test(text)) return text;
-  return `${fallback}（内部标识：${text}）`;
+  return fallback;
+}
+
+function displayTaskName(value) {
+  const text = String(value || "").trim();
+  return text && /[^\x00-\x7F]/.test(text) ? text : "";
 }
 
 function identifierSuffix(label, value) {
