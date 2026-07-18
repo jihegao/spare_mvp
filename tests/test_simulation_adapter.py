@@ -214,6 +214,49 @@ class SimulationAdapterTest(unittest.TestCase):
 
         self.assertIn("ambiguous_support_resource_migration", {error["code"] for error in result["errors"]})
 
+    def test_validate_project_rejects_deleted_stable_key_instead_of_cross_org_rebinding(self) -> None:
+        project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
+        product_id = project["products"][0]["id"]
+        deleted_key = f"support-spare:leaf-a:{product_id}"
+        project["supportOrganization"] = {
+            "tree": {
+                "id": "root",
+                "name": "保障组织",
+                "children": [
+                    {"id": "leaf-a", "name": "基层A", "children": []},
+                    {"id": "leaf-b", "name": "基层B", "children": []},
+                ],
+            }
+        }
+        project["supportResources"] = [
+            {
+                "id": f"support-spare-tombstone:leaf-a:{product_id}",
+                "organizationNodeName": "leaf-a",
+                "supportNodeName": "基层A",
+                "type": "spare",
+                "productId": product_id,
+                "quantity": 0,
+            },
+            {
+                "id": f"support-spare:leaf-b:{product_id}",
+                "organizationNodeName": "leaf-b",
+                "supportNodeName": "基层B",
+                "type": "spare",
+                "productId": product_id,
+                "quantity": 8,
+            },
+        ]
+        project["supportActivityJobs"] = [{
+            "activityCode": "USE-001",
+            "spare": [{"key": deleted_key, "productId": product_id, "quantity": 1}],
+        }]
+
+        result = self.adapter.validate_project(project)
+
+        missing = [error for error in result["errors"] if error["code"] == "missing_support_resource_key_reference"]
+        self.assertEqual(len(missing), 1)
+        self.assertIn(deleted_key, missing[0]["message"])
+
     def test_aircraft_support_v1_compiles_product_ids_and_product_display_names(self) -> None:
         project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
 

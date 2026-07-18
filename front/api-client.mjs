@@ -885,7 +885,7 @@ function normalizeSupportResourceSpareRows(projectJson, leafNodes, organizationN
     ...tombstones,
     ...nextSpareResources
   ];
-  rewriteSupportActivitySpareResourceKeys(projectJson, resourceIdAliases);
+  rewriteSupportActivitySpareResourceKeys(projectJson, resourceIdAliases, leafNodes);
 }
 
 function setUniqueResourceIdAlias(aliases, oldId, newId) {
@@ -893,34 +893,53 @@ function setUniqueResourceIdAlias(aliases, oldId, newId) {
   else if (aliases.get(oldId) !== newId) aliases.set(oldId, "");
 }
 
-function rewriteSupportActivitySpareResourceKeys(projectJson, aliases) {
+function rewriteSupportActivitySpareResourceKeys(projectJson, aliases, leafNodes = []) {
   if (!Array.isArray(projectJson.supportActivityJobs)) return;
-  const resourceIds = new Set((projectJson.supportResources || []).map((resource) => cleanText(resource?.id)).filter(Boolean));
-  const resourceIdsByProduct = new Map();
-  for (const resource of projectJson.supportResources || []) {
-    if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
-    const productId = cleanText(resource.productId);
-    if (!productId) continue;
-    const ids = resourceIdsByProduct.get(productId) || [];
-    ids.push(cleanText(resource.id));
-    resourceIdsByProduct.set(productId, ids);
+  const soleLeafId = leafNodes.length === 1 ? cleanText(leafNodes[0]?.id) : "";
+  const soleLeafResourceIdsByProduct = new Map();
+  if (soleLeafId) {
+    for (const resource of projectJson.supportResources || []) {
+      if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
+      if (cleanText(resource.organizationNodeName) !== soleLeafId) continue;
+      const productId = cleanText(resource.productId);
+      if (!productId) continue;
+      const ids = soleLeafResourceIdsByProduct.get(productId) || [];
+      ids.push(cleanText(resource.id));
+      soleLeafResourceIdsByProduct.set(productId, ids);
+    }
   }
   for (const job of projectJson.supportActivityJobs) {
     if (!job || typeof job !== "object" || !Array.isArray(job.spare)) continue;
     for (const requirement of job.spare) {
       if (!requirement || typeof requirement !== "object") continue;
       const oldKey = cleanText(requirement.key);
+      if (parseSupportSpareResourceId(oldKey)) {
+        // Stable keys already carry organization + product identity. If their exact
+        // target is gone, preserve the dangling key so validation fails closed.
+        continue;
+      }
       const replacement = aliases.get(oldKey);
       if (replacement) requirement.key = replacement;
-      else if (oldKey && aliases.has(oldKey) && cleanText(requirement.productId)) {
-        const productMatches = resourceIdsByProduct.get(cleanText(requirement.productId)) || [];
-        if (productMatches.length === 1) requirement.key = productMatches[0];
-      }
-      else if (oldKey && !resourceIds.has(oldKey)) {
-        const productMatches = resourceIdsByProduct.get(cleanText(requirement.productId)) || [];
+      else if (oldKey && !aliases.has(oldKey) && soleLeafId) {
+        const productMatches = soleLeafResourceIdsByProduct.get(cleanText(requirement.productId)) || [];
         if (productMatches.length === 1) requirement.key = productMatches[0];
       }
     }
+  }
+}
+
+function parseSupportSpareResourceId(value) {
+  const text = cleanText(value);
+  if (!text.startsWith(SUPPORT_SPARE_RESOURCE_ID_PREFIX)) return null;
+  const encodedIdentity = text.slice(SUPPORT_SPARE_RESOURCE_ID_PREFIX.length);
+  const separatorIndex = encodedIdentity.indexOf(":");
+  if (separatorIndex <= 0 || separatorIndex === encodedIdentity.length - 1) return null;
+  try {
+    const organizationId = decodeURIComponent(encodedIdentity.slice(0, separatorIndex));
+    const productId = decodeURIComponent(encodedIdentity.slice(separatorIndex + 1));
+    return organizationId && productId ? { organizationId, productId } : null;
+  } catch {
+    return null;
   }
 }
 

@@ -1581,6 +1581,56 @@ test("same-name leaf tombstone suppresses only its stable organization and produ
   ]);
 });
 
+test("deleted stable spare key never crosses organizations through product fallback", () => {
+  const deletedKey = "support-spare:leaf-a:product-pump";
+  const loaded = normalizeProjectJsonForClientDraft({
+    supportOrganization: {
+      tree: {
+        id: "root",
+        name: "保障组织",
+        children: [
+          { id: "leaf-a", name: "基层A", children: [] },
+          { id: "leaf-b", name: "基层B", children: [] }
+        ]
+      }
+    },
+    products: [{ id: "product-pump", name: "液压泵", model: "PUMP-1" }],
+    components: [{ id: "pump-lru", name: "液压泵", model: "PUMP-1", productId: "product-pump", productType: "LRU" }],
+    supportResources: [
+      {
+        id: "support-spare-tombstone:leaf-a:product-pump",
+        organizationNodeId: "leaf-a",
+        supportNodeName: "基层A",
+        type: "spare",
+        productId: "product-pump",
+        quantity: 0
+      },
+      {
+        id: "legacy-leaf-b-stock",
+        organizationNodeId: "leaf-b",
+        supportNodeName: "基层B",
+        type: "spare",
+        productId: "product-pump",
+        quantity: 8
+      }
+    ],
+    supportActivityJobs: [{
+      activityCode: "USE-001",
+      spare: [
+        { key: deletedKey, productId: "product-pump", quantity: 1 },
+        { key: "missing-legacy-key", productId: "product-pump", quantity: 1 }
+      ]
+    }]
+  });
+
+  assert.ok(loaded.supportResources.some((resource) => resource.id === "support-spare:leaf-b:product-pump"));
+  assert.ok(loaded.supportResources.every((resource) => resource.id !== deletedKey));
+  assert.deepEqual(loaded.supportActivityJobs[0].spare.map((requirement) => requirement.key), [
+    deletedKey,
+    "missing-legacy-key"
+  ]);
+});
+
 test("same-label hardware rows remain distinct when product IDs differ", () => {
   const loaded = normalizeProjectJsonForClientDraft({
     supportOrganization: {
