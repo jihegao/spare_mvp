@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   createProjectProduct,
+  findProjectProductConflicts,
+  searchProjectProducts,
   normalizeProjectProducts
 } from "../front/product-catalog.mjs";
 
@@ -43,4 +45,38 @@ test("new products can be created and shared by multiple component or resource r
   const product = createProjectProduct(project, { name: "雷达组件", model: "RAD-1", kind: "LRU" });
   assert.equal(product.id, "product-雷达组件");
   assert.equal(project.products[0].name, "雷达组件");
+});
+
+test("product search matches exact catalog fields without mutating product definitions", () => {
+  const project = {
+    products: [
+      { id: "product-engine", name: "发动机产品", model: "WS-10", kind: "LRU" },
+      { id: "product-radar", name: "雷达产品", model: "RADAR-15", kind: "SRU" }
+    ]
+  };
+  const before = JSON.stringify(project.products);
+
+  assert.deepEqual(searchProjectProducts(project, "product-engine").map((product) => product.id), ["product-engine"]);
+  assert.deepEqual(searchProjectProducts(project, "雷达").map((product) => product.id), ["product-radar"]);
+  assert.deepEqual(searchProjectProducts(project, "ws-10").map((product) => product.id), ["product-engine"]);
+  assert.equal(JSON.stringify(project.products), before);
+});
+
+test("product conflict checks block equal names or models and generated IDs stay collision-safe", () => {
+  const project = {
+    products: [
+      { id: "product-新雷达", name: "占位目录项", model: "OLD-1", kind: "LRU" },
+      { id: "product-existing", name: "已有雷达", model: "RAD-1", kind: "LRU" }
+    ],
+    components: []
+  };
+
+  const nameConflict = findProjectProductConflicts(project, { name: " 已有雷达 ", model: "RAD-2" });
+  assert.deepEqual(nameConflict.nameMatches.map((product) => product.id), ["product-existing"]);
+  const modelConflict = findProjectProductConflicts(project, { name: "新名称", model: "rad-1" });
+  assert.deepEqual(modelConflict.modelMatches.map((product) => product.id), ["product-existing"]);
+
+  const created = createProjectProduct(project, { name: "新雷达", model: "RAD-2", kind: "SRU" });
+  assert.equal(created.id, "product-新雷达-2");
+  assert.equal(project.products.find((product) => product.id === "product-新雷达").name, "占位目录项");
 });
