@@ -1445,8 +1445,9 @@ test("equipment aircraft selection keeps an editable aircraft name row", async (
   assert.match(tableSource, /<th>MTBF参数<\/th>/);
   assert.match(equipmentSource, /data-equipment-import-file/);
   assert.ok(
-    equipmentSource.indexOf("data-equipment-import-file") > equipmentSource.indexOf("<h3>装备系统建模</h3>"),
-    "equipment import button should live under the right-side equipment system title"
+    equipmentSource.indexOf("装备结构数据") < equipmentSource.indexOf("data-equipment-import-file")
+      && equipmentSource.indexOf("data-equipment-import-file") < equipmentSource.indexOf("data-equipment-search"),
+    "equipment import button should live inside the left equipment structure tree panel"
   );
   assert.ok(
     equipmentSource.indexOf("data-equipment-add-node") < equipmentSource.indexOf("renderCollapsibleTree(buildEquipmentTreeNodes())"),
@@ -2293,6 +2294,44 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(appSource, /data-scenario-selected-override-value/);
   assert.doesNotMatch(experimentPlanEditorSource, /scenario-composition-editor-panel/);
   assert.match(appSource, /return "spare-planning-experiment-plan-management"/);
+});
+
+test("equipment import and export actions stay inside the equipment tree panel", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function buildEquipmentTreeNodes")
+  );
+  const treePanelSource = equipmentSource.slice(
+    equipmentSource.indexOf('<aside class="tree-container">'),
+    equipmentSource.indexOf('<section class="detail-panel equipment-system-table-panel">')
+  );
+  const detailPanelSource = equipmentSource.slice(
+    equipmentSource.indexOf('<section class="detail-panel equipment-system-table-panel">')
+  );
+
+  assert.match(styleSource, /\.equipment-tree-data-panel/);
+  assert.match(treePanelSource, /aria-labelledby="equipment-tree-data-title"/);
+  assert.match(treePanelSource, /role="group" aria-label="装备结构数据导入与导出"/);
+  assert.match(treePanelSource, /data-equipment-download-template/);
+  assert.match(treePanelSource, /data-equipment-export-data/);
+  assert.match(treePanelSource, /data-equipment-import-file/);
+  assert.ok(treePanelSource.indexOf("装备结构树") < treePanelSource.indexOf("装备结构数据"));
+  assert.ok(treePanelSource.indexOf("装备结构数据") < treePanelSource.indexOf("搜索名称"));
+  assert.doesNotMatch(detailPanelSource, /data-equipment-download-template|data-equipment-export-data|data-equipment-import-file/);
+
+  const equipmentActionClickSource = appSource.slice(
+    appSource.indexOf('const equipmentTemplateButton = event.target.closest("[data-equipment-download-template]")'),
+    appSource.indexOf('const supportJobsTemplateButton = event.target.closest("[data-support-jobs-download-template]")')
+  );
+  assert.match(equipmentActionClickSource, /downloadEquipmentStructureTemplate\(\)/);
+  assert.match(equipmentActionClickSource, /downloadEquipmentStructureData\(\)/);
+  const equipmentImportChangeSource = appSource.slice(
+    appSource.indexOf('const equipmentImportFile = event.target.closest("[data-equipment-import-file]")'),
+    appSource.indexOf('const supportJobsImportFile = event.target.closest("[data-support-jobs-import-file]")')
+  );
+  assert.match(equipmentImportChangeSource, /importEquipmentStructureTableFile\(equipmentImportFile\.files\?\.\[0\]\)/);
 });
 
 test("support activity controls are wired through local draft fields", async () => {
@@ -4257,7 +4296,11 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(styleSource, /\.rms-equipment-tree/);
   assert.match(styleSource, /\.rms-method-panel/);
   assert.match(styleSource, /\.rms-installation-panel/);
-  assert.match(styleSource, /\.rms-tree-import-block/);
+  assert.match(styleSource, /\.rms-data-preparation-grid/);
+  assert.match(styleSource, /\.rms-calculation-flow/);
+  assert.match(styleSource, /\.rms-calculation-step/);
+  assert.match(styleSource, /@media \(max-width: 900px\)[\s\S]*\.rms-data-preparation-grid,[\s\S]*\.rms-calculation-flow,[\s\S]*grid-template-columns: 1fr;/);
+  assert.doesNotMatch(styleSource, /\.rms-tree-import-block/);
   assert.match(styleSource, /\.rms-import-button\s*\{[^}]*width: 96px;[^}]*height: 34px;/s);
   assert.match(styleSource, /\.rms-calculation-status/);
 
@@ -4268,36 +4311,62 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(workbenchSource, /上传文件/);
   assert.doesNotMatch(workbenchSource, /import-sample/);
   assert.doesNotMatch(workbenchSource, /导入 15/);
-  assert.match(workbenchSource, /导入安装数/);
   assert.match(workbenchSource, /装备结构树/);
   assert.doesNotMatch(appSource, /当前装备树来自项目装备系统建模，RMS 编辑值按飞机型号独立保存/);
   assert.doesNotMatch(workbenchSource, /当前安装数为 RMS 分配工作台独立数据/);
+  const dataPreparationPanelSource = workbenchSource.slice(
+    workbenchSource.indexOf('<section class="rms-aircraft-input-panel rms-data-preparation-panel"'),
+    workbenchSource.indexOf('${hasSelectedAircraft ? `<section class="organization-layout equipment-layout rms-layout">')
+  );
+  assert.match(dataPreparationPanelSource, /机型选择与数据准备/);
+  assert.match(dataPreparationPanelSource, /aria-labelledby="rms-data-preparation-title"/);
+  assert.match(dataPreparationPanelSource, /role="group" aria-label="RMS 安装数数据操作"/);
+  assert.ok(dataPreparationPanelSource.indexOf("飞机型号") < dataPreparationPanelSource.indexOf("下载模板"));
+  assert.ok(dataPreparationPanelSource.indexOf("下载模板") < dataPreparationPanelSource.indexOf("上传文件"));
+  assert.match(dataPreparationPanelSource, /data-rms-aircraft-model/);
+  assert.match(dataPreparationPanelSource, /data-rms-action="download-template"/);
+  assert.match(dataPreparationPanelSource, /data-rms-equipment-import-file/);
+  assert.doesNotMatch(dataPreparationPanelSource, /inputs\.missionReliability|inputs\.missionHours|inputs\.mtbfHours|inputs\.mttrHours/);
   const equipmentTreePanelSource = workbenchSource.slice(
     workbenchSource.indexOf('<aside class="tree-container rms-equipment-tree">'),
     workbenchSource.indexOf('<section class="detail-panel equipment-system-table-panel rms-installation-panel">')
   );
-  assert.ok(equipmentTreePanelSource.indexOf("装备结构树") < equipmentTreePanelSource.indexOf("导入安装数"));
-  assert.ok(equipmentTreePanelSource.indexOf("导入安装数") < equipmentTreePanelSource.indexOf("下载模板"));
-  assert.ok(equipmentTreePanelSource.indexOf("下载模板") < equipmentTreePanelSource.indexOf("上传文件"));
-  assert.match(equipmentTreePanelSource, /data-rms-action="download-template"/);
-  assert.match(equipmentTreePanelSource, /data-rms-equipment-import-file/);
+  assert.match(equipmentTreePanelSource, /装备结构树/);
+  assert.doesNotMatch(equipmentTreePanelSource, /下载模板|上传文件|data-rms-equipment-import-file/);
   const installationPanelSource = workbenchSource.slice(
     workbenchSource.indexOf('<section class="detail-panel equipment-system-table-panel rms-installation-panel">'),
-    workbenchSource.indexOf('<section class="rms-method-panel">')
+    workbenchSource.indexOf('<section class="rms-method-panel rms-calculation-panel"')
   );
   assert.doesNotMatch(installationPanelSource, /导入安装数|下载模板|上传文件/);
   assert.match(installationPanelSource, /renderInstallationTable/);
-  assert.match(workbenchSource, /飞机型号与 RMS 输入/);
+  const calculationPanelSource = workbenchSource.slice(
+    workbenchSource.indexOf('<section class="rms-method-panel rms-calculation-panel"'),
+    workbenchSource.indexOf('<section class="analysis-chart-panel rms-result-panel">')
+  );
+  assert.match(calculationPanelSource, /RMS 输入与指标分配计算/);
+  assert.match(calculationPanelSource, /aria-labelledby="rms-calculation-panel-title"/);
+  assert.match(calculationPanelSource, /RMS 输入参数/);
+  assert.match(calculationPanelSource, /指标分配方法/);
+  assert.match(calculationPanelSource, /执行计算/);
+  assert.match(calculationPanelSource, /data-rms-calculation-status/);
+  assert.match(calculationPanelSource, /data-rms-action="calculate"/);
+  assert.doesNotMatch(calculationPanelSource, /data-rms-aircraft-model|下载模板|上传文件/);
+  assert.equal((workbenchSource.match(/data-rms-aircraft-model/g) || []).length, 1);
+  assert.equal((workbenchSource.match(/data-rms-action="download-template"/g) || []).length, 1);
+  assert.equal((workbenchSource.match(/data-rms-equipment-import-file/g) || []).length, 1);
+  assert.equal((workbenchSource.match(/data-rms-action="calculate"/g) || []).length, 1);
   assert.match(workbenchSource, /data-rms-aircraft-model/);
   assert.match(workbenchSource, /inputs\.missionReliability/);
   assert.match(workbenchSource, /inputs\.missionHours/);
   assert.match(workbenchSource, /inputs\.mtbfHours/);
   assert.doesNotMatch(workbenchSource, /inputs\.criticalFailureRatio|关键故障占比/);
   assert.match(workbenchSource, /inputs\.mttrHours/);
-  assert.ok(workbenchSource.indexOf("飞机型号") < workbenchSource.indexOf('input("任务可靠度"'));
-  assert.ok(workbenchSource.indexOf('input("任务可靠度"') < workbenchSource.indexOf('input("任务时长"'));
-  assert.ok(workbenchSource.indexOf('input("任务时长"') < workbenchSource.indexOf('input("MTBF"'));
-  assert.ok(workbenchSource.indexOf('input("MTBF"') < workbenchSource.indexOf('input("MTTR"'));
+  assert.ok(calculationPanelSource.indexOf('input("任务可靠度"') < calculationPanelSource.indexOf('input("任务时长"'));
+  assert.ok(calculationPanelSource.indexOf('input("任务时长"') < calculationPanelSource.indexOf('input("MTBF"'));
+  assert.ok(calculationPanelSource.indexOf('input("MTBF"') < calculationPanelSource.indexOf('input("MTTR"'));
+  assert.ok(calculationPanelSource.indexOf('input("MTTR"') < calculationPanelSource.indexOf("指标分配方法"));
+  assert.ok(calculationPanelSource.indexOf("指标分配方法") < calculationPanelSource.indexOf("执行计算"));
+  assert.ok(calculationPanelSource.indexOf("执行计算") < calculationPanelSource.indexOf('data-rms-action="calculate"'));
   assert.match(workbenchSource, /请先选择飞机型号/);
   assert.match(workbenchSource, /当前项目暂无飞机型号，请先完成装备系统建模/);
   assert.match(workbenchSource, /organization-layout equipment-layout rms-layout/);
@@ -4325,7 +4394,9 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /R目标/);
   assert.doesNotMatch(workbenchSource, /反算 R/);
   assert.doesNotMatch(workbenchSource, /目标 R|校核可靠度|MTBCF|MTTR 裕度/);
-  assert.ok(workbenchSource.indexOf("<h3>计算方法</h3>") < workbenchSource.indexOf("<h3>节点分配结果</h3>"));
+  assert.ok(workbenchSource.indexOf("机型选择与数据准备") < workbenchSource.indexOf("装备结构树"));
+  assert.ok(workbenchSource.indexOf("装备结构树") < workbenchSource.indexOf("RMS 输入与指标分配计算"));
+  assert.ok(workbenchSource.indexOf("RMS 输入与指标分配计算") < workbenchSource.indexOf("<h3>节点分配结果</h3>"));
   assert.match(workbenchSource, /运行比/);
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
   assert.doesNotMatch(workbenchSource, /<th>结构<\/th>/);
@@ -4344,6 +4415,46 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(rmsInputChangeSource, /setPath\(rmsAllocationPlan/);
   assert.match(rmsInputChangeSource, /invalidateCurrentRmsAllocationResult\(\)/);
   assert.doesNotMatch(rmsInputChangeSource, /recalculateRmsAllocation\(\)/);
+  const rmsImportChangeSource = appSource.slice(
+    appSource.indexOf('const rmsEquipmentImportFile = event.target.closest("[data-rms-equipment-import-file]")'),
+    appSource.indexOf('const equipmentImportFile = event.target.closest("[data-equipment-import-file]")')
+  );
+  assert.match(rmsImportChangeSource, /importRmsEquipmentTableFile\(rmsEquipmentImportFile\.files\?\.\[0\]\)/);
+  const rmsActionClickSource = appSource.slice(
+    appSource.indexOf('const rmsActionButton = event.target.closest("[data-rms-action]")'),
+    appSource.indexOf('const rmsEquipmentRootButton = event.target.closest("[data-rms-equipment-root]")')
+  );
+  assert.match(rmsActionClickSource, /downloadRmsEquipmentTemplate\(\)/);
+  assert.match(rmsActionClickSource, /startRmsAllocationCalculation\(\)/);
+});
+
+test("RMS outer groups stack across the narrow two-column workspace without changing the inner mobile grid", async () => {
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const intermediateStart = styleSource.indexOf("@media (max-width: 1085px)");
+  const narrowStart = styleSource.indexOf("@media (max-width: 900px)");
+  assert.ok(intermediateStart >= 0);
+  assert.ok(narrowStart > intermediateStart);
+
+  const intermediateMedia = styleSource.slice(intermediateStart, narrowStart);
+  assert.match(intermediateMedia, /\.rms-data-preparation-grid,\s*\.rms-calculation-flow\s*\{\s*grid-template-columns: 1fr;/);
+  assert.doesNotMatch(intermediateMedia, /\.rms-calculation-input-grid/);
+
+  const narrowMedia = styleSource.slice(narrowStart);
+  assert.match(narrowMedia, /\.rms-data-preparation-grid,[\s\S]*\.rms-calculation-flow,[\s\S]*\.rms-calculation-input-grid,[\s\S]*grid-template-columns: 1fr;/);
+  assert.match(styleSource, /\.rms-calculation-flow\s*\{\s*display: grid;\s*grid-template-columns: minmax\(270px, 2fr\) minmax\(210px, 1fr\) minmax\(170px, 0\.8fr\);/);
+
+  const twoColumnWorkspaceChrome = 32 + 16 + 280 + 2 + 36 + 2 + 28;
+  const stackedContentMinimum = 270;
+  for (const viewportWidth of [901, 945, 1085]) {
+    assert.ok(viewportWidth <= 1085, `${viewportWidth}px must use the intermediate single-column outer grids`);
+    assert.ok(
+      viewportWidth - twoColumnWorkspaceChrome >= stackedContentMinimum,
+      `${viewportWidth}px must fit the retained two-column RMS input grid after the outer groups stack`
+    );
+  }
+
+  const desktopFlowMinimum = 270 + 210 + 170 + (2 * 12);
+  assert.ok(1086 - twoColumnWorkspaceChrome >= desktopFlowMinimum);
 });
 
 test("RMS allocation workbench renders parameters for only the selected method", () => {
