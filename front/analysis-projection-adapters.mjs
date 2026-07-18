@@ -1,5 +1,6 @@
 import {
   downtimeFactorLabel,
+  downtimeJobLabel,
   downtimeJobStateLabel,
   downtimeSnapshotResultLabel,
   formatDowntimeSimulationTime
@@ -351,7 +352,7 @@ function normalizeDowntimeAnomalySnapshots(value) {
         repairBacklog: Math.max(0, Math.round(numberOrZero(state.repair_backlog))),
         spareFillRate: clamp01(numberOrZero(state.spare_fill_rate)),
         jobNodeId: stringValue(job.job_id || job.node_id, "unknown_job"),
-        jobNodeLabel: stringValue(job.task || job.label || job.kind, "未定位作业"),
+        jobNodeLabel: downtimeJobLabel(job.task, job.label, job.kind),
         jobState: downtimeJobStateLabel(job.state),
         frameRef: `sample=${stringValue(frameRef.sample_index, "0")}; sample_step=${stringValue(frameRef.sample_step, "0")}; step=${stringValue(frameRef.step, "0")}`,
         frameLabel: `第${Math.max(0, Math.round(numberOrZero(frameRef.sample_index))) + 1}个样本；采样步 ${stringValue(frameRef.sample_step, "0")}；仿真步 ${stringValue(frameRef.step, "0")}`

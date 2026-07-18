@@ -18235,6 +18235,10 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
   const resources = Array.isArray(snapshot.support_resources) ? snapshot.support_resources : [];
   const shortages = Array.isArray(snapshot.spare_shortages) ? snapshot.spare_shortages : [];
   const sourceEventType = snapshot.event?.event_type || snapshot.event?.event || snapshot.event_type;
+  const businessNames = downtimeSnapshotBusinessNameIndex(
+    currentProjectJsonForExperimentContext(),
+    selectedExperimentPlanProjectJson()
+  );
   return `
     <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
       <summary>
@@ -18255,10 +18259,10 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
           <h4>保障资源占用</h4>
           <table><thead><tr><th>资源</th><th>人员</th><th>设备</th><th>库存</th></tr></thead><tbody>
             ${resources.map((resource) => `<tr>
-              <td>${htmlEscape(resource.name || resource.resource_id || "-")}</td>
+              <td>${htmlEscape(downtimeSnapshotResourceDisplayName(resource, businessNames))}</td>
               <td>${htmlEscape(resource.personnel_in_use ?? resource.in_use ?? 0)} / ${htmlEscape(resource.personnel_capacity ?? resource.capacity ?? "-")}</td>
               <td>${htmlEscape(resource.equipment_in_use ?? 0)} / ${htmlEscape(resource.equipment_capacity ?? "-")}</td>
-              <td>${htmlEscape(formatSnapshotInventory(resource.inventory))}</td>
+              <td>${htmlEscape(formatSnapshotInventory(resource.inventory, businessNames))}</td>
             </tr>`).join("") || `<tr><td colspan="4">无资源明细</td></tr>`}
           </tbody></table>
         </section>
@@ -18266,7 +18270,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
           <h4>备件短缺</h4>
           <table><thead><tr><th>备件</th><th>需求</th><th>可用</th><th>作业</th></tr></thead><tbody>
             ${shortages.map((item) => `<tr>
-              <td>${htmlEscape(item.spare_type || "-")}</td>
+              <td>${htmlEscape(downtimeSnapshotSpareDisplayName(item, businessNames))}</td>
               <td>${htmlEscape(item.required_quantity ?? "-")}</td>
               <td>${htmlEscape(item.available_quantity ?? "-")}</td>
               <td>${htmlEscape(item.job_name || "保障作业")}</td>
@@ -18278,10 +18282,59 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
   `;
 }
 
-function formatSnapshotInventory(inventory) {
-  if (!inventory || typeof inventory !== "object") return "-";
+function downtimeSnapshotBusinessNameIndex(...projectSources) {
+  const resourceNames = new Map();
+  const productNames = new Map();
+  for (const projectJson of projectSources) {
+    for (const node of projectJson?.supportNodes || []) {
+      const displayName = String(node?.display_name || node?.displayName || node?.name || node?.supportNodeName || "").trim();
+      for (const ref of [node?.id, node?.display_name, node?.displayName, node?.name, node?.supportNodeName]) {
+        if (displayName && String(ref || "").trim()) resourceNames.set(String(ref).trim(), displayName);
+      }
+    }
+    for (const resource of projectJson?.supportResources || []) {
+      const displayName = String(resource?.display_name || resource?.displayName || resource?.name || resource?.spareName || resource?.model || "").trim();
+      for (const ref of [resource?.id, resource?.display_name, resource?.displayName, resource?.name]) {
+        if (displayName && String(ref || "").trim()) resourceNames.set(String(ref).trim(), displayName);
+      }
+      if (String(resource?.type || "").trim().toLowerCase() === "spare") {
+        for (const ref of [resource?.productId, resource?.id, resource?.name, resource?.spareName, resource?.spareType, resource?.model]) {
+          if (displayName && String(ref || "").trim()) productNames.set(String(ref).trim(), displayName);
+        }
+      }
+    }
+    for (const product of projectJson?.products || []) {
+      const productId = String(product?.id || "").trim();
+      if (productId) productNames.set(productId, productDisplayName(product));
+    }
+  }
+  return { resourceNames, productNames };
+}
+
+function downtimeSnapshotResourceDisplayName(resource, businessNames) {
+  const resourceId = String(resource?.resource_id || "").trim();
+  const displayName = String(resource?.display_name || resource?.displayName || "").trim();
+  const explicitName = String(resource?.name || "").trim();
+  return (displayName && displayName !== resourceId ? displayName : "")
+    || businessNames.resourceNames.get(resourceId)
+    || businessNames.resourceNames.get(explicitName)
+    || (explicitName && explicitName !== resourceId ? explicitName : "未记录保障资源名称");
+}
+
+function downtimeSnapshotSpareDisplayName(item, businessNames) {
+  const productId = String(item?.product_id || "").trim();
+  const spareType = String(item?.spare_type || "").trim();
+  return businessNames.productNames.get(productId)
+    || businessNames.productNames.get(spareType)
+    || (/[㐀-鿿]/u.test(spareType) ? spareType : "未记录备件名称");
+}
+
+function formatSnapshotInventory(inventory, businessNames) {
+  if (!inventory || typeof inventory !== "object") return "暂无库存明细";
   const entries = Object.entries(inventory).slice(0, 4);
-  return entries.length ? entries.map(([key, value]) => `${key}:${value}`).join(" / ") : "-";
+  return entries.length
+    ? entries.map(([key, value]) => `${downtimeSnapshotSpareDisplayName({ product_id: key }, businessNames)}:${value}`).join(" / ")
+    : "暂无库存明细";
 }
 
 function field(label, path, type = "text", attrs = {}) {

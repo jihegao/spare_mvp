@@ -172,6 +172,36 @@ export function downtimeJobStateLabel(value) {
   }[String(value || "")] || "状态未识别";
 }
 
+const JOB_LABELS = Object.freeze({
+  preflight: "飞行前保障作业",
+  flight: "任务执行作业",
+  mission: "任务执行作业",
+  repair: "修复性维修作业",
+  corrective: "修复性维修作业",
+  postflight: "飞行后保障作业",
+  preventive: "预防性维修作业",
+  waiting: "等待保障资源",
+  transport: "备件运输作业",
+  spare_shortage: "备件短缺处置作业",
+  equipment_shortage: "保障设备短缺处置作业",
+  mission_delayed_by_spare_shortage: "任务因备件短缺延误",
+  mission_delayed_by_equipment_shortage: "任务因保障设备短缺延误",
+  aircraft_unavailable_for_preventive_maintenance: "飞机因预防性维修不可用",
+  aircraft_unavailable_after_failure: "飞机故障后不可用",
+  downtime_anomaly_recorded: "停机异常记录"
+});
+
+export function downtimeJobLabel(...values) {
+  let mappedFallback = "";
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (!text) continue;
+    if (/[\u3400-\u9fff]/u.test(text)) return text;
+    mappedFallback ||= JOB_LABELS[text.toLowerCase()] || "";
+  }
+  return mappedFallback || "未记录作业名称";
+}
+
 function downtimeFactorSpecificDetails(factor, details) {
   if (factor === "spare_shortage") {
     return [

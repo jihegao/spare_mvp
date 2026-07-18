@@ -1580,7 +1580,9 @@ test("carry list analysis result omits boundary explanation card", async () => {
 test("downtime factors analysis enables log snapshots and renders event snapshots", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-downtime-factor-analysis",
-    projectJson: createRuntimeProjectJson()
+    projectJson: createRuntimeProjectJson({
+      products: [{ id: "hyd-pump", name: "液压泵", model: "HP-01", kind: "LRU" }]
+    })
   });
 
   try {
@@ -1607,8 +1609,12 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
     assert.match(runtime.appNode.innerHTML, /备件短缺/);
     assert.match(runtime.appNode.innerHTML, /保障作业/);
     assert.match(runtime.appNode.innerHTML, /任务因备件短缺延误/);
+    assert.match(runtime.appNode.innerHTML, /航母飞行甲板/);
+    assert.match(runtime.appNode.innerHTML, /未记录保障资源名称/);
+    assert.match(runtime.appNode.innerHTML, /未记录备件名称/);
+    assert.match(runtime.appNode.innerHTML, /液压泵/);
     assert.match(runtime.appNode.innerHTML, /DAY_1 00:42/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /repair-J15-101|mission_delayed_by_spare_shortage|seed |t=/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /carrier-deck|unknown-resource-id|unknown-product-id|hyd-pump|repair-J15-101|mission_delayed_by_spare_shortage|seed |t=/);
     assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>/);
   } finally {
     runtime.restore();
@@ -4610,12 +4616,16 @@ async function setupRuntimeApp({
                 support_resources: [
                   {
                     resource_id: "carrier-deck",
-                    name: "航母飞行甲板",
+                    display_name: "航母飞行甲板",
                     personnel_in_use: 1,
                     personnel_capacity: 2,
                     equipment_in_use: 1,
                     equipment_capacity: 2,
                     inventory: { "hyd-pump": 0 }
+                  },
+                  {
+                    resource_id: "unknown-resource-id",
+                    inventory: { "unknown-product-id": 0 }
                   }
                 ],
                 spare_shortages: [{ spare_type: "hyd-pump", required_quantity: 1, available_quantity: 0, job_id: "repair-J15-101" }],

@@ -392,7 +392,7 @@ class AircraftSupportV1Model:
             candidate = current.get(tail_number)
             if (
                 candidate is None
-                or candidate["factor"] != active["factor"]
+                or self._downtime_event_context_key(candidate) != self._downtime_event_context_key(active)
             ):
                 self._close_downtime_event(tail_number)
 
@@ -408,6 +408,21 @@ class AircraftSupportV1Model:
 
         summary = self._downtime_event_summary()
         self.downtime_minutes = {factor: values["duration_minutes"] for factor, values in summary.items()}
+
+    @staticmethod
+    def _downtime_event_context_key(event: dict[str, Any]) -> tuple[str, ...]:
+        return tuple(
+            str(event.get(field) or "")
+            for field in (
+                "factor",
+                "mission_id",
+                "mission_phase",
+                "mission_phase_id",
+                "mission_phase_name",
+                "support_node_id",
+                "job_id",
+            )
+        )
 
     def _current_downtime_event(self, aircraft: AircraftState, start_minute: float) -> dict[str, Any] | None:
         active_jobs = [
@@ -460,16 +475,17 @@ class AircraftSupportV1Model:
             failure_minute = aircraft.component_failure_minutes.get(component_id)
         details: dict[str, Any]
         if factor == "spare_shortage":
-            spare_name, required = self._task_spare_requirement(job, task) if job is not None else (None, 0)
-            available = int((node or {}).get("inventory", {}).get(spare_name, 0) or 0) if spare_name else None
+            spare_type, required = self._task_spare_requirement(job, task) if job is not None else (None, 0)
+            available = int((node or {}).get("inventory", {}).get(spare_type, 0) or 0) if spare_type else None
             arrivals = [
                 shipment.arrival_minute for shipment in self.transport_shipments
                 if job is not None
                 and shipment.destination_node_id == job.resource_node_id
-                and shipment.spare_type == spare_name
+                and shipment.spare_type == spare_type
             ]
             details = {
-                "spare_name": spare_name,
+                "product_id": spare_type,
+                "spare_name": self._product_display_name(spare_type) if spare_type else None,
                 "spare_model": None,
                 "required_quantity": required or None,
                 "available_quantity": available,
@@ -2180,6 +2196,7 @@ class AircraftSupportV1Model:
         return {
             "resource_id": node["id"],
             "name": node["name"],
+            "display_name": node.get("display_name") or node["name"],
             "personnel_in_use": node["personnel_in_use"],
             "personnel_capacity": node["personnel_capacity"],
             "equipment_in_use": node["equipment_in_use"],
