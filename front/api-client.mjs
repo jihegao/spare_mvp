@@ -309,10 +309,16 @@ export function buildBackendProjectJson(scenario, project = {}) {
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
   if (project.isTemplate !== undefined || project.is_template !== undefined) {
+    const isTemplate = project.isTemplate !== undefined
+      ? Boolean(project.isTemplate)
+      : Boolean(project.is_template);
     projectJson.projectInfo = {
       ...(projectJson.projectInfo && typeof projectJson.projectInfo === "object" ? projectJson.projectInfo : {}),
-      isTemplate: Boolean(project.isTemplate || project.is_template)
+      isTemplate,
+      is_template: isTemplate
     };
+    projectJson.isTemplate = isTemplate;
+    projectJson.is_template = isTemplate;
   }
   return projectJson;
 }

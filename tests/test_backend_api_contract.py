@@ -858,6 +858,37 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(entry["experiment_name"], "模板项目")
         self.assertEqual(entry["is_template"], True)
 
+    def test_project_catalog_prefers_canonical_template_flag_after_unset_and_reload(self) -> None:
+        project = small_aircraft_support_project("project-template-transition-001")
+        project["isTemplate"] = True
+        project["is_template"] = True
+        project["projectInfo"] = {
+            "name": "模板状态切换项目",
+            "baseCode": "TPL",
+            "summary": "模板状态持久化回归",
+            "isTemplate": False,
+            "is_template": True,
+        }
+
+        saved = self.api.save_project(project)
+        reloaded = self.api.get_project(saved["project_id"])
+        catalog = self.api.list_projects()
+        entry = next(item for item in catalog["projects"] if item["project_id"] == saved["project_id"])
+
+        self.assertEqual(reloaded["projectInfo"]["isTemplate"], False)
+        self.assertEqual(entry["is_template"], False)
+
+        reloaded["projectInfo"]["isTemplate"] = True
+        reloaded["projectInfo"]["is_template"] = True
+        reloaded["isTemplate"] = True
+        reloaded["is_template"] = True
+        self.api.save_project(reloaded)
+        reset_entry = next(
+            item for item in self.api.list_projects()["projects"]
+            if item["project_id"] == saved["project_id"]
+        )
+        self.assertEqual(reset_entry["is_template"], True)
+
     def test_current_analysis_result_returns_only_valid_formal_projection(self) -> None:
         created, _plan, run = self._submit_successful_aircraft_support_monte_carlo_run()
 
