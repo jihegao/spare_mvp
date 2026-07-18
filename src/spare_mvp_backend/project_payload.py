@@ -302,6 +302,7 @@ class ProjectJsonExporter:
             _validate_basic_mission_phase_ids(project, self.target)
             _validate_clean_support_activity_references(project, self.target)
             _validate_product_references(project, self.target)
+            _validate_support_resource_identities(project, self.target)
             return
         if not hasattr(jsonschema, "Draft202012Validator"):
             _validate_clean_project_fallback(project, self.target)
@@ -309,6 +310,7 @@ class ProjectJsonExporter:
             _validate_basic_mission_phase_ids(project, self.target)
             _validate_clean_support_activity_references(project, self.target)
             _validate_product_references(project, self.target)
+            _validate_support_resource_identities(project, self.target)
             return
 
         schema_path = self.repo_root / "contracts" / "aircraft_support_v1_project.schema.json"
@@ -324,6 +326,7 @@ class ProjectJsonExporter:
         _validate_basic_mission_phase_ids(project, self.target)
         _validate_clean_support_activity_references(project, self.target)
         _validate_product_references(project, self.target)
+        _validate_support_resource_identities(project, self.target)
 
 
 def export_project_json(project_json: dict[str, Any], target: str = ACTIVE_CLEAN_PROJECT_TARGET) -> dict[str, Any]:
@@ -1137,6 +1140,134 @@ def _validate_clean_support_resources(resources: Any, target: str) -> None:
             _require_clean_non_empty_string(resource, "productId", f"{path}.productId", target)
         for field in ("quantity", "capacity"):
             _validate_optional_clean_integer(resource, field, f"{path}.{field}", target, minimum=0)
+
+
+def _validate_support_resource_identities(project: dict[str, Any], target: str) -> None:
+    resources = [item for item in project.get("supportResources", []) if isinstance(item, dict)]
+    resource_index_by_id: dict[str, int] = {}
+    for index, resource in enumerate(resources):
+        resource_id = _clean_text(resource.get("id"))
+        if not resource_id:
+            continue
+        if resource_id in resource_index_by_id:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportResources.{index}.id: "
+                f"duplicate support resource ID {resource_id}"
+            )
+        resource_index_by_id[resource_id] = index
+
+    organization_ids: set[str] = set()
+    organization_ids_by_name: dict[str, set[str]] = {}
+    organization_descendant_leaf_ids: dict[str, set[str]] = {}
+    organization = project.get("supportOrganization") if isinstance(project.get("supportOrganization"), dict) else {}
+    raw_tree = organization.get("tree")
+    roots = raw_tree if isinstance(raw_tree, list) else [raw_tree]
+
+    def collect_organization(node: Any) -> set[str]:
+        if not isinstance(node, dict):
+            return set()
+        node_id = _clean_text(node.get("id"))
+        node_name = _clean_text(node.get("name"))
+        if node_id:
+            organization_ids.add(node_id)
+            if node_name:
+                organization_ids_by_name.setdefault(node_name, set()).add(node_id)
+        child_leaves: set[str] = set()
+        children = node.get("children") if isinstance(node.get("children"), list) else []
+        for child in children:
+            child_leaves.update(collect_organization(child))
+        leaves = child_leaves or ({node_id} if node_id else set())
+        if node_id:
+            organization_descendant_leaf_ids[node_id] = leaves
+        return leaves
+
+    for root in roots:
+        collect_organization(root)
+
+    support_node_ids: set[str] = set()
+    support_node_ids_by_name: dict[str, set[str]] = {}
+    for node in project.get("supportNodes", []) if isinstance(project.get("supportNodes"), list) else []:
+        if not isinstance(node, dict):
+            continue
+        node_id = _clean_text(node.get("id"))
+        node_name = _clean_text(node.get("name") or node.get("supportNodeName"))
+        if node_id:
+            support_node_ids.add(node_id)
+            if node_name:
+                support_node_ids_by_name.setdefault(node_name, set()).add(node_id)
+
+    logical_index: dict[tuple[str, str], int] = {}
+    for index, resource in enumerate(resources):
+        if _clean_text(resource.get("type")).casefold() != "spare":
+            continue
+        if _clean_text(resource.get("id")).startswith("support-spare-tombstone:"):
+            continue
+        product_id = _clean_text(resource.get("productId"))
+        explicit_organization_ref = _clean_text(resource.get("organizationNodeName"))
+        organization_ref = explicit_organization_ref or _clean_text(resource.get("supportNodeName"))
+        canonical_org = organization_ref
+        identity_resolved = False
+        if organization_ids:
+            if organization_ref in organization_ids:
+                canonical_org = organization_ref
+                identity_resolved = True
+            else:
+                matches = organization_ids_by_name.get(organization_ref, set())
+                support_ref = _clean_text(resource.get("supportNodeName"))
+                support_matches = (
+                    {support_ref} if support_ref in support_node_ids else support_node_ids_by_name.get(support_ref, set())
+                )
+                if len(matches) == 1:
+                    canonical_org = next(iter(matches))
+                    identity_resolved = True
+                elif not explicit_organization_ref and len(support_matches) == 1:
+                    canonical_org = f"support-node:{next(iter(support_matches))}"
+                    identity_resolved = True
+                else:
+                    reason = "ambiguous" if len(matches) > 1 else "unknown"
+                    raise ValueError(
+                        f"clean Project JSON failed {target} schema at supportResources.{index}."
+                        f"{'organizationNodeName' if explicit_organization_ref else 'supportNodeName'}: "
+                        f"{reason} support organization {organization_ref or '<empty>'}"
+                    )
+        else:
+            support_matches = (
+                {organization_ref} if organization_ref in support_node_ids else support_node_ids_by_name.get(organization_ref, set())
+            )
+            if len(support_matches) == 1:
+                canonical_org = f"support-node:{next(iter(support_matches))}"
+                identity_resolved = True
+            else:
+                canonical_org = f"legacy:{organization_ref}"
+        descendant_leaves = organization_descendant_leaf_ids.get(canonical_org, set())
+        if len(descendant_leaves) > 1 and _non_negative_int(resource.get("quantity")) > 0:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportResources.{index}.organizationNodeName: "
+                f"non-zero spare on organization {canonical_org} cannot be distributed across multiple leaf organizations"
+            )
+        logical_key = (canonical_org, product_id)
+        if identity_resolved and canonical_org and product_id and logical_key in logical_index:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportResources.{index}: "
+                f"duplicate live spare identity ({canonical_org}, {product_id})"
+            )
+        if identity_resolved and canonical_org and product_id:
+            logical_index[logical_key] = index
+
+    known_ids = set(resource_index_by_id)
+    stable_identity_payload = any(resource_id.startswith("support-spare:") for resource_id in known_ids)
+    for job_index, job in enumerate(project.get("supportActivityJobs", []) if isinstance(project.get("supportActivityJobs"), list) else []):
+        if not isinstance(job, dict):
+            continue
+        for spare_index, requirement in enumerate(job.get("spare", []) if isinstance(job.get("spare"), list) else []):
+            if not isinstance(requirement, dict):
+                continue
+            key = _clean_text(requirement.get("key"))
+            if stable_identity_payload and key and key not in known_ids:
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at supportActivityJobs.{job_index}.spare.{spare_index}.key: "
+                    f"unknown support resource {key}"
+                )
 
 
 def _validate_clean_transport_policies(policies: Any, path: str, target: str) -> None:

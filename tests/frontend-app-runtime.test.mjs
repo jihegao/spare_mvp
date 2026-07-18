@@ -128,6 +128,50 @@ test("frontend app restores stored backend session and hydrates project catalog 
   }
 });
 
+test("cold workbench refresh restores the project encoded in the URL instead of catalog order", async () => {
+  const case1 = createRuntimeProjectJson({ project_id: "project-case1", scenarioId: "case1-runtime" });
+  const caseLarge = createRuntimeProjectJson({ project_id: "project-case-large", scenarioId: "case-large-runtime" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-part&project=project-case-large",
+    projectJson: case1,
+    projectJsonById: { "project-case-large": caseLarge },
+    backendProjects: [
+      runtimeBackendProjectEntry("project-case1", "Case1"),
+      runtimeBackendProjectEntry("project-case-large", "Case-large")
+    ]
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /<p>Case-large<\/p>/);
+    assert.ok(runtime.requests.some((request) => request.url === "/api/projects/project-case-large"));
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<p>Case1<\/p>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("invalid project hash falls back and canonicalizes URL plus stored backend project ID", async () => {
+  const projectId = "project-canonical-fallback";
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-part&project=missing-project",
+    projectJson: createRuntimeProjectJson({ project_id: projectId }),
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "Canonical fallback",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "",
+      updated_at: "2026-07-18 00:00:00"
+    }]
+  });
+
+  try {
+    assert.equal(globalThis.location.hash, `feature=spare-planning-spare-part&project=${projectId}`);
+    assert.equal(runtime.storage.get("spare-mvp.current-project-id"), projectId);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("legacy support activity references hydrate into the basic mission page and autosave canonically", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-basic-mission",
@@ -471,7 +515,16 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
         aircraftModel: "J-15",
         productType: "LRU"
       }],
-      supportResources: []
+      supportResources: [{
+        id: "legacy-base-1-pump-stock",
+        organizationNodeId: "base-1",
+        supportNodeName: "基层1",
+        type: "spare",
+        productId: "product-pump-lru",
+        name: "液压泵",
+        model: "PUMP-1",
+        quantity: 3
+      }]
     }),
     backendProjects: [{
       project_id: projectId,
@@ -489,11 +542,11 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
 
     assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层1”的备件数量。/);
     assert.match(runtime.appNode.innerHTML, /class="tree-node-label selected"[^>]*data-select-support-org-node="base-1"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-1-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-1:product-pump-lru", supportResourceField: "quantity" },
       { value: "11", type: "number" }
     );
     await runtime.click("[data-project-draft-save]");
@@ -508,9 +561,131 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
     await runtime.setHash("feature=spare-planning-spare-part");
 
     assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层1”的备件数量。/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity" type="number" value="11"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity" type="number" value="11"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
   } finally {
+    runtime.restore();
+  }
+});
+
+test("real Case-large spare edit survives save, display, and fresh runtime rehydrate", async () => {
+  const caseLarge = JSON.parse(fs.readFileSync(new URL("../exports/project-case-large.json", import.meta.url), "utf8"));
+  const projectId = caseLarge.project_id;
+  const backendProjects = [{
+    project_id: projectId,
+    experiment_name: "Case-large",
+    base_code: "RT",
+    summary: "runtime regression",
+    source_import_id: "",
+    updated_at: "2026-07-18 00:00:00"
+  }];
+  const resourceKey = "support-spare:support-org-1783479792728:product-j16-part-0018";
+  const runtime = await setupRuntimeApp({ projectJson: caseLarge, backendProjects });
+  let savedProject;
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash(`feature=spare-planning-spare-part&project=${projectId}`);
+    assert.match(runtime.appNode.innerHTML, new RegExp(`data-support-resource-key="${resourceKey}"[^>]*value="4"`));
+
+    await runtime.change(
+      "[data-support-resource-field]",
+      { supportResourceKey: resourceKey, supportResourceField: "quantity" },
+      { value: "13", type: "number" }
+    );
+    assert.match(runtime.appNode.innerHTML, new RegExp(`data-support-resource-key="${resourceKey}"[^>]*value="13"`));
+    await runtime.click("[data-project-draft-save]");
+    savedProject = await waitForProjectSave(runtime, (body) => (
+      body.project_id === projectId
+      && body.supportResources?.some((resource) => resource.id === resourceKey && resource.quantity === 13)
+    ), "expected Case-large edited spare to save");
+  } finally {
+    runtime.restore();
+  }
+
+  const rehydrated = await setupRuntimeApp({ projectJson: savedProject, backendProjects });
+  try {
+    await rehydrated.click("[data-enter-workbench]", { projectId });
+    await rehydrated.setHash(`feature=spare-planning-spare-part&project=${projectId}`);
+    assert.match(rehydrated.appNode.innerHTML, new RegExp(`data-support-resource-key="${resourceKey}"[^>]*value="13"`));
+  } finally {
+    rehydrated.restore();
+  }
+});
+
+test("in-flight autosave, manual save, and project switch serialize latest revision before hydration", async () => {
+  const projectA = "project-save-queue-a";
+  const projectB = "project-save-queue-b";
+  const firstSave = createRuntimeDeferred();
+  let delayedProjectASave = false;
+  const projectAJson = createRuntimeProjectJson({
+    project_id: projectA,
+    supportOrganization: {
+      tree: { id: "root", name: "保障组织", children: [{ id: "leaf", name: "基层", children: [] }] }
+    },
+    supportNodes: [{ id: "support-leaf", name: "基层", organizationNodeId: "leaf" }],
+    components: [{ id: "pump", name: "液压泵", model: "PUMP-1", productType: "LRU" }],
+    supportResources: []
+  });
+  const projectBJson = createRuntimeProjectJson({ project_id: projectB });
+  const backendProjects = [projectA, projectB].map((projectId) => ({
+    project_id: projectId,
+    experiment_name: projectId,
+    base_code: "RT",
+    summary: "save queue regression",
+    source_import_id: "",
+    updated_at: "2026-07-18 00:00:00"
+  }));
+  const runtime = await setupRuntimeApp({
+    projectJson: projectAJson,
+    projectJsonById: { [projectB]: projectBJson },
+    backendProjects,
+    async projectSaveHandler({ body }) {
+      if (body.project_id === projectA && !delayedProjectASave) {
+        delayedProjectASave = true;
+        await firstSave.promise;
+      }
+    }
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: projectA });
+    await runtime.setHash(`feature=spare-planning-spare-part&project=${projectA}`);
+    const key = "support-spare:leaf:product-pump";
+    await runtime.change("[data-support-resource-field]", { supportResourceKey: key, supportResourceField: "quantity" }, { value: "4", type: "number" });
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    await runtime.flush();
+    assert.equal(projectSaveBodies(runtime).filter((body) => body.project_id === projectA).length, 1);
+
+    await runtime.change("[data-support-resource-field]", { supportResourceKey: key, supportResourceField: "quantity" }, { value: "9", type: "number" });
+    const manualSave = runtime.click("[data-project-draft-save]");
+    const switchProject = runtime.click("[data-enter-workbench]", { projectId: projectB });
+    await runtime.flush();
+    assert.equal(
+      projectSaveBodies(runtime).filter((body) => body.project_id === projectA).length,
+      1,
+      "queued saves must not overtake the in-flight autosave"
+    );
+
+    firstSave.resolve();
+    await Promise.all([manualSave, switchProject]);
+    const quantities = projectSaveBodies(runtime)
+      .filter((body) => body.project_id === projectA)
+      .map((body) => body.supportResources?.find((resource) => resource.id === key)?.quantity);
+    assert.equal(quantities[0], 4);
+    assert.equal(quantities.at(-1), 9);
+    const firstProjectBRead = runtime.requests.findIndex((request) => request.url === `/api/projects/${projectB}`);
+    const lastProjectASave = runtime.requests.reduce((lastIndex, request, index) => {
+      if (request.url !== "/api/projects" || (request.options.method || "GET") !== "POST") return lastIndex;
+      try {
+        return JSON.parse(request.options.body || "{}").project_id === projectA ? index : lastIndex;
+      } catch {
+        return lastIndex;
+      }
+    }, -1);
+    assert.ok(firstProjectBRead > lastProjectASave, "project B must hydrate only after project A's latest revision saves");
+  } finally {
+    firstSave.resolve();
     runtime.restore();
   }
 });
@@ -584,6 +759,66 @@ test("support resource page switch clears stale personnel selection and spare de
   }
 });
 
+test("same-name leaf tombstone and same-label products stay isolated by stable IDs in the UI", async () => {
+  const projectId = "support-spare-stable-ui-identities";
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      project_id: projectId,
+      supportOrganization: {
+        tree: {
+          id: "root",
+          name: "保障组织",
+          children: [
+            { id: "leaf-a", name: "同名基层", children: [] },
+            { id: "leaf-b", name: "同名基层", children: [] }
+          ]
+        }
+      },
+      products: [
+        { id: "product-p1", name: "同标签LRU", model: "SAME", kind: "LRU" },
+        { id: "product-p2", name: "同标签LRU", model: "SAME", kind: "LRU" }
+      ],
+      components: [
+        { id: "lru-p1", name: "同标签LRU", model: "SAME", productId: "product-p1", productType: "LRU" },
+        { id: "lru-p2", name: "同标签LRU", model: "SAME", productId: "product-p2", productType: "LRU" }
+      ],
+      supportResources: [{
+        id: "support-spare-tombstone:leaf-a:product-p1",
+        organizationNodeId: "leaf-a",
+        supportNodeName: "同名基层",
+        type: "spare",
+        productId: "product-p1",
+        name: "同标签LRU",
+        model: "SAME",
+        quantity: 0
+      }]
+    }),
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "Stable identity UI",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "",
+      updated_at: "2026-07-18 00:00:00"
+    }]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash(`feature=spare-planning-spare-part&project=${projectId}`);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:leaf-a:product-p1"/);
+    for (const key of [
+      "support-spare:leaf-a:product-p2",
+      "support-spare:leaf-b:product-p1",
+      "support-spare:leaf-b:product-p2"
+    ]) {
+      assert.match(runtime.appNode.innerHTML, new RegExp(`data-support-resource-key="${key}"`));
+    }
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("support spare batch delete persists a leaf-scoped hardware tombstone through save and fresh rehydrate", async () => {
   const projectId = "support-spare-delete-tombstone-runtime";
   const projectJson = createRuntimeProjectJson({
@@ -622,15 +857,15 @@ test("support spare batch delete persists a leaf-scoped hardware tombstone throu
   try {
     await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-spare-part");
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1"/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru"/);
 
     await runtime.change(
       "[data-support-resource-select]",
-      { supportResourceSelect: "support-resource-1-spare-1" },
+      { supportResourceSelect: "support-spare:base-a:product-pump-lru" },
       { checked: true }
     );
     await runtime.click("[data-support-resource-batch-delete]", { supportResourceBatchDelete: "备件" });
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru"/);
 
     await runtime.click("[data-project-draft-save]");
     savedProject = await waitForProjectSave(runtime, (body) => (
@@ -643,7 +878,7 @@ test("support spare batch delete persists a leaf-scoped hardware tombstone throu
         && resource.quantity === 0
         && resource.productId
       ))
-      && body.supportResources?.every((resource) => resource.id !== "support-resource-1-spare-1")
+      && body.supportResources?.every((resource) => resource.id !== "support-spare:base-a:product-pump-lru")
     ), "expected the deleted hardware spare tombstone and unrelated resources to persist");
   } finally {
     runtime.restore();
@@ -659,7 +894,7 @@ test("support spare batch delete persists a leaf-scoped hardware tombstone throu
     await rehydratedRuntime.click("[data-project-draft-save]");
     const resavedProject = await waitForProjectSave(rehydratedRuntime, (body) => (
       body.supportResources?.some((resource) => resource.id?.startsWith("support-spare-tombstone:"))
-      && body.supportResources?.every((resource) => resource.id !== "support-resource-1-spare-1")
+      && body.supportResources?.every((resource) => resource.id !== "support-spare:base-a:product-pump-lru")
     ), "expected a fresh rehydrate and save not to resurrect the deleted hardware spare");
     assert.equal(resavedProject.supportResources.find((resource) => resource.id === "personnel-a").quantity, 3);
     assert.equal(resavedProject.supportResources.find((resource) => resource.id === "equipment-a").quantity, 2);
@@ -835,38 +1070,38 @@ test("support spare summary stays read-only until a concrete leaf is selected", 
 
     assert.match(runtime.appNode.innerHTML, /请选择具体叶子组织节点后编辑备件数量；当前为汇总视图，所有资源字段只读。/);
     assert.match(runtime.appNode.innerHTML, /class="tree-node-label selected"[^>]*data-select-support-org-node="support-org-root"/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-2-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-b:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-1-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-a:product-pump-lru", supportResourceField: "quantity" },
       { value: "99", type: "number" }
     );
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-a" });
     assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层A”的备件数量。/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity" type="number" value="0"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity" type="number" value="0"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-1-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-a:product-pump-lru", supportResourceField: "quantity" },
       { value: "7", type: "number" }
     );
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-b" });
     assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层B”的备件数量。/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-2-spare-1" data-support-resource-field="quantity" type="number" value="0"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1"/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-b:product-pump-lru" data-support-resource-field="quantity" type="number" value="0"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru"/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-1-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-a:product-pump-lru", supportResourceField: "quantity" },
       { value: "88", type: "number" }
     );
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-2-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-b:product-pump-lru", supportResourceField: "quantity" },
       { value: "5", type: "number" }
     );
 
@@ -880,8 +1115,8 @@ test("support spare summary stays read-only until a concrete leaf is selected", 
 
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "support-org-root" });
     assert.match(runtime.appNode.innerHTML, /汇总视图只读/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-2-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-b:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
   } finally {
     runtime.restore();
   }
@@ -6498,6 +6733,7 @@ async function setupRuntimeApp({
   liteMesaAnalysisResponseDelayMs = 0,
   analysisXlsxExportError = "",
   analysisXlsxExportDelayMs = 0,
+  projectSaveHandler = null,
   aircraftReliabilityHistoryRecords = [],
   backendProjects = [{
     project_id: "project-runtime",
@@ -6521,6 +6757,7 @@ async function setupRuntimeApp({
   const runtimeRuns = new Map();
   const aircraftReliabilityHistory = JSON.parse(JSON.stringify(aircraftReliabilityHistoryRecords));
   let createProjectFromImportCount = 0;
+  let projectSaveCount = 0;
   const storage = new Map([
     ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })],
     ...storageEntries
@@ -6778,6 +7015,8 @@ async function setupRuntimeApp({
     }
 	    if (url === "/api/projects" && method === "POST") {
 	      const body = JSON.parse(options.body || "{}");
+      const saveIndex = projectSaveCount++;
+      if (projectSaveHandler) await projectSaveHandler({ body, saveIndex, requests });
       const projectId = body.project_id || "project-runtime";
       projectPayloads.set(projectId, body);
       const catalogEntry = {
@@ -7005,10 +7244,15 @@ async function setupRuntimeApp({
   };
 
   await import(`../front/app.js?runtime-app=${Date.now()}-${++runtimeImportCounter}`);
+  const hashProjectMatch = String(hash || "").match(/project=([^&]+)/);
+  const hashProjectId = hashProjectMatch ? decodeURIComponent(hashProjectMatch[1]) : "";
+  const bootstrapProjectId = backendProjects.some((project) => project.project_id === hashProjectId)
+    ? hashProjectId
+    : backendProjects[0]?.project_id || projectJson.project_id || "project-runtime";
   await waitForRuntimeAppBootstrap({
     requests,
     hash,
-    projectId: backendProjects[0]?.project_id || projectJson.project_id || "project-runtime",
+    projectId: bootstrapProjectId,
     expectProjectDraft: String(hash || "").includes("feature=") && backendProjects.length > 0
   });
 
@@ -7016,6 +7260,7 @@ async function setupRuntimeApp({
     appNode,
     downloads,
     requests,
+    storage,
     async click(selector, dataset = {}, props = {}) {
       await appListeners.click?.({ target: eventTarget(selector, dataset, props) });
       await flushRuntimeTasks();
