@@ -138,11 +138,17 @@ test("normalizes mission reliability projection payload as mission wave aggregat
     run_id: "run-ui",
     model_family: "aircraft_support_v1",
     data: {
-      mission_success_probability: 0.91,
-      sortie_rate: 0.88,
+      mission_success_probability: 0.8,
+      sortie_rate: 0.8125,
       target_met: true,
-      period_completion_probability: 2 / 3,
-      period_duration_days: 21,
+      period_completion_probability: 0.9225,
+      period_duration_days: 2.125,
+      result_fields: [
+        { key: "sortie_rate", value: 0.8125, display_value: "0.813" },
+        { key: "wave_success_rate", value: 0.8, display_value: "80%" },
+        { key: "period_completion_probability", value: 0.9225, display_value: "92.3%" },
+        { key: "period_duration_days", value: 2.125, display_value: "2.13 天" }
+      ],
       total_samples: 3,
       successful_samples: 2,
       failed_samples: 1,
@@ -157,10 +163,16 @@ test("normalizes mission reliability projection payload as mission wave aggregat
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.deepEqual(view.metrics, [
-    ["任务成功概率", "0.91"],
-    ["出动架次率", "0.88"],
-    ["目标达成", "满足"],
-    ["最大下降波次", "T2 → T3 (-0.08)"]
+    ["出动架次率", "0.812"],
+    ["波次成功率", "80%"],
+    ["整周期任务可靠度", "92.2%"],
+    ["任务周期", "2.12 天"]
+  ]);
+  assert.deepEqual(view.resultFields.map(({ key, displayValue }) => [key, displayValue]), [
+    ["sortie_rate", "0.812"],
+    ["wave_success_rate", "80%"],
+    ["period_completion_probability", "92.2%"],
+    ["period_duration_days", "2.12 天"]
   ]);
   assert.deepEqual(view.steepestDrop, {
     fromIndex: 2,
@@ -169,8 +181,8 @@ test("normalizes mission reliability projection payload as mission wave aggregat
     toTime: "第2天 第1波",
     drop: 0.07999999999999996
   });
-  assert.equal(view.periodCompletionProbability, 2 / 3);
-  assert.equal(view.periodDurationDays, 21);
+  assert.equal(view.periodCompletionProbability, 0.9225);
+  assert.equal(view.periodDurationDays, 2.125);
   assert.equal(view.totalSamples, 3);
   assert.equal(view.successfulSamples, 2);
   assert.equal(view.failedSamples, 1);
