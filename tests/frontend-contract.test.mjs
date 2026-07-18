@@ -1441,7 +1441,7 @@ test("equipment aircraft selection keeps an editable aircraft name row", async (
   assert.match(equipmentSource, /function renderEquipmentAircraftTableRow\(aircraftModel, \{ editable = true \} = \{\}\)/);
   assert.match(equipmentSource, /aria-label="整机名称"/);
   assert.match(appSource, /function importEquipmentStructureTableFile\(file\)/);
-  assert.match(appSource, /function normalizeEquipmentStructureImport\(input\)/);
+  assert.match(appSource, /function normalizeEquipmentStructureImport\(input, products = \[\]\)/);
   assert.match(mutationSource, /function updateEquipmentAircraftModel\(previousModel, nextModelRaw\)/);
   assert.match(appSource, /function commitEquipmentAircraftModelInput\(input\)/);
   assert.match(appSource, /app\.addEventListener\("focusout"/);
