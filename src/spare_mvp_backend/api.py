@@ -17,6 +17,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from src.spare_mvp_backend.analysis_xlsx import AnalysisXlsxError, export_analysis_snapshot_xlsx
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_parallel_cores
@@ -353,6 +354,12 @@ class BackendApi:
             "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "filename": "rms-allocation-result.xlsx",
         }
+
+    def export_analysis_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return export_analysis_snapshot_xlsx(payload)
+        except AnalysisXlsxError as exc:
+            raise BackendApiError("analysis_export_invalid", str(exc)) from exc
 
     def replace_project(
         self,

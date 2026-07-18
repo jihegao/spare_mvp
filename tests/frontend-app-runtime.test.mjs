@@ -1365,6 +1365,7 @@ test("aircraft mission reliability page runs explicitly and exports retained sum
     assert.match(runtime.appNode.innerHTML, /class="page-head-current-context experiment-plan-context-select"/);
     assert.match(runtime.appNode.innerHTML, /飞机任务可靠性评估[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /data-aircraft-reliability-action="run">运行分析<\/button>/);
+    assert.match(runtime.appNode.innerHTML, /data-analysis-xlsx-export="mission-reliability-aircraft-mission-reliability" disabled>导出 Excel<\/button>/);
     assert.match(runtime.appNode.innerHTML, /请选择飞机型号和任务剖面后运行分析/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /整机任务可靠度/);
     await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "run" });
@@ -1375,7 +1376,7 @@ test("aircraft mission reliability page runs explicitly and exports retained sum
     assert.doesNotMatch(runtime.appNode.innerHTML, /依据任务时长和装备可靠性框图|可靠性框图与产品参数自动读取/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /可靠性框图<\/span>[\s\S]*个节点|保存分析结果|导出计算明细 CSV/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /节点名称|节点类型|串并联关系|产品可靠性参数|节点失效概率/);
-    assert.match(runtime.appNode.innerHTML, /data-aircraft-reliability-action="export">导出<\/button>/);
+    assert.match(runtime.appNode.innerHTML, /data-analysis-xlsx-export="mission-reliability-aircraft-mission-reliability"\s*>导出 Excel<\/button>/);
     assert.equal(runtime.requests.some((request) => request.url === "/api/mesa-analysis-runs"), false);
 
     await runtime.change("[data-aircraft-reliability-field]", { aircraftReliabilityField: "durationHours" }, {
@@ -1395,15 +1396,19 @@ test("aircraft mission reliability page runs explicitly and exports retained sum
     ));
     assert.equal(saveRequest, undefined);
 
-    await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "export" });
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-aircraft-mission-reliability" });
     assert.equal(runtime.downloads.length, 1);
-    assert.match(runtime.downloads[0].download, /^aircraft-mission-reliability-J-15\.xlsx$/);
+    assert.match(runtime.downloads[0].download, /^Runtime 项目-飞机任务可靠性评估-\d{8}-\d{6}\.xlsx$/);
     assert.equal(runtime.downloads[0].blob.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    const workbookEntries = storedZipEntries(new Uint8Array(await runtime.downloads[0].blob.arrayBuffer()));
-    const worksheet = workbookEntries.get("xl/worksheets/sheet1.xml");
-    assert.match(worksheet, /任务时长（小时）[\s\S]*<v>10<\/v>/);
-    assert.match(worksheet, /整机任务可靠度[\s\S]*<v>0\.7408182206817178<\/v>/);
-    assert.doesNotMatch(worksheet, /产品 A1|节点名称|串并联关系/);
+    const exportBody = runtime.requests
+      .filter((request) => request.url === "/api/analysis-results/export-xlsx")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(exportBody.analysis_type, "aircraft_mission_reliability");
+    assert.equal(new Map(exportBody.analysis_information).get("运行来源"), "当前项目");
+    assert.equal(exportBody.summary.find(([label]) => label === "任务时长")[1], 10);
+    assert.deepEqual(exportBody.detail_sections[0].columns, ["飞机型号", "任务剖面", "任务时长（小时）", "整机任务可靠度", "整机失效概率", "计算节点"]);
+    assert.doesNotMatch(JSON.stringify(exportBody), /产品 A1|节点名称|串并联关系|rbdSnapshot/);
 
     await runtime.change(
       "[data-current-experiment-plan]",
@@ -1417,6 +1422,74 @@ test("aircraft mission reliability page runs explicitly and exports retained sum
     assert.match(runtime.appNode.innerHTML, /运行上下文已更新，请重新运行/);
     await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "run" });
     assert.match(runtime.appNode.innerHTML, /<strong>0\.905<\/strong>/);
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-aircraft-mission-reliability" });
+    const planExportBody = analysisExportBodies(runtime).at(-1);
+    const planInformation = new Map(planExportBody.analysis_information);
+    assert.equal(planInformation.get("运行来源"), "已保存实验方案");
+    assert.equal(planInformation.get("实验方案名称"), "J-16 可靠性方案");
+    assert.equal(planInformation.get("实验方案 ID"), "plan-reliability-j16");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("aircraft reliability history export keeps its project identity after selecting another plan", async () => {
+  const historyAnalysisId = "analysis-project-a-history";
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-aircraft-mission-reliability",
+    projectJson: createRuntimeProjectJson({ projectInfo: { name: "项目 A" } }),
+    experimentPlans: [{
+      experiment_plan_id: "plan-b-stable-id",
+      status: "draft",
+      config: {
+        name: "方案 B",
+        projectJson: createRuntimeProjectJson({
+          project_id: "project-plan-b",
+          projectInfo: { name: "方案 B 分支项目" }
+        })
+      }
+    }],
+    aircraftReliabilityHistoryRecords: [{
+      analysis_id: historyAnalysisId,
+      project_id: "project-runtime",
+      created_at: "2026-07-17T08:00:00Z",
+      aircraft_model: "J-15",
+      mission_profile_id: "basic-runtime",
+      mission_profile_name: "项目 A 基本任务",
+      duration_hours: 5,
+      aircraft_reliability: 0.9,
+      snapshot: {
+        aircraftModel: "J-15",
+        missionProfile: { id: "basic-runtime", name: "项目 A 基本任务" },
+        durationHours: 5,
+        aircraftReliability: 0.9,
+        failureProbability: 0.1,
+        rows: []
+      }
+    }]
+  });
+
+  try {
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-b-stable-id" });
+    assert.match(runtime.appNode.innerHTML, /方案 B/);
+    await runtime.click(
+      "[data-aircraft-reliability-action]",
+      { aircraftReliabilityAction: "view-history", analysisId: historyAnalysisId }
+    );
+    await runtime.click(
+      "[data-analysis-xlsx-export]",
+      { analysisXlsxExport: "mission-reliability-aircraft-mission-reliability" }
+    );
+
+    const body = analysisExportBodies(runtime).at(-1);
+    const information = new Map(body.analysis_information);
+    assert.equal(body.project_name, "项目 A");
+    assert.equal(information.get("运行来源"), "项目历史记录");
+    assert.equal(information.get("历史项目 ID"), "project-runtime");
+    assert.equal(information.get("历史记录 ID"), historyAnalysisId);
+    assert.equal(information.has("实验方案 ID"), false);
+    assert.doesNotMatch(JSON.stringify(body), /plan-b-stable-id|方案 B 分支项目/);
+    assert.equal(body.summary.find(([label]) => label === "整机任务可靠度")[1], "0.900");
   } finally {
     runtime.restore();
   }
@@ -1600,6 +1673,192 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     const filteredAndSortedRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
     assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO/);
     assert.ok(filteredAndSortedRows.indexOf("发动机控制模块 / EC-15") < filteredAndSortedRows.indexOf("零需求产品 / ZERO"));
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("spare shortfall Excel export uses only the visible aircraft filter and sort snapshot", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis",
+    projectJson: createRuntimeProjectJson({
+      products: [
+        { id: "spare-a", name: "航电模块", model: "A-01" },
+        { id: "spare-b", name: "液压泵", model: "B-01" },
+        { id: "spare-c", name: "起动机", model: "C-01" }
+      ]
+    }),
+    liteMesaAnalysisResponseOverrides: {
+      rows: [
+        { aircraftModel: "J-15", productId: "spare-a", demand: 2, filled: 1, meanTransportDelayHours: 1.5, fillRate: 0.5, riskLevel: "高" },
+        { aircraftModel: "J-15", productId: "spare-b", demand: 5, filled: 4, meanTransportDelayHours: 0.25, fillRate: 0.8, riskLevel: "中" },
+        { aircraftModel: "J-16", productId: "spare-c", demand: 9, filled: 9, meanTransportDelayHours: 0, fillRate: 1, riskLevel: "低" }
+      ]
+    }
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /data-analysis-xlsx-export="spare-planning-spare-shortfall-analysis" disabled>导出 Excel<\/button>/);
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    await runtime.change("[data-spare-aircraft-filter]", {}, { value: "J-15" });
+    await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "desc" });
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "spare-planning-spare-shortfall-analysis" });
+
+    const body = analysisExportBodies(runtime).at(-1);
+    assert.equal(body.analysis_type, "spare_shortfall");
+    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2]]), [
+      ["J-15", "液压泵 / B-01", 5],
+      ["J-15", "航电模块 / A-01", 2]
+    ]);
+    assert.equal(JSON.stringify(body).includes("J-16"), false);
+    assert.equal(runtime.downloads.length, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("carry list Excel export follows aircraft, zero-demand, and recommended-quantity sorting", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-carry-list-analysis",
+    projectJson: createRuntimeProjectJson({
+      products: [
+        { id: "carry-a", name: "航电模块", model: "A-01" },
+        { id: "carry-b", name: "液压泵", model: "B-01" },
+        { id: "carry-zero", name: "零需求件", model: "Z-00" }
+      ]
+    }),
+    liteMesaAnalysisResponseOverrides: {
+      rows: [
+        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, demand: 4, shortage: 1, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
+        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, demand: 3, shortage: 0, lifeLimited: false, riskLevel: "低" },
+        { aircraftModel: "J-15", productId: "carry-zero", recommended: 0, demand: 0, shortage: 0, lifeLimited: false, riskLevel: "低" },
+        { aircraftModel: "J-16", productId: "carry-a", recommended: 1, demand: 1, shortage: 0, lifeLimited: false, riskLevel: "低" }
+      ]
+    }
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    await runtime.change("[data-carry-aircraft-filter]", {}, { value: "J-15" });
+    await runtime.change("[data-carry-hide-zero]", {}, { checked: true, type: "checkbox" });
+    await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "asc" });
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "spare-planning-carry-list-analysis" });
+
+    const body = analysisExportBodies(runtime).at(-1);
+    assert.equal(body.analysis_type, "carry_list");
+    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[5]]), [
+      ["J-15", "液压泵 / B-01", 2, "否"],
+      ["J-15", "航电模块 / A-01", 4, "是"]
+    ]);
+    assert.doesNotMatch(JSON.stringify(body), /J-16|零需求件/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("task reliability Excel export preserves the canonical four result_fields display values", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: {
+      result_fields: [
+        { key: "sortie_rate", label: "出动架次率", value: 0.5015, display_value: "0.502", unit: "" },
+        { key: "wave_success_rate", label: "波次成功率", value: 0.1225, display_value: "12.2%", unit: "%" },
+        { key: "period_completion_probability", label: "整周期任务可靠度", value: 0.667, display_value: "66.7%", unit: "%" },
+        { key: "period_duration_days", label: "任务周期", value: 21.25, display_value: "21.25 天", unit: "天" }
+      ]
+    },
+    analysisXlsxExportDelayMs: 40
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-task-reliability" });
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-task-reliability" });
+    assert.equal(analysisExportBodies(runtime).length, 1, "exporting state must block duplicate requests");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await runtime.flush();
+
+    const body = analysisExportBodies(runtime)[0];
+    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
+    assert.deepEqual(body.summary.map((row) => [row[0], row[1]]), [
+      ["出动架次率", "0.502"],
+      ["波次成功率", "12.2%"],
+      ["整周期任务可靠度", "66.7%"],
+      ["任务周期", "21.25 天"]
+    ]);
+    assert.deepEqual(body.detail_sections[0].rows[0], ["0.502", "12.2%", "66.7%", "21.25 天"]);
+    assert.equal(runtime.downloads.length, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("downtime Excel export reuses localized display rows and the current factor selection", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-downtime-factor-analysis",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: {
+      rows: [
+        { reason: "spare_shortage", count: 1, downtime_hours: 1 },
+        { reason: "failure", count: 1, downtime_hours: 2 }
+      ],
+      event_details: [
+        {
+          factor: "spare_shortage",
+          tail_number: "J15-101",
+          equipment_name: "液压泵",
+          mission_name: "起飞任务",
+          mission_phase: "preflight",
+          support_node_name: "甲板保障点",
+          start_minute: 1441,
+          end_minute: 1501,
+          duration_hours: 1,
+          details: { spare_name: "液压泵", required_quantity: 1, available_quantity: 0 },
+          internal_run_id: "must-not-export",
+          debug: "must-not-export"
+        },
+        { factor: "failure", tail_number: "J15-102", start_minute: 60, end_minute: 180, duration_hours: 2 }
+      ]
+    }
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    for (const factor of ["failure", "equipment_shortage", "preventive"]) {
+      await runtime.change("[data-downtime-factor-filter]", {}, { value: factor, checked: false, type: "checkbox" });
+    }
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-downtime-factor-analysis" });
+
+    const body = analysisExportBodies(runtime).at(-1);
+    const serialized = JSON.stringify(body);
+    assert.equal(body.analysis_type, "downtime_factors");
+    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[1]), ["备件短缺"]);
+    assert.match(serialized, /DAY_2 00:01/);
+    assert.match(serialized, /DAY_2 01:01/);
+    assert.match(serialized, /起飞任务；阶段：飞行前保障/);
+    assert.match(serialized, /当前装备所需备件短缺|飞机J15-101所需备件短缺/);
+    assert.doesNotMatch(serialized, /must-not-export|internal_run_id|debug/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("analysis Excel export stays disabled while running and shows the backend Chinese error", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseDelayMs: 50,
+    analysisXlsxExportError: "工作簿内容校验失败，请调整筛选条件"
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    assert.match(runtime.appNode.innerHTML, /分析运行中/);
+    assert.match(runtime.appNode.innerHTML, /data-analysis-xlsx-export="mission-reliability-task-reliability" disabled>导出 Excel<\/button>/);
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    await runtime.flush();
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-task-reliability" });
+    assert.match(runtime.appNode.innerHTML, /导出失败：[\s\S]*工作簿内容校验失败，请调整筛选条件。请确认后端可用并重试。/);
+    assert.equal(runtime.downloads.length, 0);
   } finally {
     runtime.restore();
   }
@@ -1793,7 +2052,7 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
     assert.match(runtime.appNode.innerHTML, /未记录备件名称/);
     assert.match(runtime.appNode.innerHTML, /液压泵/);
     assert.match(runtime.appNode.innerHTML, /DAY_1 00:42/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /carrier-deck|unknown-resource-id|unknown-product-id|hyd-pump|repair-J15-101|mission_delayed_by_spare_shortage|seed |t=/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /carrier-deck|unknown-resource-id|unknown-product-id|hyd-pump|repair-J15-101|mission_delayed_by_spare_shortage|seed |(?:^|[ >])t=/);
     assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>/);
   } finally {
     runtime.restore();
@@ -5271,6 +5530,10 @@ async function setupRuntimeApp({
   storageEntries = [],
   systemConfigPayload = {},
   liteMesaAnalysisResponseOverrides = {},
+  liteMesaAnalysisResponseDelayMs = 0,
+  analysisXlsxExportError = "",
+  analysisXlsxExportDelayMs = 0,
+  aircraftReliabilityHistoryRecords = [],
   backendProjects = [{
     project_id: "project-runtime",
     experiment_name: "Runtime 项目",
@@ -5291,7 +5554,7 @@ async function setupRuntimeApp({
     ...Object.entries(projectJsonById)
   ]);
   const runtimeRuns = new Map();
-  const aircraftReliabilityHistory = [];
+  const aircraftReliabilityHistory = JSON.parse(JSON.stringify(aircraftReliabilityHistoryRecords));
   let createProjectFromImportCount = 0;
   const storage = new Map([
     ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })],
@@ -5567,6 +5830,9 @@ async function setupRuntimeApp({
 	      return jsonResponse({ project_id: body.project_id || "project-runtime", project_version: "project-v0.1" });
 	    }
 	    if (url === "/api/mesa-analysis-runs" && method === "POST") {
+	      if (liteMesaAnalysisResponseDelayMs > 0) {
+	        await new Promise((resolve) => previousSetTimeout(resolve, liteMesaAnalysisResponseDelayMs));
+	      }
 	      const body = JSON.parse(options.body || "{}");
 	      const analysisType = body.analysis_type || "mission_reliability";
 	      const samples = Number(body.settings?.samples || 2);
@@ -5688,6 +5954,35 @@ async function setupRuntimeApp({
           ...liteMesaAnalysisResponseOverrides
 	      });
 	    }
+    if (url === "/api/analysis-results/export-xlsx" && method === "POST") {
+      if (analysisXlsxExportDelayMs > 0) {
+        await new Promise((resolve) => previousSetTimeout(resolve, analysisXlsxExportDelayMs));
+      }
+      if (analysisXlsxExportError) {
+        return jsonResponse(
+          { code: "analysis_export_invalid", message: analysisXlsxExportError },
+          { ok: false, status: 400 }
+        );
+      }
+      const body = JSON.parse(options.body || "{}");
+      const filename = `${body.project_name || "项目"}-${body.analysis_name || "分析结果"}-20260718-120000.xlsx`;
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get(name) {
+            return String(name).toLowerCase() === "content-disposition"
+              ? `attachment; filename="analysis.xlsx"; filename*=UTF-8''${encodeURIComponent(filename)}`
+              : "";
+          }
+        },
+        async blob() {
+          return new Blob(["PK-runtime-analysis-xlsx"], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          });
+        }
+      };
+    }
 	    if (url === "/api/runs" && method === "POST") {
 	      const body = JSON.parse(options.body || "{}");
       const runId = `formal-runtime-${body.run_type || "single"}-${runtimeRuns.size + 1}`;
@@ -5865,25 +6160,6 @@ function eventTarget(selector, dataset = {}, props = {}) {
   };
 }
 
-function storedZipEntries(bytes) {
-  const entries = new Map();
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const decoder = new TextDecoder();
-  let offset = 0;
-  while (offset + 30 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
-    assert.equal(view.getUint16(offset + 8, true), 0, "test parser expects stored ZIP entries");
-    const compressedSize = view.getUint32(offset + 18, true);
-    const nameLength = view.getUint16(offset + 26, true);
-    const extraLength = view.getUint16(offset + 28, true);
-    const nameStart = offset + 30;
-    const dataStart = nameStart + nameLength + extraLength;
-    const name = decoder.decode(bytes.subarray(nameStart, nameStart + nameLength));
-    entries.set(name, decoder.decode(bytes.subarray(dataStart, dataStart + compressedSize)));
-    offset = dataStart + compressedSize;
-  }
-  return entries;
-}
-
 function htmlSectionByClass(html, className) {
   const match = html.match(new RegExp(`<section class="[^"]*\\b${className}\\b[^"]*">[\\s\\S]*?<\\/section>`));
   assert.ok(match, `expected section with class ${className}`);
@@ -5959,6 +6235,12 @@ function projectSaveBodies(runtime) {
         return {};
       }
     });
+}
+
+function analysisExportBodies(runtime) {
+  return runtime.requests
+    .filter((request) => request.url === "/api/analysis-results/export-xlsx" && (request.options.method || "GET") === "POST")
+    .map((request) => JSON.parse(request.options.body || "{}"));
 }
 
 function createRuntimeProjectJson(overrides = {}) {

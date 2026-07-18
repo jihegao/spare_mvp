@@ -11,7 +11,7 @@ import sqlite3
 import threading
 import traceback
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from uuid import uuid4
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
@@ -188,6 +188,9 @@ def create_backend_server(
             if self.command == "POST" and route == "/rms-allocation/export-xlsx":
                 self._require_user()
                 return {"__file_download__": api.export_rms_allocation_xlsx(body)}
+            if self.command == "POST" and route == "/analysis-results/export-xlsx":
+                self._require_user()
+                return {"__file_download__": api.export_analysis_xlsx(body)}
             if self.command == "GET" and route == "/projects":
                 return api.list_projects()
             if self.command == "GET" and route == "/project-data-templates":
@@ -393,10 +396,18 @@ def create_backend_server(
 
         def _send_file_download(self, status: int, download: dict[str, Any]) -> None:
             data = bytes(download["body"])
+            filename = _safe_download_filename(download["filename"])
+            ascii_filename = "".join(
+                char if 32 <= ord(char) < 127 and char not in {'"', "\\"} else "_"
+                for char in filename
+            ).strip() or "download"
             self.send_response(status)
             self.send_header("content-type", str(download["content_type"]))
             self.send_header("content-length", str(len(data)))
-            self.send_header("content-disposition", f'attachment; filename="{_safe_download_filename(download["filename"])}"')
+            self.send_header(
+                "content-disposition",
+                f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{quote(filename)}',
+            )
             self.send_header("access-control-allow-origin", "*")
             self.end_headers()
             self.wfile.write(data)

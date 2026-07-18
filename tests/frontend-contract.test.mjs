@@ -4066,7 +4066,7 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
   const downtimeSource = await readFile(new URL("../front/downtime-analysis.mjs", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const renderSource = appSource.slice(
-    appSource.indexOf("function renderLiteMesaDowntimeFactorAnalysis"),
+    appSource.indexOf("function visibleDowntimeAnalysisSnapshot"),
     appSource.indexOf("function formatPeriodDurationDays")
   );
   const changeSource = appSource.slice(
@@ -5087,4 +5087,32 @@ test("M9.7.4 docs promote formerly payload-only fields and avoid pending coverag
   assert.doesNotMatch(combined, /components\[\]\.failureDistribution[^。]*(当前只编译进入 payload|只编译进入 payload|留给 M9\.7\.4)/);
   assert.doesNotMatch(combined, /supportNodes\[\]\.transportPolicies[^。]*(当前只编译进入 payload|只编译进入 payload|留给 M9\.7\.4)/);
   assert.doesNotMatch(combined, /supportOrganization[^。]*fail closed/);
+});
+
+test("five result analysis pages share backend XLSX export without a Monte Carlo entry", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const apiSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
+  const aircraftSource = await readFile(new URL("../front/aircraft-mission-reliability.mjs", import.meta.url), "utf8");
+  const exportSource = appSource.slice(
+    appSource.indexOf("function analysisXlsxState"),
+    appSource.indexOf("function renderAircraftMissionReliabilityAnalysis")
+  );
+  const monteCarloSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis(page)"),
+    appSource.indexOf("function normalizeLiteMesaMonteCarloResult")
+  );
+
+  assert.match(appSource, /data-analysis-xlsx-export/);
+  assert.match(exportSource, /result\?\.status !== "session_complete"/);
+  assert.match(exportSource, /state\.status === "exporting"/);
+  assert.match(exportSource, /exportAnalysisXlsx\(payload\)/);
+  assert.match(exportSource, /visibleSpareShortfallRows\(result\)/);
+  assert.match(exportSource, /visibleCarryListRows\(result\)/);
+  assert.match(exportSource, /visibleDowntimeAnalysisSnapshot\(result\)/);
+  assert.match(exportSource, /result\.resultFields \|\| normalizeTaskReliabilityResultFields\(result\)/);
+  assert.match(exportSource, /downtimeEventDisplayRow\(event\)/);
+  assert.match(exportSource, /导出失败：/);
+  assert.match(apiSource, /path: "\/analysis-results\/export-xlsx"[\s\S]*responseType: "download"/);
+  assert.doesNotMatch(monteCarloSource, /data-analysis-xlsx-export|exportAnalysisXlsx/);
+  assert.doesNotMatch(aircraftSource, /aircraftMissionReliabilityResultToXlsx|createStoredZip|xlsxRow/);
 });
