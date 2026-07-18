@@ -144,10 +144,10 @@ test("normalizes mission reliability projection payload as mission wave aggregat
       period_completion_probability: 0.9225,
       period_duration_days: 2.125,
       result_fields: [
-        { key: "sortie_rate", value: 0.8125, display_value: "0.812" },
+        { key: "sortie_rate", value: 0.8125, display_value: "0.813" },
         { key: "wave_success_rate", value: 0.8, display_value: "80%" },
-        { key: "period_completion_probability", value: 0.9225, display_value: "92.2%" },
-        { key: "period_duration_days", value: 2.125, display_value: "2.12 天" }
+        { key: "period_completion_probability", value: 0.9225, display_value: "92.3%" },
+        { key: "period_duration_days", value: 2.125, display_value: "2.13 天" }
       ],
       total_samples: 3,
       successful_samples: 2,

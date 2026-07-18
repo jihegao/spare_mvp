@@ -1549,10 +1549,10 @@ test("task reliability analysis renders the ordered four-field contract and igno
     projectJson: createRuntimeProjectJson(),
     liteMesaAnalysisResponseOverrides: {
       result_fields: [
-        { key: "period_duration_days", value: 2.125, display_value: "2.12 天" },
-        { key: "period_completion_probability", value: 0.9225, display_value: "92.2%" },
+        { key: "period_duration_days", value: 2.125, display_value: "2.13 天" },
+        { key: "period_completion_probability", value: 0.9225, display_value: "92.3%" },
         { key: "wave_success_rate", value: 0.8, display_value: "80%" },
-        { key: "sortie_rate", value: 0.8125, display_value: "0.812" }
+        { key: "sortie_rate", value: 0.8125, display_value: "0.813" }
       ]
     }
   });

@@ -55,7 +55,7 @@ test("preserves validated canonical backend display values at cross-language hal
   assert.deepEqual(taskReliabilityMetricPairs(fields).map(([_label, value]) => value), ["0.812", "80%", "92.2%", "2.12 天"]);
 });
 
-test("uses half-even local fallback when canonical display values are absent or invalid", () => {
+test("uses exact half-even fallback when canonical display values are absent, malformed, or adjacent rounded values", () => {
   const missingCanonical = normalizeTaskReliabilityResultFields({
     sortie_rate: 0.8125,
     wave_success_rate: 0.9225,
@@ -63,6 +63,14 @@ test("uses half-even local fallback when canonical display values are absent or 
     period_duration_days: 2.125
   });
   const invalidCanonical = normalizeTaskReliabilityResultFields({
+    result_fields: [
+      { key: "sortie_rate", value: 0.8125, display_value: "0.813" },
+      { key: "wave_success_rate", value: 0.9225, display_value: "92.3%" },
+      { key: "period_completion_probability", value: 0.9225, display_value: "92.3%" },
+      { key: "period_duration_days", value: 2.125, display_value: "2.13 天" }
+    ]
+  });
+  const malformedCanonical = normalizeTaskReliabilityResultFields({
     result_fields: [
       { key: "sortie_rate", value: 0.8125, display_value: "<script>" },
       { key: "wave_success_rate", value: 0.9225, display_value: "192.2%" },
@@ -73,4 +81,23 @@ test("uses half-even local fallback when canonical display values are absent or 
 
   assert.deepEqual(missingCanonical.map(({ displayValue }) => displayValue), ["0.812", "92.2%", "92.2%", "2.12 天"]);
   assert.deepEqual(invalidCanonical.map(({ displayValue }) => displayValue), ["0.812", "92.2%", "92.2%", "2.12 天"]);
+  assert.deepEqual(malformedCanonical.map(({ displayValue }) => displayValue), ["0.812", "92.2%", "92.2%", "2.12 天"]);
+});
+
+test("formats decimal half-even values consistently at binary, negative, zero, and upper boundaries", () => {
+  const fields = normalizeTaskReliabilityResultFields({
+    result_fields: [
+      { key: "sortie_rate", value: -0.8125, display_value: "-0.812" },
+      { key: "wave_success_rate", value: 0, display_value: "0%" },
+      { key: "period_completion_probability", value: 1, display_value: "100%" },
+      { key: "period_duration_days", value: 2.675, display_value: "2.68 天" }
+    ]
+  });
+
+  assert.deepEqual(fields.map(({ value, displayValue, unit }) => [value, displayValue, unit]), [
+    [-0.8125, "-0.812", ""],
+    [0, "0%", "%"],
+    [1, "100%", "%"],
+    [2.675, "2.68 天", "天"]
+  ]);
 });

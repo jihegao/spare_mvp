@@ -141,23 +141,15 @@ function trimmedDecimal(value, digits) {
 function canonicalDisplayValue(key, field, value) {
   const displayValue = String(field?.display_value ?? field?.displayValue ?? "").trim();
   if (!displayValue) return null;
-  if (key === "period_duration_days" && value === null) return displayValue === "--" ? displayValue : null;
-  const parsed = numericValue(displayValue);
-  if (value === null || parsed === null) return null;
+  let expectedDisplayValue = null;
   if (key === "sortie_rate") {
-    return /^\d+\.\d{3}$/.test(displayValue) && nearlyEqual(parsed, value, 0.0005) ? displayValue : null;
+    expectedDisplayValue = formatSortieRate(value);
+  } else if (key === "wave_success_rate" || key === "period_completion_probability") {
+    expectedDisplayValue = formatReliabilityPercent(value);
+  } else if (key === "period_duration_days") {
+    expectedDisplayValue = formatTaskPeriodDays(value);
   }
-  if (key === "wave_success_rate" || key === "period_completion_probability") {
-    return /^\d+(?:\.\d)?%$/.test(displayValue) && nearlyEqual(parsed, value, 0.0005) ? displayValue : null;
-  }
-  if (key === "period_duration_days") {
-    return /^\d+(?:\.\d{1,2})? 天$/.test(displayValue) && nearlyEqual(parsed, value, 0.005) ? displayValue : null;
-  }
-  return null;
-}
-
-function nearlyEqual(left, right, tolerance) {
-  return Math.abs(Number(left) - Number(right)) <= tolerance + Number.EPSILON * 8;
+  return displayValue === expectedDisplayValue ? displayValue : null;
 }
 
 function roundHalfEven(value, digits) {

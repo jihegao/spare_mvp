@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any
 
 
@@ -30,7 +31,7 @@ def build_task_reliability_result_fields(
             "key": "sortie_rate",
             "label": "出动架次率",
             "value": sortie,
-            "display_value": f"{sortie:.3f}",
+            "display_value": _fixed_half_even(sortie, 3),
             "unit": "",
         },
         {
@@ -74,8 +75,7 @@ def format_reliability_percent(value: Any) -> str:
         numeric = _number(value)
         if abs(numeric) <= 1:
             numeric *= 100
-    rounded = round(numeric, 1)
-    text = f"{rounded:.1f}".rstrip("0").rstrip(".")
+    text = _trimmed_half_even(numeric, 1)
     return f"{text}%"
 
 
@@ -83,8 +83,17 @@ def format_task_period_days(value: Any) -> str:
     duration = _positive_number_or_none(value)
     if duration is None:
         return "--"
-    text = f"{duration:.2f}".rstrip("0").rstrip(".")
+    text = _trimmed_half_even(duration, 2)
     return f"{text} 天"
+
+
+def _fixed_half_even(value: Any, digits: int) -> str:
+    quantum = Decimal(1).scaleb(-digits)
+    return format(Decimal(str(_number(value))).quantize(quantum, rounding=ROUND_HALF_EVEN), f".{digits}f")
+
+
+def _trimmed_half_even(value: Any, digits: int) -> str:
+    return _fixed_half_even(value, digits).rstrip("0").rstrip(".")
 
 
 def _ratio(value: Any) -> float:

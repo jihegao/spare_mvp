@@ -2754,6 +2754,17 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual([field["display_value"] for field in fields], ["0.812", "80%", "92.2%", "2.12 天"])
 
+    def test_task_reliability_result_fields_use_decimal_half_even_at_binary_negative_and_ratio_boundaries(self) -> None:
+        fields = build_task_reliability_result_fields(
+            sortie_rate=-0.8125,
+            wave_success_rate=0,
+            period_completion_probability=1,
+            period_duration_days=2.675,
+        )
+
+        self.assertEqual([field["display_value"] for field in fields], ["-0.812", "0%", "100%", "2.68 天"])
+        self.assertEqual([field["unit"] for field in fields], ["", "%", "%", "天"])
+
     def test_lite_mesa_spare_shortfall_reports_transport_delay_hours_and_repair_cancellations(self) -> None:
         result = _lite_mesa_spare_shortfall_result(
             {
