@@ -115,8 +115,8 @@ test("normalizes carry list projection payload for formal KPI and table renderin
     run_id: "run-ui",
     model_family: "aircraft_support_v1",
     data: [
-      { product_id: "product-engine", spare_type: "engine", recommended_multiplier: 1.4, risk_level: "high" },
-      { product_id: "product-hydraulic", spare_type: "hydraulic", recommended_multiplier: 1.1, risk_level: "medium" }
+      { product_id: "product-engine", spare_type: "engine", recommended_multiplier: 1.4, utilization: 2, risk_level: "high" },
+      { product_id: "product-hydraulic", spare_type: "hydraulic", recommended_multiplier: 1.1, utilization: null, risk_level: "medium" }
     ]
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
@@ -130,6 +130,8 @@ test("normalizes carry list projection payload for formal KPI and table renderin
   assert.equal(view.rows[0].priority, "高");
   assert.equal(view.rows[0].productId, "product-engine");
   assert.equal(view.rows[0].qty, 2);
+  assert.equal(view.rows[0].utilization, 2);
+  assert.equal(view.rows[1].utilization, null);
 });
 
 test("normalizes mission reliability projection payload as mission wave aggregates for formal KPI and trend rendering", () => {
