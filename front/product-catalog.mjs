@@ -143,6 +143,28 @@ export function createProjectProduct(project, draft = {}) {
   return product;
 }
 
+export function searchProjectProducts(project, query = "") {
+  const normalizedQuery = cleanText(query).toLocaleLowerCase();
+  const products = Array.isArray(project?.products) ? project.products : [];
+  if (!normalizedQuery) return [...products];
+  return products.filter((product) => [product?.id, product?.name, product?.model]
+    .some((value) => cleanText(value).toLocaleLowerCase().includes(normalizedQuery)));
+}
+
+export function findProjectProductConflicts(project, draft = {}) {
+  const name = cleanText(draft.name).toLocaleLowerCase();
+  const model = cleanText(draft.model).toLocaleLowerCase();
+  const products = Array.isArray(project?.products) ? project.products : [];
+  return {
+    nameMatches: name
+      ? products.filter((product) => cleanText(product?.name).toLocaleLowerCase() === name)
+      : [],
+    modelMatches: model
+      ? products.filter((product) => cleanText(product?.model).toLocaleLowerCase() === model)
+      : []
+  };
+}
+
 export function projectProductById(project, productId) {
   normalizeProjectProducts(project);
   return project.products.find((item) => item.id === productId) || null;

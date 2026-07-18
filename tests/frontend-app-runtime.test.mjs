@@ -3187,10 +3187,105 @@ test("equipment TSV and JSON imports preserve aliases, multiline values, root pr
   }
 });
 
-test("equipment product search waits for Enter or focusout before filtering", async () => {
+test("equipment product combobox searches by ID, name, and model with keyboard and mouse selection", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
       equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
+      products: [
+        { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" },
+        { id: "product-radar", name: "雷达产品", model: "RADAR", kind: "LRU" },
+        { id: "product-avionics", name: "航电产品", model: "AVIONICS", kind: "SRU" }
+      ],
+      components: [
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
+        { id: "avionics-system", name: "航电系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-avionics", productType: "SRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(runtime, /data-equipment-product-combobox="engine-system"/, "equipment product combobox should be available");
+    assert.match(runtime.appNode.innerHTML, /role="combobox"[\s\S]*?aria-expanded="false"[\s\S]*?data-equipment-product-combobox="engine-system"/);
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-engine">发动机产品 \/ ENGINE \/ product-engine/);
+    await runtime.click("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" });
+
+    let editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /发动机产品/);
+    assert.match(editorHtml, /雷达产品/);
+    assert.match(editorHtml, /航电产品/);
+    assert.match(runtime.appNode.innerHTML, /aria-expanded="true"[\s\S]*?aria-controls="equipment-product-options-0"/);
+    assert.match(editorHtml, /role="listbox" aria-label="产品候选项"/);
+
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "雷达" }
+    );
+    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /雷达产品/);
+    assert.doesNotMatch(editorHtml, /发动机产品|航电产品/);
+
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "product-avionics" }
+    );
+    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /航电产品/);
+    assert.doesNotMatch(editorHtml, /发动机产品|雷达产品/);
+
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "ENGINE" }
+    );
+    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
+    assert.match(editorHtml, /发动机产品/);
+    assert.doesNotMatch(editorHtml, /雷达产品|航电产品/);
+
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "产品" }
+    );
+    let keyPrevented = false;
+    await runtime.keydown("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" }, {
+      key: "ArrowDown",
+      preventDefault() { keyPrevented = true; }
+    });
+    assert.equal(keyPrevented, true);
+    assert.match(runtime.appNode.innerHTML, /aria-activedescendant="equipment-product-options-0-option-1"/);
+    await runtime.keydown("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" }, {
+      key: "Enter"
+    });
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-radar">雷达产品 \/ RADAR \/ product-radar/);
+
+    await runtime.click("[data-equipment-product-combobox]", { equipmentProductCombobox: "avionics-system" });
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "avionics-system" },
+      { value: "RADAR" }
+    );
+    await runtime.click("[data-equipment-product-select]", { equipmentProductSelect: "product-radar" });
+    assert.match(runtime.appNode.innerHTML, /已关联产品：雷达产品 \/ RADAR \/ product-radar/);
+
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.components?.filter((component) => component.productId === "product-radar").length === 2
+    ), "shared exact productId selections should save");
+    assert.equal(savedProject.products.find((product) => product.id === "product-radar").name, "雷达产品");
+    assert.equal(savedProject.products.find((product) => product.id === "product-radar").model, "RADAR");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment product combobox waits for Chinese IME composition before filtering or selecting", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
       products: [
         { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" },
         { id: "product-radar", name: "雷达产品", model: "RADAR", kind: "LRU" }
@@ -3204,39 +3299,213 @@ test("equipment product search waits for Enter or focusout before filtering", as
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
-    await waitForRuntimeHtml(runtime, /data-equipment-product-edit="engine-system"/, "equipment product editor should be available");
-    await runtime.click("[data-equipment-product-edit]", { equipmentProductEdit: "engine-system" });
+    await runtime.click("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" });
+    await runtime.compositionstart(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "l" }
+    );
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "雷", isComposing: true }
+    );
+    await runtime.keydown(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { key: "Enter", isComposing: true }
+    );
+    assert.match(runtime.appNode.innerHTML, /发动机产品/);
+    assert.match(runtime.appNode.innerHTML, /雷达产品/);
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-engine"/);
 
-    let editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
-    assert.match(editorHtml, /发动机产品/);
+    await runtime.compositionend(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "雷达" }
+    );
+    const editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
     assert.match(editorHtml, /雷达产品/);
-
-    await runtime.input("[data-equipment-product-query]", {}, { value: "雷达" });
-    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
-    assert.match(editorHtml, /发动机产品/);
-    assert.match(editorHtml, /雷达产品/);
-
-    let enterPrevented = false;
-    await runtime.keydown("[data-equipment-product-query]", {}, {
-      key: "Enter",
-      value: "雷达",
-      preventDefault() { enterPrevented = true; }
-    });
-    assert.equal(enterPrevented, true);
-    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
     assert.doesNotMatch(editorHtml, /发动机产品/);
-    assert.match(editorHtml, /雷达产品/);
-    assert.match(editorHtml, /value="雷达"[^>]*data-equipment-product-query/);
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-engine"/);
 
-    await runtime.input("[data-equipment-product-query]", {}, { value: "发动机" });
-    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
-    assert.match(editorHtml, /雷达产品/);
-    await runtime.focusout("[data-equipment-product-query]", {}, { value: "发动机" });
-    editorHtml = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("data-equipment-product-editor"));
-    assert.match(editorHtml, /发动机产品/);
-    assert.doesNotMatch(editorHtml, /雷达产品/);
+    await runtime.keydown(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { key: "Enter" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-radar"/);
   } finally {
     runtime.restore();
+  }
+});
+
+test("equipment product combobox rejects free text, empty creation, duplicates, and cancel without mutation", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      products: [
+        { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" },
+        { id: "product-radar", name: "雷达产品", model: "RADAR", kind: "LRU" },
+        { id: "product-component-model", name: "组件型号占用产品", model: "engine-system", kind: "SRU" }
+      ],
+      components: [
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" });
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "不存在的自由文本" }
+    );
+    await runtime.keydown("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" }, { key: "Enter" });
+    assert.match(runtime.appNode.innerHTML, /自由文本不会写入产品 ID/);
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-engine"/);
+
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "" }
+    );
+    await runtime.click("[data-equipment-product-create-open]");
+    await runtime.click("[data-equipment-product-create]");
+    assert.match(runtime.appNode.innerHTML, /产品名称不能为空，未创建新产品/);
+
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "name" }, { value: "发动机产品" });
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "ENGINE-NEW" });
+    await runtime.click("[data-equipment-product-create]");
+    assert.match(runtime.appNode.innerHTML, /发现同名产品/);
+    assert.match(runtime.appNode.innerHTML, /请选择已有产品，未创建重复项/);
+
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "name" }, { value: "新名称" });
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "RADAR" });
+    await runtime.click("[data-equipment-product-create]");
+    assert.match(runtime.appNode.innerHTML, /发现同型号产品/);
+
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "name" }, { value: "回填型号冲突产品" });
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "   " });
+    await runtime.click("[data-equipment-product-create]");
+    assert.match(runtime.appNode.innerHTML, /发现同型号产品/);
+    assert.match(runtime.appNode.innerHTML, /组件型号占用产品 \/ engine-system \/ product-component-model/);
+
+    await runtime.click("[data-equipment-product-create-cancel]");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-equipment-product-create-panel/);
+    await runtime.keydown("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" }, { key: "Escape" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-equipment-product-editor/);
+
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.components?.some((component) => component.id === "engine-system" && component.productId === "product-engine")
+    ), "cancelled or invalid product edits should preserve the original productId");
+    assert.equal(savedProject.products.find((product) => product.id === "product-engine").name, "发动机产品");
+    assert.equal(savedProject.products.find((product) => product.id === "product-radar").model, "RADAR");
+    assert.equal(savedProject.products.find((product) => product.id === "product-component-model").model, "engine-system");
+    assert.equal(savedProject.products.some((product) => /不存在的自由文本|新名称|回填型号冲突产品/.test(product.name)), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment product creation trims a blank model before falling back to the component ID", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      products: [
+        { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" }
+      ],
+      components: [
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" });
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "新雷达" }
+    );
+    await runtime.click("[data-equipment-product-create-open]");
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "   " });
+    await runtime.click("[data-equipment-product-create]");
+
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-新雷达">新雷达 \/ engine-system \/ product-新雷达/);
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.components?.some((component) => component.id === "engine-system" && component.productId === "product-新雷达")
+        && body.products?.some((product) => product.id === "product-新雷达" && product.model === "engine-system")
+    ), "blank product model should fall back to the component ID before creation");
+    assert.equal(savedProject.products.find((product) => product.id === "product-engine").model, "ENGINE");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment product creation uses a collision-safe ID and rehydrates after Project save", async () => {
+  const sourceProducts = [
+    { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" },
+    { id: "product-新雷达", name: "占位目录项", model: "OLD", kind: "LRU" }
+  ];
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      products: sourceProducts,
+      components: [
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+  let savedProject;
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" });
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "新雷达" }
+    );
+    await runtime.click("[data-equipment-product-create-open]");
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "RAD-NEW" });
+    await runtime.change("select[data-equipment-product-draft]", { equipmentProductDraft: "kind" }, { value: "SRU" });
+    await runtime.click("[data-equipment-product-create]");
+
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-新雷达-2">新雷达 \/ RAD-NEW \/ product-新雷达-2/);
+    assert.match(runtime.appNode.innerHTML, /已创建并关联产品：新雷达 \/ RAD-NEW \/ product-新雷达-2/);
+    await runtime.click("[data-project-draft-save]");
+    savedProject = await waitForProjectSave(runtime, (body) => (
+      body.components?.some((component) => component.id === "engine-system" && component.productId === "product-新雷达-2")
+        && body.products?.some((product) => product.id === "product-新雷达-2" && product.kind === "SRU")
+    ), "created product and exact component productId should save");
+    assert.deepEqual(
+      savedProject.products.find((product) => product.id === "product-新雷达"),
+      sourceProducts.find((product) => product.id === "product-新雷达")
+    );
+  } finally {
+    runtime.restore();
+  }
+
+  const rehydratedRuntime = await setupRuntimeApp({ projectJson: savedProject });
+  try {
+    await rehydratedRuntime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await rehydratedRuntime.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(
+      rehydratedRuntime,
+      /data-equipment-product-current="product-新雷达-2">新雷达 \/ RAD-NEW \/ product-新雷达-2/,
+      "saved created product should rehydrate by exact productId"
+    );
+  } finally {
+    rehydratedRuntime.restore();
   }
 });
 
@@ -6463,13 +6732,29 @@ async function setupRuntimeApp({
       await flushRuntimeTasks();
     },
     async input(selector, dataset = {}, props = {}) {
-      await appListeners.input?.({ target: eventTarget(selector, dataset, props) });
+      await appListeners.input?.({
+        isComposing: Boolean(props.isComposing),
+        target: eventTarget(selector, dataset, props)
+      });
       await flushRuntimeTasks();
     },
     async keydown(selector, dataset = {}, props = {}) {
       await appListeners.keydown?.({
         key: props.key || "",
+        isComposing: Boolean(props.isComposing),
         preventDefault: props.preventDefault || (() => {}),
+        target: eventTarget(selector, dataset, props)
+      });
+      await flushRuntimeTasks();
+    },
+    async compositionstart(selector, dataset = {}, props = {}) {
+      await appListeners.compositionstart?.({
+        target: eventTarget(selector, dataset, props)
+      });
+      await flushRuntimeTasks();
+    },
+    async compositionend(selector, dataset = {}, props = {}) {
+      await appListeners.compositionend?.({
         target: eventTarget(selector, dataset, props)
       });
       await flushRuntimeTasks();

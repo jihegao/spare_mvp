@@ -2157,6 +2157,112 @@ select[multiple].table-edit-select {
   font-size: 12px;
 }
 
+.equipment-product-combobox-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 240px;
+}
+
+.equipment-product-combobox-cell input[role="combobox"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.equipment-product-current {
+  max-width: 240px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.equipment-product-combobox-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.equipment-product-combobox-panel > .section-head,
+.equipment-product-create-panel > .section-head {
+  margin-bottom: 0;
+}
+
+.equipment-product-result-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.equipment-product-options {
+  display: grid;
+  gap: 6px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.equipment-product-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  width: 100%;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.equipment-product-option strong,
+.equipment-product-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.equipment-product-option span {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.equipment-product-option em {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-style: normal;
+}
+
+.equipment-product-option.is-active,
+.equipment-product-option:focus-visible {
+  border-color: var(--primary);
+  outline: 2px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  outline-offset: 1px;
+  background: var(--primary-soft);
+}
+
+.equipment-product-empty {
+  margin: 8px;
+}
+
+.equipment-product-create-open {
+  justify-self: start;
+}
+
+.equipment-product-create-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.equipment-product-create-actions {
+  margin-bottom: 0;
+}
+
 .equipment-param-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(92px, 1fr));
