@@ -13674,7 +13674,7 @@ function ensureRmsAllocationStateForScenario() {
       : baseProject.rootId;
     const savedResult = savedResultEnvelope.byAircraftModel?.[aircraftModel];
     const completedResult = rmsResultMatchesCurrentState(savedResult, plan, baseProject)
-      ? normalizeRmsResultMetricSnapshots(savedResult)
+      ? normalizeRmsResultMetricSnapshots(savedResult, plan, baseProject)
       : null;
     rmsAircraftStates[aircraftModel] = {
       project: baseProject,
@@ -13731,21 +13731,14 @@ function rmsResultMatchesCurrentState(result, plan, project) {
   });
 }
 
-function normalizeRmsResultMetricSnapshots(result) {
-  const mtbfHours = Number(result?.inputSnapshot?.mtbfHours);
-  const mttrHours = Number(result?.inputSnapshot?.mttrHours);
-  return {
-    ...result,
-    nodeResults: (result?.nodeResults || []).map((row) => ({
-      ...row,
-      mtbfHours: Number.isFinite(Number(row.mtbfHours)) && Number(row.mtbfHours) > 0
-        ? Number(row.mtbfHours)
-        : mtbfHours,
-      mttrHours: Number.isFinite(Number(row.mttrHours)) && Number(row.mttrHours) >= 0
-        ? Number(row.mttrHours)
-        : mttrHours
-    }))
-  };
+function normalizeRmsResultMetricSnapshots(result, plan, project) {
+  const hasFormulaMetrics = result?.algorithmVersion === plan.algorithmVersion
+    && (result?.nodeResults || []).every((row) => (
+      Object.hasOwn(row, "failureRate")
+      && Object.hasOwn(row, "mtbfHours")
+      && Object.hasOwn(row, "mttrHours")
+    ));
+  return hasFormulaMetrics ? result : calculateRmsAllocation(plan, project);
 }
 
 function selectRmsAircraftModel(aircraftModel) {

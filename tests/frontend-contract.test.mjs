@@ -4398,7 +4398,8 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.ok(workbenchSource.indexOf("装备结构树") < workbenchSource.indexOf("RMS 输入与指标分配计算"));
   assert.ok(workbenchSource.indexOf("RMS 输入与指标分配计算") < workbenchSource.indexOf("<h3>节点分配结果</h3>"));
   assert.match(workbenchSource, /运行比/);
-  assert.match(workbenchSource, /<th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th>/);
+  assert.match(workbenchSource, /<th>层级<\/th><th>节点<\/th><th>运行比<\/th><th>失效率<\/th><th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th>/);
+  assert.match(workbenchSource, /compactNumber\(row\.failureRate, 8\)/);
   assert.match(workbenchSource, /compactNumber\(row\.mtbfHours\)/);
   assert.match(workbenchSource, /compactNumber\(row\.mttrHours\)/);
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
@@ -4488,7 +4489,8 @@ test("RMS allocation workbench renders parameters for only the selected method",
   assert.doesNotMatch(equalHtml, /暴露时间/);
   assert.doesNotMatch(equalHtml, /目标 R|校核可靠度|MTBCF|MTTR 裕度/);
   assert.match(equalHtml, /运行比<\/th>/);
-  assert.match(equalHtml, /分配份额/);
+  assert.match(equalHtml, /失效率/);
+  assert.doesNotMatch(equalHtml, /分配份额/);
   assert.match(equalHtml, /任务计算机LRU/);
   assert.match(equalHtml, /运行比 0\.65/);
   assert.match(equalHtml, /value="0\.65"/);

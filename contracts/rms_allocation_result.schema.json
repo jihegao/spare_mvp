@@ -31,7 +31,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "mtbfHours", "mttrHours", "allocationShare", "status"],
+        "required": ["nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "failureRate", "mtbfHours", "mttrHours", "allocationShare", "status"],
         "properties": {
           "nodeId": { "type": "string", "minLength": 1 },
           "nodeName": { "type": "string", "minLength": 1 },
@@ -39,8 +39,9 @@
           "model": { "type": "string" },
           "installationCount": { "type": "integer", "minimum": 1 },
           "runningRatio": { "type": "number", "minimum": 0, "maximum": 1 },
-          "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
-          "mttrHours": { "type": "number", "minimum": 0 },
+          "failureRate": { "type": "number", "minimum": 0 },
+          "mtbfHours": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+          "mttrHours": { "type": ["number", "null"], "minimum": 0 },
           "allocationShare": { "type": "number", "minimum": 0, "maximum": 1 },
           "status": { "type": "string" }
         }

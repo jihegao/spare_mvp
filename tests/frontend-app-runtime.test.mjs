@@ -3618,9 +3618,9 @@ test("RMS method changes invalidate the current aircraft result until recalculat
     await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
     await new Promise((resolve) => setTimeout(resolve, 2050));
     const initialResultPanel = htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel");
-    assert.match(initialResultPanel, /25%/);
-    assert.match(initialResultPanel, /<th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th>/);
-    assert.match(initialResultPanel, /<td>1000<\/td>\s*<td>2<\/td>\s*<td>25%<\/td>/);
+    assert.match(initialResultPanel, /<th>失效率<\/th><th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th>/);
+    assert.doesNotMatch(initialResultPanel, /分配份额|25%/);
+    assert.match(initialResultPanel, /<td>4000<\/td>/);
 
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
 
@@ -3638,7 +3638,7 @@ test("RMS method changes invalidate the current aircraft result until recalculat
     await new Promise((resolve) => setTimeout(resolve, 2050));
 
     assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
-    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /<th>失效率<\/th>/);
   } finally {
     runtime.restore();
   }
@@ -3796,8 +3796,8 @@ test("RMS per-aircraft inputs, tree selection and saved results hydrate without 
     assert.match(runtime.appNode.innerHTML, /data-rms-path="inputs\.missionReliability"[^>]*value="0\.91"/);
     assert.match(runtime.appNode.innerHTML, /tree-node-label selected" data-rms-equipment-node="rms:J-15:j15-engine"/);
     const restoredResultPanel = htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel");
-    assert.match(restoredResultPanel, /40%/);
-    assert.match(restoredResultPanel, /<td>1000<\/td>\s*<td>2<\/td>\s*<td>40%<\/td>/);
+    assert.match(restoredResultPanel, /<th>失效率<\/th><th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th>/);
+    assert.doesNotMatch(restoredResultPanel, /分配份额|40%/);
 
     await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-20" });
     assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
@@ -3814,10 +3814,17 @@ test("RMS per-aircraft inputs, tree selection and saved results hydrate without 
     assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs.mtbfHours, 1250);
     assert.equal("criticalFailureRatio" in saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs, false);
     assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.schemaVersion, "rms-allocation-plan-v4");
-    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.algorithmVersion, "rms-engine-4.0.0");
+    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.algorithmVersion, "rms-engine-4.1.0");
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-15"].aircraftModel, "J-15");
-    assert.ok(saved.rmsAllocationResult.byAircraftModel["J-15"].nodeResults.every((row) => row.mtbfHours === 1000));
-    assert.ok(saved.rmsAllocationResult.byAircraftModel["J-15"].nodeResults.every((row) => row.mttrHours === 2));
+    const j15Rows = saved.rmsAllocationResult.byAircraftModel["J-15"].nodeResults;
+    assert.ok(j15Rows.every((row) => Number.isFinite(row.failureRate) && row.mtbfHours > 0 && row.mttrHours >= 0));
+    assert.ok(j15Rows.some((row) => row.mtbfHours !== 1000));
+    assert.ok(Math.abs(j15Rows.reduce((sum, row) => sum + row.runningRatio * row.failureRate, 0) - 0.001) < 1e-9);
+    assert.ok(Math.abs(
+      j15Rows.reduce((sum, row) => sum + row.failureRate * row.mttrHours, 0)
+        / j15Rows.reduce((sum, row) => sum + row.failureRate, 0)
+        - 2
+    ) < 1e-9);
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-20"], undefined);
   } finally {
     runtime.restore();
@@ -3830,7 +3837,7 @@ test("RMS input changes clear only the current aircraft result and block empty e
     projectJson: createPersistedRmsRuntimeProjectJson()
   });
   try {
-    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /<th>失效率<\/th>/);
     await runtime.change("[data-rms-path]", { rmsPath: "inputs.mtbfHours" }, { value: "1325", type: "number" });
 
     assert.match(runtime.appNode.innerHTML, /data-rms-calculation-status="not-calculated"[^>]*>未计算/);
@@ -3857,7 +3864,7 @@ test("RMS equipment node edits invalidate the current aircraft result", async ()
     projectJson: createPersistedRmsRuntimeProjectJson()
   });
   try {
-    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /<th>失效率<\/th>/);
     await runtime.change("[data-rms-equipment-field]", {
       rmsEquipmentNodeId: "rms:J-15:j15-engine",
       rmsEquipmentField: "quantity"
