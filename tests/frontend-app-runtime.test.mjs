@@ -2254,63 +2254,19 @@ test("aircraft mission reliability page runs explicitly and exports retained sum
   }
 });
 
-test("aircraft reliability history export keeps its project identity after selecting another plan", async () => {
-  const historyAnalysisId = "analysis-project-a-history";
+test("aircraft reliability page omits history UI and requests while retaining current analysis controls", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-aircraft-mission-reliability",
-    projectJson: createRuntimeProjectJson({ projectInfo: { name: "项目 A" } }),
-    experimentPlans: [{
-      experiment_plan_id: "plan-b-stable-id",
-      status: "draft",
-      config: {
-        name: "方案 B",
-        projectJson: createRuntimeProjectJson({
-          project_id: "project-plan-b",
-          projectInfo: { name: "方案 B 分支项目" }
-        })
-      }
-    }],
-    aircraftReliabilityHistoryRecords: [{
-      analysis_id: historyAnalysisId,
-      project_id: "project-runtime",
-      created_at: "2026-07-17T08:00:00Z",
-      aircraft_model: "J-15",
-      mission_profile_id: "basic-runtime",
-      mission_profile_name: "项目 A 基本任务",
-      duration_hours: 5,
-      aircraft_reliability: 0.9,
-      snapshot: {
-        aircraftModel: "J-15",
-        missionProfile: { id: "basic-runtime", name: "项目 A 基本任务" },
-        durationHours: 5,
-        aircraftReliability: 0.9,
-        failureProbability: 0.1,
-        rows: []
-      }
-    }]
+    projectJson: createRuntimeProjectJson({ projectInfo: { name: "项目 A" } })
   });
 
   try {
-    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-b-stable-id" });
-    assert.match(runtime.appNode.innerHTML, /方案 B/);
-    await runtime.click(
-      "[data-aircraft-reliability-action]",
-      { aircraftReliabilityAction: "view-history", analysisId: historyAnalysisId }
-    );
-    await runtime.click(
-      "[data-analysis-xlsx-export]",
-      { analysisXlsxExport: "mission-reliability-aircraft-mission-reliability" }
-    );
-
-    const body = analysisExportBodies(runtime).at(-1);
-    const information = new Map(body.analysis_information);
-    assert.equal(body.project_name, "项目 A");
-    assert.equal(information.get("运行来源"), "项目历史记录");
-    assert.equal(information.get("历史项目 ID"), "project-runtime");
-    assert.equal(information.get("历史记录 ID"), historyAnalysisId);
-    assert.equal(information.has("实验方案 ID"), false);
-    assert.doesNotMatch(JSON.stringify(body), /plan-b-stable-id|方案 B 分支项目/);
-    assert.equal(body.summary.find(([label]) => label === "整机任务可靠度")[1], "0.900");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /历史分析记录|正在读取历史记录|暂无已保存的历史分析|view-history/);
+    assert.equal(runtime.requests.some((request) => (
+      request.url === "/api/projects/project-runtime/aircraft-mission-reliability-analyses"
+    )), false);
+    assert.match(runtime.appNode.innerHTML, /data-aircraft-reliability-action="run">运行分析<\/button>/);
+    assert.match(runtime.appNode.innerHTML, /data-analysis-xlsx-export="mission-reliability-aircraft-mission-reliability"/);
   } finally {
     runtime.restore();
   }
@@ -6852,7 +6808,6 @@ async function setupRuntimeApp({
   analysisXlsxExportError = "",
   analysisXlsxExportDelayMs = 0,
   projectSaveHandler = null,
-  aircraftReliabilityHistoryRecords = [],
   backendProjects = [{
     project_id: "project-runtime",
     experiment_name: "Runtime 项目",
@@ -6873,7 +6828,6 @@ async function setupRuntimeApp({
     ...Object.entries(projectJsonById)
   ]);
   const runtimeRuns = new Map();
-  const aircraftReliabilityHistory = JSON.parse(JSON.stringify(aircraftReliabilityHistoryRecords));
   let createProjectFromImportCount = 0;
   let projectSaveCount = 0;
   const storage = new Map([
@@ -7057,29 +7011,6 @@ async function setupRuntimeApp({
         decodeURIComponent(currentAnalysisMatch[1]),
         decodeURIComponent(currentAnalysisMatch[2])
       ));
-    }
-    const aircraftReliabilityHistoryMatch = url.match(/^\/api\/projects\/([^/]+)\/aircraft-mission-reliability-analyses$/);
-    if (aircraftReliabilityHistoryMatch && method === "GET") {
-      return jsonResponse({
-        project_id: decodeURIComponent(aircraftReliabilityHistoryMatch[1]),
-        analyses: aircraftReliabilityHistory
-      });
-    }
-    if (aircraftReliabilityHistoryMatch && method === "POST") {
-      const body = JSON.parse(options.body || "{}");
-      const record = {
-        analysis_id: `analysis-runtime-${aircraftReliabilityHistory.length + 1}`,
-        project_id: decodeURIComponent(aircraftReliabilityHistoryMatch[1]),
-        aircraft_model: body.aircraftModel,
-        mission_profile_id: body.missionProfileId,
-        mission_profile_name: body.missionProfileName,
-        duration_hours: body.durationHours,
-        aircraft_reliability: body.aircraftReliability,
-        snapshot: body.snapshot,
-        created_at: "2026-07-16T00:00:00Z"
-      };
-      aircraftReliabilityHistory.unshift(record);
-      return jsonResponse(record);
     }
     const modelingImportMatch = url.match(/^\/api\/modeling-imports\/([^/]+)$/);
     if (modelingImportMatch && method === "GET") {

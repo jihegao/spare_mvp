@@ -1753,10 +1753,7 @@ function bindEvents() {
 
     const aircraftReliabilityAction = event.target.closest("[data-aircraft-reliability-action]");
     if (aircraftReliabilityAction) {
-      handleAircraftMissionReliabilityAction(
-        aircraftReliabilityAction.dataset.aircraftReliabilityAction,
-        aircraftReliabilityAction.dataset.analysisId || ""
-      ).finally(() => render());
+      handleAircraftMissionReliabilityAction(aircraftReliabilityAction.dataset.aircraftReliabilityAction).finally(() => render());
       return;
     }
 
@@ -11461,31 +11458,6 @@ function captureAnalysisSourceIdentity() {
   return { kind: "current-project", projectName, projectId };
 }
 
-function historicalAnalysisSourceIdentity(record, snapshot = {}) {
-  const recordProjectId = String(record?.project_id || record?.projectId || "").trim();
-  const embedded = snapshot?.analysisSource;
-  if (
-    embedded?.kind === "experiment-plan"
-    && String(embedded.experimentPlanId || "").trim()
-    && String(embedded.projectId || "").trim() === recordProjectId
-  ) {
-    return {
-      ...embedded,
-      kind: "experiment-plan-history",
-      historyAnalysisId: String(record?.analysis_id || record?.analysisId || "").trim(),
-      historyCreatedAt: record?.created_at || record?.createdAt || ""
-    };
-  }
-  const projectJson = currentProjectJsonForExperimentContext();
-  return {
-    kind: "project-history",
-    projectName: String(projectJson.projectInfo?.name || currentProject?.name || "未命名项目").trim(),
-    projectId: recordProjectId,
-    historyAnalysisId: String(record?.analysis_id || record?.analysisId || "").trim(),
-    historyCreatedAt: record?.created_at || record?.createdAt || ""
-  };
-}
-
 async function resolveSelectedExperimentPlanProjectJsonForRun() {
   const context = selectedExperimentPlanContext();
   const projectJson = selectedExperimentPlanProjectJson();
@@ -11595,8 +11567,6 @@ function invalidateSelectedRunContextResults(message) {
   analysisXlsxExportState = {};
   aircraftMissionReliabilityState.result = null;
   aircraftMissionReliabilityState.status = message;
-  aircraftMissionReliabilityState.actionStatus = "";
-  aircraftMissionReliabilityState.viewingHistoryId = "";
 }
 
 function selectedRunContextRequestFingerprint() {
@@ -11667,8 +11637,6 @@ function selectCurrentExperimentPlan(planKey) {
   liteMesaAnalysisResults = {};
   aircraftMissionReliabilityState.result = null;
   aircraftMissionReliabilityState.status = "运行上下文已更新，请重新运行。";
-  aircraftMissionReliabilityState.actionStatus = "";
-  aircraftMissionReliabilityState.viewingHistoryId = "";
   const planRunSettings = selectedExperimentPlanRunSettings();
   liteMesaMonteCarloSettings = {
     samples: Number(planRunSettings.samples) > 0 ? Number(planRunSettings.samples) : 4,
@@ -18422,12 +18390,7 @@ function createAircraftMissionReliabilityState() {
     missionProfileId: "",
     durationHours: "",
     result: null,
-    status: "等待运行：请选择飞机型号和任务剖面后运行分析。",
-    actionStatus: "",
-    viewingHistoryId: "",
-    history: [],
-    historyLoaded: false,
-    historyLoading: false
+    status: "等待运行：请选择飞机型号和任务剖面后运行分析。"
   };
 }
 
@@ -18506,13 +18469,11 @@ function updateAircraftMissionReliabilityInput(field, value) {
     aircraftMissionReliabilityState.durationHours = value;
   }
   aircraftMissionReliabilityState.result = null;
-  aircraftMissionReliabilityState.actionStatus = "";
-  aircraftMissionReliabilityState.viewingHistoryId = "";
   aircraftMissionReliabilityState.status = "分析输入已更新，请重新运行。";
   setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
 }
 
-async function handleAircraftMissionReliabilityAction(action, analysisId = "") {
+async function handleAircraftMissionReliabilityAction(action) {
   if (action === "run") {
     setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
     const result = calculateAircraftMissionReliability(
@@ -18520,49 +18481,7 @@ async function handleAircraftMissionReliabilityAction(action, analysisId = "") {
       captureAnalysisSourceIdentity()
     );
     aircraftMissionReliabilityState.result = result?.ok ? result : null;
-    aircraftMissionReliabilityState.actionStatus = result?.ok ? "分析完成。" : "分析未完成，请检查输入与建模数据。";
-    aircraftMissionReliabilityState.viewingHistoryId = "";
-    return;
   }
-  if (action === "view-history") {
-    const record = aircraftMissionReliabilityState.history.find((item) => String(item.analysis_id || item.analysisId) === analysisId);
-    const snapshot = record?.snapshot || record?.snapshot_json || record?.result || null;
-    if (snapshot && typeof snapshot === "object") {
-      aircraftMissionReliabilityState.result = {
-        ...snapshot,
-        ok: true,
-        analyzedAt: snapshot.analyzedAt || snapshot.analyzed_at || record?.created_at || record?.createdAt || "",
-        analysisSource: historicalAnalysisSourceIdentity(record, snapshot)
-      };
-      aircraftMissionReliabilityState.aircraftModel = snapshot.aircraftModel || snapshot.aircraft_model || aircraftMissionReliabilityState.aircraftModel;
-      aircraftMissionReliabilityState.missionProfileId = snapshot.missionProfile?.id || snapshot.mission_profile_id || aircraftMissionReliabilityState.missionProfileId;
-      aircraftMissionReliabilityState.durationHours = snapshot.durationHours || snapshot.duration_hours || aircraftMissionReliabilityState.durationHours;
-      aircraftMissionReliabilityState.viewingHistoryId = analysisId;
-      aircraftMissionReliabilityState.status = `正在查看历史分析 ${analysisId}`;
-    }
-  }
-}
-
-function ensureAircraftMissionReliabilityHistoryLoaded() {
-  if (aircraftMissionReliabilityState.historyLoaded || aircraftMissionReliabilityState.historyLoading || !backendAuthToken) return;
-  const projectId = savedProject?.project_id || currentBackendProjectId();
-  if (!projectId) return;
-  aircraftMissionReliabilityState.historyLoading = true;
-  backendApi.listAircraftMissionReliabilityAnalyses(projectId)
-    .then((response) => {
-      aircraftMissionReliabilityState.history = Array.isArray(response)
-        ? response
-        : (response?.analyses || response?.records || []);
-      aircraftMissionReliabilityState.historyLoaded = true;
-    })
-    .catch((err) => {
-      aircraftMissionReliabilityState.actionStatus = `历史记录读取失败：${formatBackendError(err)}`;
-      aircraftMissionReliabilityState.historyLoaded = true;
-    })
-    .finally(() => {
-      aircraftMissionReliabilityState.historyLoading = false;
-      render();
-    });
 }
 
 function analysisXlsxState(page = getFeaturePageById(selectedFeatureId)) {
@@ -18853,7 +18772,6 @@ function renderAircraftMissionReliabilityAnalysis() {
   const options = normalizedAircraftMissionReliabilityOptions(projectJson);
   const missions = ensureAircraftMissionReliabilitySelection(options);
   const result = aircraftMissionReliabilityState.result;
-  ensureAircraftMissionReliabilityHistoryLoaded();
   return `
     <div class="lite-mesa-workbench aircraft-mission-reliability-page">
       <section class="lite-mesa-hero">
@@ -18881,7 +18799,6 @@ function renderAircraftMissionReliabilityAnalysis() {
         </div>
       </section>
       ${renderAircraftMissionReliabilityResult(result)}
-      ${renderAircraftMissionReliabilityHistory()}
     </div>
   `;
 }
@@ -18902,19 +18819,6 @@ function renderAircraftMissionReliabilityResult(result) {
         <div class="metric-card"><span>计算节点</span><strong>${Array.isArray(result.rows) ? result.rows.length : 0}</strong><em>整机 / 系统 / 分系统 / 产品</em></div>
       </div>
       ${renderAnalysisXlsxExportControl(getFeaturePageById(selectedFeatureId), result)}
-    </section>
-  `;
-}
-
-function renderAircraftMissionReliabilityHistory() {
-  const history = aircraftMissionReliabilityState.history || [];
-  return `
-    <section class="lite-mesa-stat-section">
-      <div class="section-head"><h3>历史分析记录</h3><span>读取当前项目已有的可靠性分析快照</span></div>
-      ${aircraftMissionReliabilityState.historyLoading ? `<div class="empty-state"><strong>正在读取历史记录</strong></div>` : history.length ? `
-        <div class="table-wrap"><table><thead><tr><th>保存时间</th><th>飞机型号</th><th>任务剖面</th><th>任务时长</th><th>整机可靠度</th><th>记录查看</th></tr></thead><tbody>
-          ${history.map((record) => `<tr><td>${htmlEscape(record.created_at || record.createdAt || "")}</td><td>${htmlEscape(record.aircraft_model || record.aircraftModel || "")}</td><td>${htmlEscape(record.mission_profile_name || record.missionProfileName || "")}</td><td>${htmlEscape(record.duration_hours || record.durationHours || "")} h</td><td>${Number(record.aircraft_reliability ?? record.aircraftReliability ?? 0).toFixed(3)}</td><td><button type="button" data-aircraft-reliability-action="view-history" data-analysis-id="${htmlEscape(record.analysis_id || record.analysisId || "")}">查看</button></td></tr>`).join("")}
-        </tbody></table></div>` : `<div class="empty-state"><strong>暂无已保存的历史分析</strong></div>`}
     </section>
   `;
 }
