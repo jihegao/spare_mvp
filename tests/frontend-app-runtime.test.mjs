@@ -2536,7 +2536,7 @@ test("equipment product combobox rejects free text, empty creation, duplicates, 
     assert.match(runtime.appNode.innerHTML, /发现同型号产品/);
 
     await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "name" }, { value: "回填型号冲突产品" });
-    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "" });
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "   " });
     await runtime.click("[data-equipment-product-create]");
     assert.match(runtime.appNode.innerHTML, /发现同型号产品/);
     assert.match(runtime.appNode.innerHTML, /组件型号占用产品 \/ engine-system \/ product-component-model/);
@@ -2554,6 +2554,44 @@ test("equipment product combobox rejects free text, empty creation, duplicates, 
     assert.equal(savedProject.products.find((product) => product.id === "product-radar").model, "RADAR");
     assert.equal(savedProject.products.find((product) => product.id === "product-component-model").model, "engine-system");
     assert.equal(savedProject.products.some((product) => /不存在的自由文本|新名称|回填型号冲突产品/.test(product.name)), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment product creation trims a blank model before falling back to the component ID", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      products: [
+        { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" }
+      ],
+      components: [
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-equipment-product-combobox]", { equipmentProductCombobox: "engine-system" });
+    await runtime.input(
+      "[data-equipment-product-combobox]",
+      { equipmentProductCombobox: "engine-system" },
+      { value: "新雷达" }
+    );
+    await runtime.click("[data-equipment-product-create-open]");
+    await runtime.input("[data-equipment-product-draft]", { equipmentProductDraft: "model" }, { value: "   " });
+    await runtime.click("[data-equipment-product-create]");
+
+    assert.match(runtime.appNode.innerHTML, /data-equipment-product-current="product-新雷达">新雷达 \/ engine-system \/ product-新雷达/);
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.components?.some((component) => component.id === "engine-system" && component.productId === "product-新雷达")
+        && body.products?.some((product) => product.id === "product-新雷达" && product.model === "engine-system")
+    ), "blank product model should fall back to the component ID before creation");
+    assert.equal(savedProject.products.find((product) => product.id === "product-engine").model, "ENGINE");
   } finally {
     runtime.restore();
   }

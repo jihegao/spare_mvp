@@ -1608,7 +1608,8 @@ test("equipment product field is an exact-ID accessible combobox with explicit d
   assert.match(behaviorSource, /const normalizedDraft = normalizedEquipmentProductCreationDraft\(component\)/);
   assert.match(behaviorSource, /findProjectProductConflicts\(scenario, normalizedDraft\)/);
   assert.match(behaviorSource, /createProjectProduct\(scenario, normalizedDraft\)/);
-  assert.match(behaviorSource, /model: String\(draft\?\.model \|\| component\?\.id \|\| ""\)\.trim\(\)/);
+  assert.match(behaviorSource, /const normalizedModel = String\(draft\?\.model \|\| ""\)\.trim\(\)/);
+  assert.match(behaviorSource, /model: normalizedModel \|\| String\(component\?\.id \|\| ""\)\.trim\(\)/);
   assert.match(behaviorSource, /conflicts\.nameMatches/);
   assert.match(behaviorSource, /conflicts\.modelMatches/);
   assert.match(behaviorSource, /请选择已有产品，未创建重复项/);

@@ -6577,10 +6577,11 @@ function createAndBindEquipmentProduct(componentId) {
 }
 
 function normalizedEquipmentProductCreationDraft(component, draft = equipmentProductDraft) {
+  const normalizedModel = String(draft?.model || "").trim();
   return {
     ...draft,
     name: String(draft?.name || "").trim(),
-    model: String(draft?.model || component?.id || "").trim(),
+    model: normalizedModel || String(component?.id || "").trim(),
     kind: String(draft?.kind || "LRU").trim() || "LRU"
   };
 }
