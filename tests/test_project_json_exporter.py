@@ -462,6 +462,26 @@ class ProjectJsonExporterTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate product id product-whole-aircraft"):
             ProjectJsonExporter(target="aircraft_support_v1").export(duplicate)
 
+    def test_export_preserves_zero_quantity_spare_tombstone_as_schema_compatible_inventory(self) -> None:
+        project = self._polluted_project()
+        project["supportResources"][2] = {
+            "id": "support-spare-tombstone:org-line:product-whole-aircraft",
+            "supportNodeName": "node A",
+            "type": "spare",
+            "name": "whole aircraft",
+            "model": "whole aircraft",
+            "productId": "product-whole-aircraft",
+            "quantity": 0,
+        }
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        tombstone = next(resource for resource in clean["supportResources"] if resource["id"].startswith("support-spare-tombstone:"))
+        self.assertEqual(tombstone["type"], "spare")
+        self.assertEqual(tombstone["productId"], "product-whole-aircraft")
+        self.assertEqual(tombstone["quantity"], 0)
+        self.assertEqual(self._schema_errors(clean), [])
+
     def test_exporter_materializes_legacy_activity_applicability_on_jobs(self) -> None:
         project = self._polluted_project()
         project["supportActivities"][0]["aircraftModel"] = "J-15"

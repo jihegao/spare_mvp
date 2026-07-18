@@ -148,6 +148,7 @@ const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModel
 const RUN_CONTEXT_STORAGE_KEY = "spare-mvp:selectedRunContextByProject";
 const SYSTEM_RUNTIME_CONFIG_KEY = "system-runtime-support";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
+const SUPPORT_SPARE_TOMBSTONE_ID_PREFIX = "support-spare-tombstone:";
 let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
@@ -7558,9 +7559,20 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
 
   const targetOrgNames = new Set(targetOrgNodes.map((node) => String(node.name || node.id || "").trim()).filter(Boolean));
   const targetOrgIds = new Set(targetOrgNodes.map((node) => String(node.id || "").trim()).filter(Boolean));
+  const targetTombstones = scenario.supportResources
+    .filter((resource) => isDeletedSupportSpareResource(resource))
+    .filter((resource) => targetOrgNodes.some((orgNode) => supportSpareTombstoneBelongsToOrg(resource, orgNode)))
+    .map((resource) => {
+      const orgNode = targetOrgNodes.find((node) => supportSpareTombstoneBelongsToOrg(resource, node));
+      return {
+        ...resource,
+        organizationNodeId: orgNode?.id || resource.organizationNodeId || "",
+        supportNodeName: orgNode?.name || orgNode?.id || resource.supportNodeName || ""
+      };
+    });
   const existingSpareByKey = new Map();
   for (const resource of scenario.supportResources) {
-    if (!isSpareSupportResource(resource)) continue;
+    if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
     const key = supportSpareResourceIdentityKey(
       resource.supportNodeName,
       resource.name,
@@ -7579,11 +7591,12 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
 
   const nextTargetSpares = targetOrgNodes.flatMap((orgNode, orgIndex) => {
     const nodeName = String(orgNode.name || orgNode.id || "保障节点").trim();
-    return hardwareSpares.map((spare, spareIndex) => {
+    return hardwareSpares.flatMap((spare, spareIndex) => {
+      if (targetTombstones.some((resource) => supportSpareTombstoneMatches(resource, orgNode, spare))) return [];
       const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.aircraft);
       const fallbackKey = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, "");
       const existing = existingSpareByKey.get(key) || existingSpareByKey.get(fallbackKey);
-      return {
+      return [{
         id: String(existing?.id || `support-resource-${orgIndex + 1}-spare-${spareIndex + 1}`),
         organizationNodeId: orgNode.id || "",
         supportNodeName: nodeName,
@@ -7593,7 +7606,7 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
         model: spare.model,
         equipment: spare.aircraft || "",
         quantity: Math.max(0, Number(existing?.quantity ?? 0) || 0)
-      };
+      }];
     });
   });
 
@@ -7604,6 +7617,7 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
       const nodeId = String(resource.organizationNodeId || "").trim();
       return !targetOrgNames.has(nodeName) && !targetOrgIds.has(nodeId);
     }),
+    ...targetTombstones,
     ...nextTargetSpares
   ];
 }
@@ -7612,6 +7626,42 @@ function isSpareSupportResource(resource) {
   const type = String(resource?.type || "").trim().toLowerCase();
   return resource && typeof resource === "object" && !Array.isArray(resource)
     && (type === "spare" || type === "备件");
+}
+
+function isDeletedSupportSpareResource(resource) {
+  return isSpareSupportResource(resource)
+    && String(resource.id || "").startsWith(SUPPORT_SPARE_TOMBSTONE_ID_PREFIX);
+}
+
+function supportSpareTombstoneId(orgNode, resource) {
+  const orgId = String(orgNode?.id || orgNode?.name || "").trim();
+  const productIdentity = String(resource?.productId || "").trim()
+    || supportSpareResourceIdentityKey("", resource?.name, resource?.model, "");
+  return `${SUPPORT_SPARE_TOMBSTONE_ID_PREFIX}${encodeURIComponent(orgId)}:${encodeURIComponent(productIdentity)}`;
+}
+
+function supportSpareTombstoneBelongsToOrg(resource, orgNode) {
+  const orgId = String(orgNode?.id || orgNode?.name || "").trim();
+  return isDeletedSupportSpareResource(resource)
+    && String(resource.id || "").startsWith(`${SUPPORT_SPARE_TOMBSTONE_ID_PREFIX}${encodeURIComponent(orgId)}:`);
+}
+
+function supportSpareTombstoneMatches(resource, orgNode, spare) {
+  return supportSpareTombstoneBelongsToOrg(resource, orgNode)
+    && String(resource.productId || "").trim() === String(spare?.productId || "").trim();
+}
+
+function createDeletedSupportSpareResource(resource, orgNode) {
+  return {
+    id: supportSpareTombstoneId(orgNode, resource),
+    organizationNodeId: orgNode?.id || "",
+    supportNodeName: orgNode?.name || orgNode?.id || resource.supportNodeName || "",
+    type: "spare",
+    productId: resource.productId || "",
+    name: resource.name || resource.model || resource.productId || "已删除备件",
+    model: resource.model || resource.name || resource.productId || "已删除备件",
+    quantity: 0
+  };
 }
 
 function supportSpareResourceIdentityKey(nodeName, name, model, equipment) {
@@ -7706,7 +7756,9 @@ function supportResourceRowsForOrg(activeResourceType, orgNode) {
 }
 
 function supportResourceDeletedKeySet() {
-  return new Set();
+  return new Set((scenario.supportResources || [])
+    .filter((resource) => isDeletedSupportSpareResource(resource))
+    .map((resource) => String(resource.id || "")));
 }
 
 function supportResourceInput(row, fieldName, type = "text", disabled = false) {
@@ -7869,6 +7921,7 @@ function deleteSelectedSupportResources() {
     return false;
   }
   let deleted = false;
+  const deletedSpareTombstones = [];
   if (Array.isArray(scenario.supportResources)) {
     scenario.supportResources = scenario.supportResources.filter((resource) => {
       const selected = selectedSupportResourceKeys.has(resource.id);
@@ -7877,10 +7930,18 @@ function deleteSelectedSupportResources() {
         || supportResourceBelongsToOrg(resource, selectedSpareOrgNode);
       if (selected && matchingType && matchingSpareOrg) {
         deleted = true;
+        if (activeResourceType === "备件") {
+          deletedSpareTombstones.push(createDeletedSupportSpareResource(resource, selectedSpareOrgNode));
+        }
         return false;
       }
       return true;
     });
+    for (const tombstone of deletedSpareTombstones) {
+      if (!scenario.supportResources.some((resource) => resource.id === tombstone.id)) {
+        scenario.supportResources.push(tombstone);
+      }
+    }
   }
   selectedSupportResourceKeys = new Set();
   if (deleted) updatePreviewResultsThroughApiClient();

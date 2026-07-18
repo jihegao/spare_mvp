@@ -584,6 +584,114 @@ test("support resource page switch clears stale personnel selection and spare de
   }
 });
 
+test("support spare batch delete persists a leaf-scoped hardware tombstone through save and fresh rehydrate", async () => {
+  const projectId = "support-spare-delete-tombstone-runtime";
+  const projectJson = createRuntimeProjectJson({
+    project_id: projectId,
+    supportOrganization: {
+      tree: {
+        id: "support-org-root",
+        name: "保障组织",
+        children: [{ id: "base-a", name: "基层A", children: [] }]
+      }
+    },
+    supportNodes: [{ id: "support-node-base-a", name: "基层A", organizationNodeId: "base-a" }],
+    components: [{
+      id: "pump-lru",
+      name: "液压泵",
+      model: "PUMP-1",
+      aircraftModel: "J-15",
+      productType: "LRU"
+    }],
+    supportResources: [
+      { id: "personnel-a", organizationNodeId: "base-a", supportNodeName: "基层A", type: "personnel", name: "机务人员", model: "机械", quantity: 3 },
+      { id: "equipment-a", organizationNodeId: "base-a", supportNodeName: "基层A", type: "equipment", name: "保障车", model: "EQ-1", quantity: 2 }
+    ]
+  });
+  const backendProjects = [{
+    project_id: projectId,
+    experiment_name: "备件删除墓碑项目",
+    base_code: "RT",
+    summary: "runtime test",
+    source_import_id: "",
+    updated_at: "2026-07-18 00:00:00"
+  }];
+  const runtime = await setupRuntimeApp({ projectJson, backendProjects });
+  let savedProject;
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-spare-part");
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1"/);
+
+    await runtime.change(
+      "[data-support-resource-select]",
+      { supportResourceSelect: "support-resource-1-spare-1" },
+      { checked: true }
+    );
+    await runtime.click("[data-support-resource-batch-delete]", { supportResourceBatchDelete: "备件" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1"/);
+
+    await runtime.click("[data-project-draft-save]");
+    savedProject = await waitForProjectSave(runtime, (body) => (
+      body.project_id === projectId
+      && body.supportResources?.some((resource) => resource.id === "personnel-a" && resource.quantity === 3)
+      && body.supportResources?.some((resource) => resource.id === "equipment-a" && resource.quantity === 2)
+      && body.supportResources?.some((resource) => (
+        resource.id?.startsWith("support-spare-tombstone:")
+        && resource.type === "spare"
+        && resource.quantity === 0
+        && resource.productId
+      ))
+      && body.supportResources?.every((resource) => resource.id !== "support-resource-1-spare-1")
+    ), "expected the deleted hardware spare tombstone and unrelated resources to persist");
+  } finally {
+    runtime.restore();
+  }
+
+  const rehydratedRuntime = await setupRuntimeApp({ projectJson: savedProject, backendProjects });
+  try {
+    await rehydratedRuntime.click("[data-enter-workbench]", { projectId });
+    await rehydratedRuntime.setHash("feature=spare-planning-spare-part");
+    assert.doesNotMatch(rehydratedRuntime.appNode.innerHTML, /data-support-resource-field="quantity"/);
+    assert.doesNotMatch(rehydratedRuntime.appNode.innerHTML, /液压泵/);
+
+    await rehydratedRuntime.click("[data-project-draft-save]");
+    const resavedProject = await waitForProjectSave(rehydratedRuntime, (body) => (
+      body.supportResources?.some((resource) => resource.id?.startsWith("support-spare-tombstone:"))
+      && body.supportResources?.every((resource) => resource.id !== "support-resource-1-spare-1")
+    ), "expected a fresh rehydrate and save not to resurrect the deleted hardware spare");
+    assert.equal(resavedProject.supportResources.find((resource) => resource.id === "personnel-a").quantity, 3);
+    assert.equal(resavedProject.supportResources.find((resource) => resource.id === "equipment-a").quantity, 2);
+
+    await rehydratedRuntime.change(
+      "[data-support-resource-import-file]",
+      { supportResourceImportFile: "备件" },
+      { files: [{
+        name: "restore-spare.json",
+        async text() {
+          return JSON.stringify([{
+            organizationNodeId: "base-a",
+            name: "液压泵",
+            model: "PUMP-1",
+            equipment: "J-15",
+            quantity: 4
+          }]);
+        }
+      }] }
+    );
+    assert.match(rehydratedRuntime.appNode.innerHTML, /data-support-resource-field="quantity" type="number" value="4"/);
+    await rehydratedRuntime.click("[data-project-draft-save]");
+    const restoredProject = await waitForProjectSave(rehydratedRuntime, (body) => (
+      body.supportResources?.some((resource) => resource.type === "spare" && resource.quantity === 4)
+      && body.supportResources?.every((resource) => !resource.id?.startsWith("support-spare-tombstone:"))
+    ), "expected an explicit selected-leaf import to restore the deleted spare and clear its tombstone");
+    assert.equal(restoredProject.supportResources.find((resource) => resource.type === "spare").quantity, 4);
+  } finally {
+    rehydratedRuntime.restore();
+  }
+});
+
 test("support spare import rejects root and locked writes and binds cross-leaf rows to the selected leaf", async () => {
   const projectId = "support-spare-import-boundary-runtime";
   const runtime = await setupRuntimeApp({

@@ -1020,6 +1020,9 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(appSource, /function updateSupportResourceOverride/);
   assert.match(appSource, /function resetSupportResourceSelectionForFeatureChange/);
   assert.match(appSource, /function selectedEditableSpareSupportOrgNode/);
+  assert.match(appSource, /const SUPPORT_SPARE_TOMBSTONE_ID_PREFIX = "support-spare-tombstone:"/);
+  assert.match(appSource, /function supportResourceDeletedKeySet/);
+  assert.match(appSource, /filter\(\(resource\) => isDeletedSupportSpareResource\(resource\)\)/);
   assert.match(appSource, /scenario\.supportResources/);
   assert.doesNotMatch(appSource, /scenario\.supportResourceOverrides/);
   assert.doesNotMatch(appSource, /scenario\.deletedSupportResourceKeys/);
@@ -1042,6 +1045,7 @@ test("support organization and activity pages follow ship_front tree table edito
   );
   assert.match(spareDeleteSource, /supportResourceTypeLabel\(resource\.type\) === activeResourceType/);
   assert.match(spareDeleteSource, /supportResourceBelongsToOrg\(resource, selectedSpareOrgNode\)/);
+  assert.match(spareDeleteSource, /createDeletedSupportSpareResource\(resource, selectedSpareOrgNode\)/);
   assert.match(spareDeleteSource, /currentModelingPageLocked\(page\)/);
 
   const spareImportSource = appSource.slice(
