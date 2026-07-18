@@ -6464,6 +6464,15 @@ function renderEquipmentModeling(page) {
             <button type="button" class="btn-danger" data-equipment-delete-node ${selectedState.kind === "aircraft-list" ? "disabled" : ""}>删除</button>
           </div>
         </div>
+        <section class="equipment-tree-data-panel" aria-labelledby="equipment-tree-data-title">
+          <h5 id="equipment-tree-data-title">装备结构数据</h5>
+          <div class="equipment-import-row" role="group" aria-label="装备结构数据导入与导出">
+            <button type="button" class="equipment-template-action" data-equipment-download-template>下载模板</button>
+            <button type="button" class="equipment-template-action" data-equipment-export-data>导出当前机型</button>
+            <label class="equipment-template-action">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
+          </div>
+          <p class="rms-import-status" role="status" aria-live="polite">${htmlEscape(equipmentImportStatus)}</p>
+        </section>
         <label class="equipment-tree-search">搜索名称<input data-equipment-search value="${htmlEscape(equipmentSearchQuery)}" placeholder="输入系统或组件名称"></label>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
       </aside>
@@ -6472,12 +6481,6 @@ function renderEquipmentModeling(page) {
           <div class="section-head">
             <h3>装备系统建模</h3>
             <span>${htmlEscape(equipmentSelectionSummary(selectedState, visibleRowCount))}</span>
-          </div>
-          <div class="equipment-import-row">
-            <button type="button" class="equipment-template-action" data-equipment-download-template>下载模板</button>
-            <button type="button" class="equipment-template-action" data-equipment-export-data>导出当前机型</button>
-            <label class="equipment-template-action">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
-            <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
           ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState, productsById) : importedDataEmptyState(page.name || "装备系统建模")}
           ${equipmentProductEditorComponentId ? renderEquipmentProductEditor() : ""}

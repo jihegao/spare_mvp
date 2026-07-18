@@ -2095,12 +2095,19 @@ test("equipment parent node selector uses Chinese names while retaining parent I
     );
     await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
 
-    const rightPanel = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("equipment-system-table-panel"));
+    const equipmentHtml = runtime.appNode.innerHTML;
+    const treePanel = equipmentHtml.slice(
+      equipmentHtml.indexOf('<aside class="tree-container">'),
+      equipmentHtml.indexOf('class="detail-panel equipment-system-table-panel"')
+    );
+    const rightPanel = equipmentHtml.slice(equipmentHtml.indexOf("equipment-system-table-panel"));
     assert.match(rightPanel, /<option value="aircraft-root" selected>整机级<\/option>/);
     assert.match(rightPanel, /<option value="engine-system" selected>发动机系统<\/option>/);
     assert.doesNotMatch(rightPanel, /value="engine-system"[^>]*>engine-system<\/option>/);
-    assert.match(rightPanel, /class="equipment-template-action" data-equipment-download-template/);
-    assert.match(rightPanel, /<label class="equipment-template-action">上传文件/);
+    assert.match(treePanel, /class="equipment-template-action" data-equipment-download-template/);
+    assert.match(treePanel, /data-equipment-export-data/);
+    assert.match(treePanel, /<label class="equipment-template-action">上传文件/);
+    assert.doesNotMatch(rightPanel, /data-equipment-download-template|data-equipment-export-data|data-equipment-import-file/);
 
     await runtime.change("[data-path]", { path: "components.1.parentId" }, { value: "aircraft-root" });
     assert.match(runtime.appNode.innerHTML, /<option value="aircraft-root" selected>整机级<\/option>/);
@@ -2818,7 +2825,32 @@ test("RMS method selection updates method-specific parameters at runtime", async
   try {
     assert.match(runtime.appNode.innerHTML, /装备 RMS 指标分配/);
     assert.match(runtime.appNode.innerHTML, /请先选择飞机型号/);
+    const initialHtml = runtime.appNode.innerHTML;
+    const preparationPanel = htmlSectionByClass(initialHtml, "rms-data-preparation-panel");
+    const calculationPanel = htmlSectionByClass(initialHtml, "rms-calculation-panel");
+    assert.match(preparationPanel, /data-rms-aircraft-model/);
+    assert.match(preparationPanel, /data-rms-action="download-template"/);
+    assert.match(preparationPanel, /data-rms-equipment-import-file[^>]*disabled/);
+    assert.doesNotMatch(preparationPanel, /data-rms-path=/);
+    assert.match(calculationPanel, /data-rms-path="inputs\.missionReliability"/);
+    assert.match(calculationPanel, /data-rms-path="inputs\.missionHours"/);
+    assert.match(calculationPanel, /data-rms-path="inputs\.mtbfHours"/);
+    assert.match(calculationPanel, /data-rms-path="inputs\.mttrHours"/);
+    assert.match(calculationPanel, /data-rms-path="methods\.allocation"/);
+    assert.match(calculationPanel, /data-rms-action="calculate" disabled/);
+    assert.match(calculationPanel, /data-rms-calculation-status="not-calculated"/);
+    assert.doesNotMatch(calculationPanel, /data-rms-aircraft-model|download-template|data-rms-equipment-import-file/);
+    assert.ok(initialHtml.indexOf("rms-data-preparation-panel") < initialHtml.indexOf("rms-calculation-panel"));
+
+    await runtime.click("[data-rms-action]", { rmsAction: "download-template" });
+    assert.equal(runtime.downloads.at(-1)?.download, "RMS安装数导入模板.csv");
     await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
+    const selectedHtml = runtime.appNode.innerHTML;
+    const equipmentTreePanel = selectedHtml.slice(
+      selectedHtml.indexOf('<aside class="tree-container rms-equipment-tree">'),
+      selectedHtml.indexOf('<section class="detail-panel equipment-system-table-panel rms-installation-panel">')
+    );
+    assert.doesNotMatch(equipmentTreePanel, /下载模板|上传文件/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /基准机型/);
 
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "similar" });
@@ -2934,6 +2966,7 @@ test("案例1 RMS aircraft selection renders the legacy project equipment tree w
     assert.match(tree, /发动机控制模块/);
     assert.doesNotMatch(tree, /J-35 雷达/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /当前机型暂无装备结构/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-calculation-panel"), /RMS 输入参数[\s\S]*指标分配方法[\s\S]*执行计算/);
 
     await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-35" });
     const j35Tree = runtime.appNode.innerHTML;
@@ -2956,6 +2989,7 @@ test("案例-大 RMS aircraft selection preserves rootless component hierarchy a
     assert.match(j16Tree, /结构/);
     assert.match(j16Tree, /液压系统/);
     assert.doesNotMatch(j16Tree, /J16D 航电系统/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-data-preparation-panel"), /data-rms-aircraft-model[\s\S]*下载模板[\s\S]*上传文件/);
 
     await runtime.change("[data-rms-aircraft-model]", {}, { value: "J16D" });
     const j16dTree = runtime.appNode.innerHTML;
@@ -3095,6 +3129,7 @@ test("RMS installation table filters to a selected subtree and persists editable
 
   try {
     await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-data-preparation-panel"), /data-rms-aircraft-model[\s\S]*data-rms-action="download-template"[\s\S]*data-rms-equipment-import-file/);
     const file = {
       name: "rms-nested-tree.csv",
       async text() {
@@ -3109,6 +3144,7 @@ test("RMS installation table filters to a selected subtree and persists editable
     };
 
     await runtime.change("[data-rms-equipment-import-file]", {}, { files: [file], value: file.name });
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-data-preparation-panel"), /已导入 rms-nested-tree\.csv/);
     await runtime.click("[data-rms-equipment-node]", { rmsEquipmentNode: "power" });
 
     const installationTable = runtime.appNode.innerHTML.slice(
@@ -6065,7 +6101,7 @@ function storedZipEntries(bytes) {
 }
 
 function htmlSectionByClass(html, className) {
-  const match = html.match(new RegExp(`<section class="[^"]*\\b${className}\\b[^"]*">[\\s\\S]*?<\\/section>`));
+  const match = html.match(new RegExp(`<section class="[^"]*\\b${className}\\b[^"]*"[^>]*>[\\s\\S]*?<\\/section>`));
   assert.ok(match, `expected section with class ${className}`);
   return match[0];
 }

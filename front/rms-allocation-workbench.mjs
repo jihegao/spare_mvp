@@ -38,27 +38,25 @@ export function renderRmsAllocationWorkbench({
         <span>${htmlEscape(project.name)}${result?.algorithmVersion ? ` / ${htmlEscape(result.algorithmVersion)}` : ""}</span>
       </div>
 
-      <section class="rms-aircraft-input-panel">
-        <div class="section-head"><h3>飞机型号与 RMS 输入</h3><span>按当前项目机型分别保存</span></div>
-        <div class="rms-aircraft-input-grid">
-          <label>飞机型号
+      <section class="rms-aircraft-input-panel rms-data-preparation-panel" aria-labelledby="rms-data-preparation-title">
+        <div class="section-head"><h3 id="rms-data-preparation-title">机型选择与数据准备</h3><span>按当前项目机型分别保存</span></div>
+        <div class="rms-data-preparation-grid">
+          <label class="rms-aircraft-selector">飞机型号
             <select data-rms-aircraft-model ${hasAircraftModels ? "" : "disabled"}>
               <option value="">请选择飞机型号</option>
               ${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${model === selectedAircraftModel ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}
             </select>
           </label>
-          ${input("任务可靠度", "inputs.missionReliability", plan.inputs?.missionReliability ?? "", "number", "0.01", htmlEscape, "0", "1", "", !hasSelectedAircraft)}
-          ${input("任务时长", "inputs.missionHours", plan.inputs?.missionHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
-          ${input("MTBF", "inputs.mtbfHours", plan.inputs?.mtbfHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
-          ${input("MTTR", "inputs.mttrHours", plan.inputs?.mttrHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
+          <div class="rms-data-preparation-actions" role="group" aria-label="RMS 安装数数据操作">
+            <span class="rms-data-action-label">安装数数据</span>
+            <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
+            <label class="rms-file-button rms-import-button${hasSelectedAircraft ? "" : " disabled"}" ${hasSelectedAircraft ? "" : 'aria-disabled="true"'}>上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv" ${hasSelectedAircraft ? "" : "disabled"}></label>
+          </div>
         </div>
-        <div class="rms-input-message" role="status" aria-live="polite">
-          ${validationMessage
-            ? htmlEscape(validationMessage)
-            : (!hasAircraftModels
-              ? "当前项目暂无飞机型号，请先完成装备系统建模。"
-              : (!hasSelectedAircraft ? "请先选择飞机型号。" : (!hasEquipmentTree ? "当前机型暂无装备结构，请先完成装备系统建模。" : "")))}
-        </div>
+        <div class="rms-input-message" role="status" aria-live="polite">${!hasAircraftModels
+          ? "当前项目暂无飞机型号，请先完成装备系统建模。"
+          : (!hasSelectedAircraft ? "请先选择飞机型号。" : (!hasEquipmentTree ? "当前机型暂无装备结构，请先完成装备系统建模。" : ""))}</div>
+        ${importStatus ? `<p class="rms-import-status" role="status" aria-live="polite">${htmlEscape(importStatus)}</p>` : ""}
       </section>
 
       ${hasSelectedAircraft ? `<section class="organization-layout equipment-layout rms-layout">
@@ -66,14 +64,6 @@ export function renderRmsAllocationWorkbench({
           <div class="tree-toolbar equipment-tree-toolbar">
             <h4>装备结构树</h4>
             <span>当前项目 / ${htmlEscape(selectedAircraftModel)}</span>
-          </div>
-          <div class="rms-tree-import-block">
-            <h4>导入安装数</h4>
-            <div class="equipment-import-row rms-installation-import-row">
-              <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
-              <label class="rms-file-button rms-import-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
-            </div>
-            ${importStatus ? `<p class="rms-import-status">${htmlEscape(importStatus)}</p>` : ""}
           </div>
           ${renderEquipmentTree(project, visibleResult, selectedEquipmentNodeId, htmlEscape)}
         </aside>
@@ -84,25 +74,43 @@ export function renderRmsAllocationWorkbench({
         </section>
       </section>` : ""}
 
-      <section class="rms-method-panel">
-          <div class="section-head"><h3>计算方法</h3><span class="rms-calculation-status ${normalizedCalculationStatus}" data-rms-calculation-status="${normalizedCalculationStatus}" role="status" aria-live="polite">${calculationStatusLabel(normalizedCalculationStatus)}</span></div>
-          <div class="rms-method-grid">
-            <label>指标分配方法
-              <select data-rms-path="methods.allocation">
-                ${RELIABILITY_METHODS.map(([value, label]) => `<option value="${value}" ${plan.methods.allocation === value ? "selected" : ""}>${label}</option>`).join("")}
-              </select>
-            </label>
-            ${renderMethodParameters(plan, equipmentRoots, project.rootId, htmlEscape)}
-          </div>
-          <div class="rms-method-actions">
-            <button type="button" class="btn-primary" data-rms-action="calculate"${calculateDisabled ? " disabled" : ""}>${isCalculating ? "计算进行中" : "计算"}</button>
-          </div>
-          <div class="rms-warning-list">
-            ${isCalculating
-              ? "<span>计算进行中，请勿重复提交。</span>"
-              : (result?.warnings?.length
-              ? result.warnings.map((warning) => `<span>${result.status === "calculated" ? "" : "计算失败："}${htmlEscape(warning.code)}：${htmlEscape(warning.message)}</span>`).join("")
-              : (normalizedCalculationStatus === "completed" ? "<span>计算完成。</span>" : "<span>尚未执行计算，输入、方法或装备节点变化后需重新计算。</span>"))}
+      <section class="rms-method-panel rms-calculation-panel" aria-labelledby="rms-calculation-panel-title">
+          <div class="section-head"><h3 id="rms-calculation-panel-title">RMS 输入与指标分配计算</h3><span class="rms-calculation-status ${normalizedCalculationStatus}" data-rms-calculation-status="${normalizedCalculationStatus}" role="status" aria-live="polite">${calculationStatusLabel(normalizedCalculationStatus)}</span></div>
+          <div class="rms-calculation-flow">
+            <div class="rms-calculation-step rms-input-step" role="group" aria-labelledby="rms-input-step-title">
+              <h4 id="rms-input-step-title"><span aria-hidden="true">1</span>RMS 输入参数</h4>
+              <div class="rms-calculation-input-grid">
+                ${input("任务可靠度", "inputs.missionReliability", plan.inputs?.missionReliability ?? "", "number", "0.01", htmlEscape, "0", "1", "", !hasSelectedAircraft)}
+                ${input("任务时长", "inputs.missionHours", plan.inputs?.missionHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
+                ${input("MTBF", "inputs.mtbfHours", plan.inputs?.mtbfHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
+                ${input("MTTR", "inputs.mttrHours", plan.inputs?.mttrHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
+              </div>
+              ${validationMessage ? `<div class="rms-input-message" role="alert">${htmlEscape(validationMessage)}</div>` : ""}
+            </div>
+            <div class="rms-calculation-step rms-method-step" role="group" aria-labelledby="rms-method-step-title">
+              <h4 id="rms-method-step-title"><span aria-hidden="true">2</span>指标分配方法</h4>
+              <div class="rms-method-grid">
+                <label>指标分配方法
+                  <select data-rms-path="methods.allocation">
+                    ${RELIABILITY_METHODS.map(([value, label]) => `<option value="${value}" ${plan.methods.allocation === value ? "selected" : ""}>${label}</option>`).join("")}
+                  </select>
+                </label>
+                ${renderMethodParameters(plan, equipmentRoots, project.rootId, htmlEscape)}
+              </div>
+            </div>
+            <div class="rms-calculation-step rms-execution-step" role="group" aria-labelledby="rms-execution-step-title">
+              <h4 id="rms-execution-step-title"><span aria-hidden="true">3</span>执行计算</h4>
+              <div class="rms-method-actions">
+                <button type="button" class="btn-primary" data-rms-action="calculate"${calculateDisabled ? " disabled" : ""}>${isCalculating ? "计算进行中" : "计算"}</button>
+              </div>
+              <div class="rms-warning-list" role="status" aria-live="polite">
+                ${isCalculating
+                  ? "<span>计算进行中，请勿重复提交。</span>"
+                  : (result?.warnings?.length
+                  ? result.warnings.map((warning) => `<span>${result.status === "calculated" ? "" : "计算失败："}${htmlEscape(warning.code)}：${htmlEscape(warning.message)}</span>`).join("")
+                  : (normalizedCalculationStatus === "completed" ? "<span>计算完成。</span>" : "<span>尚未执行计算，输入、方法或装备节点变化后需重新计算。</span>"))}
+              </div>
+            </div>
           </div>
       </section>
 
