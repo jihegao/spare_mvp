@@ -729,6 +729,8 @@ let backendExperimentPlans = [];
 let backendExperimentPlansProjectId = "";
 let backendExperimentPlansLoaded = false;
 let backendExperimentPlansLoadInFlight = false;
+let backendExperimentPlansLoadError = "";
+let backendExperimentPlansRequestEpoch = 0;
 let experimentPlanListStatus = "仿真实验方案列表尚未加载";
 let experimentPlanManagementMode = "list";
 let projectDraftSaveStatus = "未保存";
@@ -766,6 +768,8 @@ let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
 let visualSupportAirportId = "";
 let solaraVisualizationReloadNonce = 0;
 let solaraVisualizationProjectIdOverride = "";
+let solaraVisualizationProjectIdOverrideContextKey = "";
+let solaraVisualizationProjectIdOverrideParentProjectId = "";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -3386,11 +3390,16 @@ function shouldEmbedExperimentPlanContextInComponent(page) {
 
 function renderExperimentPlanContextDropdown(page) {
   ensureExperimentPlanListLoaded();
+  if (isVisualSimulationPage(page)) {
+    return renderVisualSimulationExperimentPlanDropdown(page);
+  }
   const options = experimentPlanContextOptions(page);
   const selectedKey = selectedExperimentPlanContextKey(options);
   const currentProjectOption = options.find((option) => option.kind === "current-project");
   const savedPlanOptions = options.filter((option) => option.kind === "experiment-plan");
-  const status = backendExperimentPlansLoaded
+  const status = backendExperimentPlansLoadError
+    ? "方案列表加载失败"
+    : backendExperimentPlansLoaded
     ? `${savedPlanOptions.length} 个已保存方案`
     : "方案列表加载中";
   return `
@@ -3401,6 +3410,33 @@ function renderExperimentPlanContextDropdown(page) {
         ${savedPlanOptions.length ? `<optgroup label="已保存实验方案">${savedPlanOptions.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}</optgroup>` : ""}
       </select>
       <small>${htmlEscape(status)}</small>
+    </label>
+  `;
+}
+
+function visualSimulationExperimentPlanOptions(page = getFeaturePageById(selectedFeatureId)) {
+  return experimentPlanContextOptions(page).filter((option) => option.kind === "experiment-plan");
+}
+
+function selectedVisualSimulationExperimentPlanContext(page = getFeaturePageById(selectedFeatureId)) {
+  return visualSimulationExperimentPlanOptions(page).find((option) => option.key === selectedRunContextKey) || null;
+}
+
+function renderVisualSimulationExperimentPlanDropdown(page) {
+  const options = visualSimulationExperimentPlanOptions(page);
+  const selected = selectedVisualSimulationExperimentPlanContext(page);
+  const placeholder = backendExperimentPlansLoadError
+    ? "实验方案列表加载失败"
+    : backendExperimentPlansLoaded
+    ? options.length ? "请选择实验方案" : "暂无实验方案"
+    : "实验方案列表加载中";
+  return `
+    <label class="page-head-current-context experiment-plan-context-select">
+      <span>实验方案</span>
+      <select data-current-experiment-plan aria-label="实验方案" ${options.length ? "" : "disabled"}>
+        <option value="" ${selected ? "" : "selected"}>${placeholder}</option>
+        ${options.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selected?.key ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}
+      </select>
     </label>
   `;
 }
@@ -10997,10 +11033,16 @@ async function resolveSelectedExperimentPlanProjectJsonForRun() {
 }
 
 async function saveSelectedProjectJsonForSolaraVisualization() {
+  const contextKey = selectedRunContextKey;
+  const parentProjectId = currentBackendProjectId();
   const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
   const saved = await backendApi.saveProject(projectJson);
   savedProject = saved || savedProject;
-  solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || currentBackendProjectId() || "").trim();
+  if (selectedRunContextKey === contextKey && currentBackendProjectId() === parentProjectId) {
+    solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || parentProjectId || "").trim();
+    solaraVisualizationProjectIdOverrideContextKey = contextKey;
+    solaraVisualizationProjectIdOverrideParentProjectId = parentProjectId;
+  }
   projectDraftSaveStatus = "已保存";
   projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
   return saved;
@@ -11034,9 +11076,19 @@ function selectedExperimentPlanRunSettings() {
   };
 }
 
+function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
+  selectedRunContextKey = String(nextKey || "").trim();
+  solaraVisualizationProjectIdOverride = "";
+  solaraVisualizationProjectIdOverrideContextKey = "";
+  solaraVisualizationProjectIdOverrideParentProjectId = "";
+  if (persist) persistSelectedRunContextKey();
+}
+
 function resetRunContextToCurrentProject() {
-  selectedRunContextKey = experimentPlanContextOptions().find((option) => option.kind === "current-project")?.key || "";
-  persistSelectedRunContextKey();
+  replaceSelectedRunContextKey(
+    experimentPlanContextOptions().find((option) => option.kind === "current-project")?.key || "",
+    { persist: true }
+  );
   const projectJson = currentProjectJsonForExperimentContext();
   const experiment = projectJson?.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
     ? projectJson.experiment
@@ -11062,11 +11114,21 @@ function resetMissingRunContextAfterPlanRefresh() {
 }
 
 function selectCurrentExperimentPlan(planKey) {
-  const options = experimentPlanContextOptions();
-  const selected = options.find((option) => option.key === planKey) || options[0];
-  if (!selected) return;
-  selectedRunContextKey = selected.key;
-  persistSelectedRunContextKey();
+  const page = getFeaturePageById(selectedFeatureId);
+  const options = isVisualSimulationPage(page)
+    ? visualSimulationExperimentPlanOptions(page)
+    : experimentPlanContextOptions(page);
+  const selected = options.find((option) => option.key === planKey) || null;
+  if (!selected) {
+    if (!isVisualSimulationPage(page)) return;
+    replaceSelectedRunContextKey("", { persist: true });
+    visualizationReplayStatus = "请选择实验方案后刷新推演";
+    return;
+  }
+  replaceSelectedRunContextKey(selected.key, { persist: true });
+  if (isVisualSimulationPage(page)) {
+    visualizationReplayStatus = `已选择实验方案：${selected.name}`;
+  }
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = selected.kind === "experiment-plan"
     ? `已绑定实验方案：${selected.name}`
@@ -11646,7 +11708,7 @@ async function restoreStoredBackendSessionOnBoot() {
     await hydrateProjectCatalogFromBackend();
     if (selectedRoute === "workbench" && currentProject) {
       await hydrateCurrentProjectDraftFromApi();
-      selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
+      replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
     }
   } catch (err) {
     backendAuthToken = "";
@@ -11673,13 +11735,9 @@ async function handleEnterWorkbench(projectId) {
   selectedRoute = "workbench";
   selectedFeatureId = defaultFeaturePageIdForCurrentUser();
   isProjectMenuOpen = false;
-  backendExperimentPlans = [];
-  backendExperimentPlansProjectId = "";
-  backendExperimentPlansLoaded = false;
-  backendExperimentPlansLoadInFlight = false;
-  experimentPlanListStatus = "仿真实验方案列表尚未加载";
+  resetExperimentPlanListLoadState();
   selectedExperimentPlanKeys = new Set();
-  selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
+  replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
@@ -11689,7 +11747,7 @@ async function handleEnterWorkbench(projectId) {
   location.hash = `feature=${selectedFeatureId}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
-  selectedRunContextKey = readStoredRunContextKey(currentBackendProjectId());
+  replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
   if (!selectedRunContextKey) resetRunContextToCurrentProject();
 }
 
@@ -11715,11 +11773,7 @@ async function createProjectFromProjectTemplate(templateProject) {
     experimentPlanDraft = cloneScenario(projectJson);
     experimentPlanBranchActive = false;
     resetRunContextToCurrentProject();
-    backendExperimentPlans = [];
-    backendExperimentPlansProjectId = "";
-    backendExperimentPlansLoaded = false;
-    backendExperimentPlansLoadInFlight = false;
-    experimentPlanListStatus = "仿真实验方案列表尚未加载";
+    resetExperimentPlanListLoadState();
     savedProject = saved || { project_id: projectJson.project_id, project_version: projectJson.project_version || "project-v0.1" };
     modelingSnapshot = null;
     await hydrateProjectCatalogFromBackend({ forceProjectId: project.id });
@@ -12136,48 +12190,65 @@ function currentBackendProjectId() {
   return currentProject?.id ? `project-${currentProject.id}` : `project-${scenario.scenarioId}`;
 }
 
+function resetExperimentPlanListLoadState(projectId = "") {
+  backendExperimentPlansRequestEpoch += 1;
+  backendExperimentPlans = [];
+  backendExperimentPlansProjectId = String(projectId || "").trim();
+  backendExperimentPlansLoaded = false;
+  backendExperimentPlansLoadInFlight = false;
+  backendExperimentPlansLoadError = "";
+  experimentPlanListStatus = "仿真实验方案列表尚未加载";
+}
+
 function ensureExperimentPlanListLoaded(projectId = currentBackendProjectId()) {
-  if (backendExperimentPlansProjectId !== projectId) {
-    backendExperimentPlans = [];
-    backendExperimentPlansLoaded = false;
-    backendExperimentPlansLoadInFlight = false;
-    backendExperimentPlansProjectId = projectId;
-    experimentPlanListStatus = "仿真实验方案列表尚未加载";
+  const normalizedProjectId = String(projectId || "").trim();
+  if (backendExperimentPlansProjectId !== normalizedProjectId) {
+    resetExperimentPlanListLoadState(normalizedProjectId);
   }
   if (backendExperimentPlansLoaded || backendExperimentPlansLoadInFlight) return;
   backendExperimentPlansLoadInFlight = true;
-  refreshExperimentPlanList(projectId)
+  refreshExperimentPlanList(normalizedProjectId)
     .finally(() => {
       render();
     });
 }
 
 async function refreshExperimentPlanList(projectId = currentBackendProjectId(), { force = false } = {}) {
-  if (!projectId) {
+  const normalizedProjectId = String(projectId || "").trim();
+  if (!normalizedProjectId) {
+    resetExperimentPlanListLoadState();
     backendExperimentPlans = [];
     backendExperimentPlansLoaded = true;
-    backendExperimentPlansLoadInFlight = false;
     experimentPlanListStatus = "尚未选择项目，无法读取后端方案列表";
     return;
   }
+  const requestEpoch = ++backendExperimentPlansRequestEpoch;
   if (force) {
     backendExperimentPlansLoaded = false;
   }
-  backendExperimentPlansProjectId = projectId;
+  backendExperimentPlansProjectId = normalizedProjectId;
   backendExperimentPlansLoadInFlight = true;
+  backendExperimentPlansLoadError = "";
+  const requestIsCurrent = () => (
+    requestEpoch === backendExperimentPlansRequestEpoch
+    && backendExperimentPlansProjectId === normalizedProjectId
+    && currentBackendProjectId() === normalizedProjectId
+  );
   try {
-    const response = await backendApi.listExperimentPlans(projectId);
+    const response = await backendApi.listExperimentPlans(normalizedProjectId);
+    if (!requestIsCurrent()) return;
     backendExperimentPlans = Array.isArray(response?.experiment_plans) ? response.experiment_plans : [];
     backendExperimentPlansLoaded = true;
     resetMissingRunContextAfterPlanRefresh();
     experimentPlanListStatus = `已加载后端方案 ${backendExperimentPlans.length} 条`;
   } catch (err) {
+    if (!requestIsCurrent()) return;
     backendExperimentPlans = [];
     backendExperimentPlansLoaded = true;
-    resetMissingRunContextAfterPlanRefresh();
-    experimentPlanListStatus = `后端方案列表读取失败：${formatBackendError(err)}`;
+    backendExperimentPlansLoadError = formatBackendError(err);
+    experimentPlanListStatus = `后端方案列表读取失败：${backendExperimentPlansLoadError}`;
   } finally {
-    backendExperimentPlansLoadInFlight = false;
+    if (requestIsCurrent()) backendExperimentPlansLoadInFlight = false;
   }
 }
 
@@ -14545,9 +14616,30 @@ function issueStatusForDisplayIssues(issues) {
 
 async function handleMesaControl(action) {
   if (action === "reload-solara") {
+    const page = getFeaturePageById(selectedFeatureId);
+    const visualContext = isVisualSimulationPage(page)
+      ? selectedVisualSimulationExperimentPlanContext(page)
+      : null;
+    if (isVisualSimulationPage(page) && !visualContext) {
+      visualizationReplayStatus = backendExperimentPlansLoadError
+        ? `实验方案列表加载失败：${backendExperimentPlansLoadError}`
+        : backendExperimentPlansLoaded && visualSimulationExperimentPlanOptions(page).length === 0
+        ? "暂无实验方案，请先在实验方案管理中创建并保存方案"
+        : "请选择实验方案后刷新推演";
+      return;
+    }
+    const contextKey = visualContext?.key || selectedRunContextKey;
+    const parentProjectId = currentBackendProjectId();
     visualizationReplayStatus = "Solara 正在保存当前建模数据并刷新内嵌页";
     try {
       await saveSelectedProjectJsonForSolaraVisualization();
+      if (
+        selectedRunContextKey !== contextKey
+        || currentBackendProjectId() !== parentProjectId
+      ) {
+        visualizationReplayStatus = "实验方案已切换，请按当前方案重新刷新推演";
+        return;
+      }
       solaraVisualizationReloadNonce += 1;
       visualizationReplayStatus = "Solara 已保存当前建模数据，将从后端项目重新编译推演输入";
     } catch (err) {
@@ -14681,12 +14773,12 @@ function visualizationBlockedState() {
 
 function renderVisualSimulation(page) {
   const projectName = currentProject?.name || "当前项目";
-  const context = selectedExperimentPlanContext();
-  const experimentPlanName = selectedExperimentPlanName();
-  const planConfig = context?.kind === "experiment-plan" && context.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+  const context = selectedVisualSimulationExperimentPlanContext(page);
+  const experimentPlanName = context?.name || "";
+  const planConfig = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
     ? context.plan.config
     : {};
-  const planRuntimeContext = context?.kind === "experiment-plan"
+  const planRuntimeContext = context
     ? {
         experimentPlanId: context.plan.experiment_plan_id,
         planSteps: planConfig.steps,
@@ -14694,14 +14786,27 @@ function renderVisualSimulation(page) {
         planSeed: planConfig.seed
       }
     : {};
-  const solaraUrl = buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
-    projectId: solaraVisualizationProjectIdOverride || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
+  const contextProjectId = String(context?.projectJson?.project_id || "").trim();
+  const contextOverrideProjectId = (
+    solaraVisualizationProjectIdOverrideContextKey === context?.key
+    && solaraVisualizationProjectIdOverrideParentProjectId === currentBackendProjectId()
+  ) ? solaraVisualizationProjectIdOverride : "";
+  const solaraUrl = context ? buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
+    projectId: contextOverrideProjectId || contextProjectId || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
     projectName,
     featureId: page.id,
-    ...(context?.kind === "experiment-plan" ? { experimentPlanName } : {}),
+    experimentPlanName,
     ...planRuntimeContext,
     reload: solaraVisualizationReloadNonce
-  });
+  }) : "";
+  const availablePlanCount = visualSimulationExperimentPlanOptions(page).length;
+  const emptyMessage = backendExperimentPlansLoadError
+    ? `实验方案列表加载失败：${backendExperimentPlansLoadError}`
+    : backendExperimentPlansLoaded
+    ? availablePlanCount
+      ? "请选择实验方案后刷新推演"
+      : "暂无实验方案，请先在实验方案管理中创建并保存方案"
+    : "实验方案列表加载中";
   return `
     <div class="mesa-visual-shell">
       <section class="mesa-visual-toolbar">
@@ -14712,16 +14817,19 @@ function renderVisualSimulation(page) {
       </section>
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
         <div class="visual-frame-toolbar">
-          <button type="button" class="btn-primary" data-mesa-control="reload-solara">刷新推演</button>
+          <button type="button" class="btn-primary" data-mesa-control="reload-solara" ${context ? "" : "disabled"}>刷新推演</button>
         </div>
-        <iframe
+        ${context ? `<iframe
           class="solara-visualization-frame"
           title="Solara 可视化推演"
           src="${htmlEscape(solaraUrl)}"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           loading="eager"
           referrerpolicy="no-referrer"
-        ></iframe>
+        ></iframe>` : `<div class="visual-simulation-plan-empty" data-visual-simulation-plan-empty>
+          <strong>${htmlEscape(emptyMessage)}</strong>
+          ${backendExperimentPlansLoaded && !backendExperimentPlansLoadError && availablePlanCount === 0 ? `<button type="button" class="btn-secondary" data-plan-list-link>前往实验方案管理</button>` : ""}
+        </div>`}
       </div>
     </div>
   `;

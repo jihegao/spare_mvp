@@ -1409,11 +1409,25 @@ test("modeling form management only renders personnel dictionary and time unit f
 test("visual Mesa page renders Solara iframe shell", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson()
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [{
+      experiment_plan_id: "plan-visual-shell",
+      config: {
+        name: "可视化壳层方案",
+        steps: 5,
+        samples: 1,
+        seed: 11,
+        projectJson: createRuntimeProjectJson({ project_id: "project-visual-shell" })
+      }
+    }]
   });
 
   try {
-    await runtime.flush();
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-visual-shell" }
+    );
 
     assert.match(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"/);
     const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "mesa-visual-toolbar");
@@ -4307,22 +4321,22 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
   }
 });
 
-test("visual simulation renders Solara iframe without starting retired run APIs", async () => {
+test("visual simulation shows a plan-only empty state and blocks refresh without a saved plan", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson()
   });
 
   try {
-    assert.doesNotMatch(runtime.appNode.innerHTML, /Solara 可视化内嵌页/);
+    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.match(visualShell, /<span>实验方案<\/span>/);
+    assert.match(visualShell, /aria-label="实验方案" disabled/);
+    assert.match(visualShell, /暂无实验方案，请先在实验方案管理中创建并保存方案/);
+    assert.match(visualShell, /data-plan-list-link>前往实验方案管理<\/button>/);
+    assert.doesNotMatch(visualShell, /运行上下文|当前项目|已保存实验方案|<optgroup/);
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
-    assert.match(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
-    assert.match(runtime.appNode.innerHTML, /http:\/\/127\.0\.0\.1:8765/);
-    assert.match(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"/);
-    const frameWrapIndex = runtime.appNode.innerHTML.indexOf("solara-visualization-frame-wrap");
-    const reloadIndex = runtime.appNode.innerHTML.indexOf('data-mesa-control="reload-solara"', frameWrapIndex);
-    const iframeIndex = runtime.appNode.innerHTML.indexOf("solara-visualization-frame", reloadIndex);
-    assert.ok(frameWrapIndex > -1 && reloadIndex > frameWrapIndex && iframeIndex > reloadIndex);
+    assert.match(visualShell, /data-mesa-control="reload-solara" disabled/);
+    assert.doesNotMatch(visualShell, /title="Solara 可视化推演"|<iframe/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),
@@ -4332,6 +4346,11 @@ test("visual simulation renders Solara iframe without starting retired run APIs"
 
     await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
 
+    assert.equal(
+      runtime.requests.some((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST"),
+      false,
+      "visual refresh without a saved plan must not save or start a Project"
+    );
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),
       false,
@@ -4350,7 +4369,7 @@ test("visual simulation renders Solara iframe without starting retired run APIs"
       false,
       "current Project visualization must not auto-create an ExperimentPlan"
     );
-    assert.match(runtime.appNode.innerHTML, /reload=1/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /reload=1/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Solara Mesa iframe|iframe:/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /mesa-control-deck|mesa-control-status|仿真状态|推演由 Solara/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /启动回放|data-mesa-timeline|Lite Mesa 仿真未返回 run_id/);
@@ -4360,14 +4379,24 @@ test("visual simulation renders Solara iframe without starting retired run APIs"
 });
 
 test("visual simulation does not depend on lite Mesa run id", async () => {
+  const planProjectJson = createRuntimeProjectJson({ project_id: "project-visual-no-run-id" });
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson(),
+    experimentPlans: [{
+      experiment_plan_id: "plan-no-run-id",
+      config: { name: "无 run id 方案", steps: 5, samples: 2, seed: 22, projectJson: planProjectJson }
+    }],
     liteMesaAnalysisResponseOverrides: { run_id: "" }
   });
 
   try {
-    assert.doesNotMatch(runtime.appNode.innerHTML, /experiment_plan_id=|plan_steps=|plan_samples=|plan_seed=/);
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-no-run-id" }
+    );
+    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-no-run-id/);
     await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
 
     assert.match(runtime.appNode.innerHTML, /reload=1/);
@@ -4409,22 +4438,16 @@ test("visual simulation applies saved plan runtime settings without changing cur
   });
 
   try {
-    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
-    const currentProjectSave = runtime.requests
-      .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(
-      "experiment" in currentProjectSave,
-      false,
-      "current Project visualization should keep the clean Project persistence boundary"
-    );
+    assert.match(runtime.appNode.innerHTML, /<option value="" selected>请选择实验方案<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
 
     await runtime.change(
       "[data-current-experiment-plan]",
       { currentExperimentPlan: "" },
       { value: "plan-visual" }
     );
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-visual" selected>可视化保存方案<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /project_id=project-visual-plan/);
     await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
     const planProjectSave = runtime.requests
       .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
@@ -4444,6 +4467,318 @@ test("visual simulation applies saved plan runtime settings without changing cur
       false,
       "visualization refresh must not create an ExperimentPlan"
     );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual simulation distinguishes duplicate plan names by stable IDs and switches Project branches atomically", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [
+      {
+        experiment_plan_id: "plan-duplicate-a",
+        config: {
+          name: "重名方案",
+          steps: 11,
+          samples: 2,
+          seed: 101,
+          projectJson: createRuntimeProjectJson({ project_id: "project-duplicate-a" })
+        }
+      },
+      {
+        experiment_plan_id: "plan-duplicate-b",
+        config: {
+          name: "重名方案",
+          steps: 22,
+          samples: 3,
+          seed: 202,
+          projectJson: createRuntimeProjectJson({ project_id: "project-duplicate-b" })
+        }
+      }
+    ]
+  });
+
+  try {
+    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.equal((visualShell.match(/>重名方案<\/option>/g) || []).length, 2);
+    assert.match(visualShell, /<option value="plan-duplicate-a"\s*>重名方案<\/option>/);
+    assert.match(visualShell, /<option value="plan-duplicate-b"\s*>重名方案<\/option>/);
+    assert.doesNotMatch(visualShell, /current-project:|<optgroup|已保存实验方案/);
+
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-duplicate-b" }
+    );
+    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-b/);
+    assert.match(runtime.appNode.innerHTML, /project_id=project-duplicate-b/);
+    assert.match(runtime.appNode.innerHTML, /plan_steps=22/);
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
+    let saved = runtime.requests
+      .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(saved.project_id, "project-duplicate-b");
+
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-duplicate-a" }
+    );
+    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-a/);
+    assert.match(runtime.appNode.innerHTML, /project_id=project-duplicate-a/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-b/);
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
+    saved = runtime.requests
+      .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(saved.project_id, "project-duplicate-a");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual simulation clears a saved Project override when shared context changes on another analysis page", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [
+      {
+        experiment_plan_id: "plan-cross-page-a",
+        config: {
+          name: "跨页方案A",
+          steps: 11,
+          samples: 2,
+          seed: 101,
+          projectJson: createRuntimeProjectJson({ project_id: "project-cross-page-a" })
+        }
+      },
+      {
+        experiment_plan_id: "plan-cross-page-b",
+        config: {
+          name: "跨页方案B",
+          steps: 22,
+          samples: 3,
+          seed: 202,
+          projectJson: createRuntimeProjectJson({ project_id: "project-cross-page-b" })
+        }
+      }
+    ]
+  });
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-cross-page-a" }
+    );
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
+    assert.match(runtime.appNode.innerHTML, /project_id=project-cross-page-a/);
+
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-cross-page-b" }
+    );
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+
+    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.match(visualShell, /experiment_plan_id=plan-cross-page-b/);
+    assert.match(visualShell, /project_id=project-cross-page-b/);
+    assert.match(visualShell, /plan_steps=22/);
+    assert.match(visualShell, /plan_samples=3/);
+    assert.match(visualShell, /plan_seed=202/);
+    assert.doesNotMatch(visualShell, /project_id=project-cross-page-a|experiment_plan_id=plan-cross-page-a/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual experiment plan list ignores a stale response from the previous Project", async () => {
+  const projectAPlans = createRuntimeDeferred();
+  const projectBPlans = createRuntimeDeferred();
+  const projectA = createRuntimeProjectJson({ project_id: "project-race-a" });
+  const projectB = createRuntimeProjectJson({ project_id: "project-race-b" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: projectA,
+    backendProjects: [
+      {
+        project_id: "project-race-a",
+        experiment_name: "竞态项目A",
+        base_code: "RA",
+        summary: "runtime race A",
+        updated_at: "2026-07-18 00:00:00"
+      },
+      {
+        project_id: "project-race-b",
+        experiment_name: "竞态项目B",
+        base_code: "RB",
+        summary: "runtime race B",
+        updated_at: "2026-07-18 00:00:00"
+      }
+    ],
+    projectJsonById: {
+      "project-race-a": projectA,
+      "project-race-b": projectB
+    },
+    experimentPlanListsByProject: {
+      "project-race-a": projectAPlans.promise,
+      "project-race-b": projectBPlans.promise
+    }
+  });
+
+  try {
+    assert.ok(runtime.requests.some((request) => request.url === "/api/projects/project-race-a/experiment-plans"));
+    await runtime.click("[data-project-list]", { projectList: "" });
+    await runtime.click("[data-enter-workbench]", { projectId: "race-b" });
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+    assert.ok(runtime.requests.some((request) => request.url === "/api/projects/project-race-b/experiment-plans"));
+
+    projectBPlans.resolve([{
+      experiment_plan_id: "plan-race-b",
+      config: { name: "项目B方案", projectJson: projectB }
+    }]);
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-race-b"\s*>项目B方案<\/option>/);
+
+    projectAPlans.resolve([{
+      experiment_plan_id: "plan-race-a-stale",
+      config: { name: "项目A迟到方案", projectJson: projectA }
+    }]);
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-race-b"\s*>项目B方案<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /plan-race-a-stale|项目A迟到方案/);
+  } finally {
+    projectAPlans.resolve([]);
+    projectBPlans.resolve([]);
+    runtime.restore();
+  }
+});
+
+test("visual experiment plan list keeps a stored plan through HTTP 500 and restores it after retry", async () => {
+  const planProjectJson = createRuntimeProjectJson({ project_id: "project-retry-plan" });
+  let listRequestCount = 0;
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlanListsByProject: {
+      "project-runtime": () => {
+        listRequestCount += 1;
+        if (listRequestCount === 1) {
+          return jsonResponse(
+            { message: "方案服务暂时不可用" },
+            { ok: false, status: 500 }
+          );
+        }
+        return [{
+          experiment_plan_id: "plan-retry-stored",
+          config: {
+            name: "重试恢复方案",
+            steps: 33,
+            samples: 4,
+            seed: 303,
+            projectJson: planProjectJson
+          }
+        }];
+      }
+    },
+    storageEntries: [[
+      "spare-mvp:selectedRunContextByProject",
+      JSON.stringify({ "project-runtime": "plan-retry-stored" })
+    ]]
+  });
+
+  try {
+    await runtime.flush();
+    const failedVisualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.match(failedVisualShell, /实验方案列表加载失败/);
+    assert.doesNotMatch(failedVisualShell, /暂无实验方案，请先在实验方案管理中创建并保存方案/);
+    assert.match(failedVisualShell, /data-mesa-control="reload-solara" disabled/);
+    assert.doesNotMatch(failedVisualShell, /title="Solara 可视化推演"|<iframe/);
+    assert.equal(
+      JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
+      "plan-retry-stored",
+      "a transient list failure must not clear the persisted stable plan ID"
+    );
+
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+
+    const recoveredVisualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.match(recoveredVisualShell, /<option value="plan-retry-stored" selected>重试恢复方案<\/option>/);
+    assert.match(recoveredVisualShell, /experiment_plan_id=plan-retry-stored/);
+    assert.match(recoveredVisualShell, /project_id=project-retry-plan/);
+    assert.match(recoveredVisualShell, /plan_steps=33/);
+    assert.match(recoveredVisualShell, /plan_samples=4/);
+    assert.match(recoveredVisualShell, /plan_seed=303/);
+
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
+    assert.ok(runtime.requests.some((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "POST"
+      && JSON.parse(request.options.body || "{}").project_id === "project-retry-plan"
+    )));
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual simulation restores a saved plan ID and clears it after the plan is deleted", async () => {
+  const experimentPlans = [
+    {
+      experiment_plan_id: "plan-restored-visual",
+      config: {
+        name: "恢复后删除方案",
+        projectJson: createRuntimeProjectJson({ project_id: "project-restored-visual" })
+      }
+    },
+    {
+      experiment_plan_id: "plan-surviving-visual",
+      config: {
+        name: "保留方案",
+        projectJson: createRuntimeProjectJson({ project_id: "project-surviving-visual" })
+      }
+    }
+  ];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans,
+    storageEntries: [[
+      "spare-mvp:selectedRunContextByProject",
+      JSON.stringify({ "project-runtime": "plan-restored-visual" })
+    ]]
+  });
+
+  try {
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-restored-visual" selected>恢复后删除方案<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-restored-visual/);
+
+    await runtime.click("[data-plan-list-link]", { planListLink: "" });
+    await runtime.click(
+      "[data-experiment-plan-delete]",
+      { experimentPlanDelete: "plan-restored-visual" }
+    );
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+
+    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
+    assert.match(visualShell, /<option value="" selected>请选择实验方案<\/option>/);
+    assert.match(visualShell, /<option value="plan-surviving-visual"\s*>保留方案<\/option>/);
+    assert.doesNotMatch(visualShell, /恢复后删除方案|title="Solara 可视化推演"/);
+
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-surviving-visual" }
+    );
+    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-surviving-visual/);
   } finally {
     runtime.restore();
   }
@@ -4766,6 +5101,11 @@ test("refreshing away the selected saved plan resets the run context and Monte C
     assert.match(runtime.appNode.innerHTML, /当前项目：Runtime 项目/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /即将失效的方案/);
+    assert.equal(
+      JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
+      "current-project:project-runtime",
+      "an authoritative empty list must clear a persisted missing plan ID"
+    );
 
     await runtime.click("[data-lite-mesa-action='run']");
     const analysisBody = runtime.requests
@@ -5091,6 +5431,8 @@ async function setupRuntimeApp({
   projectJson = createRuntimeProjectJson(),
   importFile = null,
   experimentPlans = [],
+  experimentPlanListsByProject = {},
+  projectJsonById = {},
   sessionUser = { username: "data", role: "数据管理员" },
   storageEntries = [],
   systemConfigPayload = {},
@@ -5110,7 +5452,10 @@ async function setupRuntimeApp({
   const downloads = [];
   const objectUrls = new Map();
   const backendProjectCatalog = [...backendProjects];
-  const projectPayloads = new Map([[projectJson.project_id || "project-runtime", projectJson]]);
+  const projectPayloads = new Map([
+    [projectJson.project_id || "project-runtime", projectJson],
+    ...Object.entries(projectJsonById)
+  ]);
   const runtimeRuns = new Map();
   const aircraftReliabilityHistory = [];
   let createProjectFromImportCount = 0;
@@ -5238,7 +5583,22 @@ async function setupRuntimeApp({
     }
     const experimentPlanListMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans$/);
     if (experimentPlanListMatch && method === "GET") {
-      return jsonResponse({ project_id: decodeURIComponent(experimentPlanListMatch[1]), experiment_plans: experimentPlans });
+      const projectId = decodeURIComponent(experimentPlanListMatch[1]);
+      const configuredPlans = Object.hasOwn(experimentPlanListsByProject, projectId)
+        ? experimentPlanListsByProject[projectId]
+        : experimentPlans;
+      const resolvedPlans = await (typeof configuredPlans === "function"
+        ? configuredPlans({ projectId, requests })
+        : configuredPlans);
+      if (
+        resolvedPlans
+        && typeof resolvedPlans === "object"
+        && typeof resolvedPlans.json === "function"
+        && typeof resolvedPlans.ok === "boolean"
+      ) {
+        return resolvedPlans;
+      }
+      return jsonResponse({ project_id: projectId, experiment_plans: resolvedPlans });
     }
     const modelingSnapshotMatch = url.match(/^\/api\/projects\/([^/]+)\/modeling-snapshots$/);
     if (modelingSnapshotMatch && method === "POST") {
@@ -5258,6 +5618,17 @@ async function setupRuntimeApp({
         project_id: decodeURIComponent(experimentPlanItemMatch[1]),
         experiment_plan_id: decodeURIComponent(experimentPlanItemMatch[2]),
         config: body.config || {}
+      });
+    }
+    if (experimentPlanItemMatch && method === "DELETE") {
+      const experimentPlanId = decodeURIComponent(experimentPlanItemMatch[2]);
+      const index = experimentPlans.findIndex((plan) => plan.experiment_plan_id === experimentPlanId);
+      if (index >= 0) experimentPlans.splice(index, 1);
+      return jsonResponse({
+        project_id: decodeURIComponent(experimentPlanItemMatch[1]),
+        experiment_plan_id: experimentPlanId,
+        deleted: true,
+        soft_deleted_run_ids: []
       });
     }
     const currentAnalysisMatch = url.match(/^\/api\/projects\/([^/]+)\/analysis-results\/([^/]+)$/);
@@ -5680,6 +6051,14 @@ function htmlSectionByClass(html, className) {
   const match = html.match(new RegExp(`<section class="[^"]*\\b${className}\\b[^"]*">[\\s\\S]*?<\\/section>`));
   assert.ok(match, `expected section with class ${className}`);
   return match[0];
+}
+
+function createRuntimeDeferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 async function flushRuntimeTasks() {
