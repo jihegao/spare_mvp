@@ -118,9 +118,11 @@ import {
 import {
   createProjectProduct,
   ensureProductForComponent,
+  findProjectProductConflicts,
   normalizeProjectProducts,
   productDisplayName,
-  projectProductById
+  projectProductById,
+  searchProjectProducts
 } from "./product-catalog.mjs";
 import {
   equipmentStructureExportCsv,
@@ -804,7 +806,10 @@ let selectedEquipmentNodeKey = "";
 let equipmentSearchQuery = "";
 let equipmentProductEditorComponentId = "";
 let equipmentProductQuery = "";
-let equipmentProductQueryDraft = "";
+let equipmentProductActiveOptionIndex = -1;
+let equipmentProductCreateOpen = false;
+let equipmentProductValidationMessage = "";
+let equipmentProductCompositionActive = false;
 let equipmentProductDraft = { name: "", model: "", kind: "LRU" };
 let spareShortfallSort = { field: "", direction: "" };
 let spareAircraftFilter = "";
@@ -1048,19 +1053,15 @@ function bindEvents() {
       return;
     }
 
-    const equipmentProductEditButton = event.target.closest("[data-equipment-product-edit]");
-    if (equipmentProductEditButton) {
-      equipmentProductEditorComponentId = equipmentProductEditButton.dataset.equipmentProductEdit || "";
-      equipmentProductQuery = "";
-      equipmentProductQueryDraft = "";
-      equipmentProductDraft = { name: "", model: "", kind: "LRU" };
-      render();
+    const equipmentProductCombobox = event.target.closest("[data-equipment-product-combobox]");
+    if (equipmentProductCombobox) {
+      openEquipmentProductCombobox(equipmentProductCombobox.dataset.equipmentProductCombobox);
       return;
     }
 
     const equipmentProductCloseButton = event.target.closest("[data-equipment-product-close]");
     if (equipmentProductCloseButton) {
-      equipmentProductEditorComponentId = "";
+      closeEquipmentProductCombobox();
       render();
       return;
     }
@@ -1068,6 +1069,20 @@ function bindEvents() {
     const equipmentProductSelectButton = event.target.closest("[data-equipment-product-select]");
     if (equipmentProductSelectButton) {
       bindEquipmentComponentProduct(equipmentProductEditorComponentId, equipmentProductSelectButton.dataset.equipmentProductSelect);
+      render();
+      return;
+    }
+
+    const equipmentProductCreateOpenButton = event.target.closest("[data-equipment-product-create-open]");
+    if (equipmentProductCreateOpenButton) {
+      openEquipmentProductCreation();
+      render();
+      return;
+    }
+
+    const equipmentProductCreateCancelButton = event.target.closest("[data-equipment-product-create-cancel]");
+    if (equipmentProductCreateCancelButton) {
+      cancelEquipmentProductCreation();
       render();
       return;
     }
@@ -2226,10 +2241,11 @@ function bindEvents() {
   });
 
   app.addEventListener("keydown", (event) => {
-    const equipmentProductQueryInput = event.target.closest("[data-equipment-product-query]");
-    if (equipmentProductQueryInput && event.key === "Enter") {
+    const equipmentProductCombobox = event.target.closest("[data-equipment-product-combobox]");
+    if (equipmentProductCombobox && ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) {
+      if (event.isComposing || equipmentProductCompositionActive) return;
       event.preventDefault();
-      commitEquipmentProductQuery(equipmentProductQueryInput);
+      handleEquipmentProductComboboxKeydown(equipmentProductCombobox, event.key);
       return;
     }
     const periodicProfileNameInput = event.target.closest("[data-periodic-profile-name]");
@@ -2317,6 +2333,16 @@ function bindEvents() {
     }
     if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CHANGE_SELECTORS)) {
       event.preventDefault?.();
+      return;
+    }
+
+    const equipmentProductDraftSelect = event.target.closest("select[data-equipment-product-draft]");
+    if (equipmentProductDraftSelect) {
+      equipmentProductDraft = {
+        ...equipmentProductDraft,
+        [equipmentProductDraftSelect.dataset.equipmentProductDraft]: equipmentProductDraftSelect.value
+      };
+      equipmentProductValidationMessage = "";
       return;
     }
 
@@ -2900,11 +2926,6 @@ function bindEvents() {
   });
 
   app.addEventListener("focusout", (event) => {
-    const equipmentProductQueryInput = event.target.closest("[data-equipment-product-query]");
-    if (equipmentProductQueryInput) {
-      commitEquipmentProductQuery(equipmentProductQueryInput, { deferRender: true });
-      return;
-    }
     const periodicProfileNameInput = event.target.closest("[data-periodic-profile-name]");
     if (periodicProfileNameInput) {
       const nextTarget = event.relatedTarget;
@@ -2916,6 +2937,22 @@ function bindEvents() {
     if (equipmentAircraftModelInput) {
       commitEquipmentAircraftModelInput(equipmentAircraftModelInput);
     }
+  });
+
+  app.addEventListener("compositionstart", (event) => {
+    const equipmentProductCombobox = event.target.closest("[data-equipment-product-combobox]");
+    if (!equipmentProductCombobox) return;
+    equipmentProductCompositionActive = true;
+  });
+
+  app.addEventListener("compositionend", (event) => {
+    const equipmentProductCombobox = event.target.closest("[data-equipment-product-combobox]");
+    if (!equipmentProductCombobox) return;
+    equipmentProductCompositionActive = false;
+    updateEquipmentProductComboboxQuery(
+      equipmentProductCombobox.dataset.equipmentProductCombobox,
+      equipmentProductCombobox.value
+    );
   });
 
   app.addEventListener("input", (event) => {
@@ -2954,9 +2991,13 @@ function bindEvents() {
       return;
     }
 
-    const equipmentProductQueryInput = event.target.closest("[data-equipment-product-query]");
-    if (equipmentProductQueryInput) {
-      equipmentProductQueryDraft = equipmentProductQueryInput.value;
+    const equipmentProductCombobox = event.target.closest("[data-equipment-product-combobox]");
+    if (equipmentProductCombobox) {
+      updateEquipmentProductComboboxQuery(
+        equipmentProductCombobox.dataset.equipmentProductCombobox,
+        equipmentProductCombobox.value,
+        { deferResults: event.isComposing || equipmentProductCompositionActive }
+      );
       return;
     }
 
@@ -2966,6 +3007,7 @@ function bindEvents() {
         ...equipmentProductDraft,
         [equipmentProductDraftInput.dataset.equipmentProductDraft]: equipmentProductDraftInput.value
       };
+      equipmentProductValidationMessage = "";
       return;
     }
 
@@ -6410,6 +6452,7 @@ function diffTimeMinutes(start, end) {
 
 function renderEquipmentModeling(page) {
   normalizeProjectProducts(scenario);
+  const productsById = new Map((scenario.products || []).map((product) => [product.id, product]));
   const selectedState = resolveSelectedEquipmentNode();
   const components = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
   const aircraftModels = wholeMachineModels();
@@ -6444,7 +6487,7 @@ function renderEquipmentModeling(page) {
             <label class="equipment-template-action">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
             <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
-          ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState) : importedDataEmptyState(page.name || "装备系统建模")}
+          ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState, productsById) : importedDataEmptyState(page.name || "装备系统建模")}
           ${equipmentProductEditorComponentId ? renderEquipmentProductEditor() : ""}
         </div>
       </section>
@@ -6531,30 +6574,171 @@ function bindEquipmentComponentProduct(componentId, productId) {
   const product = projectProductById(scenario, productId);
   if (!component || !product) return;
   component.productId = product.id;
-  equipmentProductEditorComponentId = "";
+  closeEquipmentProductCombobox();
+  equipmentImportStatus = `已关联产品：${product.name} / ${product.model || "无型号"} / ${product.id}`;
   markProjectDraftChanged();
   updatePreviewResultsThroughApiClient();
 }
 
 function createAndBindEquipmentProduct(componentId) {
   const component = (scenario.components || []).find((item) => String(item.id || "") === String(componentId || ""));
-  const name = String(equipmentProductDraft.name || "").trim();
-  if (!component || !name) {
-    equipmentImportStatus = "请输入新产品名称";
+  const normalizedDraft = normalizedEquipmentProductCreationDraft(component);
+  if (!component || !normalizedDraft.name) {
+    equipmentProductValidationMessage = "产品名称不能为空，未创建新产品。";
     return;
   }
-  const product = createProjectProduct(scenario, {
-    ...equipmentProductDraft,
-    name,
-    model: String(equipmentProductDraft.model || component.id || "").trim(),
-    aircraftModel: component.aircraftModel
-  });
+  const conflicts = findProjectProductConflicts(scenario, normalizedDraft);
+  const duplicateProducts = [...new Map(
+    [...conflicts.nameMatches, ...conflicts.modelMatches].map((product) => [product.id, product])
+  ).values()];
+  if (duplicateProducts.length) {
+    const conflictKinds = [
+      conflicts.nameMatches.length ? "同名" : "",
+      conflicts.modelMatches.length ? "同型号" : ""
+    ].filter(Boolean).join("、");
+    equipmentProductValidationMessage = `发现${conflictKinds}产品：${duplicateProducts.map((product) => `${product.name} / ${product.model || "无型号"} / ${product.id}`).join("；")}。请选择已有产品，未创建重复项。`;
+    return;
+  }
+  const product = createProjectProduct(scenario, normalizedDraft);
   component.productId = product.id;
-  equipmentProductEditorComponentId = "";
-  equipmentProductDraft = { name: "", model: "", kind: "LRU" };
-  equipmentImportStatus = `已添加并匹配产品：${product.name}`;
+  closeEquipmentProductCombobox();
+  equipmentImportStatus = `已创建并关联产品：${product.name} / ${product.model || "无型号"} / ${product.id}`;
   markProjectDraftChanged();
   updatePreviewResultsThroughApiClient();
+}
+
+function normalizedEquipmentProductCreationDraft(component, draft = equipmentProductDraft) {
+  const normalizedModel = String(draft?.model || "").trim();
+  return {
+    ...draft,
+    name: String(draft?.name || "").trim(),
+    model: normalizedModel || String(component?.id || "").trim(),
+    kind: String(draft?.kind || "LRU").trim() || "LRU"
+  };
+}
+
+function openEquipmentProductCombobox(componentId) {
+  const nextComponentId = String(componentId || "");
+  if (!nextComponentId || equipmentProductEditorComponentId === nextComponentId) return;
+  const component = (scenario.components || []).find((item) => String(item.id || "") === nextComponentId);
+  if (!component) return;
+  equipmentProductEditorComponentId = nextComponentId;
+  equipmentProductQuery = "";
+  const products = searchProjectProducts(scenario, "");
+  const selectedIndex = products.findIndex((product) => product.id === component.productId);
+  equipmentProductActiveOptionIndex = products.length ? Math.max(0, selectedIndex) : -1;
+  equipmentProductCreateOpen = false;
+  equipmentProductValidationMessage = "";
+  equipmentProductDraft = { name: "", model: "", kind: "LRU" };
+  render();
+  restoreEquipmentProductComboboxFocus();
+}
+
+function closeEquipmentProductCombobox() {
+  equipmentProductEditorComponentId = "";
+  equipmentProductQuery = "";
+  equipmentProductActiveOptionIndex = -1;
+  equipmentProductCreateOpen = false;
+  equipmentProductValidationMessage = "";
+  equipmentProductCompositionActive = false;
+  equipmentProductDraft = { name: "", model: "", kind: "LRU" };
+}
+
+function updateEquipmentProductComboboxQuery(componentId, value, { deferResults = false } = {}) {
+  const nextComponentId = String(componentId || "");
+  if (!nextComponentId) return;
+  equipmentProductEditorComponentId = nextComponentId;
+  equipmentProductQuery = String(value || "");
+  if (deferResults) return;
+  equipmentProductActiveOptionIndex = searchProjectProducts(scenario, equipmentProductQuery).length ? 0 : -1;
+  equipmentProductCreateOpen = false;
+  equipmentProductValidationMessage = "";
+  refreshEquipmentProductComboboxResults();
+}
+
+function handleEquipmentProductComboboxKeydown(input, key) {
+  const componentId = input.dataset.equipmentProductCombobox;
+  if (equipmentProductEditorComponentId !== componentId) {
+    openEquipmentProductCombobox(componentId);
+  }
+  if (key === "Escape") {
+    closeEquipmentProductCombobox();
+    render();
+    return;
+  }
+  const products = searchProjectProducts(scenario, equipmentProductQuery);
+  if (!products.length) {
+    equipmentProductActiveOptionIndex = -1;
+    equipmentProductValidationMessage = "没有可选择的已有产品；自由文本不会写入产品 ID，请显式创建新产品。";
+    refreshEquipmentProductComboboxResults();
+    return;
+  }
+  if (key === "ArrowDown" || key === "ArrowUp") {
+    const direction = key === "ArrowDown" ? 1 : -1;
+    const currentIndex = equipmentProductActiveOptionIndex < 0
+      ? (direction > 0 ? -1 : 0)
+      : equipmentProductActiveOptionIndex;
+    equipmentProductActiveOptionIndex = (currentIndex + direction + products.length) % products.length;
+    refreshEquipmentProductComboboxResults({ preserveCreation: true });
+    return;
+  }
+  if (key === "Enter" && equipmentProductActiveOptionIndex >= 0) {
+    bindEquipmentComponentProduct(componentId, products[equipmentProductActiveOptionIndex].id);
+    render();
+  }
+}
+
+function refreshEquipmentProductComboboxResults({ preserveCreation = false } = {}) {
+  const component = (scenario.components || []).find((item) => String(item.id || "") === String(equipmentProductEditorComponentId || ""));
+  const input = app.querySelector?.('[data-equipment-product-combobox][aria-expanded="true"]');
+  const panel = app.querySelector?.("[data-equipment-product-editor]");
+  const status = panel?.querySelector?.("[data-equipment-product-result-status]");
+  const listbox = panel?.querySelector?.("[data-equipment-product-options]");
+  const emptyState = panel?.querySelector?.("[data-equipment-product-empty]");
+  if (!component || !input || !panel || !status || !listbox || !emptyState) {
+    render();
+    restoreEquipmentProductComboboxFocus();
+    return;
+  }
+  const products = searchProjectProducts(scenario, equipmentProductQuery);
+  const activeIndex = products.length ? clamp(equipmentProductActiveOptionIndex, 0, products.length - 1) : -1;
+  equipmentProductActiveOptionIndex = activeIndex;
+  const listboxId = equipmentProductListboxId(component);
+  status.textContent = equipmentProductResultStatus(products);
+  listbox.innerHTML = equipmentProductOptionsMarkup(component, products, listboxId, activeIndex);
+  emptyState.hidden = products.length > 0;
+  if (activeIndex >= 0) input.setAttribute("aria-activedescendant", `${listboxId}-option-${activeIndex}`);
+  else input.removeAttribute("aria-activedescendant");
+  panel.querySelector?.("[data-equipment-product-validation]")?.remove();
+  if (!preserveCreation) {
+    const createContainer = panel.querySelector?.("[data-equipment-product-create-container]");
+    if (createContainer) createContainer.innerHTML = equipmentProductCreateButtonMarkup();
+  }
+}
+
+function restoreEquipmentProductComboboxFocus() {
+  setTimeout(() => {
+    const input = app.querySelector?.('[data-equipment-product-combobox][aria-expanded="true"]');
+    input?.focus();
+    const end = String(input?.value || "").length;
+    input?.setSelectionRange?.(end, end);
+  }, 0);
+}
+
+function openEquipmentProductCreation() {
+  equipmentProductCreateOpen = true;
+  equipmentProductValidationMessage = "";
+  equipmentProductDraft = {
+    name: String(equipmentProductQuery || "").trim(),
+    model: "",
+    kind: "LRU"
+  };
+}
+
+function cancelEquipmentProductCreation() {
+  equipmentProductCreateOpen = false;
+  equipmentProductValidationMessage = "";
+  equipmentProductDraft = { name: "", model: "", kind: "LRU" };
 }
 
 function deleteSelectedEquipmentNode() {
@@ -6920,7 +7104,7 @@ function equipmentSelectionSummary(selectedState, componentCount) {
   return `${selectedState.component?.name || "组件"} / ${componentCount} 个组件`;
 }
 
-function renderEquipmentSystemTable(selectedState) {
+function renderEquipmentSystemTable(selectedState, productsById) {
   const rows = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
   const aircraftRows = selectedState.kind === "aircraft-list"
     ? wholeMachineModels().map((model) => renderEquipmentAircraftTableRow(model, { editable: false }))
@@ -6944,7 +7128,7 @@ function renderEquipmentSystemTable(selectedState) {
         </thead>
         <tbody>
           ${aircraftRows.join("")}
-          ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState)).join("")}
+          ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById)).join("")}
         </tbody>
       </table>
     </div>
@@ -6973,7 +7157,7 @@ function renderEquipmentAircraftTableRow(aircraftModel, { editable = true } = {}
   `;
 }
 
-function renderEquipmentSystemTableRow(component, index, selectedState) {
+function renderEquipmentSystemTableRow(component, index, selectedState, productsById) {
   const selected = selectedState.kind === "component" && String(selectedState.component?.id || "") === String(component.id || "");
   const mtbfDistributionType = equipmentDistributionType(component.failureDistribution?.distributionType, "mtbf");
   const mttrDistributionType = equipmentDistributionType(component.repairDistribution?.distributionType, "mttr");
@@ -6983,7 +7167,7 @@ function renderEquipmentSystemTableRow(component, index, selectedState) {
       <td>${equipmentParentNodeSelect(component, index)}</td>
       <td>${equipmentTableInput("数量n", `components.${index}.quantity`, "number", { min: "1", step: "1" })}</td>
       <td>${equipmentComponentAttributeSelect(index)}</td>
-      <td>${equipmentProductCell(component)}</td>
+      <td>${equipmentProductCell(component, productsById)}</td>
       <td>${equipmentKOutOfNInput(index)}</td>
       <td>${equipmentDistributionSelect(`components.${index}.failureDistribution.distributionType`, mtbfDistributionType, "MTBF-分布类型")}</td>
       <td>${renderEquipmentDistributionParameters(index, "mtbf", mtbfDistributionType)}</td>
@@ -6993,50 +7177,117 @@ function renderEquipmentSystemTableRow(component, index, selectedState) {
   `;
 }
 
-function equipmentProductCell(component) {
-  const product = projectProductById(scenario, component.productId) || ensureProductForComponent(scenario, component);
-  return `<button type="button" class="inline-action" data-equipment-product-edit="${htmlEscape(component.id)}">编辑/搜索：${htmlEscape(productDisplayName(product))}</button>`;
-}
-
-function renderEquipmentProductEditor() {
-  normalizeProjectProducts(scenario);
-  const component = (scenario.components || []).find((item) => String(item.id || "") === String(equipmentProductEditorComponentId || ""));
-  if (!component) return "";
-  const query = equipmentProductQuery.trim().toLocaleLowerCase();
-  const products = (scenario.products || []).filter((product) => !query || [product.id, product.name, product.model]
-    .some((value) => String(value || "").toLocaleLowerCase().includes(query)));
+function equipmentProductCell(component, productsById) {
+  const product = productsById.get(component.productId);
+  const expanded = equipmentProductEditorComponentId === String(component.id || "");
+  const listboxId = equipmentProductListboxId(component);
+  const activeDescendant = expanded && equipmentProductActiveOptionIndex >= 0
+    ? ` aria-activedescendant="${listboxId}-option-${equipmentProductActiveOptionIndex}"`
+    : "";
   return `
-    <div class="detail-card" data-equipment-product-editor>
-      <div class="section-head"><h4>编辑/搜索产品：${htmlEscape(component.name || component.id)}</h4><button type="button" data-equipment-product-close>关闭</button></div>
-      <div class="toolbar-row"><input value="${htmlEscape(equipmentProductQueryDraft)}" placeholder="搜索已有产品" aria-label="搜索已有产品" title="按 Enter 或离开输入框后搜索" data-equipment-product-query></div>
-      <div class="table-wrap compact-table">
-        <table><thead><tr><th>产品 ID</th><th>名称</th><th>型号</th><th>匹配</th></tr></thead><tbody>
-          ${products.map((product) => `<tr><td>${htmlEscape(product.id)}</td><td>${htmlEscape(product.name)}</td><td>${htmlEscape(product.model || "-")}</td><td><button type="button" class="inline-action" data-equipment-product-select="${htmlEscape(product.id)}">${component.productId === product.id ? "已匹配" : "匹配"}</button></td></tr>`).join("") || '<tr><td colspan="4" class="muted">没有匹配产品，可在下方添加</td></tr>'}
-        </tbody></table>
-      </div>
-      <h5>添加新产品并匹配</h5>
-      <div class="form-table-grid">
-        <label>名称<input data-equipment-product-draft="name" value="${htmlEscape(equipmentProductDraft.name)}"></label>
-        <label>型号<input data-equipment-product-draft="model" value="${htmlEscape(equipmentProductDraft.model)}"></label>
-        <label>类型<select data-equipment-product-draft="kind">${["非LRU", "LRU", "SRU"].map((value) => `<option value="${value}" ${equipmentProductDraft.kind === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
-      </div>
-      <button type="button" class="btn-primary" data-equipment-product-create>添加并匹配</button>
+    <div class="equipment-product-combobox-cell">
+      <input
+        type="text"
+        role="combobox"
+        aria-label="搜索并关联产品：${htmlEscape(component.name || component.id)}"
+        aria-autocomplete="list"
+        aria-haspopup="listbox"
+        aria-expanded="${String(expanded)}"
+        aria-controls="${listboxId}"
+        aria-describedby="${listboxId}-current"
+        ${activeDescendant}
+        autocomplete="off"
+        spellcheck="false"
+        value="${htmlEscape(expanded ? equipmentProductQuery : productDisplayName(product))}"
+        data-equipment-product-combobox="${htmlEscape(component.id)}"
+      >
+      <small id="${listboxId}-current" class="equipment-product-current" data-equipment-product-current="${htmlEscape(product.id)}">${htmlEscape(product.name)} / ${htmlEscape(product.model || "无型号")} / ${htmlEscape(product.id)}</small>
     </div>
   `;
 }
 
-function commitEquipmentProductQuery(input, { deferRender = false } = {}) {
-  const nextQuery = String(input?.value || "");
-  equipmentProductQueryDraft = nextQuery;
-  if (equipmentProductQuery === nextQuery) return;
-  equipmentProductQuery = nextQuery;
-  if (deferRender) {
-    setTimeout(() => {
-      if (equipmentProductEditorComponentId) render();
-    }, 0);
-    return;
-  }
-  render();
+function renderEquipmentProductEditor() {
+  const component = (scenario.components || []).find((item) => String(item.id || "") === String(equipmentProductEditorComponentId || ""));
+  if (!component) return "";
+  const products = searchProjectProducts(scenario, equipmentProductQuery);
+  const listboxId = equipmentProductListboxId(component);
+  const activeIndex = products.length
+    ? clamp(equipmentProductActiveOptionIndex, 0, products.length - 1)
+    : -1;
+  equipmentProductActiveOptionIndex = activeIndex;
+  return `
+    <div class="detail-card equipment-product-combobox-panel" data-equipment-product-editor>
+      <div class="section-head">
+        <div>
+          <h4>为 ${htmlEscape(component.name || component.id)} 关联产品</h4>
+          <p>按产品 ID、名称或型号搜索；只有选择候选项或显式创建才会更新 productId。</p>
+        </div>
+        <button type="button" data-equipment-product-close>取消并关闭</button>
+      </div>
+      <p class="equipment-product-result-status" role="status" aria-live="polite" data-equipment-product-result-status>${equipmentProductResultStatus(products)}</p>
+      <div id="${listboxId}" class="equipment-product-options" role="listbox" aria-label="产品候选项" data-equipment-product-options>
+        ${equipmentProductOptionsMarkup(component, products, listboxId, activeIndex)}
+      </div>
+      <p class="muted equipment-product-empty" data-equipment-product-empty ${products.length ? "hidden" : ""}>暂无候选，可显式创建新产品。</p>
+      ${equipmentProductValidationMessage ? `<p class="alert warn" role="alert" data-equipment-product-validation>${htmlEscape(equipmentProductValidationMessage)}</p>` : ""}
+      <div data-equipment-product-create-container>${equipmentProductCreateOpen ? equipmentProductCreationMarkup(component) : equipmentProductCreateButtonMarkup()}</div>
+    </div>
+  `;
+}
+
+function equipmentProductResultStatus(products) {
+  return products.length
+    ? `找到 ${products.length} 个产品，使用上下方向键浏览、Enter 选择。`
+    : "没有匹配的已有产品；自由文本不会写入产品 ID。";
+}
+
+function equipmentProductOptionsMarkup(component, products, listboxId, activeIndex) {
+  return products.map((product, index) => `
+    <button
+      type="button"
+      id="${listboxId}-option-${index}"
+      class="equipment-product-option ${index === activeIndex ? "is-active" : ""}"
+      role="option"
+      aria-selected="${String(index === activeIndex)}"
+      data-equipment-product-select="${htmlEscape(product.id)}"
+    >
+      <strong>${htmlEscape(product.name || product.id)}</strong>
+      <span>型号：${htmlEscape(product.model || "无型号")} · ID：${htmlEscape(product.id)}</span>
+      ${component.productId === product.id ? '<em class="status-badge success">当前关联</em>' : ""}
+    </button>
+  `).join("");
+}
+
+function equipmentProductCreationMarkup(component) {
+  const normalizedDraft = normalizedEquipmentProductCreationDraft(component);
+  const conflicts = findProjectProductConflicts(scenario, normalizedDraft);
+  const duplicateProducts = [...new Map(
+    [...conflicts.nameMatches, ...conflicts.modelMatches].map((product) => [product.id, product])
+  ).values()];
+  return `
+    <div class="equipment-product-create-panel" data-equipment-product-create-panel>
+      <div class="section-head"><h5>创建新产品并关联</h5><span>不会修改任何已有产品</span></div>
+      <div class="form-table-grid">
+        <label>产品名称<input aria-label="新产品名称" data-equipment-product-draft="name" value="${htmlEscape(equipmentProductDraft.name)}"></label>
+        <label>产品型号<input aria-label="新产品型号" data-equipment-product-draft="model" value="${htmlEscape(equipmentProductDraft.model)}"></label>
+        <label>产品类型<select aria-label="新产品类型" data-equipment-product-draft="kind">${["非LRU", "LRU", "SRU"].map((value) => `<option value="${value}" ${equipmentProductDraft.kind === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+      </div>
+      ${duplicateProducts.length ? `<p class="alert warn" data-equipment-product-duplicate-hint>已有同名或同型号候选：${duplicateProducts.map((product) => htmlEscape(`${product.name} / ${product.model || "无型号"} / ${product.id}`)).join("；")}</p>` : ""}
+      <div class="toolbar-row equipment-product-create-actions">
+        <button type="button" class="btn-primary" data-equipment-product-create>创建并关联</button>
+        <button type="button" data-equipment-product-create-cancel>取消创建</button>
+      </div>
+    </div>
+  `;
+}
+
+function equipmentProductCreateButtonMarkup() {
+  return '<button type="button" class="inline-action equipment-product-create-open" data-equipment-product-create-open>创建新产品</button>';
+}
+
+function equipmentProductListboxId(component) {
+  const index = (scenario.components || []).indexOf(component);
+  return `equipment-product-options-${Math.max(index, 0)}`;
 }
 
 function equipmentTableInput(label, path, type = "text", attrs = {}) {
