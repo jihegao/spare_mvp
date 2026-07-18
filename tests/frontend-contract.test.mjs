@@ -2624,6 +2624,7 @@ test("monte carlo experiment navigation goes directly to embedded Mesa detail", 
 
 test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const momentSource = await readFile(new URL("../front/monte-carlo-moments.mjs", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const page = getFeaturePageById("spare-planning-monte-carlo-experiment-detail");
   const missionPage = getFeaturePageById("mission-reliability-monte-carlo-experiment-detail");
@@ -2661,17 +2662,15 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   assert.match(renderSource, /正在运行 Mesa 分析/);
   assert.doesNotMatch(renderSource, /data-lite-mesa-field="samples"|data-lite-mesa-field="seed"/);
   assert.match(renderSource, /主要输出指标统计值/);
-  assert.match(renderSource, /<th>业务指标<\/th><th>最终结果<\/th>/);
-  assert.doesNotMatch(renderSource, /样本量|随机种子|样本数|均值|最小值|最大值|标准差|均值\s*\/\s*n=|参数组/);
-  assert.match(appSource, /key: "mission_success_rate", label: "任务可靠度"/);
-  assert.match(appSource, /key: "spare_fill_rate", label: "备件满足率"/);
-  assert.match(appSource, /key: "spare_utilization", label: "备件利用率"/);
-  assert.match(appSource, /ready_rate/);
-  assert.match(appSource, /key: "mean_transport_delay", label: "平均备件延误时间"/);
-  assert.doesNotMatch(appSource.slice(
-    appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),
-    appSource.indexOf("const LITE_MESA_ANALYSIS_DEFINITIONS")
-  ), /shortage_events|短缺事件/);
+  assert.match(renderSource, /<th>业务指标<\/th><th>均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
+  assert.match(renderSource, /总样本|成功样本|失败样本/);
+  assert.doesNotMatch(renderSource, /样本量|随机种子|最小值|最大值|标准差|参数组/);
+  assert.match(momentSource, /metricId: "mission_success_rate", label: "任务可靠度"/);
+  assert.match(momentSource, /metricId: "spare_fill_rate", label: "备件满足率"/);
+  assert.match(momentSource, /metricId: "spare_utilization", label: "备件利用率"/);
+  assert.match(momentSource, /metricId: "ready_rate"/);
+  assert.match(momentSource, /metricId: "mean_transport_delay", label: "平均备件延误时间"/);
+  assert.doesNotMatch(momentSource, /shortage_events|短缺事件|sample_id|debug/);
   assert.match(changeSource, /const liteMesaMonteCarloInput = event\.target\.closest\("\[data-lite-mesa-field\]"\)/);
   assert.doesNotMatch(renderSource, /非正式|预览|本地预览|正式后端结果/);
   const runSource = appSource.slice(
@@ -3952,10 +3951,7 @@ test("monte carlo detail keeps formal source status and links to analysis pages"
 
 test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const metricSource = appSource.slice(
-    appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),
-    appSource.indexOf("const LITE_MESA_ANALYSIS_DEFINITIONS")
-  );
+  const metricSource = await readFile(new URL("../front/monte-carlo-moments.mjs", import.meta.url), "utf8");
   const reliabilitySource = appSource.slice(
     appSource.indexOf("mission_reliability:"),
     appSource.indexOf("downtime_factors:")
@@ -3969,7 +3965,7 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
     appSource.indexOf("function field(label")
   );
 
-  assert.match(metricSource, /key: "sortie_rate", label: "出动架次率"/);
+  assert.match(metricSource, /metricId: "sortie_rate", label: "出动架次率"/);
   assert.match(reliabilitySource, /metricLabels: \["出动架次率", "波次成功率", "整周期任务可靠度", "任务周期"\]/);
   assert.match(reliabilityTableSource, /task-reliability-result-table/);
   assert.match(reliabilityTableSource, /fields\.map\(\(field\) => `<th>/);
@@ -4107,26 +4103,19 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
   assert.match(styleSource, /\.downtime-factor-option:has\(input:checked\)/);
 });
 
-test("lite Mesa Monte Carlo detail uses decimal ratios and hides metadata chrome", async () => {
+test("lite Mesa Monte Carlo detail uses decimal ratios, moments, and hides internal metadata chrome", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
     appSource.indexOf("function liteMesaBusinessMetricRows")
   );
-  const metricSource = appSource.slice(
-    appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),
-    appSource.indexOf("const LITE_MESA_ANALYSIS_DEFINITIONS")
-  );
-  const formatSource = appSource.slice(
-    appSource.indexOf("function formatLiteMesaMetric"),
-    appSource.indexOf("function renderAnalysis")
-  );
+  const metricSource = await readFile(new URL("../front/monte-carlo-moments.mjs", import.meta.url), "utf8");
 
-  assert.match(metricSource, /key: "mean_transport_delay", label: "平均备件延误时间"/);
+  assert.match(metricSource, /metricId: "mean_transport_delay", label: "平均备件延误时间"/);
   assert.doesNotMatch(metricSource, /shortage_events|短缺事件/);
   assert.doesNotMatch(renderSource, /后端 Mesa 仿真分析|lite-mesa-hero-meter|lite-mesa-source-grid/);
-  assert.doesNotMatch(formatSource, /if \(format === "pct"\) return pct\(value\)/);
-  assert.match(formatSource, /if \(format === "ratio"\) return ratioFixed\(value\)/);
+  assert.match(metricSource, /return value\.toFixed\(2\)/);
+  assert.match(metricSource, /variance \? "不可计算" : "无有效样本"/);
 });
 
 test("system management exposes an independent equipment RMS allocation workbench", async () => {

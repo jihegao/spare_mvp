@@ -24,6 +24,7 @@ from src.spare_mvp_backend.api import (
     _lite_mesa_mission_reliability_result,
     _lite_mesa_spare_shortfall_result,
     _normalize_lite_mesa_analysis_settings,
+    _run_aircraft_support_v1_analysis_sample,
     _run_lite_mesa_analysis_sample_worker,
 )
 from src.spare_mvp_backend.http_server import create_backend_server
@@ -272,6 +273,76 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(outcome["failure"]["error"]["code"], "sample_timeout")
         self.assertEqual(outcome["failure"]["error"]["details"]["phase"], "model_execution")
         self.assertEqual(outcome["failure"]["error"]["details"]["timeout_seconds"], 0.01)
+
+    def test_lite_mesa_all_timeout_response_keeps_empty_moments_and_execution_counts(self) -> None:
+        failures = [
+            {
+                "sample_index": index,
+                "seed": 20260718 + index,
+                "error": {"code": "sample_timeout", "message": "synthetic timeout", "details": {}},
+            }
+            for index in range(2)
+        ]
+        diagnostics = [
+            {"sample_index": index, "seed": 20260718 + index, "status": "failed", "elapsed_seconds": 60.0}
+            for index in range(2)
+        ]
+        with mock.patch(
+            "src.spare_mvp_backend.api._run_lite_mesa_analysis_samples",
+            return_value=([], failures, 1, diagnostics),
+        ):
+            payload = self.api.run_lite_mesa_analysis(
+                small_aircraft_support_project("project-lite-mesa-all-timeout"),
+                analysis_type="mission_reliability",
+                settings={"samples": 2, "seed": 20260718},
+            )
+
+        self.assertEqual(payload["status"], "blocked")
+        self.assertEqual(payload["requested_sample_count"], 2)
+        self.assertEqual(payload["completed_sample_count"], 0)
+        self.assertEqual(payload["failed_sample_count"], 2)
+        self.assertEqual(payload["metric_moments"]["total_sample_count"], 2)
+        self.assertEqual(payload["metric_moments"]["successful_sample_count"], 0)
+        self.assertEqual(payload["metric_moments"]["failed_sample_count"], 2)
+        self.assertTrue(all(metric["mean"] is None for metric in payload["metric_moments"]["metrics"]))
+        self.assertTrue(all(metric["sample_variance"] is None for metric in payload["metric_moments"]["metrics"]))
+
+    def test_lite_mesa_finite_extremes_do_not_crash_the_api_or_emit_nonfinite_moments(self) -> None:
+        project = small_aircraft_support_project("project-lite-mesa-finite-extremes")
+
+        def extreme_samples(inputs, *, base_seed, settings):
+            samples = [
+                _run_aircraft_support_v1_analysis_sample(
+                    inputs,
+                    seed=base_seed + sample_index,
+                    sample_index=sample_index,
+                )
+                for sample_index in range(settings["samples"])
+            ]
+            samples[0]["metrics"]["repair_backlog"] = 1e308
+            samples[1]["metrics"]["repair_backlog"] = -1e308
+            return samples, [], 1, []
+
+        with mock.patch(
+            "src.spare_mvp_backend.api._run_lite_mesa_analysis_samples",
+            side_effect=extreme_samples,
+        ):
+            payload = self.api.run_lite_mesa_analysis(
+                project,
+                analysis_type="mission_reliability",
+                settings={"samples": 2, "seed": 20260718, "parallelCores": 1},
+            )
+
+        repair_backlog = next(
+            metric for metric in payload["metric_moments"]["metrics"]
+            if metric["metric_id"] == "repair_backlog"
+        )
+        self.assertEqual(payload["status"], "session_complete")
+        self.assertEqual(payload["aggregate_metrics"]["repair_backlog"], 0)
+        self.assertEqual(repair_backlog["mean"], 0)
+        self.assertIsNone(repair_backlog["sample_variance"])
+        self.assertEqual(repair_backlog["valid_sample_count"], 2)
+        self.assertEqual(repair_backlog["invalid_reason"], "sample_variance_not_finite")
 
     def test_periodic_profile_empty_slots_survive_project_round_trip_and_compile(self) -> None:
         project = small_aircraft_support_project("project-periodic-profile-empty-slots")
@@ -2583,6 +2654,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["requested_sample_count"], 2)
         self.assertEqual(payload["completed_sample_count"], 2)
         self.assertEqual(payload["failed_sample_count"], 0)
+        self.assertEqual(payload["metric_moments"]["variance_denominator"], "n-1")
+        self.assertEqual(payload["metric_moments"]["total_sample_count"], 2)
+        self.assertEqual(payload["metric_moments"]["successful_sample_count"], 2)
+        self.assertEqual(payload["metric_moments"]["failed_sample_count"], 0)
+        self.assertTrue(all("unit" in metric for metric in payload["metric_moments"]["metrics"]))
         self.assertEqual(payload["seed_list"], [20260705, 20260706])
         self.assertEqual(payload["sample_timeout_seconds"], 60)
         self.assertEqual(payload["session_timeout_seconds"], 180)
