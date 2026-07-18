@@ -1018,6 +1018,8 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(supportOrgSource, /children:\s*\(node\.children \|\| \[\]\)\.map\(\(child\) => orgTreeNode\(child, depth \+ 1\)\)/);
   assert.doesNotMatch(supportOrgSource, /children:\s*depth\s*>=\s*1\s*\?\s*\[\]/);
   assert.match(appSource, /function updateSupportResourceOverride/);
+  assert.match(appSource, /function resetSupportResourceSelectionForFeatureChange/);
+  assert.match(appSource, /function selectedEditableSpareSupportOrgNode/);
   assert.match(appSource, /scenario\.supportResources/);
   assert.doesNotMatch(appSource, /scenario\.supportResourceOverrides/);
   assert.doesNotMatch(appSource, /scenario\.deletedSupportResourceKeys/);
@@ -1033,6 +1035,22 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(supportOrgSource, /data-support-org-field="description"/);
   assert.match(supportOrgSource, /关联机场/);
   assert.match(supportOrgSource, /supportOrgAirportSelect\(selectedSupportOrgNode\)/);
+
+  const spareDeleteSource = appSource.slice(
+    appSource.indexOf("function deleteSelectedSupportResources"),
+    appSource.indexOf("function findSupportOrgTreeNode")
+  );
+  assert.match(spareDeleteSource, /supportResourceTypeLabel\(resource\.type\) === activeResourceType/);
+  assert.match(spareDeleteSource, /supportResourceBelongsToOrg\(resource, selectedSpareOrgNode\)/);
+  assert.match(spareDeleteSource, /currentModelingPageLocked\(page\)/);
+
+  const spareImportSource = appSource.slice(
+    appSource.indexOf("async function importSupportResourceTableFile"),
+    appSource.indexOf("function normalizeSupportResourceImportType")
+  );
+  assert.match(spareImportSource, /selectedEditableSpareSupportOrgNode\(\)/);
+  assert.match(spareImportSource, /targetOrgNodes: \[selectedSpareOrgNode\]/);
+  assert.match(appSource, /const matched = targetOrgNodes\.find/);
   assert.match(supportOrgSource, /data-support-org-field="airport"/);
   assert.doesNotMatch(supportOrgSource, /data-support-org-field="airportId"/);
   assert.match(supportOrgSource, /function supportOrgAirportSelect\(orgNode\)/);

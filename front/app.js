@@ -1020,7 +1020,9 @@ restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi()
 function bindEvents() {
   window.addEventListener("hashchange", () => {
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
-    selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
+    const nextFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
+    resetSupportResourceSelectionForFeatureChange(selectedFeatureId, nextFeatureId);
+    selectedFeatureId = nextFeatureId;
     createExperimentPlanBranchFromCurrentProject();
     render();
   });
@@ -1207,8 +1209,8 @@ function bindEvents() {
 
     const supportResourceBatchDeleteButton = event.target.closest("[data-support-resource-batch-delete]");
     if (supportResourceBatchDeleteButton) {
-      deleteSelectedSupportResources();
-      markProjectDraftChanged();
+      const deleted = deleteSelectedSupportResources();
+      if (deleted) markProjectDraftChanged();
       render();
       return;
     }
@@ -2197,6 +2199,7 @@ function bindEvents() {
     if (featureButton) {
       selectedRoute = "workbench";
       const selectedPage = accessibleFeaturePage(featureButton.dataset.featureId);
+      resetSupportResourceSelectionForFeatureChange(selectedFeatureId, selectedPage.id);
       selectedFeatureId = selectedPage.id;
       if (selectedPage.component === "experiment-plan-management") {
         experimentPlanManagementMode = "list";
@@ -7313,7 +7316,7 @@ function renderSupportOrganizationWorkbench(page) {
               <div class="toolbar-row">
                 <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}" ${selectedIsLeaf && !locked ? "" : "disabled"}>新增</button>
                 <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></label>
-                <button type="button" class="btn-danger" data-support-resource-batch-delete${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}>批量删除</button>
+                <button type="button" class="btn-danger" data-support-resource-batch-delete="${htmlEscape(activeResourceType)}"${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}>批量删除</button>
                 <input value="" placeholder="请输入关键词进行搜索"${lockedAttr}>
                 <span class="badge">${locked ? "当前颗粒度只读" : selectedIsLeaf ? "叶子节点可编辑" : "汇总视图只读"}</span>
               </div>
@@ -7340,8 +7343,11 @@ function resolveSpareSupportOrganizationSelection(orgTree, locked) {
   const editableLeafNodes = flattenSupportOrgTreeNodes(orgTree)
     .filter((node) => node !== root && !(node.children || []).length);
   let selectedNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree);
-  if (!selectedNode) {
-    selectedNode = !locked && editableLeafNodes.length === 1 ? editableLeafNodes[0] : root;
+  if (!locked && editableLeafNodes.length === 1 && (!selectedNode || selectedNode === root)) {
+    selectedNode = editableLeafNodes[0];
+    selectedSupportOrgNodeId = selectedNode.id || "";
+  } else if (!selectedNode) {
+    selectedNode = root;
     selectedSupportOrgNodeId = selectedNode?.id || "";
   }
   const selectedIsEditableLeaf = editableLeafNodes.some((node) => node === selectedNode);
@@ -7408,10 +7414,11 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode, options =
 
 function supportResourceBelongsToOrg(resource, orgNode) {
   if (!resource || !orgNode) return false;
+  const organizationNodeId = String(resource.organizationNodeId || "").trim();
+  if (organizationNodeId) return organizationNodeId === String(orgNode.id || "").trim();
   const nodeName = String(resource.supportNodeName || "").trim();
   return nodeName === String(orgNode.name || "").trim()
-    || nodeName === String(orgNode.id || "").trim()
-    || String(resource.organizationNodeId || "").trim() === String(orgNode.id || "").trim();
+    || nodeName === String(orgNode.id || "").trim();
 }
 
 function supportResourceRow(resource, orgNode, orgIndex, resourceIndex) {
@@ -7444,6 +7451,21 @@ function supportResourceTypeValue(label) {
   if (label === "保障设备") return "equipment";
   if (label === "备件") return "spare";
   return String(label || "");
+}
+
+function supportResourceTypeForPage(page) {
+  if (!page || page.tertiary !== "保障组织建模") return "";
+  if (page.name?.includes("人员")) return "保障人员";
+  if (page.name?.includes("设备")) return "保障设备";
+  if (page.name?.includes("备件")) return "备件";
+  return "";
+}
+
+function resetSupportResourceSelectionForFeatureChange(previousFeatureId, nextFeatureId) {
+  if (previousFeatureId === nextFeatureId) return;
+  const previousType = supportResourceTypeForPage(getFeaturePageById(previousFeatureId));
+  const nextType = supportResourceTypeForPage(getFeaturePageById(nextFeatureId));
+  if (previousType || nextType) selectedSupportResourceKeys = new Set();
 }
 
 function lruSpareRows() {
@@ -7504,6 +7526,7 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
       const existing = existingSpareByKey.get(key) || existingSpareByKey.get(fallbackKey);
       return {
         id: String(existing?.id || `support-resource-${orgIndex + 1}-spare-${spareIndex + 1}`),
+        organizationNodeId: orgNode.id || "",
         supportNodeName: nodeName,
         type: "spare",
         productId: spare.productId,
@@ -7729,17 +7752,19 @@ function updateSupportResourceOverride(key, fieldName, value) {
 }
 
 function selectedSpareResourceIsEditable(resource) {
+  const selectedNode = selectedEditableSpareSupportOrgNode();
+  return Boolean(selectedNode && supportResourceBelongsToOrg(resource, selectedNode));
+}
+
+function selectedEditableSpareSupportOrgNode() {
   const page = getFeaturePageById(selectedFeatureId);
-  if (!page?.name?.includes("备件") || currentModelingPageLocked(page)) return false;
+  if (supportResourceTypeForPage(page) !== "备件" || currentModelingPageLocked(page)) return null;
   const orgTree = supportOrganizationTree();
   const root = orgTree[0] || null;
   const selectedNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree);
-  return Boolean(
-    selectedNode
-    && selectedNode !== root
-    && !(selectedNode.children || []).length
-    && supportResourceBelongsToOrg(resource, selectedNode)
-  );
+  return selectedNode && selectedNode !== root && !(selectedNode.children || []).length
+    ? selectedNode
+    : null;
 }
 
 function supportSpareAutofillByModel(model) {
@@ -7771,11 +7796,36 @@ function toggleAllSupportResourceSelection(activeResourceType, checked) {
 }
 
 function deleteSelectedSupportResources() {
+  const page = getFeaturePageById(selectedFeatureId);
+  const activeResourceType = supportResourceTypeForPage(page);
+  if (!activeResourceType || currentModelingPageLocked(page)) {
+    selectedSupportResourceKeys = new Set();
+    return false;
+  }
+  const selectedSpareOrgNode = activeResourceType === "备件"
+    ? selectedEditableSpareSupportOrgNode()
+    : null;
+  if (activeResourceType === "备件" && !selectedSpareOrgNode) {
+    selectedSupportResourceKeys = new Set();
+    return false;
+  }
+  let deleted = false;
   if (Array.isArray(scenario.supportResources)) {
-    scenario.supportResources = scenario.supportResources.filter((resource) => !selectedSupportResourceKeys.has(resource.id));
+    scenario.supportResources = scenario.supportResources.filter((resource) => {
+      const selected = selectedSupportResourceKeys.has(resource.id);
+      const matchingType = supportResourceTypeLabel(resource.type) === activeResourceType;
+      const matchingSpareOrg = activeResourceType !== "备件"
+        || supportResourceBelongsToOrg(resource, selectedSpareOrgNode);
+      if (selected && matchingType && matchingSpareOrg) {
+        deleted = true;
+        return false;
+      }
+      return true;
+    });
   }
   selectedSupportResourceKeys = new Set();
-  updatePreviewResultsThroughApiClient();
+  if (deleted) updatePreviewResultsThroughApiClient();
+  return deleted;
 }
 
 function findSupportOrgTreeNode(id, nodes = supportOrganizationTree()) {
@@ -13661,6 +13711,15 @@ async function importSupportResourceTableFile(file, activeResourceType) {
     supportResourceImportStatus = "请在备件、保障人员或保障设备页面导入资源表格。";
     return false;
   }
+  const selectedSpareOrgNode = resourceType === "备件"
+    ? selectedEditableSpareSupportOrgNode()
+    : null;
+  if (resourceType === "备件" && !selectedSpareOrgNode) {
+    supportResourceImportStatus = currentModelingPageLocked()
+      ? "当前建模颗粒度为只读，不能导入备件。"
+      : "请选择具体叶子组织节点后导入备件。";
+    return false;
+  }
   if (!file) {
     supportResourceImportStatus = `未选择${resourceType}导入文件。`;
     return false;
@@ -13668,7 +13727,11 @@ async function importSupportResourceTableFile(file, activeResourceType) {
   try {
     const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const rows = extractSupportResourceImportRows(parsed, resourceType);
-    const importedCount = applySupportResourceImportRows(resourceType, rows);
+    const importedCount = applySupportResourceImportRows(
+      resourceType,
+      rows,
+      selectedSpareOrgNode ? { targetOrgNodes: [selectedSpareOrgNode] } : undefined
+    );
     supportResourceImportStatus = `已导入 ${file.name}：${resourceType} ${importedCount} 行。`;
     updatePreviewResultsThroughApiClient();
     return true;
@@ -13762,8 +13825,10 @@ function supportResourceRowsFromSupportNodes(nodes, resourceType) {
   });
 }
 
-function applySupportResourceImportRows(resourceType, rawRows) {
-  const targetOrgNodes = selectedSupportImportOrgNodes();
+function applySupportResourceImportRows(resourceType, rawRows, options = {}) {
+  const targetOrgNodes = Array.isArray(options.targetOrgNodes)
+    ? options.targetOrgNodes.filter(Boolean)
+    : selectedSupportImportOrgNodes();
   if (!targetOrgNodes.length) throw new Error("未找到可导入的保障组织节点");
   const rows = (Array.isArray(rawRows) ? rawRows : [])
     .map((row, index) => normalizeSupportResourceImportRow(resourceType, row, targetOrgNodes, index))
@@ -13851,9 +13916,8 @@ function resolveSupportResourceImportOrgNode(row, targetOrgNodes, index) {
     "节点名称",
     "organizationNode"
   ], "");
-  const allOrgNodes = flattenSupportOrgTreeNodes();
   if (orgValue) {
-    const matched = allOrgNodes.find((node) => [node.id, node.name, node.supportNodeId].includes(orgValue));
+    const matched = targetOrgNodes.find((node) => [node.id, node.name, node.supportNodeId].includes(orgValue));
     if (matched) return matched;
   }
   return targetOrgNodes[Math.min(index, targetOrgNodes.length - 1)] || targetOrgNodes[0] || null;
@@ -13883,6 +13947,7 @@ function createSupportResourceImportNode(orgNode, resourceType, index) {
   const typeKey = supportResourceTypeValue(resourceType) || "resource";
   const resource = {
     id: `${orgNode.id || "support-org"}-${typeKey}-${Date.now()}-${index}`,
+    organizationNodeId: orgNode.id || "",
     supportNodeName: orgNode.name || orgNode.id || "保障节点",
     type: typeKey,
     name: resourceType,
