@@ -98,6 +98,42 @@ test("real fixture export preserves the shared root product and isolates the sel
   assert.equal(rows.some((row) => row["节点ID"] === "j35-engine"), false);
 });
 
+test("minimal clean fixture exports its whole-aircraft component as a parentless real root", () => {
+  const project = JSON.parse(fs.readFileSync(
+    new URL("./fixtures/clean_projects/minimal_clean_project.json", import.meta.url),
+    "utf8"
+  ));
+
+  const rows = parseEquipmentStructureImportText(
+    equipmentStructureExportCsv(project, { aircraftModel: "J-15" }),
+    "minimal-J-15.csv"
+  );
+  const wholeAircraft = rows.find((row) => row["节点ID"] === "whole-aircraft");
+
+  assert.ok(wholeAircraft);
+  assert.equal(wholeAircraft["父节点ID"], "");
+  assert.equal(wholeAircraft["产品ID"], "product-whole-aircraft");
+  assert.match(wholeAircraft["层级"], /whole/i);
+});
+
+test("current-model export keeps aircraft-root beside a nonstandard real whole root without leaking another model", () => {
+  const rows = parseEquipmentStructureImportText(equipmentStructureExportCsv({
+    equipment: { wholeMachineModels: ["J-15", "J-35"], quantity: 2 },
+    components: [
+      { id: "aircraft-root", productId: "product-aircraft-root", name: "共享整机根", quantity: 2 },
+      { id: "whole-aircraft", productId: "product-whole-j15", name: "J-15 整机", productType: "whole", aircraftModel: "J-15", quantity: 1 },
+      { id: "j15-engine", productId: "product-j15-engine", name: "J-15 发动机", parentId: "whole-aircraft", aircraftModel: "J-15", quantity: 1 },
+      { id: "whole-aircraft-j35", productId: "product-whole-j35", name: "J-35 整机", productType: "whole", aircraftModel: "J-35", quantity: 1 },
+      { id: "j35-engine", productId: "product-j35-engine", name: "J-35 发动机", parentId: "whole-aircraft-j35", aircraftModel: "J-35", quantity: 1 }
+    ]
+  }, { aircraftModel: "J-15" }), "J-15.csv");
+
+  assert.deepEqual(rows.map((row) => row["节点ID"]), ["aircraft-root", "whole-aircraft", "j15-engine"]);
+  assert.deepEqual(rows.map((row) => row["产品ID"]), ["product-aircraft-root", "product-whole-j15", "product-j15-engine"]);
+  assert.equal(rows[1]["父节点ID"], "");
+  assert.equal(rows[2]["父节点ID"], "whole-aircraft");
+});
+
 test("CSV parser round-trips BOM, commas, quotes, LF and CRLF inside quoted fields", () => {
   const csv = equipmentStructureExportCsv({
     equipment: { wholeMachineModels: ["MODEL-A"], quantity: 1 },
@@ -152,5 +188,31 @@ test("JSON product aliases use one-based array item locations instead of CSV lin
   assert.throws(
     () => validateEquipmentStructureProductReferences(rows, []),
     /第1项产品ID“product-missing”/
+  );
+});
+
+test("single-object JSON errors use object semantics and reject an unknown nonstandard whole root", () => {
+  const row = parseEquipmentStructureImportText(JSON.stringify({
+    id: "whole-aircraft",
+    productType: "whole",
+    productId: "product-missing"
+  }), "equipment.json");
+
+  assert.throws(
+    () => validateEquipmentStructureProductReferences([row], []),
+    /第1项（JSON 对象）产品ID“product-missing”/
+  );
+});
+
+test("conflicting products for the same nonstandard whole root are rejected with both source rows", () => {
+  const rows = parseEquipmentStructureImportText([
+    "节点ID,父节点ID,产品ID,系统名称,型号,层级",
+    "whole-aircraft,,product-a,J-15,J-15,whole",
+    "whole-aircraft,,product-b,J-15,J-15,whole"
+  ].join("\n"), "conflicting-roots.csv");
+
+  assert.throws(
+    () => validateEquipmentStructureProductReferences(rows, [{ id: "product-a" }, { id: "product-b" }]),
+    /产品ID引用冲突：节点ID“whole-aircraft”在第2行引用“product-a”、第3行引用“product-b”/
   );
 });

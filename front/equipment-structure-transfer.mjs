@@ -13,7 +13,9 @@ export const EQUIPMENT_STRUCTURE_HEADERS = Object.freeze([
 ]);
 
 const PRODUCT_ID_KEYS = Object.freeze(["productId", "product_id", "产品ID", "产品Id", "产品id"]);
+const NODE_ID_KEYS = Object.freeze(["id", "componentId", "component_id", "组件ID", "节点ID", "object_id"]);
 const SOURCE_LOCATIONS = new WeakMap();
+const JSON_OBJECT_ROWS = new WeakSet();
 
 export function parseEquipmentStructureImportText(text, filename = "") {
   const source = String(text ?? "").replace(/^\uFEFF/, "");
@@ -22,6 +24,9 @@ export function parseEquipmentStructureImportText(text, filename = "") {
   const looksLikeJson = filename.toLowerCase().endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[");
   if (looksLikeJson) {
     const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      SOURCE_LOCATIONS.set(parsed, "第1项（JSON 对象）");
+    }
     markJsonArrayLocations(parsed);
     return parsed;
   }
@@ -32,6 +37,14 @@ export function equipmentStructureProductId(row) {
   return pickText(row, PRODUCT_ID_KEYS);
 }
 
+export function equipmentStructureNodeId(row) {
+  return pickText(row, NODE_ID_KEYS);
+}
+
+export function equipmentStructureImportRowIsExplicitJson(row) {
+  return Boolean(row && typeof row === "object" && JSON_OBJECT_ROWS.has(row));
+}
+
 export function validateEquipmentStructureProductReferences(rows, products, { firstRowNumber = 2 } = {}) {
   const productIds = new Set(
     (Array.isArray(products) ? products : [])
@@ -39,18 +52,36 @@ export function validateEquipmentStructureProductReferences(rows, products, { fi
       .filter(Boolean)
   );
   const invalid = [];
+  const conflicts = [];
+  const productReferenceByNodeId = new Map();
   for (const [index, row] of (Array.isArray(rows) ? rows : []).entries()) {
     const productId = equipmentStructureProductId(row);
+    const nodeId = equipmentStructureNodeId(row);
+    const location = SOURCE_LOCATIONS.get(row) || `第${firstRowNumber + index}行`;
     if (productId && !productIds.has(productId)) {
       invalid.push({
-        location: SOURCE_LOCATIONS.get(row) || `第${firstRowNumber + index}行`,
+        location,
         productId
       });
+    }
+    if (nodeId && productId) {
+      const existing = productReferenceByNodeId.get(nodeId);
+      if (existing && existing.productId !== productId) {
+        conflicts.push({ nodeId, existing, location, productId });
+      } else if (!existing) {
+        productReferenceByNodeId.set(nodeId, { location, productId });
+      }
     }
   }
   if (invalid.length) {
     const locations = invalid.map(({ location, productId }) => `${location}产品ID“${productId}”`).join("、");
     throw new Error(`产品ID引用无效：${locations}在当前 Project 的产品目录中不存在`);
+  }
+  if (conflicts.length) {
+    const locations = conflicts.map(({ nodeId, existing, location, productId }) => (
+      `节点ID“${nodeId}”在${existing.location}引用“${existing.productId}”、${location}引用“${productId}”`
+    )).join("；");
+    throw new Error(`产品ID引用冲突：${locations}`);
   }
   return true;
 }
@@ -98,7 +129,7 @@ export function equipmentStructureExportCsv(project, { aircraftModel = "" } = {}
     }),
     ...components.map((component) => templateRow({
       "节点ID": component.id,
-      "父节点ID": component.parentId || "aircraft-root",
+      "父节点ID": component.parentId || (componentIsWholeMachine(component) ? "" : "aircraft-root"),
       "产品ID": component.productId,
       "系统名称": component.name,
       "型号": component.model,
@@ -230,7 +261,13 @@ function markJsonArrayLocations(value, seen = new Set()) {
     });
     return;
   }
+  JSON_OBJECT_ROWS.add(value);
   Object.values(value).forEach((item) => markJsonArrayLocations(item, seen));
+}
+
+function componentIsWholeMachine(component) {
+  const productType = String(component?.productType ?? component?.level ?? component?.type ?? "").trim();
+  return /整机|whole|aircraft/i.test(productType);
 }
 
 function csvCell(value) {

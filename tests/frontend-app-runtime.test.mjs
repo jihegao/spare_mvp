@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
 import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
@@ -1986,10 +1987,12 @@ test("equipment template and current-model export keep product IDs in Chinese CS
       equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
       products: [
         { id: "product-aircraft-root", name: "整机产品", model: "J-15", kind: "整机" },
+        { id: "product-whole-j15", name: "J-15 整机产品", model: "J-15", kind: "整机" },
         { id: "product-engine", name: "发动机产品", model: "WS-10", kind: "LRU" }
       ],
       components: [
         { id: "aircraft-root", name: "舰载机", productId: "product-aircraft-root", quantity: 2 },
+        { id: "whole-aircraft", name: "J-15 整机", aircraftModel: "J-15", productId: "product-whole-j15", productType: "whole", quantity: 2 },
         { id: "engine-left", name: "左,发动机\n\"主机\"", model: "WS-10", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
         { id: "engine-right", name: "右发动机", model: "WS-10", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
       ]
@@ -2011,20 +2014,24 @@ test("equipment template and current-model export keep product IDs in Chinese CS
     const exported = await runtime.downloads[1].blob.text();
     assert.equal((exported.match(/product-engine/g) || []).length, 2);
     assert.equal((exported.match(/product-aircraft-root/g) || []).length, 1);
+    assert.equal((exported.match(/product-whole-j15/g) || []).length, 1);
+    assert.match(exported, /whole-aircraft,,product-whole-j15,J-15 整机,,whole/);
     assert.match(exported, /engine-left,aircraft-root,product-engine,"左,发动机\n""主机""",WS-10/);
     assert.match(runtime.appNode.innerHTML, /已导出 J-15 装备结构/);
 
     const roundTripFile = { name: "装备系统建模-J-15.csv", async text() { return exported; } };
     await runtime.change("[data-equipment-import-file]", {}, { files: [roundTripFile], value: roundTripFile.name });
-    assert.match(runtime.appNode.innerHTML, /已导入 装备系统建模-J-15\.csv：1 个整机，3 个组件/);
+    assert.match(runtime.appNode.innerHTML, /已导入 装备系统建模-J-15\.csv：1 个整机，4 个组件/);
     await runtime.click("[data-project-draft-save]");
     savedProject = await waitForProjectSave(
       runtime,
       (body) => body.components?.some((component) => component.id === "aircraft-root" && component.productId === "product-aircraft-root")
+        && body.components?.some((component) => component.id === "whole-aircraft" && component.productId === "product-whole-j15")
         && body.components?.filter((component) => component.productId === "product-engine").length === 2,
       "exported product IDs should survive import and Project save"
     );
-    assert.deepEqual(savedProject.components.map((component) => component.id), ["aircraft-root", "engine-left", "engine-right"]);
+    assert.deepEqual(savedProject.components.map((component) => component.id), ["aircraft-root", "whole-aircraft", "engine-left", "engine-right"]);
+    assert.equal(savedProject.components.find((component) => component.id === "whole-aircraft").parentId, undefined);
     assert.equal(savedProject.components.find((component) => component.id === "engine-left").name, "左,发动机\n\"主机\"");
     assert.equal(savedProject.products.filter((product) => product.id === "product-engine").length, 1);
   } finally {
@@ -2040,8 +2047,62 @@ test("equipment template and current-model export keep product IDs in Chinese CS
     await reopenedRuntime.click("[data-equipment-export-data]");
     const reexported = await reopenedRuntime.downloads[0].blob.text();
     assert.equal((reexported.match(/product-aircraft-root/g) || []).length, 1);
+    assert.equal((reexported.match(/product-whole-j15/g) || []).length, 1);
     assert.equal((reexported.match(/product-engine/g) || []).length, 2);
     assert.match(reexported, /"左,发动机\n""主机"""/);
+  } finally {
+    reopenedRuntime.restore();
+  }
+});
+
+test("minimal clean Project whole-aircraft root survives export import save rehydrate and reexport", async () => {
+  const minimalProject = JSON.parse(fs.readFileSync(
+    new URL("./fixtures/clean_projects/minimal_clean_project.json", import.meta.url),
+    "utf8"
+  ));
+  let savedProject;
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      components: minimalProject.components,
+      products: minimalProject.products
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-equipment-export-data]");
+    const exported = await runtime.downloads[0].blob.text();
+    assert.match(exported, /whole-aircraft,,product-whole-aircraft,whole aircraft,,whole/);
+
+    const importFile = { name: "minimal-J-15.csv", async text() { return exported; } };
+    await runtime.change("[data-equipment-import-file]", {}, { files: [importFile], value: importFile.name });
+    assert.match(runtime.appNode.innerHTML, /已导入 minimal-J-15\.csv：1 个整机，1 个组件/);
+    await runtime.click("[data-project-draft-save]");
+    savedProject = await waitForProjectSave(
+      runtime,
+      (body) => body.components?.some((component) => component.id === "whole-aircraft"),
+      "minimal whole-aircraft root should survive Project save"
+    );
+    const savedRoot = savedProject.components.find((component) => component.id === "whole-aircraft");
+    assert.equal(savedRoot.productId, "product-whole-aircraft");
+    assert.equal(savedRoot.parentId, undefined);
+    assert.equal(savedRoot.aircraftModel, "J-15");
+  } finally {
+    runtime.restore();
+  }
+
+  const reopenedRuntime = await setupRuntimeApp({
+    hash: "feature=spare-planning-equipment-system",
+    projectJson: savedProject
+  });
+  try {
+    await waitForRuntimeHtml(reopenedRuntime, /data-equipment-export-data/, "minimal whole-aircraft root should rehydrate");
+    await reopenedRuntime.click("[data-equipment-export-data]");
+    const reexported = await reopenedRuntime.downloads[0].blob.text();
+    assert.equal((reexported.match(/product-whole-aircraft/g) || []).length, 1);
+    assert.match(reexported, /whole-aircraft,,product-whole-aircraft/);
   } finally {
     reopenedRuntime.restore();
   }
@@ -2131,6 +2192,61 @@ test("equipment import rejects unknown product IDs atomically with row and ID", 
     );
     assert.deepEqual(saved.components.map((component) => component.id), ["original-node"]);
     assert.equal(saved.products.some((product) => product.id === "product-missing"), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("nonstandard whole-root imports reject unknown and conflicting product IDs atomically", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      products: [
+        { id: "product-original", name: "原整机", model: "J-15" },
+        { id: "product-a", name: "整机 A", model: "J-15A" },
+        { id: "product-b", name: "整机 B", model: "J-15B" }
+      ],
+      components: [{ id: "whole-original", name: "原始整机", aircraftModel: "J-15", productType: "whole", productId: "product-original", quantity: 1 }]
+    })
+  });
+  const unknownFile = {
+    name: "unknown-whole.csv",
+    async text() {
+      return [
+        "节点ID,父节点ID,产品ID,系统名称,型号,层级",
+        "aircraft-root,,,J-15,J-15,整机",
+        "whole-aircraft,,product-missing,J-15,J-15,whole"
+      ].join("\n");
+    }
+  };
+  const conflictFile = {
+    name: "conflicting-whole.csv",
+    async text() {
+      return [
+        "节点ID,父节点ID,产品ID,系统名称,型号,层级",
+        "aircraft-root,,,J-15,J-15,整机",
+        "whole-aircraft,,product-a,J-15,J-15,whole",
+        "whole-aircraft,,product-b,J-15,J-15,whole"
+      ].join("\n");
+    }
+  };
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+
+    await runtime.change("[data-equipment-import-file]", {}, { files: [unknownFile], value: unknownFile.name });
+    assert.match(runtime.appNode.innerHTML, /第3行产品ID“product-missing”/);
+    await runtime.click("[data-project-draft-save]");
+    let saved = projectSaveBodies(runtime).at(-1);
+    assert.deepEqual(saved.components.map((component) => component.id), ["whole-original"]);
+
+    await runtime.change("[data-equipment-import-file]", {}, { files: [conflictFile], value: conflictFile.name });
+    assert.match(runtime.appNode.innerHTML, /产品ID引用冲突/);
+    assert.match(runtime.appNode.innerHTML, /节点ID“whole-aircraft”/);
+    await runtime.click("[data-project-draft-save]");
+    saved = projectSaveBodies(runtime).at(-1);
+    assert.deepEqual(saved.components.map((component) => component.id), ["whole-original"]);
   } finally {
     runtime.restore();
   }

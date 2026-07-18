@@ -116,6 +116,7 @@ import {
 } from "./product-catalog.mjs";
 import {
   equipmentStructureExportCsv,
+  equipmentStructureImportRowIsExplicitJson,
   equipmentStructureProductId,
   equipmentStructureTemplateCsv,
   parseEquipmentStructureImportText,
@@ -13453,7 +13454,7 @@ function normalizeEquipmentStructureImport(input, products = []) {
         defaultModel: equipment.model || equipment.aircraftModel || "",
         wholeMachineModels: equipment.wholeMachineModels || [],
         quantity: equipment.quantity,
-        preserveRootComponent: true
+        preserveSourceComponents: true
       });
     }
   }
@@ -13466,7 +13467,7 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const rows = (Array.isArray(rawRows) ? rawRows : []).filter((row) => row && typeof row === "object");
   const wholeMachineModels = new Set((Array.isArray(options.wholeMachineModels) ? options.wholeMachineModels : []).map(String).filter(Boolean));
   const components = [];
-  let rootComponent = null;
+  const rootComponents = [];
   let wholeMachineQuantity = Number(options.quantity || 0);
   rows.forEach((row, index) => {
     const explicitModel = pickImportText(row, ["aircraftModel", "aircraft_model", "整机", "整机名称", "飞机名称", "飞机型号", "装备型号", "targetProductModel"], "");
@@ -13478,26 +13479,34 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
     const isAircraftRoot = id === "aircraft-root";
     const isWholeMachine = isAircraftRoot || /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
     const rowModel = pickImportText(row, ["model", "型号"], "");
+    const explicitComponentRow = options.preserveSourceComponents
+      || equipmentStructureImportRowIsExplicitJson(row)
+      || Boolean(id && id !== "aircraft-root");
+    const knownAircraftModel = Array.from(wholeMachineModels)[0] || "";
+    const isSyntheticWholeMetadata = isWholeMachine && !productId && !explicitComponentRow;
     const aircraftModel = explicitModel
       || options.defaultModel
-      || (isWholeMachine ? rowModel : Array.from(wholeMachineModels)[0] || rowModel);
+      || (isSyntheticWholeMetadata ? rowModel || knownAircraftModel : knownAircraftModel || rowModel);
     if (isWholeMachine) {
       wholeMachineModels.add(aircraftModel || name || id || `导入整机${wholeMachineModels.size + 1}`);
       wholeMachineQuantity = pickImportNumber(row, ["quantity", "安装数", "数量", "装机数量", "n"], wholeMachineQuantity || 1);
-      if (isAircraftRoot && (productId || options.preserveRootComponent)) {
-        if (rootComponent?.productId && productId && rootComponent.productId !== productId) {
-          throw new Error(`aircraft-root：多个整机行的产品ID不一致（${rootComponent.productId}、${productId}）`);
-        }
-        rootComponent = {
+      if (productId || explicitComponentRow) {
+        const componentId = id || `${String(aircraftModel || "whole-aircraft").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-import-${index + 1}`;
+        const rootComponent = {
           ...row,
-          id: "aircraft-root",
-          name: name || aircraftModel || "整机",
+          id: componentId,
+          name: name || aircraftModel || componentId,
           model: rowModel,
-          productId: productId || rootComponent?.productId || "",
+          productId,
+          productType: productType || row.productType || "whole",
+          level: pickImportText(row, ["level", "层级"], row.level || productType || "整机"),
           quantity: Math.max(1, Math.floor(wholeMachineQuantity || 1))
         };
-        delete rootComponent.parentId;
-        delete rootComponent.aircraftModel;
+        if (parentId) rootComponent.parentId = parentId;
+        else delete rootComponent.parentId;
+        if (componentId === "aircraft-root") delete rootComponent.aircraftModel;
+        else rootComponent.aircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || "";
+        rootComponents.push(rootComponent);
       }
       return;
     }
@@ -13543,7 +13552,7 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const models = Array.from(wholeMachineModels).filter(Boolean);
   return {
     wholeMachineModels: models,
-    components: rootComponent ? [rootComponent, ...components] : components,
+    components: [...rootComponents, ...components],
     quantity: Math.max(1, Math.floor(Number(wholeMachineQuantity || 1)))
   };
 }
