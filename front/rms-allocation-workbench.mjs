@@ -80,7 +80,6 @@ export function renderRmsAllocationWorkbench({
             <div class="rms-calculation-step rms-input-step" role="group" aria-labelledby="rms-input-step-title">
               <h4 id="rms-input-step-title"><span aria-hidden="true">1</span>RMS 输入参数</h4>
               <div class="rms-calculation-input-grid">
-                ${input("任务可靠度", "inputs.missionReliability", plan.inputs?.missionReliability ?? "", "number", "0.01", htmlEscape, "0", "1", "", !hasSelectedAircraft)}
                 ${input("任务时长", "inputs.missionHours", plan.inputs?.missionHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
                 ${input("MTBF", "inputs.mtbfHours", plan.inputs?.mtbfHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
                 ${input("MTTR", "inputs.mttrHours", plan.inputs?.mttrHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}

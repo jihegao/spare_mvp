@@ -4357,12 +4357,11 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.equal((workbenchSource.match(/data-rms-equipment-import-file/g) || []).length, 1);
   assert.equal((workbenchSource.match(/data-rms-action="calculate"/g) || []).length, 1);
   assert.match(workbenchSource, /data-rms-aircraft-model/);
-  assert.match(workbenchSource, /inputs\.missionReliability/);
+  assert.doesNotMatch(workbenchSource, /inputs\.missionReliability|任务可靠度/);
   assert.match(workbenchSource, /inputs\.missionHours/);
   assert.match(workbenchSource, /inputs\.mtbfHours/);
   assert.doesNotMatch(workbenchSource, /inputs\.criticalFailureRatio|关键故障占比/);
   assert.match(workbenchSource, /inputs\.mttrHours/);
-  assert.ok(calculationPanelSource.indexOf('input("任务可靠度"') < calculationPanelSource.indexOf('input("任务时长"'));
   assert.ok(calculationPanelSource.indexOf('input("任务时长"') < calculationPanelSource.indexOf('input("MTBF"'));
   assert.ok(calculationPanelSource.indexOf('input("MTBF"') < calculationPanelSource.indexOf('input("MTTR"'));
   assert.ok(calculationPanelSource.indexOf('input("MTTR"') < calculationPanelSource.indexOf("指标分配方法"));
