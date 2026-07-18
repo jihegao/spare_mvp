@@ -66,11 +66,11 @@ test("visualization event, mission, job, and shortage vocabulary is user-facing 
   assert.equal(visualizationJobStateLabel("blocked"), "受阻");
   assert.equal(visualizationMissionStatusLabel("cancelled"), "已取消");
   assert.equal(visualizationShortageReasonLabel("personnel_capacity"), "保障人员数量不足");
-  assert.equal(visualizationShortageReasonLabel("spare:hyd-pump"), "备件（内部标识：hyd-pump）库存不足");
+  assert.equal(visualizationShortageReasonLabel("spare:hyd-pump"), "备件库存不足");
   assert.equal(visualizationJobStateLabel("future_state"), "未知状态");
 });
 
-test("visualization shortage messages lead with Chinese context and demote internal IDs", () => {
+test("visualization shortage messages keep internal IDs in data only", () => {
   const localized = localizeVisualizationEvent({
     event_id: "event-0006",
     event_type: "spare_shortage",
@@ -86,7 +86,7 @@ test("visualization shortage messages lead with Chinese context and demote inter
   assert.equal(localized.event_label, "备件短缺");
   assert.match(localized.localized_message, /^航电模块库存不足，保障作业等待备件补给/);
   assert.match(localized.localized_message, /保障节点：基层/);
-  assert.match(localized.localized_message, /作业标识：job-0006$/);
+  assert.doesNotMatch(localized.localized_message, /job-0006|内部标识|作业标识/);
   assert.doesNotMatch(localized.localized_message, /blocked by|shortage at/);
   assert.equal(localized.internal_id, "job-0006");
 });

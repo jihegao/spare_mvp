@@ -103,7 +103,7 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
             _load_backend_project_json("")
 
     def test_solara_page_labels_match_platform_copy(self) -> None:
-        self.assertEqual(solara_app.APP_TITLE, "可视化推演")
+        self.assertFalse(hasattr(solara_app, "APP_TITLE"))
         self.assertEqual(solara_app.METRICS_PANEL_TITLE, "指标")
         self.assertEqual(solara_app.VISUAL_TAB_LABELS, ["飞机视图", "任务视图", "保障视图"])
         self.assertEqual(solara_app.CONTROL_PANEL_TITLE, "运行控制")
@@ -121,6 +121,7 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
         }
         for retired_label in [
+            "可视化推演",
             "aircraft_support_v1 Solara 推演",
             "飞机保障 Solara 推演",
             "会话指标",
@@ -135,6 +136,15 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
             "会话信息",
         ]:
             self.assertNotIn(retired_label, string_literals)
+
+        page_source = source[source.index("def Page()") :]
+        self.assertNotIn("solara.AppBar", page_source)
+        control_index = page_source.index("ControlPanel(model_state, inputs)")
+        layout_index = page_source.index('classes=["sim-layout"]')
+        left_rail_index = page_source.index('classes=["sim-left-rail"]')
+        self.assertLess(control_index, layout_index)
+        self.assertLess(layout_index, left_rail_index)
+        self.assertEqual(page_source.count("ControlPanel(model_state, inputs)"), 1)
 
     def test_visible_metrics_and_model_parameters_hide_project_metadata(self) -> None:
         model = AircraftSupportV1Model(self.default_inputs)
@@ -168,7 +178,7 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         self.assertEqual(solara_app._job_state_label("blocked"), "受阻")
         self.assertEqual(solara_app._job_state_label("future_state"), "未知状态")
         self.assertEqual(solara_app._shortage_reason_label("equipment_capacity"), "保障设备可用数量不足")
-        self.assertEqual(solara_app._shortage_reason_label("spare:hyd-pump"), "备件（内部标识：hyd-pump）库存不足")
+        self.assertEqual(solara_app._shortage_reason_label("spare:hyd-pump"), "备件库存不足")
 
         row = solara_app._event_row_html({
             "time": 15,
@@ -176,9 +186,64 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
             "message": "job-0006 blocked by hyd-pump shortage at carrier-deck",
             "details": {"job_id": "job-0006", "spare_type": "航电模块", "resource_id": "基层"},
         })
-        self.assertIn("内部标识：job-0006", row)
+        self.assertNotIn("job-0006", row)
+        self.assertNotIn("内部标识", row)
         self.assertNotIn("spare_shortage", row)
         self.assertNotIn("blocked by", row)
+
+    def test_task_surfaces_show_business_names_without_internal_ids(self) -> None:
+        missions = [
+            {
+                "mission_id": "composite-day-cap-d1-w1",
+                "basic_task_id": "basic-day-cap",
+                "basic_task_name": "昼间警戒",
+                "day_index": 1,
+                "wave_index": 1,
+                "required_aircraft_type": "J-15",
+                "status": "scheduled",
+                "start_minute": 60,
+                "end_minute": 120,
+            },
+            {
+                "mission_id": "composite-day-cap-d1-w2",
+                "name": "composite-day-cap",
+                "composite_task_id": "composite-day-cap",
+                "day_index": 1,
+                "wave_index": 2,
+                "status": "preparing",
+                "start_minute": 180,
+                "end_minute": 240,
+            },
+        ]
+
+        visible_html = "".join([
+            solara_app._mission_timeline_html(missions),
+            solara_app._mission_stage_rows_html(missions),
+            solara_app._mission_detail_cards_html(missions),
+        ])
+
+        self.assertIn("昼间警戒", visible_html)
+        self.assertIn("第1天 / 第1波 / J-15", visible_html)
+        self.assertIn("未命名任务", visible_html)
+        self.assertNotIn("composite-day-cap", visible_html)
+        self.assertNotIn("basic-day-cap", visible_html)
+        self.assertEqual(
+            solara_app._current_mission_task_name("composite-day-cap-d1-w1", missions),
+            "昼间警戒",
+        )
+        self.assertEqual(solara_app._current_mission_task_name("missing-internal-id", missions), "未命名任务")
+
+        support_row = solara_app._support_job_row_html({
+            "job_id": "job-internal-1",
+            "task": "activity-code-internal-1",
+            "kind": "preflight",
+            "tail_number": "101",
+            "state": "queued",
+            "remaining": 10,
+        })
+        self.assertNotIn("job-internal-1", support_row)
+        self.assertNotIn("activity-code-internal-1", support_row)
+        self.assertIn("飞行前保障", support_row)
 
 
 if __name__ == "__main__":
