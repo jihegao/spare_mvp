@@ -1,4 +1,11 @@
 import {
+  downtimeFactorLabel,
+  downtimeJobLabel,
+  downtimeJobStateLabel,
+  downtimeSnapshotResultLabel,
+  formatDowntimeSimulationTime
+} from "./downtime-analysis.mjs";
+import {
   normalizeTaskReliabilityResultFields,
   taskReliabilityMetricPairs
 } from "./task-reliability-contract.mjs";
@@ -338,20 +345,22 @@ function normalizeDowntimeAnomalySnapshots(value) {
       const frameRef = requireObject(row.frame_ref, "frame_ref must be an object");
       return {
         id: stringValue(row.snapshot_id, `downtime-${time}`),
-        timeLabel: stringValue(time, "0"),
+        simulationTime: time,
+        timeLabel: formatDowntimeSimulationTime(time),
         eventType: stringValue(row.event_type, "downtime_event"),
-        eventLabel: stringValue(row.event_label, DOWNTIME_FACTOR_LABELS[row.event_type] || row.event_type || "停机事件"),
-        result: stringValue(row.result, "recorded"),
+        eventLabel: downtimeFactorLabel(row.event_type),
+        result: downtimeSnapshotResultLabel(row.result),
         activeJobs: Math.max(0, Math.round(numberOrZero(state.active_jobs))),
         repairBacklog: Math.max(0, Math.round(numberOrZero(state.repair_backlog))),
         spareFillRate: clamp01(numberOrZero(state.spare_fill_rate)),
         jobNodeId: stringValue(job.job_id || job.node_id, "unknown_job"),
-        jobNodeLabel: stringValue(job.task || job.label || job.kind, "未定位作业"),
-        jobState: stringValue(job.state, "unknown"),
-        frameRef: `sample=${stringValue(frameRef.sample_index, "0")}; sample_step=${stringValue(frameRef.sample_step, "0")}; step=${stringValue(frameRef.step, "0")}`
+        jobNodeLabel: downtimeJobLabel(job.task, job.label, job.kind),
+        jobState: downtimeJobStateLabel(job.state),
+        frameRef: `sample=${stringValue(frameRef.sample_index, "0")}; sample_step=${stringValue(frameRef.sample_step, "0")}; step=${stringValue(frameRef.step, "0")}`,
+        frameLabel: `第${Math.max(0, Math.round(numberOrZero(frameRef.sample_index))) + 1}个样本；采样步 ${stringValue(frameRef.sample_step, "0")}；仿真步 ${stringValue(frameRef.step, "0")}`
       };
     })
-    .sort((left, right) => Number(left.timeLabel) - Number(right.timeLabel));
+    .sort((left, right) => left.simulationTime - right.simulationTime);
 }
 
 function requireArray(value, message) {

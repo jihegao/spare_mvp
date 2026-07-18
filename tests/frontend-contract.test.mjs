@@ -3870,9 +3870,9 @@ test("phase 6D downtime analysis renders formal anomaly snapshots with export an
   assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.downtimeFactors/);
-  assert.match(formalDowntimeSource, /异常停机事件快照/);
-  assert.match(formalDowntimeSource, /support_activity_state/);
-  assert.match(formalDowntimeSource, /jobNodeId|jobNodeLabel/);
+  assert.match(formalDowntimeSource, /保障活动状态/);
+  assert.match(formalDowntimeSource, /jobNodeLabel/);
+  assert.doesNotMatch(formalDowntimeSource, /support_activity_state|jobNodeId/);
   assert.match(formalDowntimeSource, /data-downtime-snapshot-export/);
   assert.match(formalDowntimeSource, /data-downtime-snapshot-delete/);
   assert.match(appSource, /function exportDowntimeAnomalySnapshots/);
@@ -4013,11 +4013,8 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
 
 test("downtime analysis exposes four-factor multi-select, linked summaries, and typed event details", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const downtimeSource = await readFile(new URL("../front/downtime-analysis.mjs", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
-  const optionsSource = appSource.slice(
-    appSource.indexOf("const DOWNTIME_FACTOR_OPTIONS"),
-    appSource.indexOf("let demoProjects")
-  );
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaDowntimeFactorAnalysis"),
     appSource.indexOf("function formatPeriodDurationDays")
@@ -4033,7 +4030,7 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
     ["equipment_shortage", "保障设备短缺"],
     ["preventive", "预防性维修"]
   ]) {
-    assert.match(optionsSource, new RegExp(`value: "${factor}", label: "${label}"`));
+    assert.match(downtimeSource, new RegExp(`value: "${factor}", label: "${label}"`));
   }
   assert.match(appSource, /selectedDowntimeFactorTypes = new Set\(DOWNTIME_FACTOR_OPTIONS/);
   assert.match(changeSource, /selectedDowntimeFactorTypes\.add/);
@@ -4042,10 +4039,11 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
   assert.match(renderSource, /暂无该类型停机事件/);
   assert.match(renderSource, /累计停机时长（小时）/);
   assert.match(renderSource, /持续时长（小时）/);
-  assert.match(renderSource, /分钟/);
-  assert.match(renderSource, /repair: "修复性维修"/);
-  assert.match(renderSource, /preventive: "预防性维修"/);
-  assert.match(renderSource, /未配置任务/);
+  assert.match(downtimeSource, /formatDowntimeSimulationTime/);
+  assert.match(downtimeSource, /repair: "修复性维修"/);
+  assert.match(downtimeSource, /preventive: "预防性维修"/);
+  assert.match(downtimeSource, /任务名称未解析|不在任务阶段/);
+  assert.doesNotMatch(renderSource + downtimeSource, /未配置任务/);
   assert.doesNotMatch(renderSource, /`\$\{fixed\(minute, 0\)\} min`|持续时长\(h\)|累计停机时长\(h\)/);
   assert.match(renderSource, /当前范围时长占比/);
   assert.match(renderSource, /\.sort\(\(left, right\) => right\.downtimeHours - left\.downtimeHours\)/);

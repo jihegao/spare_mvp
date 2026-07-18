@@ -20,6 +20,7 @@ import re
 from typing import Any
 
 from src.spare_mvp_backend.project_payload import normalize_project_products
+from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
 
 from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     mission_period_outcome,
@@ -2753,7 +2754,7 @@ class SimulationAdapter:
             for event in sample.get("downtime_events") or []:
                 if not isinstance(event, dict) or event.get("factor") not in downtime_values:
                     continue
-                item = copy.deepcopy(event)
+                item = normalize_downtime_event_for_analysis(event)
                 item["sample_index"] = int(sample.get("sample_index", 0) or 0)
                 item["seed"] = sample.get("seed")
                 item["source_event_id"] = str(event.get("event_id") or "")
