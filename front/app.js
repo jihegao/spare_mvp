@@ -3362,6 +3362,9 @@ function shouldEmbedExperimentPlanContextInComponent(page) {
 
 function renderExperimentPlanContextDropdown(page) {
   ensureExperimentPlanListLoaded();
+  if (isVisualSimulationPage(page)) {
+    return renderVisualSimulationExperimentPlanDropdown(page);
+  }
   const options = experimentPlanContextOptions(page);
   const selectedKey = selectedExperimentPlanContextKey(options);
   const currentProjectOption = options.find((option) => option.kind === "current-project");
@@ -3377,6 +3380,31 @@ function renderExperimentPlanContextDropdown(page) {
         ${savedPlanOptions.length ? `<optgroup label="已保存实验方案">${savedPlanOptions.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}</optgroup>` : ""}
       </select>
       <small>${htmlEscape(status)}</small>
+    </label>
+  `;
+}
+
+function visualSimulationExperimentPlanOptions(page = getFeaturePageById(selectedFeatureId)) {
+  return experimentPlanContextOptions(page).filter((option) => option.kind === "experiment-plan");
+}
+
+function selectedVisualSimulationExperimentPlanContext(page = getFeaturePageById(selectedFeatureId)) {
+  return visualSimulationExperimentPlanOptions(page).find((option) => option.key === selectedRunContextKey) || null;
+}
+
+function renderVisualSimulationExperimentPlanDropdown(page) {
+  const options = visualSimulationExperimentPlanOptions(page);
+  const selected = selectedVisualSimulationExperimentPlanContext(page);
+  const placeholder = backendExperimentPlansLoaded
+    ? options.length ? "请选择实验方案" : "暂无实验方案"
+    : "实验方案列表加载中";
+  return `
+    <label class="page-head-current-context experiment-plan-context-select">
+      <span>实验方案</span>
+      <select data-current-experiment-plan aria-label="实验方案" ${options.length ? "" : "disabled"}>
+        <option value="" ${selected ? "" : "selected"}>${placeholder}</option>
+        ${options.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selected?.key ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}
+      </select>
     </label>
   `;
 }
@@ -10911,11 +10939,25 @@ function resetMissingRunContextAfterPlanRefresh() {
 }
 
 function selectCurrentExperimentPlan(planKey) {
-  const options = experimentPlanContextOptions();
-  const selected = options.find((option) => option.key === planKey) || options[0];
-  if (!selected) return;
+  const page = getFeaturePageById(selectedFeatureId);
+  const options = isVisualSimulationPage(page)
+    ? visualSimulationExperimentPlanOptions(page)
+    : experimentPlanContextOptions(page);
+  const selected = options.find((option) => option.key === planKey) || null;
+  if (!selected) {
+    if (!isVisualSimulationPage(page)) return;
+    selectedRunContextKey = "";
+    persistSelectedRunContextKey();
+    solaraVisualizationProjectIdOverride = "";
+    visualizationReplayStatus = "请选择实验方案后刷新推演";
+    return;
+  }
   selectedRunContextKey = selected.key;
   persistSelectedRunContextKey();
+  if (isVisualSimulationPage(page)) {
+    solaraVisualizationProjectIdOverride = "";
+    visualizationReplayStatus = `已选择实验方案：${selected.name}`;
+  }
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = selected.kind === "experiment-plan"
     ? `已绑定实验方案：${selected.name}`
@@ -14353,6 +14395,13 @@ function issueStatusForDisplayIssues(issues) {
 
 async function handleMesaControl(action) {
   if (action === "reload-solara") {
+    const page = getFeaturePageById(selectedFeatureId);
+    if (isVisualSimulationPage(page) && !selectedVisualSimulationExperimentPlanContext(page)) {
+      visualizationReplayStatus = backendExperimentPlansLoaded && visualSimulationExperimentPlanOptions(page).length === 0
+        ? "暂无实验方案，请先在实验方案管理中创建并保存方案"
+        : "请选择实验方案后刷新推演";
+      return;
+    }
     visualizationReplayStatus = "Solara 正在保存当前建模数据并刷新内嵌页";
     try {
       await saveSelectedProjectJsonForSolaraVisualization();
@@ -14489,12 +14538,12 @@ function visualizationBlockedState() {
 
 function renderVisualSimulation(page) {
   const projectName = currentProject?.name || "当前项目";
-  const context = selectedExperimentPlanContext();
-  const experimentPlanName = selectedExperimentPlanName();
-  const planConfig = context?.kind === "experiment-plan" && context.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+  const context = selectedVisualSimulationExperimentPlanContext(page);
+  const experimentPlanName = context?.name || "";
+  const planConfig = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
     ? context.plan.config
     : {};
-  const planRuntimeContext = context?.kind === "experiment-plan"
+  const planRuntimeContext = context
     ? {
         experimentPlanId: context.plan.experiment_plan_id,
         planSteps: planConfig.steps,
@@ -14502,14 +14551,21 @@ function renderVisualSimulation(page) {
         planSeed: planConfig.seed
       }
     : {};
-  const solaraUrl = buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
-    projectId: solaraVisualizationProjectIdOverride || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
+  const contextProjectId = String(context?.projectJson?.project_id || "").trim();
+  const solaraUrl = context ? buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
+    projectId: solaraVisualizationProjectIdOverride || contextProjectId || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
     projectName,
     featureId: page.id,
-    ...(context?.kind === "experiment-plan" ? { experimentPlanName } : {}),
+    experimentPlanName,
     ...planRuntimeContext,
     reload: solaraVisualizationReloadNonce
-  });
+  }) : "";
+  const availablePlanCount = visualSimulationExperimentPlanOptions(page).length;
+  const emptyMessage = backendExperimentPlansLoaded
+    ? availablePlanCount
+      ? "请选择实验方案后刷新推演"
+      : "暂无实验方案，请先在实验方案管理中创建并保存方案"
+    : "实验方案列表加载中";
   return `
     <div class="mesa-visual-shell">
       <section class="mesa-visual-toolbar">
@@ -14520,16 +14576,19 @@ function renderVisualSimulation(page) {
       </section>
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
         <div class="visual-frame-toolbar">
-          <button type="button" class="btn-primary" data-mesa-control="reload-solara">刷新推演</button>
+          <button type="button" class="btn-primary" data-mesa-control="reload-solara" ${context ? "" : "disabled"}>刷新推演</button>
         </div>
-        <iframe
+        ${context ? `<iframe
           class="solara-visualization-frame"
           title="Solara 可视化推演"
           src="${htmlEscape(solaraUrl)}"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           loading="eager"
           referrerpolicy="no-referrer"
-        ></iframe>
+        ></iframe>` : `<div class="visual-simulation-plan-empty" data-visual-simulation-plan-empty>
+          <strong>${htmlEscape(emptyMessage)}</strong>
+          ${backendExperimentPlansLoaded && availablePlanCount === 0 ? `<button type="button" class="btn-secondary" data-plan-list-link>前往实验方案管理</button>` : ""}
+        </div>`}
       </div>
     </div>
   `;
