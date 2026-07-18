@@ -5875,6 +5875,7 @@ function renderPeriodicTaskModeling(page) {
     ? selectedDraft.compositeTasks.filter((row) => Number(row.weekIndex) === 1)
     : [];
   const profiles = periodicProfileLists(periodicTasks);
+  const simulationSource = periodicSimulationSource(profiles, periodicTasks, compositeTasks);
   if (!selectedPeriodicProfileIds.week || !profiles.week.some((item) => item.id === selectedPeriodicProfileIds.week)) {
     selectedPeriodicProfileIds.week = String(selectedTask?.id || profiles.week[0]?.id || "");
   }
@@ -5966,6 +5967,7 @@ function renderPeriodicTaskModeling(page) {
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
+      <span class="status-badge ${simulationSource.error ? "warn" : ""}" data-periodic-simulation-source>${htmlEscape(simulationSource.text)}</span>
     </div>
     <div class="periodic-profile-tabs">${profileTabs}</div>
     <div class="organization-layout task-modeling-periodic-layout">
@@ -5982,7 +5984,6 @@ function periodicProfileLists(periodicTasks = periodicTaskList()) {
     scenario.missionProfile.periodicProfileLists = { week: [], month: [], year: [] };
   }
   const lists = scenario.missionProfile.periodicProfileLists;
-  const weekIds = periodicTasks.map((task) => String(task.id));
   lists.week = periodicTasks.map((task) => {
     const existing = Array.isArray(lists.week) ? lists.week.find((item) => String(item.id) === String(task.id)) : null;
     return { id: String(task.id), name: String(existing?.name || task.name || "周剖面") };
@@ -5995,22 +5996,46 @@ function periodicProfileLists(periodicTasks = periodicTaskList()) {
       () => segment.weekProfileId
     ));
     const sourceSlots = legacyWeekIds.length ? legacyWeekIds : expandedLegacySlots;
-    const weekProfileIds = sourceSlots
-      .map((weekProfileId) => weekIds.includes(String(weekProfileId)) ? String(weekProfileId) : "")
-      .slice(0, 5);
+    const weekProfileIds = sourceSlots.map((weekProfileId) => String(weekProfileId || "")).slice(0, 5);
     while (weekProfileIds.length < 4) weekProfileIds.push("");
     const { weekSegments: _legacyWeekSegments, ...monthProfile } = item;
     return { ...monthProfile, name: String(item.name || "未命名月剖面"), weekProfileIds };
   });
   if (!lists.month.length) lists.month.push({ id: "month-default", name: "常规月", weekProfileIds: Array(4).fill("") });
-  const monthIds = lists.month.map((item) => String(item.id));
   lists.year = (Array.isArray(lists.year) ? lists.year : []).filter((item) => item && item.id).map((item) => {
     const sourceMonths = Array.isArray(item.monthProfileIds) ? item.monthProfileIds : [];
-    const monthProfileIds = Array.from({ length: 12 }, (_, index) => monthIds.includes(String(sourceMonths[index])) ? String(sourceMonths[index]) : "");
+    const monthProfileIds = Array.from({ length: 12 }, (_, index) => String(sourceMonths[index] || ""));
     return { ...item, name: String(item.name || "未命名年剖面"), monthProfileIds };
   });
   if (!lists.year.length) lists.year.push({ id: "year-default", name: "基准年度", monthProfileIds: Array(12).fill("") });
   return lists;
+}
+
+function periodicSimulationSource(profiles, periodicTasks, compositeTasks) {
+  const weekIds = new Set(periodicTasks.map((item) => String(item.id)));
+  const monthIds = new Set(profiles.month.map((item) => String(item.id)));
+  const compositeIds = new Set(compositeTasks.map((item) => String(item.id)));
+  for (const task of periodicTasks) {
+    const references = [
+      ...(task.compositeTaskIds || []),
+      ...(task.compositeTasks || []).map((row) => row.compositeTaskId)
+    ].map((item) => String(item || "")).filter(Boolean);
+    const missing = references.find((item) => !compositeIds.has(item));
+    if (missing) return { error: true, text: `仿真来源无效：周剖面引用不存在的复合任务 ${missing}` };
+  }
+  for (const month of profiles.month) {
+    const missing = (month.weekProfileIds || []).map(String).find((item) => item && !weekIds.has(item));
+    if (missing) return { error: true, text: `仿真来源无效：月剖面引用不存在的周剖面 ${missing}` };
+  }
+  for (const year of profiles.year) {
+    const missing = (year.monthProfileIds || []).map(String).find((item) => item && !monthIds.has(item));
+    if (missing) return { error: true, text: `仿真来源无效：年剖面引用不存在的月剖面 ${missing}` };
+  }
+  const yearSlots = profiles.year.flatMap((item) => item.monthProfileIds || []).filter(Boolean);
+  if (yearSlots.length) return { error: false, text: `当前仿真来源：年剖面（${yearSlots.length} 个已配置月槽）` };
+  const monthSlots = profiles.month.flatMap((item) => item.weekProfileIds || []).filter(Boolean);
+  if (monthSlots.length) return { error: false, text: `当前仿真来源：月剖面（${monthSlots.length} 个已配置周槽）` };
+  return { error: false, text: `当前仿真来源：周剖面（${periodicTasks.length} 个）` };
 }
 
 function addPeriodicProfile(type) {

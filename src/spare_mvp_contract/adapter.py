@@ -557,8 +557,6 @@ class SimulationAdapter:
         aircraft_summary = self._aircraft_support_v1_aircraft_summary(project, mission_profile)
         experiment = self._runtime_experiment_config(project, runtime_config)
         monte_carlo = self._runtime_monte_carlo_config(project, runtime_config)
-        duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
-        stop_policy = self._runtime_stop_policy_config(project, runtime_config, duration_minutes)
         fleet_count = aircraft_summary["fleet_count"]
         initial_ready = aircraft_summary["initial_ready"]
         products_by_id = self._aircraft_support_v1_products_by_id(project)
@@ -567,6 +565,10 @@ class SimulationAdapter:
         basic_missions = copy.deepcopy(self._basic_missions(project))
         composite_tasks = copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks")))
         self._normalize_mission_task_field_ownership(basic_missions, composite_tasks)
+        periodic_plan = self._compile_periodic_profile_plan(mission_profile, composite_tasks)
+        compiled_mission_profile = {**mission_profile, "periodicTasks": periodic_plan["periodic_tasks"]}
+        duration_minutes = self._aircraft_support_v1_duration_minutes(compiled_mission_profile)
+        stop_policy = self._runtime_stop_policy_config(project, runtime_config, duration_minutes)
 
         inputs = {
             "schema_version": "aircraft-support-v1-input-v0",
@@ -581,8 +583,9 @@ class SimulationAdapter:
                 "name": str(mission_profile.get("name") or "mission profile"),
                 "duration_minutes": duration_minutes,
                 "basic_missions": basic_missions,
-                "composite_tasks": composite_tasks,
-                "periodic_tasks": copy.deepcopy(self._dict_list(mission_profile.get("periodicTasks"))),
+                "composite_tasks": periodic_plan["composite_tasks"],
+                "periodic_tasks": periodic_plan["periodic_tasks"],
+                "periodic_source": periodic_plan["source"],
                 "mission_phases": self._aircraft_support_v1_mission_phases(project, basic_missions),
                 "airports": self._runtime_airports(project.get("airports")),
             },
@@ -1455,6 +1458,8 @@ class SimulationAdapter:
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
         support_resources_disabled = self._modeling_import_domain_disabled(project, "supportResources")
         support_activities_disabled = self._modeling_import_domain_disabled(project, "supportActivities")
+
+        issues.extend(self._periodic_profile_compile_issues(project))
 
         if not components:
             issues.append(
@@ -4189,6 +4194,190 @@ class SimulationAdapter:
         if not self._is_positive_number(duration_hours):
             return 24 * 60
         return max(1, int(round(float(duration_hours) * 60)))
+
+    def _periodic_profile_compile_issues(self, project: dict[str, Any]) -> list[dict[str, str]]:
+        issues: list[dict[str, str]] = []
+        mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
+        periodic_tasks = self._dict_list(mission_profile.get("periodicTasks"))
+        week_ids = {str(item.get("id") or "").strip() for item in periodic_tasks}
+        composite_ids = {str(item.get("id") or "").strip() for item in self._dict_list(mission_profile.get("compositeTasks"))}
+        basic_ids = {
+            str(value or "").strip()
+            for item in self._basic_missions(project)
+            for value in (item.get("id"), item.get("missionId"), item.get("taskNo"), item.get("name"))
+            if str(value or "").strip()
+        }
+        lists = mission_profile.get("periodicProfileLists") if isinstance(mission_profile.get("periodicProfileLists"), dict) else {}
+        months = self._dict_list(lists.get("month"))
+        years = self._dict_list(lists.get("year"))
+        month_ids = {str(item.get("id") or "").strip() for item in months}
+        periodic_composite_ids = {
+            str(reference or "").strip()
+            for task in periodic_tasks
+            for reference in [
+                *(task.get("compositeTaskIds") or []),
+                *(row.get("compositeTaskId") for row in self._dict_list(task.get("compositeTasks"))),
+            ]
+            if str(reference or "").strip()
+        }
+        for composite_index, composite in enumerate(self._dict_list(mission_profile.get("compositeTasks"))):
+            if str(composite.get("id") or "").strip() not in periodic_composite_ids:
+                continue
+            for item_index, item in enumerate(self._dict_list(composite.get("taskItems"))):
+                reference = str(item.get("basicMissionId") or item.get("basicTaskName") or "").strip()
+                if reference and reference not in basic_ids:
+                    issues.append(self._compile_issue(
+                        "missing_periodic_basic_mission_reference",
+                        f"missionProfile.compositeTasks[{composite_index}].taskItems[{item_index}].basicMissionId",
+                        f"复合任务引用的基础任务 {reference} 不存在。", "周期性任务建模",
+                    ))
+        for task_index, task in enumerate(periodic_tasks):
+            references = [str(item or "").strip() for item in task.get("compositeTaskIds") or []]
+            references.extend(str(row.get("compositeTaskId") or "").strip() for row in self._dict_list(task.get("compositeTasks")))
+            for reference in references:
+                if reference and reference not in composite_ids:
+                    issues.append(self._compile_issue(
+                        "missing_periodic_composite_reference", f"missionProfile.periodicTasks[{task_index}]",
+                        f"周剖面引用的复合任务 {reference} 不存在。", "周期性任务建模",
+                    ))
+        for month_index, month in enumerate(months):
+            slots = month.get("weekProfileIds")
+            if not isinstance(slots, list):
+                issues.append(self._compile_issue(
+                    "invalid_periodic_week_profile_slots",
+                    f"missionProfile.periodicProfileLists.month[{month_index}].weekProfileIds",
+                    "月剖面的周槽位必须是字符串数组。", "周期性任务建模",
+                ))
+                continue
+            for slot_index, reference in enumerate(slots):
+                if not isinstance(reference, str):
+                    issues.append(self._compile_issue(
+                        "invalid_periodic_week_profile_slot",
+                        f"missionProfile.periodicProfileLists.month[{month_index}].weekProfileIds[{slot_index}]",
+                        "月剖面的周槽位必须是字符串。", "周期性任务建模",
+                    ))
+                    continue
+                reference = str(reference or "").strip()
+                if reference and reference not in week_ids:
+                    issues.append(self._compile_issue(
+                        "missing_periodic_week_profile_reference",
+                        f"missionProfile.periodicProfileLists.month[{month_index}].weekProfileIds[{slot_index}]",
+                        f"月剖面引用的周剖面 {reference} 不存在。", "周期性任务建模",
+                    ))
+        for year_index, year in enumerate(years):
+            slots = year.get("monthProfileIds")
+            if not isinstance(slots, list):
+                issues.append(self._compile_issue(
+                    "invalid_periodic_month_profile_slots",
+                    f"missionProfile.periodicProfileLists.year[{year_index}].monthProfileIds",
+                    "年剖面的月槽位必须是字符串数组。", "周期性任务建模",
+                ))
+                continue
+            for slot_index, reference in enumerate(slots):
+                if not isinstance(reference, str):
+                    issues.append(self._compile_issue(
+                        "invalid_periodic_month_profile_slot",
+                        f"missionProfile.periodicProfileLists.year[{year_index}].monthProfileIds[{slot_index}]",
+                        "年剖面的月槽位必须是字符串。", "周期性任务建模",
+                    ))
+                    continue
+                reference = str(reference or "").strip()
+                if reference and reference not in month_ids:
+                    issues.append(self._compile_issue(
+                        "missing_periodic_month_profile_reference",
+                        f"missionProfile.periodicProfileLists.year[{year_index}].monthProfileIds[{slot_index}]",
+                        f"年剖面引用的月剖面 {reference} 不存在。", "周期性任务建模",
+                    ))
+        if periodic_tasks and not self._periodic_profile_schedule(mission_profile)[1]:
+            issues.append(self._compile_issue(
+                "empty_periodic_task_schedule", "missionProfile.periodicTasks",
+                "周期任务无法生成任何有效任务实例，请至少配置一个存在的复合任务。", "周期性任务建模",
+            ))
+        return issues
+
+    def _periodic_profile_schedule(self, mission_profile: dict[str, Any]) -> tuple[str, list[tuple[int, str]]]:
+        tasks = self._dict_list(mission_profile.get("periodicTasks"))
+        task_by_id = {str(item.get("id") or "").strip(): item for item in tasks}
+        lists = mission_profile.get("periodicProfileLists") if isinstance(mission_profile.get("periodicProfileLists"), dict) else {}
+        months = self._dict_list(lists.get("month"))
+        years = self._dict_list(lists.get("year"))
+        month_by_id = {str(item.get("id") or "").strip(): item for item in months}
+        year_has_refs = any(
+            str(ref or "").strip()
+            for item in years
+            for ref in (item.get("monthProfileIds") if isinstance(item.get("monthProfileIds"), list) else [])
+        )
+        month_has_refs = any(
+            str(ref or "").strip()
+            for item in months
+            for ref in (item.get("weekProfileIds") if isinstance(item.get("weekProfileIds"), list) else [])
+        )
+        schedule: list[tuple[int, str]] = []
+        if year_has_refs:
+            week_offset = 0
+            for year in years:
+                year_slots = year.get("monthProfileIds") if isinstance(year.get("monthProfileIds"), list) else []
+                for month_ref in year_slots:
+                    month = month_by_id.get(str(month_ref or "").strip())
+                    month_slots = month.get("weekProfileIds") if month and isinstance(month.get("weekProfileIds"), list) else ["", "", "", ""]
+                    for week_ref in month_slots:
+                        reference = str(week_ref or "").strip()
+                        if reference in task_by_id:
+                            schedule.append((week_offset, reference))
+                        week_offset += 1
+            return "year", schedule
+        if month_has_refs:
+            week_offset = 0
+            for month in months:
+                month_slots = month.get("weekProfileIds") if isinstance(month.get("weekProfileIds"), list) else []
+                for week_ref in month_slots:
+                    reference = str(week_ref or "").strip()
+                    if reference in task_by_id:
+                        schedule.append((week_offset, reference))
+                    week_offset += 1
+            return "month", schedule
+        for task in tasks:
+            task_id = str(task.get("id") or "").strip()
+            if self._periodic_task_active_duration_days(task) is not None:
+                schedule.append((0, task_id))
+        return "week", schedule
+
+    def _compile_periodic_profile_plan(self, mission_profile: dict[str, Any], composite_tasks: list[dict[str, Any]]) -> dict[str, Any]:
+        source_level, schedule = self._periodic_profile_schedule(mission_profile)
+        tasks = self._dict_list(mission_profile.get("periodicTasks"))
+        source = {"level": source_level, "label": {"week": "周剖面", "month": "月剖面", "year": "年剖面"}[source_level], "configured_slots": len(schedule)}
+        if source_level == "week":
+            return {"source": source, "periodic_tasks": copy.deepcopy(tasks), "composite_tasks": composite_tasks}
+        task_by_id = {str(item.get("id") or "").strip(): item for item in tasks}
+        composite_by_id = {str(item.get("id") or "").strip(): item for item in composite_tasks}
+        compiled_tasks: list[dict[str, Any]] = []
+        compiled_composites: list[dict[str, Any]] = []
+        total_weeks = max((offset for offset, _ in schedule), default=0) + 1
+        for occurrence, (week_offset, task_id) in enumerate(schedule, start=1):
+            task = copy.deepcopy(task_by_id[task_id])
+            suffix = f"__{source_level}_{occurrence}"
+            references = {str(row.get("compositeTaskId") or "").strip() for row in self._dict_list(task.get("compositeTasks")) if str(row.get("compositeTaskId") or "").strip()}
+            references.update(str(item or "").strip() for item in task.get("compositeTaskIds") or [] if str(item or "").strip())
+            reference_map = {reference: f"{reference}{suffix}" for reference in sorted(references)}
+            for reference, clone_id in reference_map.items():
+                clone = copy.deepcopy(composite_by_id[reference])
+                clone["id"] = clone_id
+                compiled_composites.append(clone)
+            task["id"] = f"{task_id}{suffix}"
+            task["repeatWeeks"] = task["repeatRounds"] = task["repeatCount"] = total_weeks
+            task["compositeTaskIds"] = list(reference_map.values())
+            rows = []
+            for row in self._dict_list(task.get("compositeTasks")):
+                reference = str(row.get("compositeTaskId") or "").strip()
+                if not reference:
+                    continue
+                row["compositeTaskId"] = reference_map[reference]
+                row["weekIndex"] = week_offset + max(1, self._positive_int(row.get("weekIndex"), 1))
+                rows.append(row)
+            task["compositeTasks"] = rows
+            task["weekdayAssignments"] = {}
+            compiled_tasks.append(task)
+        return {"source": source, "periodic_tasks": compiled_tasks, "composite_tasks": compiled_composites}
 
     def _aircraft_support_v1_duration_minutes(self, mission_profile: dict[str, Any]) -> int:
         periodic_days = []
