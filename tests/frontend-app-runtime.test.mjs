@@ -4199,6 +4199,94 @@ test("visual simulation applies saved plan runtime settings without changing cur
   }
 });
 
+test("visual simulation resyncs an updated stable plan fingerprint and skips unchanged refreshes", async () => {
+  const planProjectJson = createRuntimeProjectJson({
+    project_id: "project-visual-fingerprint",
+    supportResources: [{
+      id: "spare-fingerprint",
+      supportNodeName: "基层",
+      type: "spare",
+      name: "航电模块",
+      model: "AV-1",
+      productId: "product-av-1",
+      quantity: 2
+    }]
+  });
+  delete planProjectJson.experiment;
+  const experimentPlans = [{
+    experiment_plan_id: "plan-stable-fingerprint",
+    status: "draft",
+    config: {
+      name: "稳定标识方案",
+      steps: 12,
+      samples: 3,
+      seed: 1203,
+      projectJson: planProjectJson
+    }
+  }];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans
+  });
+  const branchProjectSaves = () => runtime.requests
+    .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
+    .map((request) => JSON.parse(request.options.body || "{}"))
+    .filter((body) => body.project_id === "project-visual-fingerprint");
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-stable-fingerprint" }
+    );
+    assert.equal(branchProjectSaves().length, 1);
+    assert.equal(branchProjectSaves()[0].supportResources[0].quantity, 2);
+    assert.match(runtime.appNode.innerHTML, /plan_steps=12/);
+
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click(
+      "[data-experiment-plan-edit]",
+      { experimentPlanEdit: "plan-stable-fingerprint", experimentPlanName: "稳定标识方案" }
+    );
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.steps" },
+      { value: "24", type: "number" }
+    );
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "supportResources.0.quantity" },
+      { value: "9", type: "number" }
+    );
+    await runtime.click("[data-save-plan]");
+
+    const updateRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans/plan-stable-fingerprint"
+      && (request.options.method || "GET") === "PUT"
+    ));
+    assert.ok(updateRequest);
+    const updateBody = JSON.parse(updateRequest.options.body || "{}");
+    assert.equal(updateBody.config.steps, 24);
+    assert.equal(updateBody.config.projectJson.supportResources[0].quantity, 9);
+
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+    assert.equal(branchProjectSaves().length, 2, "same-ID changed content must save the branch Project again");
+    assert.equal(branchProjectSaves()[1].supportResources[0].quantity, 9);
+    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-stable-fingerprint/);
+    assert.match(runtime.appNode.innerHTML, /plan_steps=24/);
+    assert.match(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
+
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
+    await runtime.setHash("feature=spare-planning-visual-mesa-page");
+    assert.equal(branchProjectSaves().length, 2, "unchanged force refresh must reuse the matching fingerprint");
+    assert.match(runtime.appNode.innerHTML, /plan_steps=24/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("visual simulation distinguishes duplicate plan names by stable IDs and switches Project branches atomically", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
@@ -5360,11 +5448,14 @@ async function setupRuntimeApp({
     const experimentPlanItemMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)$/);
     if (experimentPlanItemMatch && method === "PUT") {
       const body = JSON.parse(options.body || "{}");
-      return jsonResponse({
+      const updatedPlan = {
         project_id: decodeURIComponent(experimentPlanItemMatch[1]),
         experiment_plan_id: decodeURIComponent(experimentPlanItemMatch[2]),
         config: body.config || {}
-      });
+      };
+      const index = experimentPlans.findIndex((plan) => plan.experiment_plan_id === updatedPlan.experiment_plan_id);
+      if (index >= 0) experimentPlans[index] = updatedPlan;
+      return jsonResponse(updatedPlan);
     }
     if (experimentPlanItemMatch && method === "DELETE") {
       const experimentPlanId = decodeURIComponent(experimentPlanItemMatch[2]);

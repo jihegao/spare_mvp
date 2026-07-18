@@ -765,6 +765,7 @@ let visualSupportAirportId = "";
 let solaraVisualizationProjectIdOverride = "";
 let solaraVisualizationProjectIdOverrideContextKey = "";
 let solaraVisualizationProjectIdOverrideParentProjectId = "";
+let solaraVisualizationProjectIdOverrideFingerprint = "";
 let solaraVisualizationProjectSyncInFlightKey = "";
 let solaraVisualizationProjectSyncError = "";
 let solaraVisualizationProjectSyncErrorKey = "";
@@ -10923,20 +10924,20 @@ async function resolveSelectedExperimentPlanProjectJsonForRun() {
   return buildBackendProjectJson(hydratedProjectJson, currentProject);
 }
 
-async function syncSelectedProjectJsonForSolaraVisualization() {
-  const contextKey = selectedRunContextKey;
-  const parentProjectId = currentBackendProjectId();
+async function syncSelectedProjectJsonForSolaraVisualization({ contextKey, parentProjectId, fingerprint }) {
   const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
   const saved = await backendApi.saveProject(projectJson);
-  savedProject = saved || savedProject;
-  if (selectedRunContextKey === contextKey && currentBackendProjectId() === parentProjectId) {
-    solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || parentProjectId || "").trim();
-    solaraVisualizationProjectIdOverrideContextKey = contextKey;
-    solaraVisualizationProjectIdOverrideParentProjectId = parentProjectId;
+  if (!visualSimulationSyncRequestMatches({ contextKey, parentProjectId, fingerprint })) {
+    return { saved, applied: false };
   }
+  savedProject = saved || savedProject;
+  solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || parentProjectId || "").trim();
+  solaraVisualizationProjectIdOverrideContextKey = contextKey;
+  solaraVisualizationProjectIdOverrideParentProjectId = parentProjectId;
+  solaraVisualizationProjectIdOverrideFingerprint = fingerprint;
   projectDraftSaveStatus = "已保存";
   projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-  return saved;
+  return { saved, applied: true };
 }
 
 function selectedExperimentPlanRunSettings() {
@@ -10972,10 +10973,9 @@ function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
   solaraVisualizationProjectIdOverride = "";
   solaraVisualizationProjectIdOverrideContextKey = "";
   solaraVisualizationProjectIdOverrideParentProjectId = "";
-  solaraVisualizationProjectSyncInFlightKey = "";
+  solaraVisualizationProjectIdOverrideFingerprint = "";
   solaraVisualizationProjectSyncError = "";
   solaraVisualizationProjectSyncErrorKey = "";
-  solaraVisualizationProjectSyncRequestId += 1;
   if (persist) persistSelectedRunContextKey();
 }
 
@@ -14628,9 +14628,11 @@ function renderVisualSimulation(page) {
       }
     : {};
   const contextProjectId = String(context?.projectJson?.project_id || "").trim();
+  const contextFingerprint = context ? visualSimulationPlanFingerprint(context) : "";
   const contextOverrideProjectId = context && (
     solaraVisualizationProjectIdOverrideContextKey === context?.key
     && solaraVisualizationProjectIdOverrideParentProjectId === currentBackendProjectId()
+    && solaraVisualizationProjectIdOverrideFingerprint === contextFingerprint
   ) ? solaraVisualizationProjectIdOverride : "";
   ensureSelectedVisualSimulationProjectSynced(page);
   const solaraUrl = contextOverrideProjectId ? buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
@@ -14677,36 +14679,80 @@ function renderVisualSimulation(page) {
   `;
 }
 
-function visualSimulationProjectSyncKey(context) {
-  return `${currentBackendProjectId()}::${context?.key || ""}`;
+function visualSimulationPlanFingerprint(context) {
+  const config = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+    ? context.plan.config
+    : {};
+  const projectJson = context?.projectJson && typeof context.projectJson === "object" && !Array.isArray(context.projectJson)
+    ? context.projectJson
+    : {};
+  return stableVisualizationPlanStringify({
+    projectJson,
+    steps: config.steps ?? null,
+    samples: config.samples ?? null,
+    seed: config.seed ?? null
+  });
+}
+
+function stableVisualizationPlanStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableVisualizationPlanStringify(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${stableVisualizationPlanStringify(value[key])}`
+    )).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function visualSimulationProjectSyncKey(context, parentProjectId = currentBackendProjectId()) {
+  return `${parentProjectId}::${context?.key || ""}::${visualSimulationPlanFingerprint(context)}`;
+}
+
+function visualSimulationSyncRequestMatches({ contextKey, parentProjectId, fingerprint }) {
+  if (selectedRunContextKey !== contextKey || currentBackendProjectId() !== parentProjectId) return false;
+  const context = experimentPlanContextOptions().find((option) => (
+    option.kind === "experiment-plan" && option.key === contextKey
+  ));
+  return Boolean(context) && visualSimulationPlanFingerprint(context) === fingerprint;
 }
 
 function ensureSelectedVisualSimulationProjectSynced(page) {
   const context = selectedVisualSimulationExperimentPlanContext(page);
   if (!context) return;
   const parentProjectId = currentBackendProjectId();
+  const fingerprint = visualSimulationPlanFingerprint(context);
   if (
     solaraVisualizationProjectIdOverride
     && solaraVisualizationProjectIdOverrideContextKey === context.key
     && solaraVisualizationProjectIdOverrideParentProjectId === parentProjectId
+    && solaraVisualizationProjectIdOverrideFingerprint === fingerprint
   ) return;
-  const syncKey = visualSimulationProjectSyncKey(context);
+  if (solaraVisualizationProjectSyncInFlightKey) return;
+  const syncKey = visualSimulationProjectSyncKey(context, parentProjectId);
   if (
-    solaraVisualizationProjectSyncInFlightKey === syncKey
-    || (solaraVisualizationProjectSyncErrorKey === syncKey && solaraVisualizationProjectSyncError)
+    solaraVisualizationProjectSyncErrorKey === syncKey && solaraVisualizationProjectSyncError
   ) return;
   const requestId = ++solaraVisualizationProjectSyncRequestId;
   solaraVisualizationProjectSyncInFlightKey = syncKey;
   solaraVisualizationProjectSyncError = "";
   solaraVisualizationProjectSyncErrorKey = "";
   visualizationReplayStatus = `正在准备实验方案：${context.name}`;
-  syncSelectedProjectJsonForSolaraVisualization()
-    .then(() => {
-      if (requestId !== solaraVisualizationProjectSyncRequestId) return;
+  syncSelectedProjectJsonForSolaraVisualization({
+    contextKey: context.key,
+    parentProjectId,
+    fingerprint
+  })
+    .then(({ applied }) => {
+      if (requestId !== solaraVisualizationProjectSyncRequestId || !applied) return;
       visualizationReplayStatus = `实验方案已就绪：${context.name}`;
     })
     .catch((err) => {
-      if (requestId !== solaraVisualizationProjectSyncRequestId) return;
+      if (
+        requestId !== solaraVisualizationProjectSyncRequestId
+        || !visualSimulationSyncRequestMatches({ contextKey: context.key, parentProjectId, fingerprint })
+      ) return;
       solaraVisualizationProjectSyncError = err && err.message ? err.message : "后端接口不可用";
       solaraVisualizationProjectSyncErrorKey = syncKey;
       visualizationReplayStatus = `实验方案数据准备失败：${solaraVisualizationProjectSyncError}`;

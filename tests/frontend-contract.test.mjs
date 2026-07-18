@@ -3144,7 +3144,9 @@ test("visual simulation uses only persisted ExperimentPlan IDs and fails closed 
   assert.doesNotMatch(visualDropdownSource, /<optgroup|已保存实验方案|current-project:/);
   assert.match(visualDropdownSource, /暂无实验方案/);
   assert.match(syncSource, /if \(!context\) return/);
-  assert.match(syncSource, /syncSelectedProjectJsonForSolaraVisualization\(\)/);
+  assert.match(syncSource, /syncSelectedProjectJsonForSolaraVisualization\(\{/);
+  assert.match(syncSource, /visualSimulationPlanFingerprint\(context\)/);
+  assert.match(syncSource, /visualSimulationSyncRequestMatches/);
   assert.match(visualSource, /solaraVisualizationProjectIdOverrideContextKey === context\?\.key/);
   assert.match(visualSource, /data-visual-simulation-plan-empty/);
   assert.match(visualSource, /data-plan-list-link>前往实验方案管理<\/button>/);
@@ -3756,8 +3758,9 @@ test("visual simulation automatically syncs the selected Project before mounting
   assert.match(appSource, /async function syncSelectedProjectJsonForSolaraVisualization/);
   assert.match(appSource, /resolveSelectedExperimentPlanProjectJsonForRun\(\)/);
   assert.match(appSource, /backendApi\.saveProject\(projectJson\)/);
-  assert.match(syncSource, /syncSelectedProjectJsonForSolaraVisualization\(\)/);
+  assert.match(syncSource, /syncSelectedProjectJsonForSolaraVisualization\(\{/);
   assert.match(syncSource, /solaraVisualizationProjectSyncInFlightKey/);
+  assert.match(syncSource, /solaraVisualizationProjectIdOverrideFingerprint === fingerprint/);
   assert.match(syncSource, /render\(\)/);
   assert.doesNotMatch(appSource, /solaraVisualizationReloadNonce|saveSelectedProjectJsonForSolaraVisualization/);
   assert.doesNotMatch(visualSource + syncSource, /startLiteMesaVisualizationThroughApi\(\)|backendApi\.runLiteMesaAnalysis|startSingleRunThroughApi|submitRunIntent|\/api\/runs/);
@@ -4966,7 +4969,7 @@ test("visual simulation syncs automatically without a reload action", async () =
 
   assert.doesNotMatch(appSource, /const mesaRunSelect = event\.target\.closest/);
   assert.doesNotMatch(controlHandlerSource, /reload-solara/);
-  assert.match(syncSource, /syncSelectedProjectJsonForSolaraVisualization\(\)/);
+  assert.match(syncSource, /syncSelectedProjectJsonForSolaraVisualization\(\{/);
   assert.match(syncSource, /render\(\)/);
   assert.doesNotMatch(syncSource, /visualizationReplayPlaying = true|startVisualizationReplay\(\)|startLiteMesaVisualizationThroughApi\(\)/);
   assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);
