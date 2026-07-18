@@ -1524,6 +1524,85 @@ test("support spare migration never distributes an ancestor quantity across mult
   assert.equal(quantities.get("leaf-b"), 0);
 });
 
+test("support spare migration preserves ancestor and leaf non-zero conflict for backend rejection", () => {
+  const loaded = normalizeProjectJsonForClientDraft({
+    supportOrganization: {
+      tree: {
+        id: "root",
+        name: "保障组织",
+        children: [{ id: "relay", name: "中继", children: [{ id: "leaf", name: "基层", children: [] }] }]
+      }
+    },
+    products: [{ id: "product-pump", name: "液压泵", model: "PUMP-1" }],
+    components: [{ id: "pump-lru", name: "液压泵", model: "PUMP-1", productId: "product-pump", productType: "LRU" }],
+    supportResources: [
+      { id: "ancestor-stock", organizationNodeId: "relay", supportNodeName: "中继", type: "spare", productId: "product-pump", quantity: 4 },
+      { id: "leaf-stock", organizationNodeId: "leaf", supportNodeName: "基层", type: "spare", productId: "product-pump", quantity: 5 }
+    ],
+    supportActivityJobs: [{
+      activityCode: "USE-001",
+      spare: [{ key: "ancestor-stock", productId: "product-pump", quantity: 1 }]
+    }]
+  });
+
+  const live = loaded.supportResources.filter((resource) => resource.type === "spare");
+  assert.equal(live.length, 2);
+  assert.deepEqual(live.map((resource) => resource.quantity).sort((a, b) => a - b), [4, 5]);
+  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:leaf:product-pump");
+});
+
+test("same-name leaf tombstone suppresses only its stable organization and product identity", () => {
+  const loaded = normalizeProjectJsonForClientDraft({
+    supportOrganization: {
+      tree: {
+        id: "root",
+        name: "保障组织",
+        children: [
+          { id: "leaf-a", name: "同名基层", children: [] },
+          { id: "leaf-b", name: "同名基层", children: [] }
+        ]
+      }
+    },
+    products: [{ id: "product-pump", name: "液压泵", model: "PUMP-1" }],
+    components: [{ id: "pump-lru", name: "液压泵", model: "PUMP-1", productId: "product-pump", productType: "LRU" }],
+    supportResources: [{
+      id: "support-spare-tombstone:leaf-a:product-pump",
+      organizationNodeId: "leaf-a",
+      supportNodeName: "同名基层",
+      type: "spare",
+      productId: "product-pump",
+      quantity: 0
+    }]
+  });
+
+  assert.deepEqual(loaded.supportResources.map((resource) => resource.id).sort(), [
+    "support-spare-tombstone:leaf-a:product-pump",
+    "support-spare:leaf-b:product-pump"
+  ]);
+});
+
+test("same-label hardware rows remain distinct when product IDs differ", () => {
+  const loaded = normalizeProjectJsonForClientDraft({
+    supportOrganization: {
+      tree: { id: "root", name: "保障组织", children: [{ id: "leaf", name: "基层", children: [] }] }
+    },
+    products: [
+      { id: "product-p1", name: "同标签LRU", model: "SAME" },
+      { id: "product-p2", name: "同标签LRU", model: "SAME" }
+    ],
+    components: [
+      { id: "lru-p1", name: "同标签LRU", model: "SAME", productId: "product-p1", productType: "LRU" },
+      { id: "lru-p2", name: "同标签LRU", model: "SAME", productId: "product-p2", productType: "LRU" }
+    ],
+    supportResources: []
+  });
+
+  assert.deepEqual(loaded.supportResources.map((resource) => resource.id).sort(), [
+    "support-spare:leaf:product-p1",
+    "support-spare:leaf:product-p2"
+  ]);
+});
+
 test("stable spare IDs are order-independent and separate legacy collisions by organization", () => {
   const scenario = {
     supportOrganization: {
@@ -1541,10 +1620,16 @@ test("stable spare IDs are order-independent and separate legacy collisions by o
     supportResources: [
       { id: "duplicate-old-id", organizationNodeId: "leaf-a", supportNodeName: "同名基层", type: "spare", productId: "product-pump", name: "液压泵", model: "PUMP-1", quantity: 4 },
       { id: "duplicate-old-id", organizationNodeId: "leaf-b", supportNodeName: "同名基层", type: "spare", productId: "product-pump", name: "液压泵", model: "PUMP-1", quantity: 7 }
-    ]
+    ],
+    supportActivityJobs: [{
+      activityCode: "USE-001",
+      spare: [{ key: "duplicate-old-id", productId: "product-pump", quantity: 1 }]
+    }]
   };
-  const forward = normalizeProjectJsonForClientDraft(scenario).supportResources;
-  const reverse = normalizeProjectJsonForClientDraft({ ...scenario, supportResources: [...scenario.supportResources].reverse() }).supportResources;
+  const forwardProject = normalizeProjectJsonForClientDraft(scenario);
+  const reverseProject = normalizeProjectJsonForClientDraft({ ...scenario, supportResources: [...scenario.supportResources].reverse() });
+  const forward = forwardProject.supportResources;
+  const reverse = reverseProject.supportResources;
   const identity = (rows) => rows.map((row) => `${row.id}=${row.quantity}`).sort();
 
   assert.deepEqual(identity(forward), [
@@ -1552,6 +1637,8 @@ test("stable spare IDs are order-independent and separate legacy collisions by o
     "support-spare:leaf-b:product-pump=7"
   ]);
   assert.deepEqual(identity(reverse), identity(forward));
+  assert.equal(forwardProject.supportActivityJobs[0].spare[0].key, "duplicate-old-id");
+  assert.equal(reverseProject.supportActivityJobs[0].spare[0].key, "duplicate-old-id");
 });
 
 test("Case-large export migrates old resource collisions without dangling activity references", async () => {
@@ -1566,11 +1653,15 @@ test("Case-large export migrates old resource collisions without dangling activi
   const keyedRequirements = loaded.supportActivityJobs
     .flatMap((job) => job.spare || [])
     .filter((requirement) => requirement.key);
+  const originalKeyedRequirementCount = caseLarge.supportActivityJobs
+    .flatMap((job) => job.spare || [])
+    .filter((requirement) => requirement.key).length;
 
   assert.ok(liveSpares.length > 0);
   assert.ok(liveSpares.every((resource) => resource.id.startsWith("support-spare:")));
   assert.equal(new Set(logicalKeys).size, logicalKeys.length);
   assert.ok(keyedRequirements.every((requirement) => resourceIds.has(requirement.key)));
+  assert.equal(keyedRequirements.length, originalKeyedRequirementCount);
   assert.ok(loaded.supportActivityJobs.flatMap((job) => job.spare || []).every((requirement) => requirement.productId));
 });
 
@@ -2194,6 +2285,32 @@ test("project switch flushes pending project draft autosave before changing proj
   assert.match(flushSource, /projectDraftAutosaveTimer = null/);
   assert.match(flushSource, /projectDraftSaveStatus === "有未保存修改"/);
   assert.match(flushSource, /await saveCurrentProjectDraftThroughApi\(\)/);
+});
+
+test("every Project draft dirty helper shares revision tracking and the serialized save queue", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const dirtySource = appSource.slice(
+    appSource.indexOf("function markProjectDraftDirty"),
+    appSource.indexOf("function scheduleProjectDraftAutosave")
+  );
+  const rmsDirtySource = appSource.slice(
+    appSource.indexOf("function markRmsAllocationDraftChanged"),
+    appSource.indexOf("function startRmsAllocationCalculation")
+  );
+  const productDirtySource = appSource.slice(
+    appSource.indexOf("function markProductCatalogChanged"),
+    appSource.indexOf("function permissionRoleLabel")
+  );
+  const planSaveSource = appSource.slice(
+    appSource.indexOf("async function saveCurrentExperimentPlanThroughApi"),
+    appSource.indexOf("function ensureExperimentPlanLargeSampleRequest")
+  );
+
+  assert.match(dirtySource, /projectDraftRevision \+= 1/);
+  assert.match(rmsDirtySource, /markProjectDraftDirty\(\)/);
+  assert.match(productDirtySource, /markProjectDraftDirty\(\{ updatePreview: true \}\)/);
+  assert.match(planSaveSource, /await saveCurrentProjectDraftThroughApi\(\)/);
+  assert.doesNotMatch(planSaveSource, /backendApi\.saveProject\(/);
 });
 
 test("frontend app wires local modeling import actions through explicit backend actions", async () => {

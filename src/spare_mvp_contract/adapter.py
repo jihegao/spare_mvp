@@ -167,21 +167,28 @@ class SimulationAdapter:
 
         organization_ids: set[str] = set()
         organization_ids_by_name: dict[str, set[str]] = {}
+        organization_descendant_leaf_ids: dict[str, set[str]] = {}
         organization = project.get("supportOrganization") if isinstance(project.get("supportOrganization"), dict) else {}
         raw_tree = organization.get("tree")
         roots = raw_tree if isinstance(raw_tree, list) else [raw_tree]
 
-        def collect_organization(node: Any) -> None:
+        def collect_organization(node: Any) -> set[str]:
             if not isinstance(node, dict):
-                return
+                return set()
             node_id = str(node.get("id") or "").strip()
             node_name = str(node.get("name") or "").strip()
             if node_id:
                 organization_ids.add(node_id)
                 if node_name:
                     organization_ids_by_name.setdefault(node_name, set()).add(node_id)
-            for child in node.get("children") if isinstance(node.get("children"), list) else []:
-                collect_organization(child)
+            child_leaves: set[str] = set()
+            children = node.get("children") if isinstance(node.get("children"), list) else []
+            for child in children:
+                child_leaves.update(collect_organization(child))
+            leaves = child_leaves or ({node_id} if node_id else set())
+            if node_id:
+                organization_descendant_leaf_ids[node_id] = leaves
+            return leaves
 
         for root in roots:
             collect_organization(root)
@@ -207,13 +214,16 @@ class SimulationAdapter:
             explicit_organization_ref = str(resource.get("organizationNodeName") or "").strip()
             organization_ref = explicit_organization_ref or str(resource.get("supportNodeName") or "").strip()
             canonical_org = organization_ref
+            identity_resolved = False
             if organization_ids:
                 if organization_ref in organization_ids:
                     canonical_org = organization_ref
+                    identity_resolved = True
                 else:
                     matches = organization_ids_by_name.get(organization_ref, set())
                     if len(matches) == 1:
                         canonical_org = next(iter(matches))
+                        identity_resolved = True
                     else:
                         support_ref = str(resource.get("supportNodeName") or "").strip()
                         support_matches = (
@@ -221,19 +231,35 @@ class SimulationAdapter:
                         )
                         if not explicit_organization_ref and len(support_matches) == 1:
                             canonical_org = f"support-node:{next(iter(support_matches))}"
-                        elif explicit_organization_ref:
+                            identity_resolved = True
+                        else:
                             errors.append({
                                 "code": "ambiguous_support_resource_organization" if len(matches) > 1 else "unknown_support_resource_organization",
-                                "path": f"supportResources[{index}].organizationNodeName",
+                                "path": f"supportResources[{index}].{'organizationNodeName' if explicit_organization_ref else 'supportNodeName'}",
                                 "message": f"support resource organization {organization_ref or '<empty>'} is not a unique organization node",
                             })
                             continue
-                        else:
-                            canonical_org = f"legacy:{organization_ref}"
+            else:
+                support_matches = (
+                    {organization_ref} if organization_ref in support_node_ids else support_node_ids_by_name.get(organization_ref, set())
+                )
+                if len(support_matches) == 1:
+                    canonical_org = f"support-node:{next(iter(support_matches))}"
+                    identity_resolved = True
+                else:
+                    canonical_org = f"legacy:{organization_ref}"
+            descendant_leaves = organization_descendant_leaf_ids.get(canonical_org, set())
+            if len(descendant_leaves) > 1 and self._non_negative_int(resource.get("quantity"), 0) > 0:
+                errors.append({
+                    "code": "ambiguous_support_resource_migration",
+                    "path": f"supportResources[{index}].organizationNodeName",
+                    "message": f"non-zero spare on organization {canonical_org} cannot be distributed across multiple leaf organizations",
+                })
+                continue
             if not canonical_org or not product_id:
                 continue
             logical_key = (canonical_org, product_id)
-            if explicit_organization_ref and logical_key in logical_seen:
+            if identity_resolved and logical_key in logical_seen:
                 errors.append({
                     "code": "duplicate_support_resource_identity",
                     "path": f"supportResources[{index}]",
@@ -242,14 +268,15 @@ class SimulationAdapter:
                         f"supportResources[{logical_seen[logical_key]}]"
                     ),
                 })
-            elif explicit_organization_ref:
+            elif identity_resolved:
                 logical_seen[logical_key] = index
 
         known_resource_ids = set(ids)
+        stable_identity_payload = any(resource_id.startswith("support-spare:") for resource_id in known_resource_ids)
         for job_index, job in enumerate(self._dict_list(project.get("supportActivityJobs"))):
             for spare_index, requirement in enumerate(self._dict_list(job.get("spare"))):
                 key = str(requirement.get("key") or "").strip()
-                if key and key not in known_resource_ids:
+                if stable_identity_payload and key and key not in known_resource_ids:
                     errors.append({
                         "code": "missing_support_resource_key_reference",
                         "path": f"supportActivityJobs[{job_index}].spare[{spare_index}].key",

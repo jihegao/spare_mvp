@@ -249,6 +249,14 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(settings["sessionTimeoutSeconds"], 300)
         self.assertNotIn("maxTimeWindow", _normalize_lite_mesa_analysis_settings({"maxTimeWindow": 1}))
 
+    def test_save_project_accepts_committed_case_large_after_legacy_export_normalization(self) -> None:
+        legacy = json.loads((REPO_ROOT / "exports" / "project-case-large.json").read_text(encoding="utf-8"))
+        clean = export_project_json(legacy, target="aircraft_support_v1")
+
+        saved = self.api.save_project(clean)
+
+        self.assertEqual(saved["project_id"], legacy["project_id"])
+
     def test_lite_mesa_session_budget_scales_with_execution_waves_and_stays_bounded(self) -> None:
         parallel = _normalize_lite_mesa_analysis_settings({"samples": 24, "parallelCores": 4})
         serial = _normalize_lite_mesa_analysis_settings({"samples": 24, "parallelCores": 1})

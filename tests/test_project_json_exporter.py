@@ -76,6 +76,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "name": "基层",
             "supportNodeId": "node-a",
         }]
+        for resource in project["supportResources"]:
+            resource["supportNodeName"] = "org-line"
 
         exported = ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
@@ -481,6 +483,77 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertEqual(tombstone["productId"], "product-whole-aircraft")
         self.assertEqual(tombstone["quantity"], 0)
         self.assertEqual(self._schema_errors(clean), [])
+
+    def test_committed_case_large_legacy_export_still_normalizes_before_stable_key_enforcement(self) -> None:
+        project = json.loads((REPO_ROOT / "exports" / "project-case-large.json").read_text(encoding="utf-8"))
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        self.assertEqual(clean["project_id"], project["project_id"])
+        self.assertTrue(clean["products"])
+        self.assertEqual(self._schema_errors(clean), [])
+
+    def test_export_rejects_legacy_support_name_duplicate_and_unknown_identity(self) -> None:
+        base = self._polluted_project()
+        product_id = base["products"][0]["id"]
+        base["supportOrganization"] = {
+            "tree": {
+                "id": "root",
+                "name": "保障组织",
+                "children": [{"id": "leaf-a", "name": "基层A", "children": []}],
+            }
+        }
+        base["supportNodes"] = [{"id": "support-leaf-a", "name": "基层A"}]
+
+        duplicate = deepcopy(base)
+        duplicate["supportResources"] = [
+            {"id": "legacy-a", "supportNodeName": "基层A", "type": "spare", "productId": product_id, "name": "A", "quantity": 1},
+            {"id": "legacy-b", "supportNodeName": "基层A", "type": "spare", "productId": product_id, "name": "B", "quantity": 2},
+        ]
+        with self.assertRaisesRegex(ValueError, "duplicate live spare identity"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(duplicate)
+
+        unknown = deepcopy(base)
+        unknown["supportResources"] = [{
+            "id": "legacy-unknown",
+            "supportNodeName": "不存在",
+            "type": "spare",
+            "productId": product_id,
+            "name": "unknown",
+            "quantity": 1,
+        }]
+        with self.assertRaisesRegex(ValueError, "unknown support organization"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(unknown)
+
+    def test_export_rejects_nonzero_spare_on_multi_leaf_ancestor(self) -> None:
+        project = self._polluted_project()
+        product_id = project["products"][0]["id"]
+        project["supportOrganization"] = {
+            "tree": {
+                "id": "root",
+                "name": "保障组织",
+                "children": [{
+                    "id": "relay",
+                    "name": "中继",
+                    "children": [
+                        {"id": "leaf-a", "name": "基层A", "children": []},
+                        {"id": "leaf-b", "name": "基层B", "children": []},
+                    ],
+                }],
+            }
+        }
+        project["supportResources"] = [{
+            "id": "legacy-relay-stock",
+            "organizationNodeName": "relay",
+            "supportNodeName": "中继",
+            "type": "spare",
+            "productId": product_id,
+            "name": "legacy stock",
+            "quantity": 4,
+        }]
+
+        with self.assertRaisesRegex(ValueError, "cannot be distributed across multiple leaf organizations"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
     def test_exporter_materializes_legacy_activity_applicability_on_jobs(self) -> None:
         project = self._polluted_project()

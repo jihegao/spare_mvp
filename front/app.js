@@ -7734,9 +7734,10 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode, options =
   if (!supportResources.length && Array.isArray(scenario.supportNodes)) {
     return supportResourceRowsFromSupportNodes(scenario.supportNodes, activeResourceType);
   }
+  const hardwareSpares = activeResourceType === "备件" ? lruSpareRows() : [];
   return orgNodes.flatMap((orgNode, orgIndex) => {
     const resourcesForOrg = activeResourceType === "备件"
-      ? supportSpareResourcesForOrg(orgNode)
+      ? supportSpareResourcesForOrg(orgNode, hardwareSpares)
       : supportResources.filter((resource) => supportResourceBelongsToOrg(resource, orgNode));
     const rows = resourcesForOrg
       .map((resource, resourceIndex) => supportResourceRow(resource, orgNode, orgIndex, resourceIndex));
@@ -7818,15 +7819,14 @@ function lruSpareRows() {
       };
     })
     .filter((spare) => {
-      const key = supportSpareResourceIdentityKey("", spare.name, spare.model, spare.aircraft);
-      if (seen.has(key)) return false;
-      seen.add(key);
+      const productId = String(spare.productId || "").trim();
+      if (!productId || seen.has(productId)) return false;
+      seen.add(productId);
       return true;
     });
 }
 
-function supportSpareResourcesForOrg(orgNode) {
-  const hardwareSpares = lruSpareRows();
+function supportSpareResourcesForOrg(orgNode, hardwareSpares = lruSpareRows()) {
   if (!hardwareSpares.length || !orgNode) return [];
   const resources = Array.isArray(scenario.supportResources) ? scenario.supportResources : [];
   const tombstones = resources
@@ -7879,8 +7879,7 @@ function supportSpareMatchesHardware(resource, spare) {
 
 function supportSpareResourceId(orgNode, spare) {
   const orgId = String(orgNode?.id || orgNode?.name || "").trim();
-  const productId = String(spare?.productId || "").trim()
-    || supportSpareResourceIdentityKey("", spare?.name, spare?.model, spare?.aircraft);
+  const productId = String(spare?.productId || "").trim();
   return `${SUPPORT_SPARE_RESOURCE_ID_PREFIX}${encodeURIComponent(orgId)}:${encodeURIComponent(productId)}`;
 }
 
@@ -7897,8 +7896,7 @@ function isDeletedSupportSpareResource(resource) {
 
 function supportSpareTombstoneId(orgNode, resource) {
   const orgId = String(orgNode?.id || orgNode?.name || "").trim();
-  const productIdentity = String(resource?.productId || "").trim()
-    || supportSpareResourceIdentityKey("", resource?.name, resource?.model, "");
+  const productIdentity = String(resource?.productId || "").trim();
   return `${SUPPORT_SPARE_TOMBSTONE_ID_PREFIX}${encodeURIComponent(orgId)}:${encodeURIComponent(productIdentity)}`;
 }
 
@@ -12454,7 +12452,7 @@ function templateSummaryFromModelingImportRecord(record) {
 }
 
 async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
-  const focusProjectId = String(forceProjectId || (currentProject?.id ? String(currentProject.id) : "")).trim();
+  const focusProjectId = String(forceProjectId || currentProject?.projectBackendId || currentProject?.id || "").trim();
   projectListStatus = "正在从后端读取项目列表";
   try {
     const result = await backendApi.listProjects();
@@ -12468,6 +12466,13 @@ async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
       project.id === focusProjectId || project.projectBackendId === focusProjectId
     )) || null;
     currentProject = restoredProject || demoProjects[0] || null;
+    if (currentProject) {
+      const canonicalProjectId = currentProject.projectBackendId || currentProject.id;
+      persistCurrentProjectId(canonicalProjectId);
+      if (selectedRoute === "workbench" && readProjectIdFromHash() !== canonicalProjectId) {
+        replaceWorkbenchHash(selectedFeatureId, canonicalProjectId);
+      }
+    }
     if (backendProjects.length) {
       projectListStatus = focusProjectId && !restoredProject
         ? `未找到上次项目 ${focusProjectId}，已回退到 ${currentProject?.name || "项目列表首项"}，请确认项目选择。`
@@ -12760,12 +12765,17 @@ function isCurrentModelingPage() {
   return getFeaturePageById(selectedFeatureId).secondary === "仿真建模";
 }
 
-function markProjectDraftChanged() {
-  if (!isCurrentModelingPage()) return;
+function markProjectDraftDirty({ modelingPageOnly = false, updatePreview = false } = {}) {
+  if (modelingPageOnly && !isCurrentModelingPage()) return;
   experimentPlanBranchActive = false;
   projectDraftRevision += 1;
   projectDraftSaveStatus = "有未保存修改";
-  scheduleProjectDraftAutosave();
+  if (updatePreview) updatePreviewResultsThroughApiClient();
+  if (currentProject) scheduleProjectDraftAutosave();
+}
+
+function markProjectDraftChanged() {
+  markProjectDraftDirty({ modelingPageOnly: true });
 }
 
 function scheduleProjectDraftAutosave() {
@@ -12859,12 +12869,12 @@ async function saveCurrentExperimentPlanThroughApi() {
     backendApiStatus = `实验方案保存失败：${parallelCoresError}`;
     return;
   }
-  const projectJson = buildBackendProjectJson(scenario, currentProject);
   const planProjectJson = cloneScenario(experimentPlanDraft);
   ensureExperimentPlanLargeSampleRequest(planProjectJson);
   const existingExperimentPlanId = String(experimentPlan?.experiment_plan_id || "").trim();
   try {
-    savedProject = await backendApi.saveProject(projectJson);
+    savedProject = await saveCurrentProjectDraftThroughApi();
+    if (!savedProject) throw new Error("Project draft 保存失败，未创建实验方案");
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
     const runIntent = buildRunIntent({
       runType: "single",
@@ -13879,8 +13889,7 @@ function persistRmsAllocationDraftToScenario() {
 }
 
 function markRmsAllocationDraftChanged() {
-  projectDraftSaveStatus = "有未保存修改";
-  scheduleProjectDraftAutosave();
+  markProjectDraftDirty();
 }
 
 function startRmsAllocationCalculation() {
@@ -14717,9 +14726,7 @@ function deleteProductCatalogItem(productId) {
 }
 
 function markProductCatalogChanged() {
-  projectDraftSaveStatus = "有未保存修改";
-  updatePreviewResultsThroughApiClient();
-  if (currentProject) scheduleProjectDraftAutosave();
+  markProjectDraftDirty({ updatePreview: true });
 }
 
 function permissionRoleLabel(roleKey) {
@@ -19613,18 +19620,23 @@ function workbenchHash(featureId, projectId = currentProject?.projectBackendId |
   return parts.join("&");
 }
 
+function replaceWorkbenchHash(featureId, projectId = currentProject?.projectBackendId || currentProject?.id) {
+  if (typeof location === "undefined") return;
+  const normalizedHash = workbenchHash(featureId, projectId);
+  if (typeof window !== "undefined" && window.history?.replaceState) {
+    window.history.replaceState(null, "", `${location.pathname}${location.search}#${normalizedHash}`);
+    return;
+  }
+  location.hash = normalizedHash;
+}
+
 function normalizeSelectedFeatureHash(featureId) {
   if (typeof location === "undefined" || typeof window === "undefined") return;
   const rawFeatureId = readRawFeatureIdFromHash();
   const projectId = readProjectIdFromHash() || currentProject?.projectBackendId || currentProject?.id;
   const currentHashProjectId = String(currentProject?.projectBackendId || currentProject?.id || "");
   if (!rawFeatureId || (rawFeatureId === featureId && (!currentProject || readProjectIdFromHash() === currentHashProjectId))) return;
-  const normalizedHash = workbenchHash(featureId, projectId);
-  if (window.history?.replaceState) {
-    window.history.replaceState(null, "", `${location.pathname}${location.search}#${normalizedHash}`);
-    return;
-  }
-  location.hash = normalizedHash;
+  replaceWorkbenchHash(featureId, projectId);
 }
 
 function readRouteFromHash() {

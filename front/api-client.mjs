@@ -826,16 +826,16 @@ function normalizeSupportResourceSpareRows(projectJson, leafNodes, organizationN
     let targetOrganizationId = leafIds.has(organizationId) ? organizationId : "";
     if (!targetOrganizationId && node?.descendantLeafIds?.length === 1 && hardwareProductIds.has(productId)) {
       const candidateLeafId = cleanText(node.descendantLeafIds[0]);
-      const candidateLeafName = cleanText(organizationNameByRef.get(candidateLeafId));
       const blockedByTombstone = tombstones.some((item) => (
         supportSpareTombstoneOrganizationId(item) === candidateLeafId
         && cleanText(item.productId) === productId
-        && cleanText(item.supportNodeName) === candidateLeafName
       ));
       if (!blockedByTombstone) targetOrganizationId = candidateLeafId;
     }
     if (!targetOrganizationId || !productId) {
-      legacyAncestorOrUnresolved.push(resource);
+      if (!node || !node.descendantLeafIds?.length || nonNegativeInteger(resource.quantity) > 0) {
+        legacyAncestorOrUnresolved.push(resource);
+      }
       continue;
     }
     const key = supportSpareSemanticKey(targetOrganizationId, productId);
@@ -848,7 +848,7 @@ function normalizeSupportResourceSpareRows(projectJson, leafNodes, organizationN
     const organizationId = cleanText(node.id);
     const nodeName = cleanText(node.name);
     return hardwareSpares.flatMap((spare) => {
-      if (tombstones.some((resource) => supportSpareTombstoneMatches(resource, nodeName, spare))) return [];
+      if (tombstones.some((resource) => supportSpareTombstoneMatches(resource, organizationId, spare))) return [];
       const semanticKey = supportSpareSemanticKey(organizationId, spare.productId);
       const existing = existingSpareByKey.get(semanticKey) || [];
       const nonZeroSources = existing.filter((source) => nonNegativeInteger(source?.quantity) > 0);
@@ -914,7 +914,7 @@ function rewriteSupportActivitySpareResourceKeys(projectJson, aliases) {
       if (replacement) requirement.key = replacement;
       else if (oldKey && aliases.has(oldKey) && cleanText(requirement.productId)) {
         const productMatches = resourceIdsByProduct.get(cleanText(requirement.productId)) || [];
-        requirement.key = productMatches.length === 1 ? productMatches[0] : "";
+        if (productMatches.length === 1) requirement.key = productMatches[0];
       }
       else if (oldKey && !resourceIds.has(oldKey)) {
         const productMatches = resourceIdsByProduct.get(cleanText(requirement.productId)) || [];
@@ -954,9 +954,9 @@ function projectHardwareSpareRows(projectJson) {
       equipment: cleanText(component.aircraftModel || component.equipment || component.equipmentType)
     }))
     .filter((spare) => {
-      const key = supportSpareResourceIdentityKey("", spare.name, spare.model, spare.equipment);
-      if (seen.has(key)) return false;
-      seen.add(key);
+      const productId = cleanText(spare.productId);
+      if (!productId || seen.has(productId)) return false;
+      seen.add(productId);
       return true;
     });
 }
@@ -981,9 +981,9 @@ function supportSpareTombstoneOrganizationId(resource) {
   }
 }
 
-function supportSpareTombstoneMatches(resource, nodeName, spare) {
+function supportSpareTombstoneMatches(resource, organizationId, spare) {
   return isDeletedSupportSpareResource(resource)
-    && cleanText(resource.supportNodeName) === cleanText(nodeName)
+    && supportSpareTombstoneOrganizationId(resource) === cleanText(organizationId)
     && cleanText(resource.productId) === cleanText(spare.productId);
 }
 

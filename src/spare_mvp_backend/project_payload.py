@@ -1158,21 +1158,28 @@ def _validate_support_resource_identities(project: dict[str, Any], target: str) 
 
     organization_ids: set[str] = set()
     organization_ids_by_name: dict[str, set[str]] = {}
+    organization_descendant_leaf_ids: dict[str, set[str]] = {}
     organization = project.get("supportOrganization") if isinstance(project.get("supportOrganization"), dict) else {}
     raw_tree = organization.get("tree")
     roots = raw_tree if isinstance(raw_tree, list) else [raw_tree]
 
-    def collect_organization(node: Any) -> None:
+    def collect_organization(node: Any) -> set[str]:
         if not isinstance(node, dict):
-            return
+            return set()
         node_id = _clean_text(node.get("id"))
         node_name = _clean_text(node.get("name"))
         if node_id:
             organization_ids.add(node_id)
             if node_name:
                 organization_ids_by_name.setdefault(node_name, set()).add(node_id)
-        for child in node.get("children") if isinstance(node.get("children"), list) else []:
-            collect_organization(child)
+        child_leaves: set[str] = set()
+        children = node.get("children") if isinstance(node.get("children"), list) else []
+        for child in children:
+            child_leaves.update(collect_organization(child))
+        leaves = child_leaves or ({node_id} if node_id else set())
+        if node_id:
+            organization_descendant_leaf_ids[node_id] = leaves
+        return leaves
 
     for root in roots:
         collect_organization(root)
@@ -1199,9 +1206,11 @@ def _validate_support_resource_identities(project: dict[str, Any], target: str) 
         explicit_organization_ref = _clean_text(resource.get("organizationNodeName"))
         organization_ref = explicit_organization_ref or _clean_text(resource.get("supportNodeName"))
         canonical_org = organization_ref
+        identity_resolved = False
         if organization_ids:
             if organization_ref in organization_ids:
                 canonical_org = organization_ref
+                identity_resolved = True
             else:
                 matches = organization_ids_by_name.get(organization_ref, set())
                 support_ref = _clean_text(resource.get("supportNodeName"))
@@ -1210,26 +1219,43 @@ def _validate_support_resource_identities(project: dict[str, Any], target: str) 
                 )
                 if len(matches) == 1:
                     canonical_org = next(iter(matches))
+                    identity_resolved = True
                 elif not explicit_organization_ref and len(support_matches) == 1:
                     canonical_org = f"support-node:{next(iter(support_matches))}"
-                elif explicit_organization_ref:
+                    identity_resolved = True
+                else:
                     reason = "ambiguous" if len(matches) > 1 else "unknown"
                     raise ValueError(
-                        f"clean Project JSON failed {target} schema at supportResources.{index}.organizationNodeName: "
+                        f"clean Project JSON failed {target} schema at supportResources.{index}."
+                        f"{'organizationNodeName' if explicit_organization_ref else 'supportNodeName'}: "
                         f"{reason} support organization {organization_ref or '<empty>'}"
                     )
-                else:
-                    canonical_org = f"legacy:{organization_ref}"
+        else:
+            support_matches = (
+                {organization_ref} if organization_ref in support_node_ids else support_node_ids_by_name.get(organization_ref, set())
+            )
+            if len(support_matches) == 1:
+                canonical_org = f"support-node:{next(iter(support_matches))}"
+                identity_resolved = True
+            else:
+                canonical_org = f"legacy:{organization_ref}"
+        descendant_leaves = organization_descendant_leaf_ids.get(canonical_org, set())
+        if len(descendant_leaves) > 1 and _non_negative_int(resource.get("quantity")) > 0:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportResources.{index}.organizationNodeName: "
+                f"non-zero spare on organization {canonical_org} cannot be distributed across multiple leaf organizations"
+            )
         logical_key = (canonical_org, product_id)
-        if explicit_organization_ref and canonical_org and product_id and logical_key in logical_index:
+        if identity_resolved and canonical_org and product_id and logical_key in logical_index:
             raise ValueError(
                 f"clean Project JSON failed {target} schema at supportResources.{index}: "
                 f"duplicate live spare identity ({canonical_org}, {product_id})"
             )
-        if explicit_organization_ref and canonical_org and product_id:
+        if identity_resolved and canonical_org and product_id:
             logical_index[logical_key] = index
 
     known_ids = set(resource_index_by_id)
+    stable_identity_payload = any(resource_id.startswith("support-spare:") for resource_id in known_ids)
     for job_index, job in enumerate(project.get("supportActivityJobs", []) if isinstance(project.get("supportActivityJobs"), list) else []):
         if not isinstance(job, dict):
             continue
@@ -1237,7 +1263,7 @@ def _validate_support_resource_identities(project: dict[str, Any], target: str) 
             if not isinstance(requirement, dict):
                 continue
             key = _clean_text(requirement.get("key"))
-            if key and key not in known_ids:
+            if stable_identity_payload and key and key not in known_ids:
                 raise ValueError(
                     f"clean Project JSON failed {target} schema at supportActivityJobs.{job_index}.spare.{spare_index}.key: "
                     f"unknown support resource {key}"

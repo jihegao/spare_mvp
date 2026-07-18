@@ -161,6 +161,59 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("duplicate_support_resource_id", codes)
         self.assertIn("unknown_support_resource_organization", codes)
 
+    def test_validate_project_rejects_legacy_support_name_duplicate_and_unknown_identity(self) -> None:
+        project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
+        product_id = project["products"][0]["id"]
+        project["supportOrganization"] = {
+            "tree": {
+                "id": "root",
+                "name": "保障组织",
+                "children": [{"id": "leaf-a", "name": "基层A", "children": []}],
+            }
+        }
+        project["supportNodes"] = [{"id": "support-leaf-a", "name": "基层A"}]
+        project["supportResources"] = [
+            {"id": "legacy-a", "supportNodeName": "基层A", "type": "spare", "productId": product_id, "quantity": 2},
+            {"id": "legacy-b", "supportNodeName": "基层A", "type": "spare", "productId": product_id, "quantity": 3},
+            {"id": "legacy-unknown", "supportNodeName": "不存在", "type": "spare", "productId": product_id, "quantity": 1},
+        ]
+
+        result = self.adapter.validate_project(project)
+        codes = {error["code"] for error in result["errors"]}
+
+        self.assertIn("duplicate_support_resource_identity", codes)
+        self.assertIn("unknown_support_resource_organization", codes)
+
+    def test_validate_project_rejects_nonzero_spare_on_multi_leaf_ancestor(self) -> None:
+        project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
+        product_id = project["products"][0]["id"]
+        project["supportOrganization"] = {
+            "tree": {
+                "id": "root",
+                "name": "保障组织",
+                "children": [{
+                    "id": "relay",
+                    "name": "中继",
+                    "children": [
+                        {"id": "leaf-a", "name": "基层A", "children": []},
+                        {"id": "leaf-b", "name": "基层B", "children": []},
+                    ],
+                }],
+            }
+        }
+        project["supportResources"] = [{
+            "id": "legacy-relay-stock",
+            "organizationNodeName": "relay",
+            "supportNodeName": "中继",
+            "type": "spare",
+            "productId": product_id,
+            "quantity": 4,
+        }]
+
+        result = self.adapter.validate_project(project)
+
+        self.assertIn("ambiguous_support_resource_migration", {error["code"] for error in result["errors"]})
+
     def test_aircraft_support_v1_compiles_product_ids_and_product_display_names(self) -> None:
         project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
 
@@ -180,6 +233,17 @@ class SimulationAdapterTest(unittest.TestCase):
 
     def test_issue_237_current_project_and_saved_plan_keep_the_same_aircraft_product_pairs(self) -> None:
         current_project = self._with_product_catalog(self._load_fixture("m9_6_platform_case_export.json")["project"])
+        legacy_spare_products = {}
+        for resource in current_project["supportResources"]:
+            if resource.get("type") != "spare":
+                continue
+            spare_name = str(resource.get("model") or resource.get("name") or resource["id"])
+            product_id = legacy_spare_products.setdefault(spare_name, f"product-legacy-spare-{len(legacy_spare_products) + 1}")
+            resource["productId"] = product_id
+        current_project["products"].extend(
+            {"id": product_id, "name": spare_name, "model": spare_name}
+            for spare_name, product_id in legacy_spare_products.items()
+        )
         saved_plan_project = copy.deepcopy(current_project)
 
         identities = []
