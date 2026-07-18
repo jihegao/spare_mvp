@@ -392,7 +392,7 @@ class AircraftSupportV1Model:
             candidate = current.get(tail_number)
             if (
                 candidate is None
-                or candidate["factor"] != active["factor"]
+                or self._downtime_event_context_key(candidate) != self._downtime_event_context_key(active)
             ):
                 self._close_downtime_event(tail_number)
 
@@ -408,6 +408,21 @@ class AircraftSupportV1Model:
 
         summary = self._downtime_event_summary()
         self.downtime_minutes = {factor: values["duration_minutes"] for factor, values in summary.items()}
+
+    @staticmethod
+    def _downtime_event_context_key(event: dict[str, Any]) -> tuple[str, ...]:
+        return tuple(
+            str(event.get(field) or "")
+            for field in (
+                "factor",
+                "mission_id",
+                "mission_phase",
+                "mission_phase_id",
+                "mission_phase_name",
+                "support_node_id",
+                "job_id",
+            )
+        )
 
     def _current_downtime_event(self, aircraft: AircraftState, start_minute: float) -> dict[str, Any] | None:
         active_jobs = [
@@ -449,18 +464,28 @@ class AircraftSupportV1Model:
         mission_id = job.mission_id if job is not None else aircraft.current_mission_id
         mission = self._mission_by_id(mission_id)
         component = self._component_by_id(job.component_id if job is not None else aircraft.failed_component_id)
+        component_id = str(
+            (component or {}).get("id")
+            or (job.component_id if job is not None else None)
+            or aircraft.failed_component_id
+            or ""
+        )
+        failure_minute = aircraft.failed_component_minute
+        if failure_minute is None and component_id:
+            failure_minute = aircraft.component_failure_minutes.get(component_id)
         details: dict[str, Any]
         if factor == "spare_shortage":
-            spare_name, required = self._task_spare_requirement(job, task) if job is not None else (None, 0)
-            available = int((node or {}).get("inventory", {}).get(spare_name, 0) or 0) if spare_name else None
+            spare_type, required = self._task_spare_requirement(job, task) if job is not None else (None, 0)
+            available = int((node or {}).get("inventory", {}).get(spare_type, 0) or 0) if spare_type else None
             arrivals = [
                 shipment.arrival_minute for shipment in self.transport_shipments
                 if job is not None
                 and shipment.destination_node_id == job.resource_node_id
-                and shipment.spare_type == spare_name
+                and shipment.spare_type == spare_type
             ]
             details = {
-                "spare_name": spare_name,
+                "product_id": spare_type,
+                "spare_name": self._product_display_name(spare_type) if spare_type else None,
                 "spare_model": None,
                 "required_quantity": required or None,
                 "available_quantity": available,
@@ -486,10 +511,10 @@ class AircraftSupportV1Model:
             }
         elif factor == "failure":
             details = {
-                "component_id": (component or {}).get("id") or aircraft.failed_component_id,
+                "component_id": component_id or None,
                 "component_name": (component or {}).get("name"),
                 "failure_mode": (component or {}).get("failure_mode"),
-                "failure_minute": aircraft.failed_component_minute,
+                "failure_minute": failure_minute,
                 "repair_completed_minute": None,
             }
         else:
@@ -507,14 +532,25 @@ class AircraftSupportV1Model:
                 "planned_start_minute": start_minute,
                 "completed_minute": None,
             }
+        phase_id = str(task.get("activityCode") or task.get("id") or (job.kind if job is not None else ""))
+        phase_name = str(
+            task.get("workName")
+            or task.get("name")
+            or (job.activity_name if job is not None else "")
+        )
+        mission_name = ""
+        if mission is not None:
+            mission_name = str(mission.basic_task_name or mission.name or "")
         return {
             "event_id": "",
             "factor": factor,
             "tail_number": aircraft.tail_number,
             "aircraft_type": aircraft.aircraft_type,
             "mission_id": mission_id,
-            "mission_name": getattr(mission, "basic_task_name", None) if mission is not None else None,
+            "mission_name": mission_name or None,
             "mission_phase": job.kind if job is not None else None,
+            "mission_phase_id": phase_id or None,
+            "mission_phase_name": phase_name or None,
             "support_node_id": job.resource_node_id if job is not None else None,
             "support_node_name": (node or {}).get("name"),
             "job_id": job.job_id if job is not None else None,
@@ -530,13 +566,18 @@ class AircraftSupportV1Model:
     @staticmethod
     def _downtime_description(factor: str, aircraft: AircraftState, job: JobState | None) -> str:
         labels = {
-            "spare_shortage": "waiting for required spare",
-            "equipment_shortage": "waiting for support equipment",
-            "failure": "unavailable after equipment failure",
-            "preventive": "under preventive maintenance",
+            "spare_shortage": "因所需备件短缺而等待",
+            "equipment_shortage": "因保障设备不足而等待",
+            "failure": "装备故障后不可用，等待修复",
+            "preventive": "正在执行预防性维修",
         }
-        suffix = f" ({job.job_id})" if job is not None else ""
-        return f"{aircraft.tail_number} {labels[factor]}{suffix}"
+        phase = ""
+        if job is not None:
+            task = job.current_task if isinstance(job.current_task, dict) else {}
+            phase_name = str(task.get("workName") or task.get("name") or job.activity_name or "").strip()
+            if phase_name:
+                phase = f"，当前阶段为{phase_name}"
+        return f"飞机{aircraft.tail_number}{labels[factor]}{phase}"
 
     def _close_downtime_event(self, tail_number: str) -> None:
         event = self._active_downtime_events.pop(tail_number, None)
@@ -1193,7 +1234,13 @@ class AircraftSupportV1Model:
             aircraft.state = "maintenance"
             self.failed_sorties += 1
             component = self._component_by_id(aircraft.failed_component_id)
-            self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
+            self._create_job(
+                aircraft,
+                self.repair_activity,
+                kind="repair",
+                mission_id=mission.mission_id if mission is not None else aircraft.current_mission_id,
+                component=component,
+            )
             self._event(
                 "mission_failed_returned" if early_return else "mission_failed_after_return",
                 f"{aircraft.tail_number} {'early returned' if early_return else 'returned'} with propagated aircraft failure",
@@ -1203,12 +1250,23 @@ class AircraftSupportV1Model:
         elif aircraft.component_failure_minutes:
             aircraft.state = "maintenance"
             component = self._component_by_id(self._first_failed_component_id(aircraft))
-            self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
+            self._create_job(
+                aircraft,
+                self.repair_activity,
+                kind="repair",
+                mission_id=mission.mission_id if mission is not None else aircraft.current_mission_id,
+                component=component,
+            )
             self._event("mission_returned_with_component_failure", f"{aircraft.tail_number} returned with component failure and needs repair")
         else:
             aircraft.state = "post_support"
             aircraft.postflight_required = True
-            self._create_job(aircraft, self.postflight_activity, kind="postflight")
+            self._create_job(
+                aircraft,
+                self.postflight_activity,
+                kind="postflight",
+                mission_id=mission.mission_id if mission is not None else aircraft.current_mission_id,
+            )
             self._event("mission_returned", f"{aircraft.tail_number} returned from mission and needs postflight")
         aircraft.current_mission_id = None
         aircraft.return_time = None
@@ -2138,6 +2196,7 @@ class AircraftSupportV1Model:
         return {
             "resource_id": node["id"],
             "name": node["name"],
+            "display_name": node.get("display_name") or node["name"],
             "personnel_in_use": node["personnel_in_use"],
             "personnel_capacity": node["personnel_capacity"],
             "equipment_in_use": node["equipment_in_use"],

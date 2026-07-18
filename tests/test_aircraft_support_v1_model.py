@@ -250,7 +250,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         personnel_wait = model._current_downtime_event(model.aircraft[1], 3)
         self.assertEqual(personnel_wait["factor"], "failure")
 
-    def test_downtime_ledger_keeps_same_factor_across_task_transitions(self) -> None:
+    def test_downtime_ledger_splits_same_factor_when_repair_task_context_changes(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())
         aircraft = model.aircraft[0]
         aircraft.failed_component_id = "component-1"
@@ -260,7 +260,10 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             kind="repair",
             activity_id="repair",
             activity_name="repair",
-            tasks=[{"workName": "diagnose"}, {"workName": "replace"}],
+            tasks=[
+                {"activityCode": "diagnose", "workName": "故障诊断"},
+                {"activityCode": "replace", "workName": "部件更换"},
+            ],
             priority=1,
             resource_node_id="deck",
             state="running",
@@ -275,10 +278,67 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         model._record_downtime_minutes()
         model._close_all_downtime_events()
 
-        self.assertEqual(len(model.downtime_events), 1)
-        self.assertEqual(model.downtime_events[0]["factor"], "failure")
-        self.assertEqual(model.downtime_events[0]["duration_minutes"], 2)
-        self.assertEqual(model.snapshot()["downtime_failure_events"], 1)
+        self.assertEqual(len(model.downtime_events), 2)
+        diagnose, replace = model.downtime_events
+        self.assertEqual([diagnose["factor"], replace["factor"]], ["failure", "failure"])
+        self.assertEqual(
+            [(diagnose["mission_phase_name"], diagnose["start_minute"], diagnose["end_minute"]),
+             (replace["mission_phase_name"], replace["start_minute"], replace["end_minute"])],
+            [("故障诊断", 0.0, 1.0), ("部件更换", 1.0, 2.0)],
+        )
+        self.assertEqual(sum(event["duration_minutes"] for event in model.downtime_events), 2)
+        self.assertEqual(model.snapshot()["downtime_failure_events"], 2)
+
+    def test_failure_return_preserves_mission_and_phase_context_in_downtime_event(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["support_activities"]["activities"][1]["name"] = "修复性维修"
+        inputs["support_activities"]["activities"][1]["jobs"][0]["workName"] = "故障诊断"
+        model = AircraftSupportV1Model(inputs)
+        aircraft = model.aircraft[0]
+        mission = model.missions[0]
+        aircraft.state = "flying"
+        aircraft.current_mission_id = mission.mission_id
+        aircraft.return_time = 30
+        aircraft.failed_component_id = "component-1"
+        aircraft.failed_component_minute = 25
+        aircraft.component_failure_minutes["component-1"] = 25
+        aircraft.in_flight_failure = True
+        model.minute = 30
+
+        model._return_aircraft_from_mission(aircraft, early_return=True)
+        event = model._current_downtime_event(aircraft, 30)
+
+        self.assertIsNone(aircraft.current_mission_id)
+        self.assertEqual(model.jobs[-1].mission_id, mission.mission_id)
+        self.assertEqual(event["mission_id"], mission.mission_id)
+        self.assertEqual(event["mission_name"], "mission")
+        self.assertEqual(event["mission_phase_id"], "rp-1")
+        self.assertEqual(event["mission_phase_name"], "故障诊断")
+        self.assertEqual(event["details"]["failure_minute"], 25)
+        self.assertEqual(event["description"], f"飞机{aircraft.tail_number}装备故障后不可用，等待修复，当前阶段为故障诊断")
+
+    def test_component_failure_minute_is_used_when_whole_aircraft_failure_time_is_absent(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        aircraft = model.aircraft[0]
+        aircraft.component_failure_minutes["component-1"] = 17
+        job = JobState(
+            job_id="repair-component",
+            tail_number=aircraft.tail_number,
+            kind="repair",
+            activity_id="repair",
+            activity_name="修复性维修",
+            tasks=[{"activityCode": "diagnose", "workName": "故障诊断"}],
+            priority=1,
+            resource_node_id="deck",
+            component_id="component-1",
+            state="running",
+            remaining=10,
+        )
+        model.jobs.append(job)
+
+        event = model._current_downtime_event(aircraft, 17)
+
+        self.assertEqual(event["details"]["failure_minute"], 17)
 
     def test_blank_activity_resource_uses_aircraft_airport_support_node(self) -> None:
         inputs = _minimal_inputs()
@@ -1026,6 +1086,9 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         shortage = next(event for event in reversed(model.event_log) if event["event"] == "spare_shortage")
         self.assertEqual(shortage["details"]["product_id"], "product-radar")
         self.assertEqual(shortage["details"]["spare_type"], "Radar LRU")
+        downtime = model._current_downtime_event(aircraft, model.minute)
+        self.assertEqual(downtime["details"]["product_id"], "product-radar")
+        self.assertEqual(downtime["details"]["spare_name"], "Radar LRU")
 
     def test_non_lru_repair_does_not_auto_create_spare_requirement(self) -> None:
         inputs = _minimal_inputs()
