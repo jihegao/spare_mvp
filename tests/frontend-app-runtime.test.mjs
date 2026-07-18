@@ -1535,6 +1535,7 @@ test("task reliability analysis restores its title and project context", async (
     assert.match(runtime.appNode.innerHTML, /lite-mesa-hero[\s\S]*lite-mesa-settings lite-mesa-analysis-settings/);
     assert.match(runtime.appNode.innerHTML, /<h3>分析设定<\/h3>/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /样本量 \/ 随机种子只读/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /时间窗口|maxTimeWindow/);
     assert.match(runtime.appNode.innerHTML, /<h3>分析结果明细<\/h3>/);
     assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
   } finally {
@@ -1542,19 +1543,16 @@ test("task reliability analysis restores its title and project context", async (
   }
 });
 
-test("task reliability analysis renders mission wave average mission success line chart", async () => {
+test("task reliability analysis renders the ordered four-field contract and ignores legacy time-window state", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson(),
     liteMesaAnalysisResponseOverrides: {
-      metrics: [
-        ["任务成功率", "0.800"],
-        ["战备完好率", "0.460"],
-        ["仿真实验总次数", "27"],
-        ["整周期任务成功次数", "1"],
-        ["整周期任务失败次数", "26"],
-        ["整周期任务可靠度", "0.037"],
-        ["任务可靠度百分比", "4%"]
+      result_fields: [
+        { key: "period_duration_days", value: 21, display_value: "21 天" },
+        { key: "period_completion_probability", value: 0.923, display_value: "92.3%" },
+        { key: "wave_success_rate", value: 0.8, display_value: "80%" },
+        { key: "sortie_rate", value: 0.75, display_value: "0.750" }
       ]
     }
   });
@@ -1562,28 +1560,25 @@ test("task reliability analysis renders mission wave average mission success lin
   try {
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
-    assert.match(runtime.appNode.innerHTML, /任务波次平均成功率/);
+    const analysisRun = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .find((body) => body.analysis_type === "mission_reliability");
+    assert.ok(analysisRun);
+    assert.equal("maxTimeWindow" in analysisRun.settings, false);
+
+    const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.match(detailPanel, /<thead><tr><th>出动架次率<\/th><th>波次成功率<\/th><th>整周期任务可靠度<\/th><th>任务周期<\/th><\/tr><\/thead>/);
+    assert.match(detailPanel, /<tbody><tr><td>0\.750<\/td><td>80%<\/td><td>92\.3%<\/td><td>21 天<\/td><\/tr><\/tbody>/);
+    assert.match(detailPanel, /波次成功率趋势/);
     assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
     assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);
-    assert.match(runtime.appNode.innerHTML, /仿真实验总次数/);
-    assert.match(runtime.appNode.innerHTML, /整周期任务成功次数/);
-    assert.match(runtime.appNode.innerHTML, /整周期任务失败次数/);
-    assert.match(runtime.appNode.innerHTML, /任务可靠度百分比/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<span>任务成功率<\/span>/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<span>战备完好率<\/span>/);
-    assert.match(runtime.appNode.innerHTML, /任务周期[\s\S]*21 天/);
-    assert.match(runtime.appNode.innerHTML, /成功 \/ 总实验[\s\S]*1 \/ 27/);
-    assert.match(runtime.appNode.innerHTML, /整周期任务可靠度/);
+    assert.match(detailPanel, /<title>第1天 第1波：75%<\/title>/);
     assert.match(runtime.appNode.innerHTML, />1\.0<\/text>/);
     assert.match(runtime.appNode.innerHTML, />0\.5<\/text>/);
     assert.match(runtime.appNode.innerHTML, />0\.0<\/text>/);
-    assert.match(runtime.appNode.innerHTML, /第1天/);
-    assert.match(runtime.appNode.innerHTML, /0\.750/);
-    assert.match(runtime.appNode.innerHTML, /0\.500/);
-    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-collapsible-table">/);
-    assert.match(runtime.appNode.innerHTML, /<summary>样本明细/);
-    assert.match(runtime.appNode.innerHTML, /任务波次/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<th>seed<\/th>|row\.seed/);
+    assert.doesNotMatch(detailPanel, /任务剖面可靠性|仿真实验总次数|整周期任务成功次数|整周期任务失败次数|任务可靠度百分比|样本明细|平均任务成功率/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<span>时间窗口<\/span>|data-lite-mesa-analysis-field="maxTimeWindow"/);
   } finally {
     runtime.restore();
   }
@@ -4661,11 +4656,10 @@ async function setupRuntimeApp({
 		          ["因维修延误导致的任务取消次数", "2"]
 		        ],
 		        mission_reliability: [
-		          ["仿真实验总次数", String(samples)],
-		          ["整周期任务成功次数", "1"],
-		          ["整周期任务失败次数", String(Math.max(0, samples - 1))],
-		          ["整周期任务可靠度", samples ? (1 / samples).toFixed(3) : "0.000"],
-		          ["任务可靠度百分比", samples ? `${Math.round(100 / samples)}%` : "0%"]
+		          ["出动架次率", "0.750"],
+		          ["波次成功率", "80%"],
+		          ["整周期任务可靠度", samples ? `${Number((100 / samples).toFixed(1))}%` : "0%"],
+		          ["任务周期", "21 天"]
 		        ]
 		      };
           const runId = `lite-mesa-runtime-${analysisType}`;
@@ -4687,11 +4681,19 @@ async function setupRuntimeApp({
 	          sample_id: `sample-${index + 1}`,
 	          final: aggregateMetrics
 	        })),
-		        metrics: metricsByAnalysis[analysisType] || [
+	        metrics: metricsByAnalysis[analysisType] || [
 		          ["任务成功率", "0.800"],
 		          ["出动架次率", "0.750"],
-		          ["样本数", String(samples)]
-		        ],
+	          ["样本数", String(samples)]
+	        ],
+	        result_fields: analysisType === "mission_reliability"
+	          ? [
+	              { key: "sortie_rate", label: "出动架次率", value: 0.75, display_value: "0.750", unit: "" },
+	              { key: "wave_success_rate", label: "波次成功率", value: 0.8, display_value: "80%", unit: "%" },
+	              { key: "period_completion_probability", label: "整周期任务可靠度", value: samples ? 1 / samples : 0, display_value: samples ? `${Number((100 / samples).toFixed(1))}%` : "0%", unit: "%" },
+	              { key: "period_duration_days", label: "任务周期", value: 21, display_value: "21 天", unit: "天" }
+	            ]
+	          : [],
 		        rows: analysisType === "mission_reliability"
 		          ? [
 		              { sequence: 1, dayIndex: 1, waveIndex: 1, waveLabel: "第1天 第1波", sampleCount: samples, plannedSorties: 4, meanMissionSuccessRate: 0.75, meanSortieRate: 0.9 },

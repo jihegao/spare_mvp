@@ -157,10 +157,16 @@ test("normalizes mission reliability projection payload as mission wave aggregat
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.deepEqual(view.metrics, [
-    ["任务成功概率", "0.91"],
-    ["出动架次率", "0.88"],
-    ["目标达成", "满足"],
-    ["最大下降波次", "T2 → T3 (-0.08)"]
+    ["出动架次率", "0.880"],
+    ["波次成功率", "91%"],
+    ["整周期任务可靠度", "66.7%"],
+    ["任务周期", "21 天"]
+  ]);
+  assert.deepEqual(view.resultFields.map(({ key, displayValue }) => [key, displayValue]), [
+    ["sortie_rate", "0.880"],
+    ["wave_success_rate", "91%"],
+    ["period_completion_probability", "66.7%"],
+    ["period_duration_days", "21 天"]
   ]);
   assert.deepEqual(view.steepestDrop, {
     fromIndex: 2,

@@ -32,6 +32,10 @@ from src.spare_mvp_backend.project_payload import export_project_json, strip_pro
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_backend.run_service import RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
+from src.spare_mvp_contract.task_reliability import (
+    build_task_reliability_result_fields,
+    format_reliability_percent,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -241,6 +245,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(settings["parallelCores"], 1)
         self.assertEqual(settings["sampleTimeoutSeconds"], 60)
         self.assertEqual(settings["sessionTimeoutSeconds"], 300)
+        self.assertNotIn("maxTimeWindow", _normalize_lite_mesa_analysis_settings({"maxTimeWindow": 1}))
 
     def test_lite_mesa_session_budget_scales_with_execution_waves_and_stays_bounded(self) -> None:
         parallel = _normalize_lite_mesa_analysis_settings({"samples": 24, "parallelCores": 4})
@@ -409,8 +414,16 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(reliability["valid_samples"], 3)
         self.assertAlmostEqual(reliability["period_completion_probability"], 2 / 3)
         self.assertEqual(reliability["period_duration_days"], 14)
-        self.assertIn(["仿真实验总次数", "3"], reliability["metrics"])
-        self.assertIn(["整周期任务失败次数", "1"], reliability["metrics"])
+        self.assertEqual(reliability["metrics"], [
+            ["出动架次率", "0.800"],
+            ["波次成功率", "91%"],
+            ["整周期任务可靠度", "66.7%"],
+            ["任务周期", "14 天"],
+        ])
+        self.assertEqual(
+            [field["key"] for field in reliability["result_fields"]],
+            ["sortie_rate", "wave_success_rate", "period_completion_probability", "period_duration_days"],
+        )
         downtime = _lite_mesa_downtime_factors_result(
             {"data": []},
             {
@@ -2499,7 +2512,7 @@ class BackendApiContractTest(unittest.TestCase):
         payload = self.api.run_lite_mesa_analysis(
             small_aircraft_support_project("project-lite-mesa-contract"),
             analysis_type="mission_reliability",
-            settings={"samples": 2, "seed": 20260705},
+            settings={"samples": 2, "seed": 20260705, "maxTimeWindow": 1},
         )
 
         self.assertEqual(payload["status"], "session_complete")
@@ -2526,6 +2539,13 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["wave_rows"][0]["sampleCount"], 2)
         self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
         self.assertNotIn("seed", payload["wave_rows"][0])
+        self.assertEqual([field["key"] for field in payload["result_fields"]], [
+            "sortie_rate", "wave_success_rate", "period_completion_probability", "period_duration_days"
+        ])
+        self.assertEqual(payload["metrics"], [
+            [field["label"], field["display_value"]] for field in payload["result_fields"]
+        ])
+        self.assertNotIn("任务剖面可靠性", json.dumps(payload["metrics"], ensure_ascii=False))
         self.assertEqual(payload["visualization_state_series"]["run_id"], payload["run_id"])
         self.assertEqual(payload["visualization_state_series"]["frames"], [])
         self.assertEqual(self._run_side_effect_counts(), before)
@@ -2659,7 +2679,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(snapshots[0]["spare_shortages"][0]["spare_type"], "液压泵")
         self.assertEqual(snapshots[0]["job_node"]["job_id"], "repair-J15-101")
 
-    def test_lite_mesa_mission_reliability_reports_task_failure_count(self) -> None:
+    def test_lite_mesa_mission_reliability_excludes_legacy_metrics_and_missing_period_is_explicit(self) -> None:
         result = _lite_mesa_mission_reliability_result(
             {"data": {"mission_success_probability": 0.8, "sortie_rate": 0.4}},
             [
@@ -2669,7 +2689,13 @@ class BackendApiContractTest(unittest.TestCase):
             {"maxTimeWindow": 12},
         )
 
-        self.assertEqual(result["metrics"][3], ["任务失败次数", "5"])
+        self.assertEqual(result["metrics"], [
+            ["出动架次率", "0.400"],
+            ["波次成功率", "80%"],
+            ["整周期任务可靠度", "0%"],
+            ["任务周期", "--"],
+        ])
+        self.assertNotIn("任务失败次数", {label for label, _value in result["metrics"]})
 
     def test_lite_mesa_mission_reliability_rows_aggregate_by_wave_and_skip_missing_samples(self) -> None:
         result = _lite_mesa_mission_reliability_result(
@@ -2691,7 +2717,7 @@ class BackendApiContractTest(unittest.TestCase):
                     ],
                 },
             ],
-            {"maxTimeWindow": ""},
+            {"maxTimeWindow": 1},
         )
 
         self.assertEqual(result["rows"], result["wave_rows"])
@@ -2706,6 +2732,17 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
         self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
         self.assertNotIn("seed", result["rows"][0])
+
+    def test_task_reliability_result_fields_keep_percent_and_period_contract(self) -> None:
+        fields = build_task_reliability_result_fields(
+            sortie_rate=0.81234,
+            wave_success_rate="87.5%",
+            period_completion_probability=0.923,
+            period_duration_days=None,
+        )
+
+        self.assertEqual([field["display_value"] for field in fields], ["0.812", "87.5%", "92.3%", "--"])
+        self.assertEqual(format_reliability_percent("92.3%"), "92.3%")
 
     def test_lite_mesa_spare_shortfall_reports_transport_delay_hours_and_repair_cancellations(self) -> None:
         result = _lite_mesa_spare_shortfall_result(

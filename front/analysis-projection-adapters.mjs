@@ -1,3 +1,8 @@
+import {
+  normalizeTaskReliabilityResultFields,
+  taskReliabilityMetricPairs
+} from "./task-reliability-contract.mjs";
+
 const PROJECTION_KINDS = Object.freeze({
   spare_shortfall: "analysis_projection_spare_shortfall",
   carry_list: "analysis_projection_carry_list",
@@ -205,12 +210,20 @@ function normalizeMissionReliability(payload) {
   const state = data.target_met ? "满足" : "未达标";
   const seriesRows = normalizeMissionReliabilitySeries(data, { probability, sortieRate, state });
   const steepestDrop = missionReliabilitySteepestDrop(seriesRows);
+  const resultFields = normalizeTaskReliabilityResultFields({
+    result_fields: data.result_fields,
+    sortie_rate: sortieRate,
+    wave_success_rate: data.wave_success_rate ?? data.profile_reliability ?? probability,
+    period_completion_probability: data.period_completion_probability,
+    period_duration_days: data.period_duration_days
+  });
   return {
     analysisType: "mission_reliability",
     formal: true,
     source: "projection payload",
     rows: seriesRows,
     steepestDrop,
+    resultFields,
     profileReliability: clamp01(numberOrZero(data.profile_reliability ?? probability)),
     periodCompletionProbability: clamp01(numberOrZero(data.period_completion_probability)),
     periodDurationDays: Math.max(0, numberOrZero(data.period_duration_days)),
@@ -218,12 +231,7 @@ function normalizeMissionReliability(payload) {
     successfulSamples: Math.max(0, Math.round(numberOrZero(data.successful_samples))),
     failedSamples: Math.max(0, Math.round(numberOrZero(data.failed_samples))),
     validSamples: Math.max(0, Math.round(numberOrZero(data.valid_samples))),
-    metrics: [
-      ["任务成功概率", fixed(probability, 2)],
-      ["出动架次率", fixed(sortieRate, 2)],
-      ["目标达成", state],
-      ["最大下降波次", missionReliabilityDropLabel(steepestDrop)]
-    ]
+    metrics: taskReliabilityMetricPairs(resultFields)
   };
 }
 
@@ -287,11 +295,6 @@ function missionReliabilitySteepestDrop(rows) {
     }
   }
   return best && best.drop > 0 ? best : null;
-}
-
-function missionReliabilityDropLabel(drop) {
-  if (!drop) return "无下降区间";
-  return `T${drop.fromIndex} → T${drop.toIndex} (-${fixed(drop.drop, 2)})`;
 }
 
 function normalizeDowntimeFactors(payload) {
