@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
 import {
@@ -6,6 +7,7 @@ import {
   equipmentStructureExportCsv,
   equipmentStructureProductId,
   equipmentStructureTemplateCsv,
+  parseEquipmentStructureImportText,
   validateEquipmentStructureProductReferences
 } from "../front/equipment-structure-transfer.mjs";
 
@@ -78,5 +80,77 @@ test("equipment structure product validation rejects every unknown exact ID with
   assert.throws(
     () => validateEquipmentStructureProductReferences(rows, [{ id: "product-known" }]),
     /第3行产品ID“PRODUCT-KNOWN”.*第4行产品ID“product-missing”.*当前 Project/
+  );
+});
+
+test("real fixture export preserves the shared root product and isolates the selected aircraft model", () => {
+  const project = JSON.parse(fs.readFileSync(
+    new URL("./fixtures/clean_projects/full_platform_case_clean_project.json", import.meta.url),
+    "utf8"
+  ));
+
+  const csv = equipmentStructureExportCsv(project, { aircraftModel: "J-15" });
+  const rows = parseEquipmentStructureImportText(csv, "J-15.csv");
+
+  assert.equal(rows[0]["节点ID"], "aircraft-root");
+  assert.equal(rows[0]["产品ID"], "product-aircraft-root");
+  assert.ok(rows.some((row) => row["节点ID"] === "j15-engine"));
+  assert.equal(rows.some((row) => row["节点ID"] === "j35-engine"), false);
+});
+
+test("CSV parser round-trips BOM, commas, quotes, LF and CRLF inside quoted fields", () => {
+  const csv = equipmentStructureExportCsv({
+    equipment: { wholeMachineModels: ["MODEL-A"], quantity: 1 },
+    products: [{ id: "product-root" }, { id: "product-system" }],
+    components: [
+      { id: "aircraft-root", productId: "product-root", name: "整机", quantity: 1 },
+      {
+        id: "system-1",
+        parentId: "aircraft-root",
+        aircraftModel: "MODEL-A",
+        productId: "product-system",
+        name: "动力,\n系统\"左\"",
+        model: "SYS\r\n001",
+        quantity: 1
+      }
+    ]
+  }, { aircraftModel: "MODEL-A" });
+
+  const rows = parseEquipmentStructureImportText(csv, "round-trip.csv");
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1]["系统名称"], "动力,\n系统\"左\"");
+  assert.equal(rows[1]["型号"], "SYS\r\n001");
+  assert.equal(validateEquipmentStructureProductReferences(rows, [
+    { id: "product-root" },
+    { id: "product-system" }
+  ]), true);
+});
+
+test("TSV parser handles quoted tabs and multiline fields and reports their physical start line", () => {
+  const tsv = [
+    "\uFEFF节点ID\t父节点ID\t产品ID\t系统名称\t型号\t层级",
+    "aircraft-root\t\t\tMODEL-A\tMODEL-A\t整机",
+    "system-1\taircraft-root\tproduct-missing\t\"航电\t系统\r\n第二行\"\tAV-1\t系统"
+  ].join("\r\n");
+
+  const rows = parseEquipmentStructureImportText(tsv, "equipment.tsv");
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1]["系统名称"], "航电\t系统\r\n第二行");
+  assert.throws(
+    () => validateEquipmentStructureProductReferences(rows, []),
+    /第3行产品ID“product-missing”/
+  );
+});
+
+test("JSON product aliases use one-based array item locations instead of CSV line numbers", () => {
+  const rows = parseEquipmentStructureImportText(JSON.stringify([
+    { id: "system-1", product_id: "product-missing" }
+  ]), "equipment.json");
+
+  assert.throws(
+    () => validateEquipmentStructureProductReferences(rows, []),
+    /第1项产品ID“product-missing”/
   );
 });

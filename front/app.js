@@ -118,6 +118,7 @@ import {
   equipmentStructureExportCsv,
   equipmentStructureProductId,
   equipmentStructureTemplateCsv,
+  parseEquipmentStructureImportText,
   validateEquipmentStructureProductReferences
 } from "./equipment-structure-transfer.mjs";
 
@@ -13303,7 +13304,7 @@ async function importRmsEquipmentTableFile(file) {
     return;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     applyRmsEquipmentImport(parsed, `已导入 ${file.name}`);
   } catch (err) {
     rmsEquipmentImportStatus = `RMS 装备树导入失败：${err && err.message ? err.message : "文件无法解析"}`;
@@ -13359,7 +13360,7 @@ async function importEquipmentStructureTableFile(file) {
     return false;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const imported = normalizeEquipmentStructureImport(parsed, scenario.products);
     if (!imported.components.length && !imported.wholeMachineModels.length) {
       throw new Error("导入表格未包含有效装备节点");
@@ -13410,7 +13411,7 @@ async function importSupportActivityJobsFile(tabKey, file) {
   const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity || !file) return;
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const rows = Array.isArray(parsed) ? parsed : (parsed.rows || parsed.supportActivityJobs || []);
     if (!Array.isArray(rows) || !rows.length) throw new Error("导入文件没有工作项目");
     const codes = new Set();
@@ -13451,7 +13452,8 @@ function normalizeEquipmentStructureImport(input, products = []) {
       return normalizeEquipmentStructureRows(components, {
         defaultModel: equipment.model || equipment.aircraftModel || "",
         wholeMachineModels: equipment.wholeMachineModels || [],
-        quantity: equipment.quantity
+        quantity: equipment.quantity,
+        preserveRootComponent: true
       });
     }
   }
@@ -13464,6 +13466,7 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const rows = (Array.isArray(rawRows) ? rawRows : []).filter((row) => row && typeof row === "object");
   const wholeMachineModels = new Set((Array.isArray(options.wholeMachineModels) ? options.wholeMachineModels : []).map(String).filter(Boolean));
   const components = [];
+  let rootComponent = null;
   let wholeMachineQuantity = Number(options.quantity || 0);
   rows.forEach((row, index) => {
     const explicitModel = pickImportText(row, ["aircraftModel", "aircraft_model", "整机", "整机名称", "飞机名称", "飞机型号", "装备型号", "targetProductModel"], "");
@@ -13472,7 +13475,8 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
     const parentId = pickImportText(row, ["parentId", "parent_id", "父节点", "父节点ID", "上级节点", "parent"], "");
     const name = pickImportText(row, ["name", "系统名称", "组件名称", "节点名称", "装备名称", "componentName"], "");
     const id = pickImportText(row, ["id", "componentId", "组件ID", "节点ID", "object_id"], "");
-    const isWholeMachine = /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
+    const isAircraftRoot = id === "aircraft-root";
+    const isWholeMachine = isAircraftRoot || /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
     const rowModel = pickImportText(row, ["model", "型号"], "");
     const aircraftModel = explicitModel
       || options.defaultModel
@@ -13480,6 +13484,21 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
     if (isWholeMachine) {
       wholeMachineModels.add(aircraftModel || name || id || `导入整机${wholeMachineModels.size + 1}`);
       wholeMachineQuantity = pickImportNumber(row, ["quantity", "安装数", "数量", "装机数量", "n"], wholeMachineQuantity || 1);
+      if (isAircraftRoot && (productId || options.preserveRootComponent)) {
+        if (rootComponent?.productId && productId && rootComponent.productId !== productId) {
+          throw new Error(`aircraft-root：多个整机行的产品ID不一致（${rootComponent.productId}、${productId}）`);
+        }
+        rootComponent = {
+          ...row,
+          id: "aircraft-root",
+          name: name || aircraftModel || "整机",
+          model: rowModel,
+          productId: productId || rootComponent?.productId || "",
+          quantity: Math.max(1, Math.floor(wholeMachineQuantity || 1))
+        };
+        delete rootComponent.parentId;
+        delete rootComponent.aircraftModel;
+      }
       return;
     }
     const componentAircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || options.defaultModel || "导入整机";
@@ -13524,7 +13543,7 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const models = Array.from(wholeMachineModels).filter(Boolean);
   return {
     wholeMachineModels: models,
-    components,
+    components: rootComponent ? [rootComponent, ...components] : components,
     quantity: Math.max(1, Math.floor(Number(wholeMachineQuantity || 1)))
   };
 }
@@ -13540,7 +13559,7 @@ async function importSupportResourceTableFile(file, activeResourceType) {
     return false;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const rows = extractSupportResourceImportRows(parsed, resourceType);
     const importedCount = applySupportResourceImportRows(resourceType, rows);
     supportResourceImportStatus = `已导入 ${file.name}：${resourceType} ${importedCount} 行。`;
@@ -13788,48 +13807,6 @@ function pickImportNumber(row, keys, fallback = 0) {
   const matched = String(text).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
   const value = matched ? Number(matched[0]) : Number(text);
   return Number.isFinite(value) ? Math.max(0, value) : fallback;
-}
-
-function parseRmsEquipmentImportText(text, filename = "") {
-  const trimmed = String(text || "").trim();
-  if (!trimmed) throw new Error("文件为空");
-  const looksLikeJson = filename.toLowerCase().endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[");
-  if (looksLikeJson) return JSON.parse(trimmed);
-  return parseDelimitedTable(trimmed);
-}
-
-function parseDelimitedTable(text) {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) throw new Error("CSV 表格至少需要表头和一行数据");
-  const delimiter = lines[0].includes("\t") ? "\t" : ",";
-  const headers = parseDelimitedLine(lines[0], delimiter).map((header) => header.trim());
-  return lines.slice(1).map((line) => {
-    const values = parseDelimitedLine(line, delimiter);
-    return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-  });
-}
-
-function parseDelimitedLine(line, delimiter) {
-  const values = [];
-  let current = "";
-  let quoted = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    const nextChar = line[index + 1];
-    if (char === '"' && quoted && nextChar === '"') {
-      current += '"';
-      index += 1;
-    } else if (char === '"') {
-      quoted = !quoted;
-    } else if (char === delimiter && !quoted) {
-      values.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  values.push(current);
-  return values.map((value) => value.trim());
 }
 
 async function handleSystemUserAction(action) {

@@ -13,6 +13,20 @@ export const EQUIPMENT_STRUCTURE_HEADERS = Object.freeze([
 ]);
 
 const PRODUCT_ID_KEYS = Object.freeze(["productId", "product_id", "产品ID", "产品Id", "产品id"]);
+const SOURCE_LOCATIONS = new WeakMap();
+
+export function parseEquipmentStructureImportText(text, filename = "") {
+  const source = String(text ?? "").replace(/^\uFEFF/, "");
+  const trimmed = source.trim();
+  if (!trimmed) throw new Error("文件为空");
+  const looksLikeJson = filename.toLowerCase().endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[");
+  if (looksLikeJson) {
+    const parsed = JSON.parse(trimmed);
+    markJsonArrayLocations(parsed);
+    return parsed;
+  }
+  return parseDelimitedTable(source);
+}
 
 export function equipmentStructureProductId(row) {
   return pickText(row, PRODUCT_ID_KEYS);
@@ -28,11 +42,14 @@ export function validateEquipmentStructureProductReferences(rows, products, { fi
   for (const [index, row] of (Array.isArray(rows) ? rows : []).entries()) {
     const productId = equipmentStructureProductId(row);
     if (productId && !productIds.has(productId)) {
-      invalid.push({ rowNumber: firstRowNumber + index, productId });
+      invalid.push({
+        location: SOURCE_LOCATIONS.get(row) || `第${firstRowNumber + index}行`,
+        productId
+      });
     }
   }
   if (invalid.length) {
-    const locations = invalid.map(({ rowNumber, productId }) => `第${rowNumber}行产品ID“${productId}”`).join("、");
+    const locations = invalid.map(({ location, productId }) => `${location}产品ID“${productId}”`).join("、");
     throw new Error(`产品ID引用无效：${locations}在当前 Project 的产品目录中不存在`);
   }
   return true;
@@ -65,12 +82,15 @@ export function equipmentStructureExportCsv(project, { aircraftModel = "" } = {}
   ).trim();
   if (!selectedModel) throw new Error("当前 Project 没有可导出的整机型号");
 
-  const components = (Array.isArray(project?.components) ? project.components : [])
+  const projectComponents = Array.isArray(project?.components) ? project.components : [];
+  const rootComponent = projectComponents.find((component) => String(component?.id || "") === "aircraft-root");
+  const components = projectComponents
     .filter((component) => !component?.aircraftModel || String(component.aircraftModel) === selectedModel)
     .filter((component) => String(component?.id || "") !== "aircraft-root");
   const rows = [
     templateRow({
       "节点ID": "aircraft-root",
+      "产品ID": rootComponent?.productId,
       "系统名称": selectedModel,
       "型号": selectedModel,
       "层级": "整机",
@@ -106,6 +126,111 @@ function rowsToCsv(rows) {
     ...rows.map((row) => EQUIPMENT_STRUCTURE_HEADERS.map((header) => csvCell(row?.[header])).join(","))
   ];
   return `\uFEFF${lines.join("\n")}\n`;
+}
+
+function parseDelimitedTable(text) {
+  const delimiter = detectDelimiter(text);
+  const records = parseDelimitedRecords(text, delimiter)
+    .filter(({ values }) => values.some((value) => String(value).trim()));
+  if (records.length < 2) throw new Error("CSV/TSV 表格至少需要表头和一行数据");
+  const headers = records[0].values.map((header) => String(header).trim());
+  return records.slice(1).map(({ values, startLine }) => {
+    const row = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
+    SOURCE_LOCATIONS.set(row, `第${startLine}行`);
+    return row;
+  });
+}
+
+function detectDelimiter(text) {
+  let quoted = false;
+  let commas = 0;
+  let tabs = 0;
+  let recordText = "";
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const nextChar = text[index + 1];
+    if (char === '"' && quoted && nextChar === '"') {
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (!quoted && (char === "\r" || char === "\n")) {
+      if (recordText.trim()) break;
+      commas = 0;
+      tabs = 0;
+      recordText = "";
+      if (char === "\r" && nextChar === "\n") index += 1;
+    } else if (!quoted && char === ",") {
+      commas += 1;
+      recordText += char;
+    } else if (!quoted && char === "\t") {
+      tabs += 1;
+      recordText += char;
+    } else {
+      recordText += char;
+    }
+  }
+  return tabs > commas ? "\t" : ",";
+}
+
+function parseDelimitedRecords(text, delimiter) {
+  const records = [];
+  let values = [];
+  let current = "";
+  let quoted = false;
+  let lineNumber = 1;
+  let recordStartLine = 1;
+  const finishRecord = () => {
+    values.push(current);
+    records.push({ values, startLine: recordStartLine });
+    values = [];
+    current = "";
+    recordStartLine = lineNumber + 1;
+  };
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const nextChar = text[index + 1];
+    if (char === '"' && quoted && nextChar === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === delimiter && !quoted) {
+      values.push(current);
+      current = "";
+    } else if ((char === "\r" || char === "\n") && !quoted) {
+      if (char === "\r" && nextChar === "\n") index += 1;
+      finishRecord();
+      lineNumber += 1;
+    } else {
+      current += char;
+      if (char === "\r") {
+        if (nextChar === "\n") {
+          current += nextChar;
+          index += 1;
+        }
+        lineNumber += 1;
+      } else if (char === "\n") {
+        lineNumber += 1;
+      }
+    }
+  }
+  if (quoted) throw new Error(`CSV/TSV 第${recordStartLine}行存在未闭合的引号字段`);
+  if (current || values.length) finishRecord();
+  return records;
+}
+
+function markJsonArrayLocations(value, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      if (item && typeof item === "object") SOURCE_LOCATIONS.set(item, `第${index + 1}项`);
+      markJsonArrayLocations(item, seen);
+    });
+    return;
+  }
+  Object.values(value).forEach((item) => markJsonArrayLocations(item, seen));
 }
 
 function csvCell(value) {

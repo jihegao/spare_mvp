@@ -1980,12 +1980,17 @@ test("equipment parent node selector uses Chinese names while retaining parent I
 });
 
 test("equipment template and current-model export keep product IDs in Chinese CSV round trips", async () => {
+  let savedProject;
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
       equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
-      products: [{ id: "product-engine", name: "发动机产品", model: "WS-10", kind: "LRU" }],
+      products: [
+        { id: "product-aircraft-root", name: "整机产品", model: "J-15", kind: "整机" },
+        { id: "product-engine", name: "发动机产品", model: "WS-10", kind: "LRU" }
+      ],
       components: [
-        { id: "engine-left", name: "左发动机", model: "WS-10", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
+        { id: "aircraft-root", name: "舰载机", productId: "product-aircraft-root", quantity: 2 },
+        { id: "engine-left", name: "左,发动机\n\"主机\"", model: "WS-10", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
         { id: "engine-right", name: "右发动机", model: "WS-10", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
       ]
     })
@@ -2005,22 +2010,40 @@ test("equipment template and current-model export keep product IDs in Chinese CS
     assert.equal(runtime.downloads[1].download, "装备系统建模-J-15.csv");
     const exported = await runtime.downloads[1].blob.text();
     assert.equal((exported.match(/product-engine/g) || []).length, 2);
-    assert.match(exported, /engine-left,aircraft-root,product-engine,左发动机,WS-10/);
+    assert.equal((exported.match(/product-aircraft-root/g) || []).length, 1);
+    assert.match(exported, /engine-left,aircraft-root,product-engine,"左,发动机\n""主机""",WS-10/);
     assert.match(runtime.appNode.innerHTML, /已导出 J-15 装备结构/);
 
     const roundTripFile = { name: "装备系统建模-J-15.csv", async text() { return exported; } };
     await runtime.change("[data-equipment-import-file]", {}, { files: [roundTripFile], value: roundTripFile.name });
-    assert.match(runtime.appNode.innerHTML, /已导入 装备系统建模-J-15\.csv：1 个整机，2 个组件/);
+    assert.match(runtime.appNode.innerHTML, /已导入 装备系统建模-J-15\.csv：1 个整机，3 个组件/);
     await runtime.click("[data-project-draft-save]");
-    const saved = await waitForProjectSave(
+    savedProject = await waitForProjectSave(
       runtime,
-      (body) => body.components?.filter((component) => component.productId === "product-engine").length === 2,
+      (body) => body.components?.some((component) => component.id === "aircraft-root" && component.productId === "product-aircraft-root")
+        && body.components?.filter((component) => component.productId === "product-engine").length === 2,
       "exported product IDs should survive import and Project save"
     );
-    assert.deepEqual(saved.components.map((component) => component.id), ["engine-left", "engine-right"]);
-    assert.equal(saved.products.filter((product) => product.id === "product-engine").length, 1);
+    assert.deepEqual(savedProject.components.map((component) => component.id), ["aircraft-root", "engine-left", "engine-right"]);
+    assert.equal(savedProject.components.find((component) => component.id === "engine-left").name, "左,发动机\n\"主机\"");
+    assert.equal(savedProject.products.filter((product) => product.id === "product-engine").length, 1);
   } finally {
     runtime.restore();
+  }
+
+  const reopenedRuntime = await setupRuntimeApp({
+    hash: "feature=spare-planning-equipment-system",
+    projectJson: savedProject
+  });
+  try {
+    await waitForRuntimeHtml(reopenedRuntime, /data-equipment-export-data/, "saved equipment should hydrate after re-entering the page");
+    await reopenedRuntime.click("[data-equipment-export-data]");
+    const reexported = await reopenedRuntime.downloads[0].blob.text();
+    assert.equal((reexported.match(/product-aircraft-root/g) || []).length, 1);
+    assert.equal((reexported.match(/product-engine/g) || []).length, 2);
+    assert.match(reexported, /"左,发动机\n""主机"""/);
+  } finally {
+    reopenedRuntime.restore();
   }
 });
 
@@ -2108,6 +2131,68 @@ test("equipment import rejects unknown product IDs atomically with row and ID", 
     );
     assert.deepEqual(saved.components.map((component) => component.id), ["original-node"]);
     assert.equal(saved.products.some((product) => product.id === "product-missing"), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment TSV and JSON imports preserve aliases, multiline values, root products and location semantics", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2 },
+      products: [
+        { id: "product-root", name: "整机产品", model: "J-15" },
+        { id: "product-tsv", name: "TSV 产品", model: "TSV-1" },
+        { id: "product-json", name: "JSON 产品", model: "JSON-1" }
+      ],
+      components: []
+    })
+  });
+  const tsvFile = {
+    name: "equipment.tsv",
+    async text() {
+      return [
+        "\uFEFFid\tparent_id\tproduct_id\tname\tmodel\tlevel\tquantity\trunning_ratio\taircraftModel",
+        "aircraft-root\t\tproduct-root\tJ-15\tJ-15\t整机\t2\t1\tJ-15",
+        "tsv-node\taircraft-root\tproduct-tsv\t\"航电\t系统\r\n第二行\"\tTSV-1\tLRU\t1\t0.75\tJ-15"
+      ].join("\r\n");
+    }
+  };
+  const jsonFile = {
+    name: "equipment.json",
+    async text() {
+      return JSON.stringify([
+        { id: "aircraft-root", product_id: "product-root", name: "J-15", model: "J-15", level: "整机", quantity: 2 },
+        { id: "json-node", parent_id: "aircraft-root", product_id: "product-json", name: "JSON 航电", model: "JSON-1", level: "LRU", quantity: 1, aircraftModel: "J-15" }
+      ]);
+    }
+  };
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.change("[data-equipment-import-file]", {}, { files: [tsvFile], value: tsvFile.name });
+    assert.match(runtime.appNode.innerHTML, /已导入 equipment\.tsv：1 个整机，2 个组件/);
+    await runtime.click("[data-project-draft-save]");
+    const savedTsv = await waitForProjectSave(
+      runtime,
+      (body) => body.components?.some((component) => component.id === "tsv-node"),
+      "TSV equipment import should save"
+    );
+    assert.equal(savedTsv.components.find((component) => component.id === "aircraft-root").productId, "product-root");
+    assert.equal(savedTsv.components.find((component) => component.id === "tsv-node").name, "航电\t系统\r\n第二行");
+    assert.equal(savedTsv.components.find((component) => component.id === "tsv-node").productId, "product-tsv");
+
+    await runtime.change("[data-equipment-import-file]", {}, { files: [jsonFile], value: jsonFile.name });
+    assert.match(runtime.appNode.innerHTML, /已导入 equipment\.json：1 个整机，2 个组件/);
+    await runtime.click("[data-project-draft-save]");
+    const savedJson = await waitForProjectSave(
+      runtime,
+      (body) => body.components?.some((component) => component.id === "json-node"),
+      "JSON equipment import should save"
+    );
+    assert.equal(savedJson.components.find((component) => component.id === "aircraft-root").productId, "product-root");
+    assert.equal(savedJson.components.find((component) => component.id === "json-node").productId, "product-json");
   } finally {
     runtime.restore();
   }
