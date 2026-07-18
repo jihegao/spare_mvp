@@ -1094,6 +1094,41 @@ test("ambiguous legacy support activity display-name references are not silently
   assert.equal(loadedDraft.basicMissions[0].supportActivityName, "飞行前保障");
 });
 
+test("legacy support activity references stay unresolved across load and save when the canonical target was duplicated", () => {
+  const persistedProject = {
+    scenarioId: "duplicate-canonical-support-activity-reference",
+    basicMissions: [
+      { id: "mission-duplicate-canonical-support", supportActivityName: "旧飞行前保障" }
+    ],
+    supportActivities: [
+      { id: "support-a", name: "旧飞行前保障", activityName: "J16直接准备方案" },
+      { id: "support-b", name: "另一保障显示名", activityName: "J16直接准备方案" }
+    ]
+  };
+
+  const loadedDraft = normalizeProjectJsonForClientDraft(persistedProject);
+  const reloadedDraft = normalizeProjectJsonForClientDraft(loadedDraft);
+  const savedProject = buildBackendProjectJson(loadedDraft, { id: "duplicate-canonical-support-activity-reference" });
+
+  assert.equal(loadedDraft.basicMissions[0].supportActivityName, "旧飞行前保障");
+  assert.equal(reloadedDraft.basicMissions[0].supportActivityName, "旧飞行前保障");
+  assert.equal(savedProject.basicMissions[0].supportActivityName, "旧飞行前保障");
+});
+
+test("canonical support activity references are rewritten to the normalized canonical value", () => {
+  const loadedDraft = normalizeProjectJsonForClientDraft({
+    scenarioId: "trimmed-canonical-support-activity-reference",
+    basicMissions: [
+      { id: "mission-trimmed-canonical-support", supportActivityName: "  J16直接准备方案  " }
+    ],
+    supportActivities: [
+      { id: "support-canonical", activityName: "J16直接准备方案" }
+    ]
+  });
+
+  assert.equal(loadedDraft.basicMissions[0].supportActivityName, "J16直接准备方案");
+});
+
 test("buildBackendProjectJson migrates duplicate operations activity names into stable mission references", () => {
   const scenario = {
     scenarioId: "case-large-support-activity-persistence",

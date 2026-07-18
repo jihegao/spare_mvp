@@ -294,6 +294,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
 
 export function buildBackendProjectJson(scenario, project = {}) {
   const projectJson = normalizeProjectJsonForClientDraft(scenario);
+  ensureUniqueSupportActivityNames(projectJson);
   stripProjectRuntimeConfig(projectJson);
   stripProjectNonModelFields(projectJson);
   liftSupportActivityJobsToTopLevel(projectJson);
@@ -315,7 +316,6 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   normalizeProjectProducts(normalized);
   normalizeProjectJsonBasicMissions(normalized);
   normalizeBasicMissionSupportActivityNames(normalized);
-  ensureUniqueSupportActivityNames(normalized);
   normalizeMissionTaskFieldOwnership(normalized);
   syncCompositeTaskInheritedBasicFields(normalized);
   canonicalizeSupportActivityJobPredecessors(normalized);
@@ -352,7 +352,11 @@ function normalizeBasicMissionSupportActivityNames(projectJson) {
   for (const mission of basicMissions) {
     if (!mission || typeof mission !== "object" || Array.isArray(mission)) continue;
     const reference = String(mission.supportActivityName || "").trim();
-    if (!reference || canonicalNameCounts.get(reference) === 1) continue;
+    if (!reference) continue;
+    if (canonicalNameCounts.get(reference) === 1) {
+      mission.supportActivityName = reference;
+      continue;
+    }
     const legacyMatches = activitiesByLegacyName.get(reference) || [];
     if (legacyMatches.length !== 1) continue;
     const canonicalName = String(legacyMatches[0].activityName || "").trim();

@@ -127,6 +127,66 @@ test("frontend app restores stored backend session and hydrates project catalog 
   }
 });
 
+test("legacy support activity references hydrate into the basic mission page and autosave canonically", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-basic-mission",
+    projectJson: createRuntimeProjectJson({
+      basicMissions: [{
+        id: "basic-runtime-legacy-support",
+        name: "运行时基本任务",
+        equipmentType: "J-15",
+        taskDurationMinutes: 90,
+        minRequiredSorties: 1,
+        supportActivityName: "飞行前保障"
+      }],
+      supportActivities: [{
+        id: "ops-runtime-legacy-support",
+        name: "飞行前保障",
+        activityName: "J-15直接准备方案",
+        activityType: "使用保障活动",
+        planType: "使用保障方案",
+        aircraftModel: "J-15",
+        durationHours: 1,
+        activityCodes: []
+      }]
+    })
+  });
+
+  try {
+    await waitForRuntimeHtml(
+      runtime,
+      /<option value="J-15直接准备方案" selected>/,
+      "legacy Project should hydrate with the canonical support activity selected"
+    );
+
+    await runtime.change(
+      "[data-path]",
+      { path: "basicMissions.0.taskArea" },
+      { value: "甲板训练区", type: "text" }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    await runtime.flush();
+
+    const validateRequest = runtime.requests.findLast((request) => request.url === "/api/projects/validate");
+    const saveRequest = runtime.requests.findLast((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(validateRequest, "800ms autosave should validate the hydrated Project");
+    assert.ok(saveRequest, "800ms autosave should persist the hydrated Project");
+    for (const request of [validateRequest, saveRequest]) {
+      const body = JSON.parse(request.options.body || "{}");
+      assert.equal(body.basicMissions[0].supportActivityName, "J-15直接准备方案");
+      assert.equal(body.basicMissions[0].taskArea, "甲板训练区");
+      assert.equal(body.supportActivities[0].activityName, "J-15直接准备方案");
+      assert.equal("name" in body.supportActivities[0], false);
+    }
+    assert.doesNotMatch(runtime.appNode.innerHTML, /自动保存未成功/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("support resource page imports a local personnel table", async () => {
   let changeHandler = null;
   const appNode = {
