@@ -36,7 +36,8 @@ export function createRmsAllocationProjectForScenario(scenario, selectedAircraft
   for (const aircraftModel of aircraftModels) {
     const rootId = rmsScenarioNodeId(aircraftModel, "aircraft-root");
     const components = (scenario?.components || []).filter((component) => (
-      !component?.aircraftModel || String(component.aircraftModel) === aircraftModel
+      !isSyntheticAircraftRoot(component)
+      && (!component?.aircraftModel || String(component.aircraftModel) === aircraftModel)
     ));
     const componentIds = new Set(components.map((component) => String(component?.id || "")).filter(Boolean));
     equipmentNodes.push({
@@ -940,6 +941,10 @@ function scenarioAircraftModels(scenario) {
 
 function rmsScenarioNodeId(aircraftModel, sourceNodeId) {
   return `rms:${encodeURIComponent(aircraftModel)}:${encodeURIComponent(sourceNodeId)}`;
+}
+
+function isSyntheticAircraftRoot(component) {
+  return String(component?.id || "") === "aircraft-root";
 }
 
 function validateRequiredRange(errors, value, label, { min, max, minExclusive = false, unit = "" } = {}) {
