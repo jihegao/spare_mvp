@@ -2127,6 +2127,68 @@ test("RMS aircraft selector filters the project equipment tree and similar refer
   }
 });
 
+test("案例1 RMS aircraft selection renders the legacy project equipment tree without a root cycle", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createCase1RmsRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-15" });
+    const tree = runtime.appNode.innerHTML;
+    assert.match(tree, /data-rms-equipment-root="rms:J-15:aircraft-root"/);
+    assert.match(tree, /发动机/);
+    assert.match(tree, /发动机控制模块/);
+    assert.doesNotMatch(tree, /J-35 雷达/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /当前机型暂无装备结构/);
+
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-35" });
+    const j35Tree = runtime.appNode.innerHTML;
+    assert.match(j35Tree, /J-35 雷达/);
+    assert.doesNotMatch(j35Tree, /发动机控制模块/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("案例-大 RMS aircraft selection preserves rootless component hierarchy across models", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createCaseLargeRmsRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J16" });
+    const j16Tree = runtime.appNode.innerHTML;
+    assert.match(j16Tree, /结构/);
+    assert.match(j16Tree, /液压系统/);
+    assert.doesNotMatch(j16Tree, /J16D 航电系统/);
+
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J16D" });
+    const j16dTree = runtime.appNode.innerHTML;
+    assert.match(j16dTree, /J16D 航电系统/);
+    assert.doesNotMatch(j16dTree, /液压系统/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("RMS selected aircraft without modeled components shows the explicit equipment empty state", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-equipment-rms-allocation",
+    projectJson: createCase1RmsRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35", "J-99"] }
+    })
+  });
+
+  try {
+    await runtime.change("[data-rms-aircraft-model]", {}, { value: "J-99" });
+    assert.match(runtime.appNode.innerHTML, /当前机型暂无装备结构，请先完成装备系统建模。/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("RMS calculation is blocked without an aircraft or with invalid required inputs", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=system-management-equipment-rms-allocation",
@@ -4968,6 +5030,43 @@ function createRmsRuntimeProjectJson(overrides = {}) {
       { id: "j15-computer", aircraftModel: "J-15", name: "J-15 任务计算机", model: "MC-15", level: "系统", parentId: "aircraft-root", quantity: 1, runningRatio: 1, importance: 1, complexity: 1 },
       { id: "j20-engine", aircraftModel: "J-20", name: "J-20 发动机", model: "WS-15", level: "系统", parentId: "aircraft-root", quantity: 2, runningRatio: 0.8, importance: 1, complexity: 1 },
       { id: "j20-radar", aircraftModel: "J-20", name: "J-20 雷达", model: "RADAR-20", level: "系统", parentId: "aircraft-root", quantity: 1, runningRatio: 1, importance: 1, complexity: 1 }
+    ]
+  });
+}
+
+function createCase1RmsRuntimeProjectJson(overrides = {}) {
+  return createRuntimeProjectJson({
+    ...overrides,
+    project_id: "project-case-1",
+    projectInfo: { name: "案例1", ...(overrides.projectInfo || {}) },
+    equipment: {
+      model: "J-15",
+      wholeMachineModels: ["J-15", "J-35"],
+      ...(overrides.equipment || {})
+    },
+    components: overrides.components || [
+      { id: "aircraft-root", name: "舰载机", quantity: 6 },
+      { id: "j15-engine", parentId: "aircraft-root", aircraftModel: "J-15", name: "发动机", quantity: 2 },
+      { id: "j15-engine-control", parentId: "j15-engine", aircraftModel: "J-15", name: "发动机控制模块", quantity: 1 },
+      { id: "j35-radar", parentId: "aircraft-root", aircraftModel: "J-35", name: "J-35 雷达", quantity: 1 }
+    ]
+  });
+}
+
+function createCaseLargeRmsRuntimeProjectJson(overrides = {}) {
+  return createRuntimeProjectJson({
+    ...overrides,
+    project_id: "project-case-large",
+    projectInfo: { name: "案例-大", ...(overrides.projectInfo || {}) },
+    equipment: {
+      model: "J16",
+      wholeMachineModels: ["J16", "J16D"],
+      ...(overrides.equipment || {})
+    },
+    components: overrides.components || [
+      { id: "j16-structure", aircraftModel: "J16", name: "结构", quantity: 1 },
+      { id: "j16-hydraulic", parentId: "j16-structure", aircraftModel: "J16", name: "液压系统", quantity: 1 },
+      { id: "j16d-avionics", aircraftModel: "J16D", name: "J16D 航电系统", quantity: 1 }
     ]
   });
 }

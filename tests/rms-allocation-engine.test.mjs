@@ -101,6 +101,61 @@ test("project equipment modeling is projected into isolated aircraft RMS roots",
   assert.equal(calculateRmsAllocation(createDefaultRmsAllocationPlan(j15), j15).aircraftModel, "J-15");
 });
 
+test("legacy synthetic aircraft root is not projected as a self-referencing RMS node", () => {
+  const scenario = {
+    project_id: "project-case-1",
+    projectInfo: { name: "案例1" },
+    equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35"] },
+    components: [
+      { id: "aircraft-root", name: "舰载机", quantity: 6 },
+      { id: "j15-engine", parentId: "aircraft-root", aircraftModel: "J-15", name: "发动机", quantity: 2 },
+      { id: "j15-control", parentId: "j15-engine", aircraftModel: "J-15", name: "发动机控制模块", quantity: 1 },
+      { id: "j35-radar", parentId: "aircraft-root", aircraftModel: "J-35", name: "雷达", quantity: 1 }
+    ]
+  };
+
+  const project = createRmsAllocationProjectForScenario(scenario, "J-15");
+
+  assert.equal(project.equipmentNodes.filter((node) => node.id === project.rootId).length, 1);
+  assert.equal(project.equipmentNodes.some((node) => node.id === node.parentId), false);
+  assert.deepEqual(
+    project.equipmentNodes.filter((node) => node.parentId === project.rootId).map((node) => node.name),
+    ["发动机"]
+  );
+  assert.equal(
+    project.equipmentNodes.find((node) => node.name === "发动机控制模块")?.parentId,
+    "rms:J-15:j15-engine"
+  );
+});
+
+test("rootless case-large components retain their hierarchy under each aircraft RMS root", () => {
+  const scenario = {
+    project_id: "project-case-large",
+    projectInfo: { name: "案例-大" },
+    equipment: { model: "J16", wholeMachineModels: ["J16", "J16D"] },
+    components: [
+      { id: "j16-structure", aircraftModel: "J16", name: "结构", quantity: 1 },
+      { id: "j16-hydraulic", parentId: "j16-structure", aircraftModel: "J16", name: "液压系统", quantity: 1 },
+      { id: "j16d-avionics", aircraftModel: "J16D", name: "航电系统", quantity: 1 }
+    ]
+  };
+
+  const project = createRmsAllocationProjectForScenario(scenario, "J16");
+
+  assert.deepEqual(
+    project.equipmentNodes.filter((node) => node.parentId === project.rootId).map((node) => node.name),
+    ["结构"]
+  );
+  assert.equal(
+    project.equipmentNodes.find((node) => node.name === "液压系统")?.parentId,
+    "rms:J16:j16-structure"
+  );
+  assert.equal(
+    project.equipmentNodes.find((node) => node.name === "航电系统")?.parentId,
+    "rms:J16D:aircraft-root"
+  );
+});
+
 test("proportional allocation uses imported installation count and running ratio", () => {
   const imported = normalizeRmsEquipmentImportRows([
     { id: "root", name: "测试整机", level: "装备", quantity: 1 },
