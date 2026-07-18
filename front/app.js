@@ -27,6 +27,11 @@ import {
   normalizeMonteCarloMetricMoments
 } from "./monte-carlo-moments.mjs";
 import {
+  formatReliabilityPercent,
+  normalizeTaskReliabilityResultFields,
+  taskReliabilityMetricPairs
+} from "./task-reliability-contract.mjs";
+import {
   createDefaultCurrentAnalysisProfiles,
   createEmptyCurrentAnalysisResult,
   createEmptyCurrentAnalysisResults,
@@ -119,6 +124,14 @@ import {
   projectProductById
 } from "./product-catalog.mjs";
 import {
+  equipmentStructureExportCsv,
+  equipmentStructureImportRowIsExplicitJson,
+  equipmentStructureProductId,
+  equipmentStructureTemplateCsv,
+  parseEquipmentStructureImportText,
+  validateEquipmentStructureProductReferences
+} from "./equipment-structure-transfer.mjs";
+import {
   DOWNTIME_FACTOR_OPTIONS,
   downtimeAircraftStateLabel,
   downtimeDisplayValue,
@@ -180,7 +193,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     subtitle: "按完整任务周期统计全部任务均成功的实验比例",
     settingSubject: "任务维度与时间维度",
     settingMethod: "目标达成统计",
-    metricLabels: ["仿真实验总次数", "整周期任务成功次数", "整周期任务失败次数", "整周期任务可靠度", "任务可靠度百分比"]
+    metricLabels: ["出动架次率", "波次成功率", "整周期任务可靠度", "任务周期"]
   },
   downtime_factors: {
     experimentId: "project_baseline_at_current_granularity",
@@ -2072,6 +2085,13 @@ function bindEvents() {
     const equipmentTemplateButton = event.target.closest("[data-equipment-download-template]");
     if (equipmentTemplateButton) {
       downloadEquipmentStructureTemplate();
+      return;
+    }
+
+    const equipmentExportButton = event.target.closest("[data-equipment-export-data]");
+    if (equipmentExportButton) {
+      downloadEquipmentStructureData();
+      render();
       return;
     }
 
@@ -6348,6 +6368,7 @@ function renderEquipmentModeling(page) {
           </div>
           <div class="equipment-import-row">
             <button type="button" class="equipment-template-action" data-equipment-download-template>下载模板</button>
+            <button type="button" class="equipment-template-action" data-equipment-export-data>导出当前机型</button>
             <label class="equipment-template-action">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
             <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
@@ -13290,7 +13311,7 @@ async function importRmsEquipmentTableFile(file) {
     return;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     applyRmsEquipmentImport(parsed, `已导入 ${file.name}`);
   } catch (err) {
     rmsEquipmentImportStatus = `RMS 装备树导入失败：${err && err.message ? err.message : "文件无法解析"}`;
@@ -13346,8 +13367,8 @@ async function importEquipmentStructureTableFile(file) {
     return false;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
-    const imported = normalizeEquipmentStructureImport(parsed);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
+    const imported = normalizeEquipmentStructureImport(parsed, scenario.products);
     if (!imported.components.length && !imported.wholeMachineModels.length) {
       throw new Error("导入表格未包含有效装备节点");
     }
@@ -13358,6 +13379,7 @@ async function importEquipmentStructureTableFile(file) {
       quantity: imported.quantity || scenario.equipment?.quantity || 1
     };
     scenario.components = imported.components;
+    normalizeProjectProducts(scenario);
     selectedEquipmentNodeKey = imported.wholeMachineModels[0] ? `aircraft:${imported.wholeMachineModels[0]}` : "aircraft-list";
     selectedEquipmentComponentIndex = 0;
     equipmentImportStatus = `已导入 ${file.name}：${imported.wholeMachineModels.length} 个整机，${imported.components.length} 个组件。`;
@@ -13370,8 +13392,21 @@ async function importEquipmentStructureTableFile(file) {
 }
 
 function downloadEquipmentStructureTemplate() {
-  const content = "\uFEFF节点ID,父节点ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR,维修分布类型\naircraft-root,,示例整机,MODEL-A,装备,1,1,1000,1.5,固定\nsystem-1,aircraft-root,动力系统,SYS-001,系统,2,1,1200,2,正态分布\n";
-  downloadTextFile("装备系统建模导入模板.csv", content, "text/csv;charset=utf-8");
+  downloadTextFile("装备系统建模导入模板.csv", equipmentStructureTemplateCsv(), "text/csv;charset=utf-8");
+}
+
+function downloadEquipmentStructureData() {
+  try {
+    normalizeProjectProducts(scenario);
+    const selectedState = resolveSelectedEquipmentNode();
+    const aircraftModel = selectedState.aircraftModel || wholeMachineModels()[0] || scenario.equipment?.model || "";
+    const content = equipmentStructureExportCsv(scenario, { aircraftModel });
+    const safeModel = String(aircraftModel || "当前机型").replace(/[\\/:*?"<>|]/g, "-");
+    downloadTextFile(`装备系统建模-${safeModel}.csv`, content, "text/csv;charset=utf-8");
+    equipmentImportStatus = `已导出 ${aircraftModel} 装备结构，产品ID与当前 Project 产品目录保持关联。`;
+  } catch (err) {
+    equipmentImportStatus = `装备结构树导出失败：${err && err.message ? err.message : "数据无法导出"}`;
+  }
 }
 
 function downloadSupportActivityJobsTemplate() {
@@ -13383,7 +13418,7 @@ async function importSupportActivityJobsFile(tabKey, file) {
   const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity || !file) return;
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const rows = Array.isArray(parsed) ? parsed : (parsed.rows || parsed.supportActivityJobs || []);
     if (!Array.isArray(rows) || !rows.length) throw new Error("导入文件没有工作项目");
     const codes = new Set();
@@ -13413,43 +13448,78 @@ async function importSupportActivityJobsFile(tabKey, file) {
   }
 }
 
-function normalizeEquipmentStructureImport(input) {
+function normalizeEquipmentStructureImport(input, products = []) {
   const projectJson = input?.projectJson || input?.project_json || input?.scenario || input;
   if (projectJson && typeof projectJson === "object" && !Array.isArray(projectJson)) {
     const components = firstImportArray(projectJson, ["components", "equipmentComponents", "equipmentAssets"])
       || firstImportArray(projectJson.objects, ["components", "equipmentComponents", "equipmentAssets"]);
     if (components) {
+      validateEquipmentStructureProductReferences(components, products);
       const equipment = projectJson.equipment || projectJson.objects?.equipment || {};
       return normalizeEquipmentStructureRows(components, {
         defaultModel: equipment.model || equipment.aircraftModel || "",
         wholeMachineModels: equipment.wholeMachineModels || [],
-        quantity: equipment.quantity
+        quantity: equipment.quantity,
+        preserveSourceComponents: true
       });
     }
   }
-  return normalizeEquipmentStructureRows(Array.isArray(input) ? input : [input]);
+  const rows = Array.isArray(input) ? input : [input];
+  validateEquipmentStructureProductReferences(rows, products);
+  return normalizeEquipmentStructureRows(rows);
 }
 
 function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const rows = (Array.isArray(rawRows) ? rawRows : []).filter((row) => row && typeof row === "object");
   const wholeMachineModels = new Set((Array.isArray(options.wholeMachineModels) ? options.wholeMachineModels : []).map(String).filter(Boolean));
   const components = [];
+  const rootComponents = [];
+  let wholeMachineQuantity = Number(options.quantity || 0);
   rows.forEach((row, index) => {
     const explicitModel = pickImportText(row, ["aircraftModel", "aircraft_model", "整机", "整机名称", "飞机名称", "飞机型号", "装备型号", "targetProductModel"], "");
-    const productType = pickImportText(row, ["productType", "product_type", "组件属性", "产品类型", "节点类型", "type"], "");
+    const productType = pickImportText(row, ["productType", "product_type", "组件属性", "产品类型", "节点类型", "层级", "type"], "");
+    const productId = equipmentStructureProductId(row);
     const parentId = pickImportText(row, ["parentId", "parent_id", "父节点", "父节点ID", "上级节点", "parent"], "");
-    const name = pickImportText(row, ["name", "组件名称", "节点名称", "装备名称", "componentName"], "");
+    const name = pickImportText(row, ["name", "系统名称", "组件名称", "节点名称", "装备名称", "componentName"], "");
     const id = pickImportText(row, ["id", "componentId", "组件ID", "节点ID", "object_id"], "");
-    const isWholeMachine = /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
-    const aircraftModel = explicitModel || options.defaultModel || pickImportText(row, ["model", "型号"], "");
+    const isAircraftRoot = id === "aircraft-root";
+    const isWholeMachine = isAircraftRoot || /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
+    const rowModel = pickImportText(row, ["model", "型号"], "");
+    const explicitComponentRow = options.preserveSourceComponents
+      || equipmentStructureImportRowIsExplicitJson(row)
+      || Boolean(id && id !== "aircraft-root");
+    const knownAircraftModel = Array.from(wholeMachineModels)[0] || "";
+    const isSyntheticWholeMetadata = isWholeMachine && !productId && !explicitComponentRow;
+    const aircraftModel = explicitModel
+      || options.defaultModel
+      || (isSyntheticWholeMetadata ? rowModel || knownAircraftModel : knownAircraftModel || rowModel);
     if (isWholeMachine) {
       wholeMachineModels.add(aircraftModel || name || id || `导入整机${wholeMachineModels.size + 1}`);
+      wholeMachineQuantity = pickImportNumber(row, ["quantity", "安装数", "数量", "装机数量", "n"], wholeMachineQuantity || 1);
+      if (productId || explicitComponentRow) {
+        const componentId = id || `${String(aircraftModel || "whole-aircraft").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-import-${index + 1}`;
+        const rootComponent = {
+          ...row,
+          id: componentId,
+          name: name || aircraftModel || componentId,
+          model: rowModel,
+          productId,
+          productType: productType || row.productType || "whole",
+          level: pickImportText(row, ["level", "层级"], row.level || productType || "整机"),
+          quantity: Math.max(1, Math.floor(wholeMachineQuantity || 1))
+        };
+        if (parentId) rootComponent.parentId = parentId;
+        else delete rootComponent.parentId;
+        if (componentId === "aircraft-root") delete rootComponent.aircraftModel;
+        else rootComponent.aircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || "";
+        rootComponents.push(rootComponent);
+      }
       return;
     }
     const componentAircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || options.defaultModel || "导入整机";
     wholeMachineModels.add(componentAircraftModel);
     const componentId = id || `${componentAircraftModel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-import-${index + 1}`;
-    const quantity = Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "数量", "装机数量", "n"], row.quantity ?? 1)));
+    const quantity = Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "安装数", "数量", "装机数量", "n"], row.quantity ?? 1)));
     const importedKRaw = row.kOutOfN && typeof row.kOutOfN === "object" && !Array.isArray(row.kOutOfN)
       ? String(row.kOutOfN.k ?? "").trim()
       : pickImportText(row, ["kOutOfN", "k", "K值", "K值（n中取k）", "可用数量要求k", "n中取k"], "");
@@ -13458,14 +13528,26 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
       ...row,
       id: componentId,
       name: name || componentId,
+      model: pickImportText(row, ["componentModel", "component_model", "model", "型号"], rowModel),
       aircraftModel: componentAircraftModel,
       parentId: parentId || "aircraft-root",
+      productId,
       productType: /^(LRU|SRU)$/i.test(productType) ? productType.toUpperCase() : (productType && !/整机|whole|aircraft/i.test(productType) ? productType : ""),
+      level: pickImportText(row, ["level", "层级"], row.level || ""),
       quantity,
+      runningRatio: pickImportNumber(row, ["runningRatio", "running_ratio", "运行比"], row.runningRatio ?? row.missionUse?.runningRatio ?? 1),
       kOutOfN: { enabled: quantity > 1, n: quantity, k: importedK },
       connectionType: pickImportText(row, ["connectionType", "连接方式", "结构类型"], row.connectionType || "串联"),
       mtbfHours: pickImportNumber(row, ["mtbfHours", "MTBF", "mtbf", "平均故障间隔"], row.mtbfHours ?? 120),
-      meanRepairTimeMinutes: pickImportNumber(row, ["meanRepairTimeMinutes", "MTTR", "mttr", "平均修复时间"], row.meanRepairTimeMinutes ?? 120)
+      meanRepairTimeMinutes: pickImportNumber(row, ["meanRepairTimeMinutes", "MTTR", "mttr", "平均修复时间"], row.meanRepairTimeMinutes ?? 120),
+      repairDistribution: {
+        ...(row.repairDistribution && typeof row.repairDistribution === "object" ? row.repairDistribution : {}),
+        distributionType: pickImportText(
+          row,
+          ["repairDistributionType", "维修分布类型"],
+          row.repairDistribution?.distributionType || "固定值"
+        )
+      }
     };
     const kMessage = validateEquipmentComponentKOutOfN(nextComponent);
     if (kMessage) {
@@ -13476,8 +13558,8 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const models = Array.from(wholeMachineModels).filter(Boolean);
   return {
     wholeMachineModels: models,
-    components,
-    quantity: Math.max(1, Math.floor(Number(options.quantity || 1)))
+    components: [...rootComponents, ...components],
+    quantity: Math.max(1, Math.floor(Number(wholeMachineQuantity || 1)))
   };
 }
 
@@ -13492,7 +13574,7 @@ async function importSupportResourceTableFile(file, activeResourceType) {
     return false;
   }
   try {
-    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const rows = extractSupportResourceImportRows(parsed, resourceType);
     const importedCount = applySupportResourceImportRows(resourceType, rows);
     supportResourceImportStatus = `已导入 ${file.name}：${resourceType} ${importedCount} 行。`;
@@ -13740,48 +13822,6 @@ function pickImportNumber(row, keys, fallback = 0) {
   const matched = String(text).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
   const value = matched ? Number(matched[0]) : Number(text);
   return Number.isFinite(value) ? Math.max(0, value) : fallback;
-}
-
-function parseRmsEquipmentImportText(text, filename = "") {
-  const trimmed = String(text || "").trim();
-  if (!trimmed) throw new Error("文件为空");
-  const looksLikeJson = filename.toLowerCase().endsWith(".json") || trimmed.startsWith("{") || trimmed.startsWith("[");
-  if (looksLikeJson) return JSON.parse(trimmed);
-  return parseDelimitedTable(trimmed);
-}
-
-function parseDelimitedTable(text) {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) throw new Error("CSV 表格至少需要表头和一行数据");
-  const delimiter = lines[0].includes("\t") ? "\t" : ",";
-  const headers = parseDelimitedLine(lines[0], delimiter).map((header) => header.trim());
-  return lines.slice(1).map((line) => {
-    const values = parseDelimitedLine(line, delimiter);
-    return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-  });
-}
-
-function parseDelimitedLine(line, delimiter) {
-  const values = [];
-  let current = "";
-  let quoted = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    const nextChar = line[index + 1];
-    if (char === '"' && quoted && nextChar === '"') {
-      current += '"';
-      index += 1;
-    } else if (char === '"') {
-      quoted = !quoted;
-    } else if (char === delimiter && !quoted) {
-      values.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  values.push(current);
-  return values.map((value) => value.trim());
 }
 
 async function handleSystemUserAction(action) {
@@ -17198,16 +17238,12 @@ function renderFormalProjectionBody(formalProjection) {
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
-    const drop = formalProjection.steepestDrop;
     return `
-      <div class="kpi-strip"><div class="kpi-card"><span>任务剖面可靠性</span><strong>${pct(formalProjection.profileReliability)}</strong></div><div class="kpi-card"><span>整周期任务可靠度</span><strong>${pct(formalProjection.periodCompletionProbability)}</strong></div><div class="kpi-card"><span>成功/总样本</span><strong>${formalProjection.successfulSamples}/${formalProjection.totalSamples}</strong></div><div class="kpi-card"><span>失败样本</span><strong>${formalProjection.failedSamples}</strong></div></div><div class="analysis-chart-panel"><div class="chart-title">projection payload 任务波次平均成功率</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
-      <div class="decision-support-card"><strong>最大下降波次</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，${htmlEscape(drop.fromTime)} 到 ${htmlEscape(drop.toTime)}，下降 ${fixed(drop.drop, 3)}` : "未发现下降波次"}</span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>状态</th></tr></thead>
-          <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.timeLabel)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.probability, 3)}</td><td>${fixed(row.sortieRate, 3)}</td><td><span class="status-badge ${row.state === "未达标" ? "warn" : "success"}">${htmlEscape(row.state)}</span></td></tr>`).join("")}</tbody>
-        </table>
-      </div>
+      ${renderLiteMesaMissionReliabilityWaveChart(rows.map((row) => ({
+        sequence: row.sequence,
+        waveLabel: row.waveLabel || row.timeLabel,
+        meanMissionSuccessRate: row.probability
+      })))}
     `;
   }
   if (formalProjection.analysisType === "downtime_factors") {
@@ -17335,7 +17371,7 @@ function renderBar(value, max, color) {
   return `<div class="bar-track"><span class="bar-fill ${color}" style="width:${width}%"></span></div>`;
 }
 
-function renderLineChart(points) {
+function renderLineChart(points, { ariaLabel = "任务可靠度趋势" } = {}) {
   const width = 640;
   const height = 180;
   const plotLeft = 52;
@@ -17358,12 +17394,12 @@ function renderLineChart(points) {
   const line = points.map((point) => `${xScale(point.x).toFixed(1)},${yScale(point.y).toFixed(1)}`).join(" ");
   const yTicks = [0, 0.5, 1];
   return `
-    <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="任务可靠度趋势">
+    <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${htmlEscape(ariaLabel)}">
       <line class="line-chart-axis line-chart-y-axis" x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}"></line>
       <line class="line-chart-axis line-chart-x-axis" x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}"></line>
       ${yTicks.map((tick) => `<line class="line-chart-tick" x1="${plotLeft - 4}" y1="${yScale(tick).toFixed(1)}" x2="${plotRight}" y2="${yScale(tick).toFixed(1)}"></line><text class="line-chart-y-label" x="${plotLeft - 10}" y="${(yScale(tick) + 4).toFixed(1)}">${tick.toFixed(1)}</text>`).join("")}
       <polyline points="${line}"></polyline>
-      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"></circle><text class="line-chart-x-label" x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
+      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"><title>${htmlEscape(point.tooltip || `${point.x}：${point.y}`)}</title></circle><text class="line-chart-x-label" x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
     </svg>
   `;
 }
@@ -17778,7 +17814,7 @@ function createDefaultLiteMesaAnalysisSettings() {
   return {
     spare_shortfall: { samples: 27, seed: 20260621 },
     carry_list: { samples: 27, seed: 20260621, missionConfidenceTarget: 0.9 },
-    mission_reliability: { samples: 27, seed: 20260621, maxTimeWindow: "" },
+    mission_reliability: { samples: 27, seed: 20260621 },
     downtime_factors: { samples: 1, seed: 20260621, topN: 4 }
   };
 }
@@ -17828,14 +17864,6 @@ function renderLiteMesaAnalysisEditableSettings(definition, settings) {
       </label>
     `;
   }
-  if (definition.analysisType === "mission_reliability") {
-    return `
-      <label class="lite-mesa-setting-chip editable">
-        <span>时间窗口</span>
-        <input data-lite-mesa-analysis-field="maxTimeWindow" type="number" min="1" step="1" value="${htmlEscape(settings.maxTimeWindow ?? "")}" placeholder="全任务窗口">
-      </label>
-    `;
-  }
   if (definition.analysisType === "downtime_factors") {
     return `
       <label class="lite-mesa-setting-chip editable">
@@ -17854,8 +17882,6 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
   const next = { ...current };
   if (field === "missionConfidenceTarget") {
     next.missionConfidenceTarget = Math.max(0, Math.min(1, Number(value) || 0));
-  } else if (field === "maxTimeWindow") {
-    next.maxTimeWindow = Number(value) > 0 ? Math.trunc(Number(value)) : "";
   } else if (field === "topN") {
     next.topN = Math.max(1, Math.min(20, Math.trunc(Number(value) || 1)));
   } else {
@@ -17882,6 +17908,9 @@ async function runLiteMesaAnalysisPage(page) {
     seed,
     ...(definition.analysisType === "downtime_factors" ? { write_event_snapshots: true } : {})
   };
+  if (definition.analysisType === "mission_reliability") {
+    delete normalizedSettings.maxTimeWindow;
+  }
   liteMesaAnalysisResults = {
     ...liteMesaAnalysisResults,
     [definition.analysisType]: {
@@ -17941,6 +17970,10 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
       ? payload.mission_wave_rows
       : [];
   const rows = Array.isArray(payload.rows) ? payload.rows : waveRows;
+  const taskReliabilityResultFields = definition.analysisType === "mission_reliability"
+    ? normalizeTaskReliabilityResultFields(payload)
+    : [];
+  const taskReliabilityValue = (key) => taskReliabilityResultFields.find((field) => field.key === key)?.value ?? null;
   return {
     status: payload.status === "session_complete" ? "session_complete" : "blocked",
     source: payload.source || "lite_mesa_aircraft_support_v1",
@@ -17948,18 +17981,23 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     experimentId: payload.experiment_id || definition.experimentId,
     sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
-    metrics: Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
+    metrics: definition.analysisType === "mission_reliability"
+      ? taskReliabilityMetricPairs(taskReliabilityResultFields)
+      : Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
+    resultFields: taskReliabilityResultFields,
     rows,
     waveRows: waveRows.length ? waveRows : rows,
     dailyRows: Array.isArray(payload.daily_rows) ? payload.daily_rows : [],
     eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
     eventDetails: Array.isArray(payload.event_details) ? payload.event_details : [],
     eventDetailsComplete: Array.isArray(payload.event_details),
-    periodDurationDays: Number(payload.period_duration_days || 0),
+    sortieRate: taskReliabilityValue("sortie_rate"),
+    waveSuccessRate: taskReliabilityValue("wave_success_rate"),
+    periodDurationDays: taskReliabilityValue("period_duration_days"),
     periodTotalSamples: Number(payload.period_total_samples || payload.sample_count || 0),
     periodSuccessfulSamples: Number(payload.successful_samples || 0),
     periodFailedSamples: Number(payload.period_failed_samples || 0),
-    periodCompletionProbability: Number(payload.period_completion_probability || 0),
+    periodCompletionProbability: taskReliabilityValue("period_completion_probability"),
     limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
     message: payload.message || ""
   };
@@ -17986,7 +18024,6 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 function liteMesaAnalysisVisibleMetrics(definition, metrics) {
   const hiddenLabels = {
     carry_list: new Set(["备件满足率下限", "置信度目标", "样本数"]),
-    mission_reliability: new Set(["任务成功率", "战备完好率"]),
     downtime_factors: new Set(["样本数"])
   }[definition.analysisType] || new Set();
   return (metrics || []).filter(([label]) => !hiddenLabels.has(String(label)));
@@ -18047,21 +18084,13 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     `;
   }
   if (definition.analysisType === "mission_reliability") {
+    const fields = result.resultFields || normalizeTaskReliabilityResultFields(result);
     return `
-      <div class="kpi-strip">
-        <div class="kpi-card"><span>任务周期</span><strong>${formatPeriodDurationDays(result.periodDurationDays)}</strong></div>
-        <div class="kpi-card"><span>成功 / 总实验</span><strong>${result.periodSuccessfulSamples} / ${result.periodTotalSamples}</strong></div>
-        <div class="kpi-card"><span>失败实验</span><strong>${result.periodFailedSamples}</strong></div>
-        <div class="kpi-card"><span>整周期任务可靠度</span><strong>${pct(result.periodCompletionProbability)}</strong></div>
-      </div>
+      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
+        <thead><tr>${fields.map((field) => `<th>${htmlEscape(field.label)}</th>`).join("")}</tr></thead>
+        <tbody><tr>${fields.map((field) => `<td>${htmlEscape(field.displayValue)}</td>`).join("")}</tr></tbody>
+      </table></div>
       ${renderLiteMesaMissionReliabilityWaveChart(rows)}
-      <details class="lite-mesa-collapsible-table">
-        <summary>样本明细（${rows.length}）</summary>
-        <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均应执行波次</th><th>平均成功波次</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || `波次${row.sequence ?? "-"}`)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.meanMissionSuccessRate ?? row.missionSuccessRate, 3)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.meanSortieRate ?? row.sortieRate)}</td><td>${fixed(row.plannedWaves ?? row.planned_waves, 1)}</td><td>${fixed(row.successfulWaves ?? row.successful_waves, 1)}</td></tr>`).join("")}</tbody>
-        </table></div>
-      </details>
     `;
   }
   if (definition.analysisType === "downtime_factors") {
@@ -18193,29 +18222,19 @@ function renderDowntimeFactorSpecificDetails(rows) {
   return `<details class="downtime-factor-specific"><summary>查看</summary>${rows.map(([label, value]) => `<div><span>${htmlEscape(label)}</span><strong>${htmlEscape(downtimeDisplayValue(value))}</strong></div>`).join("")}</details>`;
 }
 
-function formatPeriodDurationDays(value) {
-  const days = Number(value || 0);
-  if (!(days > 0)) return "--";
-  return `${Number.isInteger(days) ? days : fixed(days, 2)} 天`;
-}
-
-function formatLiteMesaAnalysisMetricValue(label, value) {
-  if (String(label || "").includes("出动架次率")) return fixed(value, 3);
-  return pct(value);
-}
-
 function renderLiteMesaMissionReliabilityWaveChart(rows) {
   if (!rows.length) {
-    return `<div class="empty-state"><strong>任务波次平均成功率</strong><p>当前会话未返回按任务波次聚合的任务成功率。</p></div>`;
+    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>当前会话未返回按任务波次聚合的成功率。</p></div>`;
   }
   const points = rows.map((row, index) => ({
     x: Number(row.sequence || index + 1),
-    y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0)
+    y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0),
+    tooltip: `${row.waveLabel || row.waveKey || `波次${row.sequence ?? index + 1}`}：${formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)}`
   }));
   return `
     <div class="analysis-chart-panel">
-      <div class="chart-title">任务波次平均成功率</div>
-      ${renderLineChart(points)}
+      <div class="chart-title">波次成功率趋势</div>
+      ${renderLineChart(points, { ariaLabel: "波次成功率趋势" })}
     </div>
   `;
 }

@@ -30,6 +30,7 @@ from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     mission_period_outcome,
     period_completion_summary,
 )
+from src.spare_mvp_contract.task_reliability import build_task_reliability_result_fields
 
 PROJECT_SCHEMA_VERSION = "project-v0"
 SCENARIO_SCHEMA_VERSION = "scenario-v0"
@@ -2798,6 +2799,12 @@ class SimulationAdapter:
             metrics=metrics,
             samples=samples or [],
         )
+        task_reliability_result_fields = build_task_reliability_result_fields(
+            sortie_rate=sortie_rate,
+            wave_success_rate=mission_success,
+            period_completion_probability=period_completion_probability,
+            period_duration_days=period_summary["duration_days"],
+        )
         return {
             "large_sample_summary": {
                 "projection_type": "large_sample_summary",
@@ -2891,8 +2898,10 @@ class SimulationAdapter:
                     "in_flight_failures": metrics.get("in_flight_failures", 0),
                     "target_met": mission_success >= 0.9,
                     "profile_reliability": mission_success,
+                    "wave_success_rate": mission_success,
                     "period_completion_probability": period_completion_probability,
                     "period_duration_days": period_summary["duration_days"],
+                    "result_fields": task_reliability_result_fields,
                     "total_samples": total_period_samples,
                     "successful_samples": successful_period_samples,
                     "failed_samples": failed_period_samples,

@@ -950,7 +950,12 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("constraint_results", spare_shortfall_payload["data"][0])
         mission_series = mission_reliability_payload["data"]["series"]
         mission_wave_rows = mission_reliability_payload["data"]["mission_wave_rows"]
+        mission_result_fields = mission_reliability_payload["data"]["result_fields"]
         self.assertEqual(mission_series, mission_wave_rows)
+        self.assertEqual([field["key"] for field in mission_result_fields], [
+            "sortie_rate", "wave_success_rate", "period_completion_probability", "period_duration_days"
+        ])
+        self.assertEqual(mission_reliability_payload["data"]["wave_success_rate"], mission_reliability_payload["data"]["profile_reliability"])
         self.assertGreaterEqual(len(mission_series), 1)
         wave_keys = [(row["day_index"], row["wave_index"]) for row in mission_series]
         self.assertEqual(wave_keys, sorted(wave_keys))
