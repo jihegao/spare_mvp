@@ -1003,7 +1003,9 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.doesNotMatch(supportOrgSource, /保障层级/);
   assert.doesNotMatch(supportOrgSource, /保障策略/);
   assert.doesNotMatch(supportOrgSource, /横向保障组织/);
-  assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(activeResourceType, selectedSupportOrgNode\)/);
+  assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(/);
+  assert.match(supportOrgSource, /spareSelection \? \{ orgNodes: spareSelection\.resourceOrgNodes \} : undefined/);
+  assert.match(supportOrgSource, /function resolveSpareSupportOrganizationSelection/);
   assert.doesNotMatch(supportOrgSource, /if \(!orgTree\.length\)/);
   assert.match(supportOrgSource, /function buildSupportResourceRows/);
   assert.match(supportOrgSource, /scope: orgNode\.name/);
@@ -1016,6 +1018,11 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(supportOrgSource, /children:\s*\(node\.children \|\| \[\]\)\.map\(\(child\) => orgTreeNode\(child, depth \+ 1\)\)/);
   assert.doesNotMatch(supportOrgSource, /children:\s*depth\s*>=\s*1\s*\?\s*\[\]/);
   assert.match(appSource, /function updateSupportResourceOverride/);
+  assert.match(appSource, /function resetSupportResourceSelectionForFeatureChange/);
+  assert.match(appSource, /function selectedEditableSpareSupportOrgNode/);
+  assert.match(appSource, /const SUPPORT_SPARE_TOMBSTONE_ID_PREFIX = "support-spare-tombstone:"/);
+  assert.match(appSource, /function supportResourceDeletedKeySet/);
+  assert.match(appSource, /filter\(\(resource\) => isDeletedSupportSpareResource\(resource\)\)/);
   assert.match(appSource, /scenario\.supportResources/);
   assert.doesNotMatch(appSource, /scenario\.supportResourceOverrides/);
   assert.doesNotMatch(appSource, /scenario\.deletedSupportResourceKeys/);
@@ -1031,6 +1038,23 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(supportOrgSource, /data-support-org-field="description"/);
   assert.match(supportOrgSource, /关联机场/);
   assert.match(supportOrgSource, /supportOrgAirportSelect\(selectedSupportOrgNode\)/);
+
+  const spareDeleteSource = appSource.slice(
+    appSource.indexOf("function deleteSelectedSupportResources"),
+    appSource.indexOf("function findSupportOrgTreeNode")
+  );
+  assert.match(spareDeleteSource, /supportResourceTypeLabel\(resource\.type\) === activeResourceType/);
+  assert.match(spareDeleteSource, /supportResourceBelongsToOrg\(resource, selectedSpareOrgNode\)/);
+  assert.match(spareDeleteSource, /createDeletedSupportSpareResource\(resource, selectedSpareOrgNode\)/);
+  assert.match(spareDeleteSource, /currentModelingPageLocked\(page\)/);
+
+  const spareImportSource = appSource.slice(
+    appSource.indexOf("async function importSupportResourceTableFile"),
+    appSource.indexOf("function normalizeSupportResourceImportType")
+  );
+  assert.match(spareImportSource, /selectedEditableSpareSupportOrgNode\(\)/);
+  assert.match(spareImportSource, /targetOrgNodes: \[selectedSpareOrgNode\]/);
+  assert.match(appSource, /const matched = targetOrgNodes\.find/);
   assert.match(supportOrgSource, /data-support-org-field="airport"/);
   assert.doesNotMatch(supportOrgSource, /data-support-org-field="airportId"/);
   assert.match(supportOrgSource, /function supportOrgAirportSelect\(orgNode\)/);
@@ -1131,7 +1155,8 @@ test("support organization fourth-level pages render matching resource panels", 
     appSource.indexOf("function renderOrgTreeNode")
   );
   assert.match(supportOrgSource, /const activeResourceType =/);
-  assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(activeResourceType, selectedSupportOrgNode\)/);
+  assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(/);
+  assert.match(supportOrgSource, /spareSelection \? \{ orgNodes: spareSelection\.resourceOrgNodes \} : undefined/);
   assert.match(supportOrgSource, /page\.name\.includes\("人员"\) \? "保障人员"/);
   assert.match(supportOrgSource, /page\.name\.includes\("设备"\) \? "保障设备"/);
   assert.match(supportOrgSource, /page\.name\.includes\("备件"\) \? "备件"/);

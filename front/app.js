@@ -153,6 +153,7 @@ const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModel
 const RUN_CONTEXT_STORAGE_KEY = "spare-mvp:selectedRunContextByProject";
 const SYSTEM_RUNTIME_CONFIG_KEY = "system-runtime-support";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
+const SUPPORT_SPARE_TOMBSTONE_ID_PREFIX = "support-spare-tombstone:";
 let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
@@ -1025,7 +1026,9 @@ restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi()
 function bindEvents() {
   window.addEventListener("hashchange", () => {
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
-    selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
+    const nextFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
+    resetSupportResourceSelectionForFeatureChange(selectedFeatureId, nextFeatureId);
+    selectedFeatureId = nextFeatureId;
     createExperimentPlanBranchFromCurrentProject();
     render();
   });
@@ -1199,6 +1202,7 @@ function bindEvents() {
     const supportOrgNode = event.target.closest("[data-select-support-org-node]");
     if (supportOrgNode && !clickedTreeToggleIcon) {
       selectedSupportOrgNodeId = supportOrgNode.dataset.selectSupportOrgNode;
+      selectedSupportResourceKeys = new Set();
       render();
       return;
     }
@@ -1221,8 +1225,8 @@ function bindEvents() {
 
     const supportResourceBatchDeleteButton = event.target.closest("[data-support-resource-batch-delete]");
     if (supportResourceBatchDeleteButton) {
-      deleteSelectedSupportResources();
-      markProjectDraftChanged();
+      const deleted = deleteSelectedSupportResources();
+      if (deleted) markProjectDraftChanged();
       render();
       return;
     }
@@ -2227,6 +2231,7 @@ function bindEvents() {
     if (featureButton) {
       selectedRoute = "workbench";
       const selectedPage = accessibleFeaturePage(featureButton.dataset.featureId);
+      resetSupportResourceSelectionForFeatureChange(selectedFeatureId, selectedPage.id);
       selectedFeatureId = selectedPage.id;
       if (selectedPage.component === "experiment-plan-management") {
         experimentPlanManagementMode = "list";
@@ -2540,12 +2545,12 @@ function bindEvents() {
 
     const supportResourceField = event.target.closest("[data-support-resource-field]");
     if (supportResourceField) {
-      updateSupportResourceOverride(
+      const updated = updateSupportResourceOverride(
         supportResourceField.dataset.supportResourceKey,
         supportResourceField.dataset.supportResourceField,
         parseInput(supportResourceField)
       );
-      markProjectDraftChanged();
+      if (updated) markProjectDraftChanged();
       render();
       return;
     }
@@ -7583,12 +7588,28 @@ function renderSupportOrganizationWorkbench(page) {
   const locked = currentModelingPageLocked(page);
   const lockedAttr = modelingLockDisabledAttr(locked);
   const orgTree = supportOrganizationTree();
-  const selectedSupportOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
-  const selectedIsLeaf = !(selectedSupportOrgNode?.children || []).length;
-  const visibleResourceRows = buildSupportResourceRows(activeResourceType, selectedSupportOrgNode).filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const spareSelection = activeResourceType === "备件"
+    ? resolveSpareSupportOrganizationSelection(orgTree, locked)
+    : null;
+  const selectedSupportOrgNode = spareSelection?.selectedNode
+    || findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree)
+    || orgTree[0];
+  const selectedIsLeaf = spareSelection
+    ? spareSelection.selectedIsEditableLeaf
+    : !(selectedSupportOrgNode?.children || []).length;
+  const visibleResourceRows = buildSupportResourceRows(
+    activeResourceType,
+    selectedSupportOrgNode,
+    spareSelection ? { orgNodes: spareSelection.resourceOrgNodes } : undefined
+  ).filter((row) => !supportResourceDeletedKeySet().has(row.key));
   const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
   const resourceColumns = supportResourceDataColumns(activeResourceType);
+  const spareSummaryReadOnly = activeResourceType === "备件" && !selectedIsLeaf;
+  const resourceControlsDisabled = locked || spareSummaryReadOnly;
+  const resourceControlsDisabledAttr = resourceControlsDisabled
+    ? ` disabled title="${htmlEscape(locked ? MODELING_PAGE_LOCK_MESSAGE : "请选择具体叶子组织节点后编辑备件资源。")}"`
+    : "";
   return `
     <div class="ship-front-workbench">
       ${modelingLockNotice(page)}
@@ -7616,17 +7637,18 @@ function renderSupportOrganizationWorkbench(page) {
             ` : `
               <div class="toolbar-row">
                 <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}" ${selectedIsLeaf && !locked ? "" : "disabled"}>新增</button>
-                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"${lockedAttr}></label>
-                <button type="button" class="btn-danger" data-support-resource-batch-delete${lockedAttr}>批量删除</button>
+                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></label>
+                <button type="button" class="btn-danger" data-support-resource-batch-delete="${htmlEscape(activeResourceType)}"${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}>批量删除</button>
                 <input value="" placeholder="请输入关键词进行搜索"${lockedAttr}>
-                <span class="badge">${locked ? "当前颗粒度只读" : selectedIsLeaf ? "叶子节点可编辑" : "根节点汇总显示"}</span>
+                <span class="badge">${locked ? "当前颗粒度只读" : selectedIsLeaf ? "叶子节点可编辑" : "汇总视图只读"}</span>
               </div>
+              ${spareSelection ? renderSpareSupportOrganizationGuidance(spareSelection, locked) : ""}
               <p class="rms-import-status">${htmlEscape(supportResourceImportStatus)}</p>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${lockedAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
+                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
                   <tbody>${visibleResourceRows.map((row, index) => `
-                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${lockedAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, !selectedIsLeaf || locked)}</td>`).join("")}</tr>
+                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, !selectedIsLeaf || locked)}</td>`).join("")}</tr>
                   `).join("") || `<tr><td colspan="${resourceColumns.length + 3}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
@@ -7636,6 +7658,45 @@ function renderSupportOrganizationWorkbench(page) {
       </div>
     </div>
   `;
+}
+
+function resolveSpareSupportOrganizationSelection(orgTree, locked) {
+  const root = orgTree[0] || null;
+  const editableLeafNodes = flattenSupportOrgTreeNodes(orgTree)
+    .filter((node) => node !== root && !(node.children || []).length);
+  let selectedNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree);
+  if (!locked && editableLeafNodes.length === 1 && (!selectedNode || selectedNode === root)) {
+    selectedNode = editableLeafNodes[0];
+    selectedSupportOrgNodeId = selectedNode.id || "";
+  } else if (!selectedNode) {
+    selectedNode = root;
+    selectedSupportOrgNodeId = selectedNode?.id || "";
+  }
+  const selectedIsEditableLeaf = editableLeafNodes.some((node) => node === selectedNode);
+  const selectedDescendants = selectedNode
+    ? flattenSupportOrgTreeNodes([selectedNode]).filter((node) => editableLeafNodes.includes(node))
+    : [];
+  return {
+    root,
+    editableLeafNodes,
+    selectedNode,
+    selectedIsEditableLeaf,
+    resourceOrgNodes: selectedIsEditableLeaf ? [selectedNode] : selectedDescendants
+  };
+}
+
+function renderSpareSupportOrganizationGuidance(selection, locked) {
+  let message = "";
+  if (locked) {
+    message = "当前建模颗粒度为只读，备件数量不可编辑。";
+  } else if (selection.selectedIsEditableLeaf) {
+    message = `正在编辑叶子组织节点“${selection.selectedNode?.name || "未命名节点"}”的备件数量。`;
+  } else if (!selection.editableLeafNodes.length) {
+    message = "当前保障组织没有可编辑叶子节点；请先在保障组织结构建模中创建具体叶节点。";
+  } else {
+    message = "请选择具体叶子组织节点后编辑备件数量；当前为汇总视图，所有资源字段只读。";
+  }
+  return `<p class="inline-status support-spare-edit-guidance" role="status">${htmlEscape(message)}</p>`;
 }
 
 function renderOrgTreeNode(node, depth = 0) {
@@ -7652,10 +7713,12 @@ function orgTreeNode(node, depth = 0) {
   };
 }
 
-function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
+function buildSupportResourceRows(activeResourceType, selectedOrgNode, options = {}) {
   const orgTree = supportOrganizationTree();
   const leafNodes = flattenSupportOrgTreeNodes(selectedOrgNode ? [selectedOrgNode] : orgTree).filter((node) => !(node.children || []).length);
-  const orgNodes = (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
+  const orgNodes = Array.isArray(options.orgNodes)
+    ? options.orgNodes
+    : (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
   if (activeResourceType === "备件") {
     syncSupportSpareResourcesFromHardwareTree(orgNodes);
   }
@@ -7673,10 +7736,11 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
 
 function supportResourceBelongsToOrg(resource, orgNode) {
   if (!resource || !orgNode) return false;
+  const organizationNodeId = String(resource.organizationNodeId || "").trim();
+  if (organizationNodeId) return organizationNodeId === String(orgNode.id || "").trim();
   const nodeName = String(resource.supportNodeName || "").trim();
   return nodeName === String(orgNode.name || "").trim()
-    || nodeName === String(orgNode.id || "").trim()
-    || String(resource.organizationNodeId || "").trim() === String(orgNode.id || "").trim();
+    || nodeName === String(orgNode.id || "").trim();
 }
 
 function supportResourceRow(resource, orgNode, orgIndex, resourceIndex) {
@@ -7711,6 +7775,21 @@ function supportResourceTypeValue(label) {
   return String(label || "");
 }
 
+function supportResourceTypeForPage(page) {
+  if (!page || page.tertiary !== "保障组织建模") return "";
+  if (page.name?.includes("人员")) return "保障人员";
+  if (page.name?.includes("设备")) return "保障设备";
+  if (page.name?.includes("备件")) return "备件";
+  return "";
+}
+
+function resetSupportResourceSelectionForFeatureChange(previousFeatureId, nextFeatureId) {
+  if (previousFeatureId === nextFeatureId) return;
+  const previousType = supportResourceTypeForPage(getFeaturePageById(previousFeatureId));
+  const nextType = supportResourceTypeForPage(getFeaturePageById(nextFeatureId));
+  if (previousType || nextType) selectedSupportResourceKeys = new Set();
+}
+
 function lruSpareRows() {
   normalizeProjectProducts(scenario);
   const seen = new Set();
@@ -7742,9 +7821,20 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
 
   const targetOrgNames = new Set(targetOrgNodes.map((node) => String(node.name || node.id || "").trim()).filter(Boolean));
   const targetOrgIds = new Set(targetOrgNodes.map((node) => String(node.id || "").trim()).filter(Boolean));
+  const targetTombstones = scenario.supportResources
+    .filter((resource) => isDeletedSupportSpareResource(resource))
+    .filter((resource) => targetOrgNodes.some((orgNode) => supportSpareTombstoneBelongsToOrg(resource, orgNode)))
+    .map((resource) => {
+      const orgNode = targetOrgNodes.find((node) => supportSpareTombstoneBelongsToOrg(resource, node));
+      return {
+        ...resource,
+        organizationNodeId: orgNode?.id || resource.organizationNodeId || "",
+        supportNodeName: orgNode?.name || orgNode?.id || resource.supportNodeName || ""
+      };
+    });
   const existingSpareByKey = new Map();
   for (const resource of scenario.supportResources) {
-    if (!isSpareSupportResource(resource)) continue;
+    if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
     const key = supportSpareResourceIdentityKey(
       resource.supportNodeName,
       resource.name,
@@ -7752,15 +7842,25 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
       resource.equipment || resource.equipmentId
     );
     if (!existingSpareByKey.has(key)) existingSpareByKey.set(key, resource);
+    const fallbackKey = supportSpareResourceIdentityKey(
+      resource.supportNodeName,
+      resource.name,
+      resource.model,
+      ""
+    );
+    if (!existingSpareByKey.has(fallbackKey)) existingSpareByKey.set(fallbackKey, resource);
   }
 
   const nextTargetSpares = targetOrgNodes.flatMap((orgNode, orgIndex) => {
     const nodeName = String(orgNode.name || orgNode.id || "保障节点").trim();
-    return hardwareSpares.map((spare, spareIndex) => {
+    return hardwareSpares.flatMap((spare, spareIndex) => {
+      if (targetTombstones.some((resource) => supportSpareTombstoneMatches(resource, orgNode, spare))) return [];
       const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.aircraft);
-      const existing = existingSpareByKey.get(key);
-      return {
+      const fallbackKey = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, "");
+      const existing = existingSpareByKey.get(key) || existingSpareByKey.get(fallbackKey);
+      return [{
         id: String(existing?.id || `support-resource-${orgIndex + 1}-spare-${spareIndex + 1}`),
+        organizationNodeId: orgNode.id || "",
         supportNodeName: nodeName,
         type: "spare",
         productId: spare.productId,
@@ -7768,7 +7868,7 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
         model: spare.model,
         equipment: spare.aircraft || "",
         quantity: Math.max(0, Number(existing?.quantity ?? 0) || 0)
-      };
+      }];
     });
   });
 
@@ -7779,6 +7879,7 @@ function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
       const nodeId = String(resource.organizationNodeId || "").trim();
       return !targetOrgNames.has(nodeName) && !targetOrgIds.has(nodeId);
     }),
+    ...targetTombstones,
     ...nextTargetSpares
   ];
 }
@@ -7787,6 +7888,42 @@ function isSpareSupportResource(resource) {
   const type = String(resource?.type || "").trim().toLowerCase();
   return resource && typeof resource === "object" && !Array.isArray(resource)
     && (type === "spare" || type === "备件");
+}
+
+function isDeletedSupportSpareResource(resource) {
+  return isSpareSupportResource(resource)
+    && String(resource.id || "").startsWith(SUPPORT_SPARE_TOMBSTONE_ID_PREFIX);
+}
+
+function supportSpareTombstoneId(orgNode, resource) {
+  const orgId = String(orgNode?.id || orgNode?.name || "").trim();
+  const productIdentity = String(resource?.productId || "").trim()
+    || supportSpareResourceIdentityKey("", resource?.name, resource?.model, "");
+  return `${SUPPORT_SPARE_TOMBSTONE_ID_PREFIX}${encodeURIComponent(orgId)}:${encodeURIComponent(productIdentity)}`;
+}
+
+function supportSpareTombstoneBelongsToOrg(resource, orgNode) {
+  const orgId = String(orgNode?.id || orgNode?.name || "").trim();
+  return isDeletedSupportSpareResource(resource)
+    && String(resource.id || "").startsWith(`${SUPPORT_SPARE_TOMBSTONE_ID_PREFIX}${encodeURIComponent(orgId)}:`);
+}
+
+function supportSpareTombstoneMatches(resource, orgNode, spare) {
+  return supportSpareTombstoneBelongsToOrg(resource, orgNode)
+    && String(resource.productId || "").trim() === String(spare?.productId || "").trim();
+}
+
+function createDeletedSupportSpareResource(resource, orgNode) {
+  return {
+    id: supportSpareTombstoneId(orgNode, resource),
+    organizationNodeId: orgNode?.id || "",
+    supportNodeName: orgNode?.name || orgNode?.id || resource.supportNodeName || "",
+    type: "spare",
+    productId: resource.productId || "",
+    name: resource.name || resource.model || resource.productId || "已删除备件",
+    model: resource.model || resource.name || resource.productId || "已删除备件",
+    quantity: 0
+  };
 }
 
 function supportSpareResourceIdentityKey(nodeName, name, model, equipment) {
@@ -7881,7 +8018,9 @@ function supportResourceRowsForOrg(activeResourceType, orgNode) {
 }
 
 function supportResourceDeletedKeySet() {
-  return new Set();
+  return new Set((scenario.supportResources || [])
+    .filter((resource) => isDeletedSupportSpareResource(resource))
+    .map((resource) => String(resource.id || "")));
 }
 
 function supportResourceInput(row, fieldName, type = "text", disabled = false) {
@@ -7963,10 +8102,11 @@ function supportOrganizationSelect(key, selectedNodeId, disabled = false) {
 }
 
 function updateSupportResourceOverride(key, fieldName, value) {
-  if (!key || !fieldName) return;
+  if (!key || !fieldName) return false;
   if (!Array.isArray(scenario.supportResources)) scenario.supportResources = [];
   const resource = scenario.supportResources.find((item) => item && item.id === key);
-  if (!resource) return;
+  if (!resource) return false;
+  if (isSpareSupportResource(resource) && !selectedSpareResourceIsEditable(resource)) return false;
   const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : value;
   if (fieldName === "organizationNodeId") {
     const orgNode = findSupportOrgTreeNode(nextValue);
@@ -7981,6 +8121,23 @@ function updateSupportResourceOverride(key, fieldName, value) {
     if (autofill.name) resource.name = autofill.name;
   }
   updatePreviewResultsThroughApiClient();
+  return true;
+}
+
+function selectedSpareResourceIsEditable(resource) {
+  const selectedNode = selectedEditableSpareSupportOrgNode();
+  return Boolean(selectedNode && supportResourceBelongsToOrg(resource, selectedNode));
+}
+
+function selectedEditableSpareSupportOrgNode() {
+  const page = getFeaturePageById(selectedFeatureId);
+  if (supportResourceTypeForPage(page) !== "备件" || currentModelingPageLocked(page)) return null;
+  const orgTree = supportOrganizationTree();
+  const root = orgTree[0] || null;
+  const selectedNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree);
+  return selectedNode && selectedNode !== root && !(selectedNode.children || []).length
+    ? selectedNode
+    : null;
 }
 
 function supportSpareAutofillByModel(model) {
@@ -8012,11 +8169,45 @@ function toggleAllSupportResourceSelection(activeResourceType, checked) {
 }
 
 function deleteSelectedSupportResources() {
+  const page = getFeaturePageById(selectedFeatureId);
+  const activeResourceType = supportResourceTypeForPage(page);
+  if (!activeResourceType || currentModelingPageLocked(page)) {
+    selectedSupportResourceKeys = new Set();
+    return false;
+  }
+  const selectedSpareOrgNode = activeResourceType === "备件"
+    ? selectedEditableSpareSupportOrgNode()
+    : null;
+  if (activeResourceType === "备件" && !selectedSpareOrgNode) {
+    selectedSupportResourceKeys = new Set();
+    return false;
+  }
+  let deleted = false;
+  const deletedSpareTombstones = [];
   if (Array.isArray(scenario.supportResources)) {
-    scenario.supportResources = scenario.supportResources.filter((resource) => !selectedSupportResourceKeys.has(resource.id));
+    scenario.supportResources = scenario.supportResources.filter((resource) => {
+      const selected = selectedSupportResourceKeys.has(resource.id);
+      const matchingType = supportResourceTypeLabel(resource.type) === activeResourceType;
+      const matchingSpareOrg = activeResourceType !== "备件"
+        || supportResourceBelongsToOrg(resource, selectedSpareOrgNode);
+      if (selected && matchingType && matchingSpareOrg) {
+        deleted = true;
+        if (activeResourceType === "备件") {
+          deletedSpareTombstones.push(createDeletedSupportSpareResource(resource, selectedSpareOrgNode));
+        }
+        return false;
+      }
+      return true;
+    });
+    for (const tombstone of deletedSpareTombstones) {
+      if (!scenario.supportResources.some((resource) => resource.id === tombstone.id)) {
+        scenario.supportResources.push(tombstone);
+      }
+    }
   }
   selectedSupportResourceKeys = new Set();
-  updatePreviewResultsThroughApiClient();
+  if (deleted) updatePreviewResultsThroughApiClient();
+  return deleted;
 }
 
 function findSupportOrgTreeNode(id, nodes = supportOrganizationTree()) {
@@ -11945,6 +12136,7 @@ async function handleEnterWorkbench(projectId) {
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
+  resetSupportOrganizationWorkbenchSelection();
   analysisXlsxExportState = {};
   aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
   liteMesaMonteCarloStatus = "项目已切换，请重新运行 Mesa 分析。";
@@ -12513,6 +12705,7 @@ async function hydrateCurrentProjectDraftFromApi() {
     const projectJson = normalizeProjectJsonForClientDraft(rawProjectJson);
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(projectJson);
+    resetSupportOrganizationWorkbenchSelection();
     const sourceImportId = projectJson.missionProfile?.sourceImportId || "";
     if (sourceImportId && currentProject) {
       currentProject = {
@@ -12534,6 +12727,11 @@ async function hydrateCurrentProjectDraftFromApi() {
   } catch (err) {
     projectDraftHydrateStatus = `未读取到 Project draft：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
+}
+
+function resetSupportOrganizationWorkbenchSelection() {
+  selectedSupportOrgNodeId = "";
+  selectedSupportResourceKeys = new Set();
 }
 
 async function saveCurrentProjectDraftThroughApi() {
@@ -13980,6 +14178,15 @@ async function importSupportResourceTableFile(file, activeResourceType) {
     supportResourceImportStatus = "请在备件、保障人员或保障设备页面导入资源表格。";
     return false;
   }
+  const selectedSpareOrgNode = resourceType === "备件"
+    ? selectedEditableSpareSupportOrgNode()
+    : null;
+  if (resourceType === "备件" && !selectedSpareOrgNode) {
+    supportResourceImportStatus = currentModelingPageLocked()
+      ? "当前建模颗粒度为只读，不能导入备件。"
+      : "请选择具体叶子组织节点后导入备件。";
+    return false;
+  }
   if (!file) {
     supportResourceImportStatus = `未选择${resourceType}导入文件。`;
     return false;
@@ -13987,7 +14194,11 @@ async function importSupportResourceTableFile(file, activeResourceType) {
   try {
     const parsed = parseEquipmentStructureImportText(await file.text(), file.name);
     const rows = extractSupportResourceImportRows(parsed, resourceType);
-    const importedCount = applySupportResourceImportRows(resourceType, rows);
+    const importedCount = applySupportResourceImportRows(
+      resourceType,
+      rows,
+      selectedSpareOrgNode ? { targetOrgNodes: [selectedSpareOrgNode] } : undefined
+    );
     supportResourceImportStatus = `已导入 ${file.name}：${resourceType} ${importedCount} 行。`;
     updatePreviewResultsThroughApiClient();
     return true;
@@ -14081,8 +14292,10 @@ function supportResourceRowsFromSupportNodes(nodes, resourceType) {
   });
 }
 
-function applySupportResourceImportRows(resourceType, rawRows) {
-  const targetOrgNodes = selectedSupportImportOrgNodes();
+function applySupportResourceImportRows(resourceType, rawRows, options = {}) {
+  const targetOrgNodes = Array.isArray(options.targetOrgNodes)
+    ? options.targetOrgNodes.filter(Boolean)
+    : selectedSupportImportOrgNodes();
   if (!targetOrgNodes.length) throw new Error("未找到可导入的保障组织节点");
   const rows = (Array.isArray(rawRows) ? rawRows : [])
     .map((row, index) => normalizeSupportResourceImportRow(resourceType, row, targetOrgNodes, index))
@@ -14170,9 +14383,8 @@ function resolveSupportResourceImportOrgNode(row, targetOrgNodes, index) {
     "节点名称",
     "organizationNode"
   ], "");
-  const allOrgNodes = flattenSupportOrgTreeNodes();
   if (orgValue) {
-    const matched = allOrgNodes.find((node) => [node.id, node.name, node.supportNodeId].includes(orgValue));
+    const matched = targetOrgNodes.find((node) => [node.id, node.name, node.supportNodeId].includes(orgValue));
     if (matched) return matched;
   }
   return targetOrgNodes[Math.min(index, targetOrgNodes.length - 1)] || targetOrgNodes[0] || null;
@@ -14202,6 +14414,7 @@ function createSupportResourceImportNode(orgNode, resourceType, index) {
   const typeKey = supportResourceTypeValue(resourceType) || "resource";
   const resource = {
     id: `${orgNode.id || "support-org"}-${typeKey}-${Date.now()}-${index}`,
+    organizationNodeId: orgNode.id || "",
     supportNodeName: orgNode.name || orgNode.id || "保障节点",
     type: typeKey,
     name: resourceType,
