@@ -128,12 +128,17 @@ class BackendHttpApiTest(unittest.TestCase):
                     "project_name": "Runtime 项目",
                     "analysis_name": "任务可靠度评估",
                     "exported_at": "2026-07-18T12:00:00+08:00",
-                    "analysis_information": [["样本量", 27]],
+                    "analysis_information": [
+                        ["运行来源", "项目历史记录"],
+                        ["历史项目 ID", "project-runtime"],
+                        ["历史记录 ID", "analysis-project-a-history"],
+                        ["样本量", 27],
+                    ],
                     "summary": [["整周期任务可靠度", "66.7%", "%"]],
                     "detail_sections": [{
                         "title": "任务可靠度结果",
                         "columns": ["整周期任务可靠度"],
-                        "rows": [["66.7%"]],
+                        "rows": [["66.7%\u0001\u000b"]],
                     }],
                 }
                 req = request.Request(
@@ -157,6 +162,28 @@ class BackendHttpApiTest(unittest.TestCase):
                 workbook = load_workbook(BytesIO(body), read_only=True)
                 self.assertEqual(workbook.sheetnames, ["分析信息", "结果摘要", "结果明细"])
                 self.assertEqual(workbook["结果摘要"]["B2"].value, "66.7%")
+                self.assertEqual(workbook["结果明细"]["A3"].value, "66.7%")
+                information = dict(workbook["分析信息"].iter_rows(min_row=2, values_only=True))
+                self.assertEqual(information["项目名称"], "Runtime 项目")
+                self.assertEqual(information["运行来源"], "项目历史记录")
+                self.assertEqual(information["历史项目 ID"], "project-runtime")
+                self.assertEqual(information["历史记录 ID"], "analysis-project-a-history")
+                self.assertNotIn("实验方案 ID", information)
+
+                with mock.patch(
+                    "src.spare_mvp_backend.analysis_xlsx.Workbook.save",
+                    side_effect=ValueError("openpyxl write failed"),
+                ):
+                    status, error = self._json_error_with_status(
+                        base_url,
+                        "POST",
+                        "/analysis-results/export-xlsx",
+                        payload,
+                        auth_token=token,
+                    )
+                self.assertEqual(status, 400)
+                self.assertEqual(error["code"], "analysis_export_invalid")
+                self.assertIn("无法写入 Excel", error["message"])
             finally:
                 server.shutdown()
                 server.server_close()

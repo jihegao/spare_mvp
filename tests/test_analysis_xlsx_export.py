@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import unittest
+from unittest import mock
 
 from openpyxl import load_workbook
 
@@ -102,6 +103,20 @@ class AnalysisXlsxExportTest(unittest.TestCase):
         self.assertEqual(workbook["结果明细"]["A3"].value, "'=HYPERLINK(\"bad\")")
         self.assertEqual(workbook["结果明细"]["B3"].value, "'+1+1")
         self.assertEqual(workbook["结果明细"]["A3"].data_type, "s")
+
+    def test_illegal_xml_controls_are_removed_but_tab_newline_and_carriage_return_remain(self) -> None:
+        payload = self._payload("spare_shortfall")
+        payload["detail_sections"][0]["rows"] = [["保留\t制表\n换行\r回车\x01\x08\x0b\x0c\x1f", "80%"]]
+        workbook = load_workbook(io.BytesIO(export_analysis_snapshot_xlsx(payload)["body"]), data_only=False)
+        self.assertEqual(workbook["结果明细"]["A3"].value, "保留\t制表\n换行\r回车")
+
+    def test_openpyxl_write_failure_becomes_a_chinese_analysis_error(self) -> None:
+        with mock.patch(
+            "src.spare_mvp_backend.analysis_xlsx.Workbook.save",
+            side_effect=ValueError("openpyxl write failed"),
+        ):
+            with self.assertRaisesRegex(AnalysisXlsxError, "包含无法写入 Excel 的字符或数值"):
+                export_analysis_snapshot_xlsx(self._payload("spare_shortfall"))
 
     def test_detail_rows_are_capped_with_an_explicit_information_note(self) -> None:
         payload = self._payload("carry_list")

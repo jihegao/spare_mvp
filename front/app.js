@@ -10864,6 +10864,53 @@ function selectedExperimentPlanProjectJson() {
   return buildBackendProjectJson(source, currentProject);
 }
 
+function captureAnalysisSourceIdentity() {
+  const context = selectedExperimentPlanContext();
+  const projectJson = selectedExperimentPlanProjectJson();
+  const projectName = String(
+    projectJson.projectInfo?.name
+    || currentProject?.name
+    || projectJson.experiment?.name
+    || "未命名项目"
+  ).trim();
+  const projectId = String(projectJson.project_id || currentBackendProjectId() || "").trim();
+  if (context?.kind === "experiment-plan") {
+    return {
+      kind: "experiment-plan",
+      projectName,
+      projectId,
+      experimentPlanName: String(context.name || "未命名方案").trim(),
+      experimentPlanId: String(context.key || "").trim()
+    };
+  }
+  return { kind: "current-project", projectName, projectId };
+}
+
+function historicalAnalysisSourceIdentity(record, snapshot = {}) {
+  const recordProjectId = String(record?.project_id || record?.projectId || "").trim();
+  const embedded = snapshot?.analysisSource;
+  if (
+    embedded?.kind === "experiment-plan"
+    && String(embedded.experimentPlanId || "").trim()
+    && String(embedded.projectId || "").trim() === recordProjectId
+  ) {
+    return {
+      ...embedded,
+      kind: "experiment-plan-history",
+      historyAnalysisId: String(record?.analysis_id || record?.analysisId || "").trim(),
+      historyCreatedAt: record?.created_at || record?.createdAt || ""
+    };
+  }
+  const projectJson = currentProjectJsonForExperimentContext();
+  return {
+    kind: "project-history",
+    projectName: String(projectJson.projectInfo?.name || currentProject?.name || "未命名项目").trim(),
+    projectId: recordProjectId,
+    historyAnalysisId: String(record?.analysis_id || record?.analysisId || "").trim(),
+    historyCreatedAt: record?.created_at || record?.createdAt || ""
+  };
+}
+
 async function resolveSelectedExperimentPlanProjectJsonForRun() {
   const context = selectedExperimentPlanContext();
   const projectJson = selectedExperimentPlanProjectJson();
@@ -17475,13 +17522,15 @@ function ensureAircraftMissionReliabilitySelection(options) {
   return missions;
 }
 
-function calculateAircraftMissionReliability(projectJson) {
+function calculateAircraftMissionReliability(projectJson, analysisSource = captureAnalysisSourceIdentity()) {
   const evaluated = evaluateAircraftMissionReliability(projectJson, {
     aircraftModel: aircraftMissionReliabilityState.aircraftModel,
     missionProfileId: aircraftMissionReliabilityState.missionProfileId,
     durationHours: Number(aircraftMissionReliabilityState.durationHours)
   });
-  const result = evaluated?.ok ? { ...evaluated, analyzedAt: new Date().toISOString() } : evaluated;
+  const result = evaluated?.ok
+    ? { ...evaluated, analyzedAt: new Date().toISOString(), analysisSource }
+    : evaluated;
   aircraftMissionReliabilityState.result = result;
   aircraftMissionReliabilityState.status = result?.message || (result?.ok ? "任务可靠度计算完成。" : "可靠度计算被阻止，请检查输入。");
   return result;
@@ -17511,7 +17560,10 @@ function updateAircraftMissionReliabilityInput(field, value) {
 async function handleAircraftMissionReliabilityAction(action, analysisId = "") {
   if (action === "run") {
     setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
-    const result = calculateAircraftMissionReliability(aircraftMissionReliabilityContextProjectJson());
+    const result = calculateAircraftMissionReliability(
+      aircraftMissionReliabilityContextProjectJson(),
+      captureAnalysisSourceIdentity()
+    );
     aircraftMissionReliabilityState.result = result?.ok ? result : null;
     aircraftMissionReliabilityState.actionStatus = result?.ok ? "分析完成。" : "分析未完成，请检查输入与建模数据。";
     aircraftMissionReliabilityState.viewingHistoryId = "";
@@ -17521,7 +17573,12 @@ async function handleAircraftMissionReliabilityAction(action, analysisId = "") {
     const record = aircraftMissionReliabilityState.history.find((item) => String(item.analysis_id || item.analysisId) === analysisId);
     const snapshot = record?.snapshot || record?.snapshot_json || record?.result || null;
     if (snapshot && typeof snapshot === "object") {
-      aircraftMissionReliabilityState.result = { ...snapshot, ok: true };
+      aircraftMissionReliabilityState.result = {
+        ...snapshot,
+        ok: true,
+        analyzedAt: snapshot.analyzedAt || snapshot.analyzed_at || record?.created_at || record?.createdAt || "",
+        analysisSource: historicalAnalysisSourceIdentity(record, snapshot)
+      };
       aircraftMissionReliabilityState.aircraftModel = snapshot.aircraftModel || snapshot.aircraft_model || aircraftMissionReliabilityState.aircraftModel;
       aircraftMissionReliabilityState.missionProfileId = snapshot.missionProfile?.id || snapshot.mission_profile_id || aircraftMissionReliabilityState.missionProfileId;
       aircraftMissionReliabilityState.durationHours = snapshot.durationHours || snapshot.duration_hours || aircraftMissionReliabilityState.durationHours;
@@ -17619,7 +17676,7 @@ function analysisXlsxPayloadForPage(page, result) {
   }
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const settings = liteMesaAnalysisEffectiveSettings(definition);
-  const common = analysisXlsxCommonPayload(page, definition.title, result?.completedAt, settings);
+  const common = analysisXlsxCommonPayload(page, definition.title, result?.completedAt, settings, result?.analysisSource);
   if (definition.analysisType === "spare_shortfall") {
     const productsById = analysisProductsById();
     const rows = visibleSpareShortfallRows(result);
@@ -17725,11 +17782,17 @@ function analysisXlsxPayloadForPage(page, result) {
 function aircraftMissionReliabilityXlsxPayload(page, result) {
   const reliability = Number(result.aircraftReliability ?? result.reliability ?? 0);
   const failureProbability = Number(result.failureProbability ?? (1 - reliability));
-  const common = analysisXlsxCommonPayload(page, "飞机任务可靠性评估", result.analyzedAt, {
-    aircraftModel: result.aircraftModel,
-    missionProfile: result.missionProfile?.name || result.missionProfileName || "",
-    durationHours: result.durationHours
-  });
+  const common = analysisXlsxCommonPayload(
+    page,
+    "飞机任务可靠性评估",
+    result.analyzedAt,
+    {
+      aircraftModel: result.aircraftModel,
+      missionProfile: result.missionProfile?.name || result.missionProfileName || "",
+      durationHours: result.durationHours
+    },
+    result.analysisSource
+  );
   return {
     ...common,
     analysis_type: "aircraft_mission_reliability",
@@ -17756,28 +17819,44 @@ function aircraftMissionReliabilityXlsxPayload(page, result) {
   };
 }
 
-function analysisXlsxCommonPayload(page, analysisName, analysisTime, settings = {}) {
-  const context = selectedExperimentPlanContext();
-  const projectJson = selectedExperimentPlanProjectJson();
-  const projectName = String(projectJson.projectInfo?.name || currentProject?.name || "未命名项目").trim();
+function analysisXlsxCommonPayload(page, analysisName, analysisTime, settings = {}, analysisSource = null) {
+  const source = analysisSource && typeof analysisSource === "object"
+    ? analysisSource
+    : { kind: "unbound", projectName: "来源未确认项目" };
+  const projectName = String(source.projectName || "来源未确认项目").trim();
   const exportedAt = new Date().toISOString();
   const information = [
     ["分析时间", analysisTime || exportedAt],
-    ["运行来源", context?.kind === "experiment-plan" ? "已保存实验方案" : "当前项目"],
+    ...analysisXlsxSourceInformation(source),
     ...Object.entries(settings).map(([key, value]) => [analysisSettingExportLabel(key), value ?? ""])
   ];
-  if (context?.kind === "experiment-plan") {
-    information.splice(2, 0,
-      ["实验方案名称", context.name || "未命名方案"],
-      ["实验方案 ID", context.key]
-    );
-  }
   return {
     project_name: projectName,
     analysis_name: analysisName,
     exported_at: exportedAt,
     analysis_information: information
   };
+}
+
+function analysisXlsxSourceInformation(source) {
+  if (["experiment-plan", "experiment-plan-history"].includes(source.kind)) {
+    return [
+      ["运行来源", source.kind === "experiment-plan-history" ? "实验方案历史记录" : "已保存实验方案"],
+      ["实验方案名称", source.experimentPlanName || "未命名方案"],
+      ["实验方案 ID", source.experimentPlanId || ""],
+      ...(source.historyAnalysisId ? [["历史记录 ID", source.historyAnalysisId]] : []),
+      ...(source.historyCreatedAt ? [["历史记录时间", source.historyCreatedAt]] : [])
+    ];
+  }
+  if (source.kind === "project-history") {
+    return [
+      ["运行来源", "项目历史记录"],
+      ...(source.projectId ? [["历史项目 ID", source.projectId]] : []),
+      ...(source.historyAnalysisId ? [["历史记录 ID", source.historyAnalysisId]] : []),
+      ...(source.historyCreatedAt ? [["历史记录时间", source.historyCreatedAt]] : [])
+    ];
+  }
+  return [["运行来源", source.kind === "current-project" ? "当前项目" : "来源未确认"]];
 }
 
 function analysisSettingExportLabel(key) {
@@ -18142,6 +18221,7 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
 
 async function runLiteMesaAnalysisPage(page) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
+  const analysisSource = captureAnalysisSourceIdentity();
   const settings = liteMesaAnalysisEffectiveSettings(definition);
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(settings.samples) || 1)));
   const seed = Math.trunc(Number(settings.seed) || 1);
@@ -18173,7 +18253,8 @@ async function runLiteMesaAnalysisPage(page) {
       ...liteMesaAnalysisResults,
       [definition.analysisType]: {
         ...normalizeLiteMesaAnalysisResult(definition, response),
-        completedAt: new Date().toISOString()
+        completedAt: new Date().toISOString(),
+        analysisSource
       }
     };
   } catch (err) {

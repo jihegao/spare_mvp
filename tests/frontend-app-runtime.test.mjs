@@ -1282,6 +1282,7 @@ test("aircraft mission reliability page runs explicitly and exports retained sum
       .map((request) => JSON.parse(request.options.body || "{}"))
       .at(-1);
     assert.equal(exportBody.analysis_type, "aircraft_mission_reliability");
+    assert.equal(new Map(exportBody.analysis_information).get("运行来源"), "当前项目");
     assert.equal(exportBody.summary.find(([label]) => label === "任务时长")[1], 10);
     assert.deepEqual(exportBody.detail_sections[0].columns, ["飞机型号", "任务剖面", "任务时长（小时）", "整机任务可靠度", "整机失效概率", "计算节点"]);
     assert.doesNotMatch(JSON.stringify(exportBody), /产品 A1|节点名称|串并联关系|rbdSnapshot/);
@@ -1298,6 +1299,74 @@ test("aircraft mission reliability page runs explicitly and exports retained sum
     assert.match(runtime.appNode.innerHTML, /运行上下文已更新，请重新运行/);
     await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "run" });
     assert.match(runtime.appNode.innerHTML, /<strong>0\.905<\/strong>/);
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-aircraft-mission-reliability" });
+    const planExportBody = analysisExportBodies(runtime).at(-1);
+    const planInformation = new Map(planExportBody.analysis_information);
+    assert.equal(planInformation.get("运行来源"), "已保存实验方案");
+    assert.equal(planInformation.get("实验方案名称"), "J-16 可靠性方案");
+    assert.equal(planInformation.get("实验方案 ID"), "plan-reliability-j16");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("aircraft reliability history export keeps its project identity after selecting another plan", async () => {
+  const historyAnalysisId = "analysis-project-a-history";
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-aircraft-mission-reliability",
+    projectJson: createRuntimeProjectJson({ projectInfo: { name: "项目 A" } }),
+    experimentPlans: [{
+      experiment_plan_id: "plan-b-stable-id",
+      status: "draft",
+      config: {
+        name: "方案 B",
+        projectJson: createRuntimeProjectJson({
+          project_id: "project-plan-b",
+          projectInfo: { name: "方案 B 分支项目" }
+        })
+      }
+    }],
+    aircraftReliabilityHistoryRecords: [{
+      analysis_id: historyAnalysisId,
+      project_id: "project-runtime",
+      created_at: "2026-07-17T08:00:00Z",
+      aircraft_model: "J-15",
+      mission_profile_id: "basic-runtime",
+      mission_profile_name: "项目 A 基本任务",
+      duration_hours: 5,
+      aircraft_reliability: 0.9,
+      snapshot: {
+        aircraftModel: "J-15",
+        missionProfile: { id: "basic-runtime", name: "项目 A 基本任务" },
+        durationHours: 5,
+        aircraftReliability: 0.9,
+        failureProbability: 0.1,
+        rows: []
+      }
+    }]
+  });
+
+  try {
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-b-stable-id" });
+    assert.match(runtime.appNode.innerHTML, /方案 B/);
+    await runtime.click(
+      "[data-aircraft-reliability-action]",
+      { aircraftReliabilityAction: "view-history", analysisId: historyAnalysisId }
+    );
+    await runtime.click(
+      "[data-analysis-xlsx-export]",
+      { analysisXlsxExport: "mission-reliability-aircraft-mission-reliability" }
+    );
+
+    const body = analysisExportBodies(runtime).at(-1);
+    const information = new Map(body.analysis_information);
+    assert.equal(body.project_name, "项目 A");
+    assert.equal(information.get("运行来源"), "项目历史记录");
+    assert.equal(information.get("历史项目 ID"), "project-runtime");
+    assert.equal(information.get("历史记录 ID"), historyAnalysisId);
+    assert.equal(information.has("实验方案 ID"), false);
+    assert.doesNotMatch(JSON.stringify(body), /plan-b-stable-id|方案 B 分支项目/);
+    assert.equal(body.summary.find(([label]) => label === "整机任务可靠度")[1], "0.900");
   } finally {
     runtime.restore();
   }
@@ -1513,6 +1582,7 @@ test("spare shortfall Excel export uses only the visible aircraft filter and sor
 
     const body = analysisExportBodies(runtime).at(-1);
     assert.equal(body.analysis_type, "spare_shortfall");
+    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
     assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2]]), [
       ["J-15", "液压泵 / B-01", 5],
       ["J-15", "航电模块 / A-01", 2]
@@ -1552,6 +1622,7 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
 
     const body = analysisExportBodies(runtime).at(-1);
     assert.equal(body.analysis_type, "carry_list");
+    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
     assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[5]]), [
       ["J-15", "液压泵 / B-01", 2, "否"],
       ["J-15", "航电模块 / A-01", 4, "是"]
@@ -1585,6 +1656,7 @@ test("task reliability Excel export preserves the canonical four result_fields d
     await runtime.flush();
 
     const body = analysisExportBodies(runtime)[0];
+    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
     assert.deepEqual(body.summary.map((row) => [row[0], row[1]]), [
       ["出动架次率", "0.502"],
       ["波次成功率", "12.2%"],
@@ -1636,6 +1708,7 @@ test("downtime Excel export reuses localized display rows and the current factor
     const body = analysisExportBodies(runtime).at(-1);
     const serialized = JSON.stringify(body);
     assert.equal(body.analysis_type, "downtime_factors");
+    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
     assert.deepEqual(body.detail_sections[0].rows.map((row) => row[1]), ["备件短缺"]);
     assert.match(serialized, /DAY_2 00:01/);
     assert.match(serialized, /DAY_2 01:01/);
@@ -4907,6 +4980,7 @@ async function setupRuntimeApp({
   liteMesaAnalysisResponseDelayMs = 0,
   analysisXlsxExportError = "",
   analysisXlsxExportDelayMs = 0,
+  aircraftReliabilityHistoryRecords = [],
   backendProjects = [{
     project_id: "project-runtime",
     experiment_name: "Runtime 项目",
@@ -4924,7 +4998,7 @@ async function setupRuntimeApp({
   const backendProjectCatalog = [...backendProjects];
   const projectPayloads = new Map([[projectJson.project_id || "project-runtime", projectJson]]);
   const runtimeRuns = new Map();
-  const aircraftReliabilityHistory = [];
+  const aircraftReliabilityHistory = JSON.parse(JSON.stringify(aircraftReliabilityHistoryRecords));
   let createProjectFromImportCount = 0;
   const storage = new Map([
     ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })],

@@ -24,6 +24,7 @@ MAX_DETAIL_ROWS = 10_000
 MAX_DETAIL_COLUMNS = 40
 MAX_CELL_TEXT = 32_000
 _UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_ILLEGAL_XML_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 _FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 
@@ -50,46 +51,49 @@ def export_analysis_snapshot_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
     if not summary and not any(section["rows"] for section in sections):
         raise AnalysisXlsxError("当前页面没有可导出的分析结果。")
 
-    workbook = Workbook()
-    info_sheet = workbook.active
-    info_sheet.title = "分析信息"
-    _write_table(
-        info_sheet,
-        ["信息项", "内容"],
-        [
-            ["项目名称", project_name],
-            ["分析类型", analysis_name],
-            *information,
-            *([["导出说明", f"明细超过 {MAX_DETAIL_ROWS} 行，已截断 {omitted_rows} 行。"]] if omitted_rows else []),
-        ],
-    )
+    try:
+        workbook = Workbook()
+        info_sheet = workbook.active
+        info_sheet.title = "分析信息"
+        _write_table(
+            info_sheet,
+            ["信息项", "内容"],
+            [
+                ["项目名称", project_name],
+                ["分析类型", analysis_name],
+                *information,
+                *([["导出说明", f"明细超过 {MAX_DETAIL_ROWS} 行，已截断 {omitted_rows} 行。"]] if omitted_rows else []),
+            ],
+        )
 
-    summary_sheet = workbook.create_sheet("结果摘要")
-    _write_table(summary_sheet, ["指标名称", "值", "单位"], summary)
+        summary_sheet = workbook.create_sheet("结果摘要")
+        _write_table(summary_sheet, ["指标名称", "值", "单位"], summary)
 
-    detail_sheet = workbook.create_sheet("结果明细")
-    if not sections:
-        _write_table(detail_sheet, ["结果"], [["当前页面无明细表，仅导出结果摘要。"]])
-    else:
-        row_index = 1
-        for section_index, section in enumerate(sections):
-            if section_index:
+        detail_sheet = workbook.create_sheet("结果明细")
+        if not sections:
+            _write_table(detail_sheet, ["结果"], [["当前页面无明细表，仅导出结果摘要。"]])
+        else:
+            row_index = 1
+            for section_index, section in enumerate(sections):
+                if section_index:
+                    row_index += 1
+                detail_sheet.cell(row=row_index, column=1, value=_safe_cell_value(section["title"]))
+                detail_sheet.cell(row=row_index, column=1).font = Font(bold=True, size=12)
                 row_index += 1
-            detail_sheet.cell(row=row_index, column=1, value=_safe_cell_value(section["title"]))
-            detail_sheet.cell(row=row_index, column=1).font = Font(bold=True, size=12)
-            row_index += 1
-            row_index = _write_table(
-                detail_sheet,
-                section["columns"],
-                section["rows"],
-                start_row=row_index,
-            )
-        _fit_columns(detail_sheet)
+                row_index = _write_table(
+                    detail_sheet,
+                    section["columns"],
+                    section["rows"],
+                    start_row=row_index,
+                )
+            _fit_columns(detail_sheet)
 
-    workbook.properties.title = analysis_name
-    workbook.properties.creator = "spare_mvp"
-    output = io.BytesIO()
-    workbook.save(output)
+        workbook.properties.title = analysis_name
+        workbook.properties.creator = "spare_mvp"
+        output = io.BytesIO()
+        workbook.save(output)
+    except Exception as exc:
+        raise AnalysisXlsxError("分析结果包含无法写入 Excel 的字符或数值，请检查后重试。") from exc
     return {
         "body": output.getvalue(),
         "content_type": XLSX_CONTENT_TYPE,
@@ -196,23 +200,27 @@ def _safe_cell_value(value: Any) -> str | int | float:
         return "是" if value else "否"
     if isinstance(value, (int, float)):
         return value
-    text = str(value).replace("\x00", "").strip()[:MAX_CELL_TEXT]
+    text = _clean_xml_text(value).strip()[:MAX_CELL_TEXT]
     if text.startswith(_FORMULA_PREFIXES):
         return f"'{text}"
     return text
 
 
 def _required_text(value: Any, label: str) -> str:
-    text = str(value or "").strip()
+    text = _clean_xml_text(value).strip()
     if not text:
         raise AnalysisXlsxError(f"缺少{label}，无法导出。")
     return text
 
 
 def _safe_filename_segment(value: Any, fallback: str) -> str:
-    text = _UNSAFE_FILENAME.sub("_", str(value or "")).strip(" .")
+    text = _UNSAFE_FILENAME.sub("_", _clean_xml_text(value)).strip(" .")
     text = re.sub(r"\s+", " ", text)[:60].strip(" .")
     return text or fallback
+
+
+def _clean_xml_text(value: Any) -> str:
+    return _ILLEGAL_XML_CHARACTERS.sub("", str(value or ""))
 
 
 def _export_timestamp(value: Any) -> datetime:
