@@ -3011,8 +3011,9 @@ test("lite Mesa run context separates the current Project from persisted Experim
     appSource.indexOf("function selectCurrentExperimentPlan"),
     appSource.indexOf("function toggleExperimentPlanSelection")
   );
-  assert.match(runContextSelectionSource, /selectedRunContextKey = selected\.key/);
-  assert.match(runContextSelectionSource, /persistSelectedRunContextKey\(\)/);
+  assert.match(runContextSelectionSource, /replaceSelectedRunContextKey\(selected\.key, \{ persist: true \}\)/);
+  assert.match(appSource, /function replaceSelectedRunContextKey/);
+  assert.match(appSource, /solaraVisualizationProjectIdOverrideContextKey = ""/);
   assert.doesNotMatch(runContextSelectionSource, /selectedExperimentPlanKeys|experimentPlan =/);
 });
 
@@ -3073,7 +3074,7 @@ test("visible simulation embeds Solara while Monte Carlo and analysis launches u
     appSource.indexOf("function normalizeLiteMesaAnalysisResult")
   );
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function visualizationStreamEventClass")
   );
   const visualSaveSource = appSource.slice(
@@ -3117,6 +3118,58 @@ test("visible simulation embeds Solara while Monte Carlo and analysis launches u
   assert.doesNotMatch(visualSource, /当前 Project 回放/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
+});
+
+test("visual simulation uses only persisted ExperimentPlan IDs and fails closed without a selection", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const visualDropdownSource = appSource.slice(
+    appSource.indexOf("function visualSimulationExperimentPlanOptions"),
+    appSource.indexOf("function currentContextSummary")
+  );
+  const visualSelectionSource = appSource.slice(
+    appSource.indexOf("function selectedVisualSimulationExperimentPlanContext"),
+    appSource.indexOf("function renderVisualSimulationExperimentPlanDropdown")
+  );
+  const mesaControlSource = appSource.slice(
+    appSource.indexOf("async function handleMesaControl"),
+    appSource.indexOf("function startVisualizationReplay")
+  );
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation(page)"),
+    appSource.indexOf("function visualizationStreamEventClass")
+  );
+
+  assert.match(visualDropdownSource, /filter\(\(option\) => option\.kind === "experiment-plan"\)/);
+  assert.match(visualSelectionSource, /option\.key === selectedRunContextKey/);
+  assert.match(visualDropdownSource, /<span>实验方案<\/span>/);
+  assert.match(visualDropdownSource, /aria-label="实验方案"/);
+  assert.match(visualDropdownSource, /<option value="\$\{htmlEscape\(option\.key\)\}"/);
+  assert.doesNotMatch(visualDropdownSource, /<optgroup|已保存实验方案|current-project:/);
+  assert.match(visualDropdownSource, /暂无实验方案/);
+  assert.match(mesaControlSource, /!visualContext/);
+  assert.match(mesaControlSource, /selectedRunContextKey !== contextKey/);
+  assert.match(visualSource, /solaraVisualizationProjectIdOverrideContextKey === context\?\.key/);
+  assert.match(visualSource, /data-visual-simulation-plan-empty/);
+  assert.match(visualSource, /data-plan-list-link>前往实验方案管理<\/button>/);
+  assert.match(visualSource, /context \? `<iframe/);
+  assert.match(visualSource, /data-mesa-control="reload-solara" \$\{context \? "" : "disabled"\}/);
+  assert.match(visualSource, /experimentPlanId: context\.plan\.experiment_plan_id/);
+});
+
+test("ExperimentPlan list refresh rejects stale responses from another Project or request epoch", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const refreshSource = appSource.slice(
+    appSource.indexOf("function resetExperimentPlanListLoadState"),
+    appSource.indexOf("async function deleteExperimentPlanFromList")
+  );
+
+  assert.match(refreshSource, /backendExperimentPlansRequestEpoch \+= 1/);
+  assert.match(refreshSource, /const requestEpoch = \+\+backendExperimentPlansRequestEpoch/);
+  assert.match(refreshSource, /requestEpoch === backendExperimentPlansRequestEpoch/);
+  assert.match(refreshSource, /backendExperimentPlansProjectId === normalizedProjectId/);
+  assert.match(refreshSource, /currentBackendProjectId\(\) === normalizedProjectId/);
+  assert.match(refreshSource, /if \(!requestIsCurrent\(\)\) return/);
+  assert.match(refreshSource, /if \(requestIsCurrent\(\)\) backendExperimentPlansLoadInFlight = false/);
 });
 
 test("M9.8 docs mark platform embedding complete without making independent-mesa a runtime entry", async () => {
@@ -3693,7 +3746,7 @@ test("formal run starts only allow imported sample projects", async () => {
 test("visual simulation refreshes Solara iframe instead of starting Lite Mesa replay", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function visualizationStreamEventClass")
   );
   const reloadSource = appSource.slice(
@@ -4319,12 +4372,49 @@ test("system management exposes project management and base configuration pages"
   assert.match(styleSource, /\.modeling-config-grid/);
   assert.match(styleSource, /\.modeling-form-config-grid/);
   assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*max-width:\s*1040px/s);
-  assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(320px,\s*1fr\)\)/s);
+  assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(styleSource, /\.field-checkbox-grid/);
   assert.match(styleSource, /\.granularity-check\s*\{[^}]*color:\s*var\(--primary\)/s);
   assert.match(styleSource, /\.granularity-field-checkbox\s*\{[^}]*appearance:\s*none[^}]*opacity:\s*1/s);
   assert.match(styleSource, /\.granularity-field-checkbox:checked::after\s*\{/);
   assert.match(styleSource, /\.granularity-field-checkbox:disabled\s*\{[^}]*opacity:\s*1/s);
+});
+
+test("modeling form product catalog collapse is accessible and does not reserve layout space", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const formSource = appSource.slice(
+    appSource.indexOf("function renderModelingFormManagementConfig"),
+    appSource.indexOf("function renderProductCatalogManagement")
+  );
+  const productSource = appSource.slice(
+    appSource.indexOf("function renderProductCatalogManagement"),
+    appSource.indexOf("function renderProductCatalogEditor")
+  );
+
+  assert.match(appSource, /let isProductCatalogCollapsed = false/);
+  assert.match(appSource, /const productCatalogCollapseButton = event\.target\.closest\("\[data-product-catalog-collapse-toggle\]"\)/);
+  assert.match(appSource, /isProductCatalogCollapsed = !isProductCatalogCollapsed;\s*render\(\);/s);
+  assert.match(productSource, /<button[\s\S]*?type="button"[\s\S]*?data-product-catalog-collapse-toggle/);
+  assert.match(productSource, /aria-expanded="\$\{String\(!isProductCatalogCollapsed\)\}"/);
+  assert.match(productSource, /aria-controls="product-catalog-content"/);
+  assert.match(productSource, /aria-label="\$\{isProductCatalogCollapsed \? "展开产品列表" : "折叠产品列表"\}"/);
+  assert.match(productSource, /isProductCatalogCollapsed \? "展开列表" : "收起列表"/);
+  assert.match(productSource, /id="product-catalog-content"[\s\S]*?data-product-catalog-content \$\{isProductCatalogCollapsed \? "hidden" : ""\}/);
+
+  const productIndex = formSource.indexOf("${renderProductCatalogManagement()}");
+  const timeUnitIndex = formSource.indexOf("data-modeling-form-time-unit-fields");
+  assert.ok(productIndex >= 0 && productIndex < timeUnitIndex, "time unit fields must follow the product catalog in DOM order");
+  assert.doesNotMatch(formSource, /class="[^"]*spacer|data-layout-spacer/i);
+
+  assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*align-content:\s*start/s);
+  assert.match(styleSource, /\.product-catalog-content\[hidden\]\s*\{[^}]*display:\s*none/s);
+  assert.match(styleSource, /\.modeling-form-time-unit-card\s*\{[^}]*scroll-margin-block-start:\s*12px/s);
+  assert.match(styleSource, /@media \(max-width:\s*760px\)[\s\S]*?\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(styleSource, /@media \(max-width:\s*760px\)[\s\S]*?\.product-catalog-section-head\s*\{[^}]*flex-direction:\s*column/s);
+  assert.doesNotMatch(styleSource, /\.modeling-form-config-grid\s*\{[^}]*(?:min-)?height\s*:/s);
+  assert.doesNotMatch(styleSource, /\.product-catalog-content\s*\{[^}]*min-height\s*:/s);
+  assert.doesNotMatch(styleSource, /\.modeling-form-time-unit-card\s*\{[^}]*min-height\s*:/s);
 });
 
 test("user management add and edit actions open an editable user form", async () => {
@@ -4421,7 +4511,7 @@ test("editable and project text values are escaped before template insertion", a
 test("visual simulation page embeds the Solara visualization frame", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function visualizationStreamEventClass")
   );
   assert.match(appSource, /mesa-visual-shell/);
@@ -4455,7 +4545,7 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function renderVisualizationEventStream")
   );
   const stageSource = appSource.slice(
@@ -4647,7 +4737,7 @@ test("visual simulation embeds Solara without demo fallback", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function renderVisualizationEventStream")
   );
 
@@ -4675,7 +4765,7 @@ test("M9 state-series replay remains internal while visual page embeds Solara", 
     appSource.indexOf("async function hydrateLastBackendRunFromApi")
   );
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function visualizationStreamEventClass")
   );
   const controlSource = appSource.slice(
@@ -4712,7 +4802,7 @@ test("M9 state-series replay remains internal while visual page embeds Solara", 
 test("visual simulation places Solara refresh inside the iframe frame", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function renderVisualizationEventStream")
   );
 
@@ -4764,7 +4854,7 @@ test("M9.2 visual simulation keeps state stream support behind the simplified re
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function visualizationStreamEventClass")
   );
   const controlHandlerSource = appSource.slice(
@@ -4792,14 +4882,15 @@ test("M9.2 visual simulation keeps state stream support behind the simplified re
 test("visual simulation enters the Solara Mesa page without a replay list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
-    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualSimulation(page)"),
     appSource.indexOf("function visualizationStreamEventClass")
   );
 
   assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
   assert.doesNotMatch(appSource, /data-mesa-run-select/);
   assert.doesNotMatch(visualSource, /选择回放/);
-  assert.doesNotMatch(visualSource, /<select/);
+  assert.match(visualSource, /renderExperimentPlanContextDropdown\(page\)/);
+  assert.doesNotMatch(visualSource, /data-mesa-run-select|选择回放/);
   assert.match(visualSource, /data-mesa-control="reload-solara"/);
   assert.match(visualSource, /刷新推演/);
   assert.doesNotMatch(visualSource, /启动回放|暂停回放|启动新仿真/);
