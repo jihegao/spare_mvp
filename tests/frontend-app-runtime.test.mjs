@@ -1979,6 +1979,140 @@ test("equipment parent node selector uses Chinese names while retaining parent I
   }
 });
 
+test("equipment template and current-model export keep product IDs in Chinese CSV round trips", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
+      products: [{ id: "product-engine", name: "发动机产品", model: "WS-10", kind: "LRU" }],
+      components: [
+        { id: "engine-left", name: "左发动机", model: "WS-10", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
+        { id: "engine-right", name: "右发动机", model: "WS-10", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(runtime, /data-equipment-export-data/, "equipment export action should render");
+
+    await runtime.click("[data-equipment-download-template]");
+    assert.equal(runtime.downloads[0].download, "装备系统建模导入模板.csv");
+    const template = await runtime.downloads[0].blob.text();
+    assert.match(template, /^节点ID,父节点ID,产品ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR,维修分布类型/m);
+
+    await runtime.click("[data-equipment-export-data]");
+    assert.equal(runtime.downloads[1].download, "装备系统建模-J-15.csv");
+    const exported = await runtime.downloads[1].blob.text();
+    assert.equal((exported.match(/product-engine/g) || []).length, 2);
+    assert.match(exported, /engine-left,aircraft-root,product-engine,左发动机,WS-10/);
+    assert.match(runtime.appNode.innerHTML, /已导出 J-15 装备结构/);
+
+    const roundTripFile = { name: "装备系统建模-J-15.csv", async text() { return exported; } };
+    await runtime.change("[data-equipment-import-file]", {}, { files: [roundTripFile], value: roundTripFile.name });
+    assert.match(runtime.appNode.innerHTML, /已导入 装备系统建模-J-15\.csv：1 个整机，2 个组件/);
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(
+      runtime,
+      (body) => body.components?.filter((component) => component.productId === "product-engine").length === 2,
+      "exported product IDs should survive import and Project save"
+    );
+    assert.deepEqual(saved.components.map((component) => component.id), ["engine-left", "engine-right"]);
+    assert.equal(saved.products.filter((product) => product.id === "product-engine").length, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment import preserves shared existing product IDs and auto-fills only blank IDs on save", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
+      products: [{ id: "product-shared", name: "共享航电产品", model: "AV-1", kind: "LRU" }],
+      components: [{ id: "old-node", name: "旧节点", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-shared", quantity: 1 }]
+    })
+  });
+  const importFile = {
+    name: "共享产品装备.csv",
+    async text() {
+      return [
+        "节点ID,父节点ID,产品ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR,维修分布类型",
+        "aircraft-root,,,J-15,J-15,整机,2,1,,,",
+        "avionics-left,aircraft-root,product-shared,左航电,AV-1,LRU,1,0.8,1200,60,固定值",
+        "avionics-right,aircraft-root,product-shared,右航电,AV-1,LRU,1,0.9,1300,70,正态分布",
+        "sensor,avionics-left,,中文传感器,S-1,SRU,2,1,800,30,固定值"
+      ].join("\n");
+    }
+  };
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.change("[data-equipment-import-file]", {}, { files: [importFile], value: importFile.name });
+
+    assert.match(runtime.appNode.innerHTML, /已导入 共享产品装备\.csv：1 个整机，3 个组件/);
+    assert.match(runtime.appNode.innerHTML, /左航电/);
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(
+      runtime,
+      (body) => body.components?.some((component) => component.id === "sensor"),
+      "equipment product associations should persist in Project JSON"
+    );
+    const sharedComponents = saved.components.filter((component) => component.productId === "product-shared");
+    const sensor = saved.components.find((component) => component.id === "sensor");
+    assert.equal(sharedComponents.length, 2);
+    assert.ok(sensor.productId);
+    assert.notEqual(sensor.productId, "product-shared");
+    assert.ok(saved.products.some((product) => product.id === sensor.productId));
+    assert.equal(saved.products.filter((product) => product.id === "product-shared").length, 1);
+    assert.equal(saved.components.find((component) => component.id === "avionics-left").parentId, "aircraft-root");
+    assert.equal(saved.components.find((component) => component.id === "avionics-left").name, "左航电");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment import rejects unknown product IDs atomically with row and ID", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
+      products: [{ id: "product-known", name: "已知产品", model: "KNOWN", kind: "LRU" }],
+      components: [{ id: "original-node", name: "原始节点", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-known", quantity: 1 }]
+    })
+  });
+  const invalidFile = {
+    name: "非法产品引用.csv",
+    async text() {
+      return [
+        "节点ID,父节点ID,产品ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR,维修分布类型",
+        "aircraft-root,,,J-15,J-15,整机,2,1,,,",
+        "valid-new,aircraft-root,product-known,有效节点,V-1,LRU,1,1,1000,60,固定值",
+        "invalid-new,aircraft-root,product-missing,非法节点,X-1,LRU,1,1,1000,60,固定值"
+      ].join("\n");
+    }
+  };
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.change("[data-equipment-import-file]", {}, { files: [invalidFile], value: invalidFile.name });
+
+    assert.match(runtime.appNode.innerHTML, /装备结构树导入失败：产品ID引用无效/);
+    assert.match(runtime.appNode.innerHTML, /第4行产品ID“product-missing”/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /有效节点|非法节点/);
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(
+      runtime,
+      (body) => body.components?.some((component) => component.id === "original-node"),
+      "failed equipment import should leave the original Project draft intact"
+    );
+    assert.deepEqual(saved.components.map((component) => component.id), ["original-node"]);
+    assert.equal(saved.products.some((product) => product.id === "product-missing"), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("equipment product search waits for Enter or focusout before filtering", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({

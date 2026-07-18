@@ -114,6 +114,12 @@ import {
   productDisplayName,
   projectProductById
 } from "./product-catalog.mjs";
+import {
+  equipmentStructureExportCsv,
+  equipmentStructureProductId,
+  equipmentStructureTemplateCsv,
+  validateEquipmentStructureProductReferences
+} from "./equipment-structure-transfer.mjs";
 
 const app = document.querySelector("#app");
 const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
@@ -2071,6 +2077,13 @@ function bindEvents() {
     const equipmentTemplateButton = event.target.closest("[data-equipment-download-template]");
     if (equipmentTemplateButton) {
       downloadEquipmentStructureTemplate();
+      return;
+    }
+
+    const equipmentExportButton = event.target.closest("[data-equipment-export-data]");
+    if (equipmentExportButton) {
+      downloadEquipmentStructureData();
+      render();
       return;
     }
 
@@ -6347,6 +6360,7 @@ function renderEquipmentModeling(page) {
           </div>
           <div class="equipment-import-row">
             <button type="button" class="equipment-template-action" data-equipment-download-template>下载模板</button>
+            <button type="button" class="equipment-template-action" data-equipment-export-data>导出当前机型</button>
             <label class="equipment-template-action">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
             <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
@@ -13346,7 +13360,7 @@ async function importEquipmentStructureTableFile(file) {
   }
   try {
     const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
-    const imported = normalizeEquipmentStructureImport(parsed);
+    const imported = normalizeEquipmentStructureImport(parsed, scenario.products);
     if (!imported.components.length && !imported.wholeMachineModels.length) {
       throw new Error("导入表格未包含有效装备节点");
     }
@@ -13357,6 +13371,7 @@ async function importEquipmentStructureTableFile(file) {
       quantity: imported.quantity || scenario.equipment?.quantity || 1
     };
     scenario.components = imported.components;
+    normalizeProjectProducts(scenario);
     selectedEquipmentNodeKey = imported.wholeMachineModels[0] ? `aircraft:${imported.wholeMachineModels[0]}` : "aircraft-list";
     selectedEquipmentComponentIndex = 0;
     equipmentImportStatus = `已导入 ${file.name}：${imported.wholeMachineModels.length} 个整机，${imported.components.length} 个组件。`;
@@ -13369,8 +13384,21 @@ async function importEquipmentStructureTableFile(file) {
 }
 
 function downloadEquipmentStructureTemplate() {
-  const content = "\uFEFF节点ID,父节点ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR,维修分布类型\naircraft-root,,示例整机,MODEL-A,装备,1,1,1000,1.5,固定\nsystem-1,aircraft-root,动力系统,SYS-001,系统,2,1,1200,2,正态分布\n";
-  downloadTextFile("装备系统建模导入模板.csv", content, "text/csv;charset=utf-8");
+  downloadTextFile("装备系统建模导入模板.csv", equipmentStructureTemplateCsv(), "text/csv;charset=utf-8");
+}
+
+function downloadEquipmentStructureData() {
+  try {
+    normalizeProjectProducts(scenario);
+    const selectedState = resolveSelectedEquipmentNode();
+    const aircraftModel = selectedState.aircraftModel || wholeMachineModels()[0] || scenario.equipment?.model || "";
+    const content = equipmentStructureExportCsv(scenario, { aircraftModel });
+    const safeModel = String(aircraftModel || "当前机型").replace(/[\\/:*?"<>|]/g, "-");
+    downloadTextFile(`装备系统建模-${safeModel}.csv`, content, "text/csv;charset=utf-8");
+    equipmentImportStatus = `已导出 ${aircraftModel} 装备结构，产品ID与当前 Project 产品目录保持关联。`;
+  } catch (err) {
+    equipmentImportStatus = `装备结构树导出失败：${err && err.message ? err.message : "数据无法导出"}`;
+  }
 }
 
 function downloadSupportActivityJobsTemplate() {
@@ -13412,12 +13440,13 @@ async function importSupportActivityJobsFile(tabKey, file) {
   }
 }
 
-function normalizeEquipmentStructureImport(input) {
+function normalizeEquipmentStructureImport(input, products = []) {
   const projectJson = input?.projectJson || input?.project_json || input?.scenario || input;
   if (projectJson && typeof projectJson === "object" && !Array.isArray(projectJson)) {
     const components = firstImportArray(projectJson, ["components", "equipmentComponents", "equipmentAssets"])
       || firstImportArray(projectJson.objects, ["components", "equipmentComponents", "equipmentAssets"]);
     if (components) {
+      validateEquipmentStructureProductReferences(components, products);
       const equipment = projectJson.equipment || projectJson.objects?.equipment || {};
       return normalizeEquipmentStructureRows(components, {
         defaultModel: equipment.model || equipment.aircraftModel || "",
@@ -13426,29 +13455,37 @@ function normalizeEquipmentStructureImport(input) {
       });
     }
   }
-  return normalizeEquipmentStructureRows(Array.isArray(input) ? input : [input]);
+  const rows = Array.isArray(input) ? input : [input];
+  validateEquipmentStructureProductReferences(rows, products);
+  return normalizeEquipmentStructureRows(rows);
 }
 
 function normalizeEquipmentStructureRows(rawRows, options = {}) {
   const rows = (Array.isArray(rawRows) ? rawRows : []).filter((row) => row && typeof row === "object");
   const wholeMachineModels = new Set((Array.isArray(options.wholeMachineModels) ? options.wholeMachineModels : []).map(String).filter(Boolean));
   const components = [];
+  let wholeMachineQuantity = Number(options.quantity || 0);
   rows.forEach((row, index) => {
     const explicitModel = pickImportText(row, ["aircraftModel", "aircraft_model", "整机", "整机名称", "飞机名称", "飞机型号", "装备型号", "targetProductModel"], "");
-    const productType = pickImportText(row, ["productType", "product_type", "组件属性", "产品类型", "节点类型", "type"], "");
+    const productType = pickImportText(row, ["productType", "product_type", "组件属性", "产品类型", "节点类型", "层级", "type"], "");
+    const productId = equipmentStructureProductId(row);
     const parentId = pickImportText(row, ["parentId", "parent_id", "父节点", "父节点ID", "上级节点", "parent"], "");
-    const name = pickImportText(row, ["name", "组件名称", "节点名称", "装备名称", "componentName"], "");
+    const name = pickImportText(row, ["name", "系统名称", "组件名称", "节点名称", "装备名称", "componentName"], "");
     const id = pickImportText(row, ["id", "componentId", "组件ID", "节点ID", "object_id"], "");
     const isWholeMachine = /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
-    const aircraftModel = explicitModel || options.defaultModel || pickImportText(row, ["model", "型号"], "");
+    const rowModel = pickImportText(row, ["model", "型号"], "");
+    const aircraftModel = explicitModel
+      || options.defaultModel
+      || (isWholeMachine ? rowModel : Array.from(wholeMachineModels)[0] || rowModel);
     if (isWholeMachine) {
       wholeMachineModels.add(aircraftModel || name || id || `导入整机${wholeMachineModels.size + 1}`);
+      wholeMachineQuantity = pickImportNumber(row, ["quantity", "安装数", "数量", "装机数量", "n"], wholeMachineQuantity || 1);
       return;
     }
     const componentAircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || options.defaultModel || "导入整机";
     wholeMachineModels.add(componentAircraftModel);
     const componentId = id || `${componentAircraftModel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-import-${index + 1}`;
-    const quantity = Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "数量", "装机数量", "n"], row.quantity ?? 1)));
+    const quantity = Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "安装数", "数量", "装机数量", "n"], row.quantity ?? 1)));
     const importedKRaw = row.kOutOfN && typeof row.kOutOfN === "object" && !Array.isArray(row.kOutOfN)
       ? String(row.kOutOfN.k ?? "").trim()
       : pickImportText(row, ["kOutOfN", "k", "K值", "K值（n中取k）", "可用数量要求k", "n中取k"], "");
@@ -13457,14 +13494,26 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
       ...row,
       id: componentId,
       name: name || componentId,
+      model: pickImportText(row, ["componentModel", "component_model", "model", "型号"], rowModel),
       aircraftModel: componentAircraftModel,
       parentId: parentId || "aircraft-root",
+      productId,
       productType: /^(LRU|SRU)$/i.test(productType) ? productType.toUpperCase() : (productType && !/整机|whole|aircraft/i.test(productType) ? productType : ""),
+      level: pickImportText(row, ["level", "层级"], row.level || ""),
       quantity,
+      runningRatio: pickImportNumber(row, ["runningRatio", "running_ratio", "运行比"], row.runningRatio ?? row.missionUse?.runningRatio ?? 1),
       kOutOfN: { enabled: quantity > 1, n: quantity, k: importedK },
       connectionType: pickImportText(row, ["connectionType", "连接方式", "结构类型"], row.connectionType || "串联"),
       mtbfHours: pickImportNumber(row, ["mtbfHours", "MTBF", "mtbf", "平均故障间隔"], row.mtbfHours ?? 120),
-      meanRepairTimeMinutes: pickImportNumber(row, ["meanRepairTimeMinutes", "MTTR", "mttr", "平均修复时间"], row.meanRepairTimeMinutes ?? 120)
+      meanRepairTimeMinutes: pickImportNumber(row, ["meanRepairTimeMinutes", "MTTR", "mttr", "平均修复时间"], row.meanRepairTimeMinutes ?? 120),
+      repairDistribution: {
+        ...(row.repairDistribution && typeof row.repairDistribution === "object" ? row.repairDistribution : {}),
+        distributionType: pickImportText(
+          row,
+          ["repairDistributionType", "维修分布类型"],
+          row.repairDistribution?.distributionType || "固定值"
+        )
+      }
     };
     const kMessage = validateEquipmentComponentKOutOfN(nextComponent);
     if (kMessage) {
@@ -13476,7 +13525,7 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
   return {
     wholeMachineModels: models,
     components,
-    quantity: Math.max(1, Math.floor(Number(options.quantity || 1)))
+    quantity: Math.max(1, Math.floor(Number(wholeMachineQuantity || 1)))
   };
 }
 
