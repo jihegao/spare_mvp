@@ -12,6 +12,7 @@ import jsonschema
 
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 from src.spare_mvp_backend.m9_6_case_package import build_m9_6_platform_case_export
+from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -684,13 +685,112 @@ class SimulationAdapterTest(unittest.TestCase):
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["missionProfile"].pop("durationHours", None)
         project["missionProfile"]["periodicTasks"] = [
-            {"id": "periodic-1", "name": "weekly", "repeatCycleValue": 2, "repeatCycleUnit": "week", "repeatCount": 2}
+            {
+                "id": "periodic-1", "name": "weekly", "repeatCycleValue": 2,
+                "repeatCycleUnit": "week", "repeatCount": 2,
+                "compositeTaskIds": ["composite-day-cap"],
+            }
         ]
 
         result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
 
         self.assertEqual(result["status"], "compiled")
         self.assertEqual(result["scenario"]["simulation_inputs"]["time"]["duration_minutes"], 28 * 24 * 60)
+        self.assertEqual(
+            result["scenario"]["simulation_inputs"]["mission_profile"]["periodic_source"],
+            {"level": "week", "label": "周剖面", "configured_slots": 1},
+        )
+
+    def test_aircraft_support_v1_compiles_three_day_week_profile_without_higher_profiles(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["missionProfile"].pop("durationHours", None)
+        project["missionProfile"]["periodicTasks"] = [{
+            "id": "week-three-day", "name": "three day", "cycleDays": 7, "repeatWeeks": 1,
+            "compositeTaskIds": ["composite-day-cap"],
+            "compositeTasks": [
+                {"weekIndex": 1, "weekday": day, "compositeTaskId": "composite-day-cap"}
+                for day in ("mondayCompositeTaskId", "tuesdayCompositeTaskId", "wednesdayCompositeTaskId")
+            ],
+        }]
+        project["missionProfile"]["periodicProfileLists"] = {
+            "week": [{"id": "week-three-day", "name": "three day"}],
+            "month": [{"id": "month-empty", "name": "empty", "weekProfileIds": ["", "", "", ""]}],
+            "year": [{"id": "year-empty", "name": "empty", "monthProfileIds": [""] * 12}],
+        }
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "compiled")
+        inputs = result["scenario"]["simulation_inputs"]
+        self.assertEqual(inputs["mission_profile"]["periodic_source"]["level"], "week")
+        self.assertEqual(inputs["time"]["duration_minutes"], 3 * 24 * 60)
+        model = AircraftSupportV1Model(inputs)
+        self.assertEqual(sorted({mission.day_index for mission in model.missions}), [1, 2, 3])
+
+    def test_aircraft_support_v1_compiles_month_profile_without_year_configuration(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["missionProfile"].pop("durationHours", None)
+        project["missionProfile"]["periodicProfileLists"] = {
+            "week": [{"id": "periodic-carrier-day-night", "name": "week"}],
+            "month": [{"id": "month-one", "name": "month", "weekProfileIds": ["periodic-carrier-day-night", "", "", ""]}],
+            "year": [{"id": "year-empty", "name": "empty", "monthProfileIds": [""] * 12}],
+        }
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "compiled")
+        inputs = result["scenario"]["simulation_inputs"]
+        self.assertEqual(inputs["mission_profile"]["periodic_source"]["level"], "month")
+        self.assertEqual(inputs["mission_profile"]["periodic_source"]["configured_slots"], 1)
+        self.assertTrue(all("__month_1" in item["id"] for item in inputs["mission_profile"]["composite_tasks"]))
+        self.assertGreater(len(AircraftSupportV1Model(inputs).missions), 0)
+
+    def test_aircraft_support_v1_periodic_profile_references_fail_closed(self) -> None:
+        cases = (
+            ("missing-basic", "missing_periodic_basic_mission_reference"),
+            ("missing-composite", "missing_periodic_composite_reference"),
+            ("missing-week", "missing_periodic_week_profile_reference"),
+            ("missing-month", "missing_periodic_month_profile_reference"),
+            ("empty-schedule", "empty_periodic_task_schedule"),
+        )
+        for missing_reference, expected_code in cases:
+            with self.subTest(expected_code=expected_code):
+                project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+                project["missionProfile"]["periodicProfileLists"] = {
+                    "week": [{"id": "periodic-carrier-day-night", "name": "week"}],
+                    "month": [{"id": "month-one", "name": "month", "weekProfileIds": ["", "", "", ""]}],
+                    "year": [{"id": "year-one", "name": "year", "monthProfileIds": [""] * 12}],
+                }
+                if expected_code == "missing_periodic_basic_mission_reference":
+                    project["missionProfile"]["compositeTasks"][0]["taskItems"][0]["basicMissionId"] = missing_reference
+                elif expected_code == "missing_periodic_composite_reference":
+                    project["missionProfile"]["periodicTasks"][0]["compositeTasks"][0]["compositeTaskId"] = missing_reference
+                elif expected_code == "missing_periodic_week_profile_reference":
+                    project["missionProfile"]["periodicProfileLists"]["month"][0]["weekProfileIds"][0] = missing_reference
+                elif expected_code == "missing_periodic_month_profile_reference":
+                    project["missionProfile"]["periodicProfileLists"]["year"][0]["monthProfileIds"][0] = missing_reference
+                else:
+                    project["missionProfile"]["periodicTasks"][0]["compositeTaskIds"] = []
+                    project["missionProfile"]["periodicTasks"][0]["compositeTasks"] = []
+
+                result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+                self.assertEqual(result["status"], "blocked")
+                self.assertIn(expected_code, {issue["code"] for issue in result["issues"]})
+
+    def test_aircraft_support_v1_periodic_profile_slot_shapes_fail_closed(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["missionProfile"]["periodicProfileLists"] = {
+            "month": [{"id": "month-invalid", "weekProfileIds": 3}],
+            "year": [{"id": "year-invalid", "monthProfileIds": ["month-invalid", 7]}],
+        }
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        issue_codes = {issue["code"] for issue in result["issues"]}
+        self.assertIn("invalid_periodic_week_profile_slots", issue_codes)
+        self.assertIn("invalid_periodic_month_profile_slot", issue_codes)
 
     def test_aircraft_support_v1_compile_gate_blocks_uninferrable_periodic_duration_without_duration_hours(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]

@@ -1387,6 +1387,7 @@ test("periodic task editor uses named week month and year profiles without total
     assert.match(runtime.appNode.innerHTML, /月剖面/);
     assert.match(runtime.appNode.innerHTML, /年剖面/);
     assert.match(runtime.appNode.innerHTML, /旧周期性任务名/);
+    assert.match(runtime.appNode.innerHTML, /当前仿真来源：周剖面（1 个）/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /上级任务名称/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /周期性任务名称/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /每周天数/);
@@ -1420,6 +1421,7 @@ test("periodic task editor uses named week month and year profiles without total
       periodicCompositionIndex: "1"
     }, { value: "" });
     assert.match(runtime.appNode.innerHTML, /1 \/ 4 周已配置/);
+    assert.match(runtime.appNode.innerHTML, /当前仿真来源：月剖面（1 个已配置周槽）/);
     await runtime.click("[data-periodic-composition-action]", {
       periodicCompositionAction: "add",
       periodicCompositionType: "month",
@@ -1457,6 +1459,7 @@ test("periodic task editor uses named week month and year profiles without total
       periodicCompositionIndex: "1"
     }, { value: "" });
     assert.match(runtime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周/);
+    assert.match(runtime.appNode.innerHTML, /当前仿真来源：年剖面（1 个已配置月槽）/);
     await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "week" });
 
     await runtime.click("[data-periodic-profile-add]", { periodicProfileAdd: "week" });
@@ -1545,6 +1548,35 @@ test("periodic task editor uses named week month and year profiles without total
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置月剖面<\/option>/g) || []).length, 11);
   } finally {
     reopenedRuntime.restore();
+  }
+});
+
+test("periodic task editor preserves invalid configured references and marks the simulation source invalid", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-periodic-task",
+    projectJson: createRuntimeProjectJson({
+      missionProfile: {
+        name: "invalid periodic references",
+        compositeTasks: [{ id: "composite-valid", name: "valid", taskItems: [] }],
+        periodicTasks: [{ id: "week-valid", name: "valid week", cycleDays: 7, repeatWeeks: 1, compositeTaskIds: ["composite-valid"] }],
+        periodicProfileLists: {
+          week: [{ id: "week-valid", name: "valid week" }],
+          month: [{ id: "month-invalid", name: "invalid month", weekProfileIds: ["week-missing", "", "", ""] }],
+          year: [{ id: "year-empty", name: "empty year", monthProfileIds: Array(12).fill("") }]
+        }
+      }
+    })
+  });
+  try {
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /仿真来源无效：月剖面引用不存在的周剖面 week-missing/);
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.missionProfile?.periodicProfileLists?.month?.[0]?.weekProfileIds?.[0] === "week-missing"
+    ), "expected invalid non-empty reference to remain visible to fail-closed validation");
+    assert.equal(savedProject.missionProfile.periodicProfileLists.month[0].weekProfileIds[0], "week-missing");
+  } finally {
+    runtime.restore();
   }
 });
 

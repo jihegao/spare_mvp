@@ -50,6 +50,16 @@
         "basic_missions": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
         "composite_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
         "periodic_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "periodic_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "label", "configured_slots"],
+          "properties": {
+            "level": { "type": "string", "enum": ["week", "month", "year"] },
+            "label": { "type": "string", "enum": ["周剖面", "月剖面", "年剖面"] },
+            "configured_slots": { "type": "integer", "minimum": 0 }
+          }
+        },
         "mission_phases": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
         "airports": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
       }
