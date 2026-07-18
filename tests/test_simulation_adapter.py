@@ -103,6 +103,64 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(result["errors"][0]["path"], "components")
         self.assertEqual(result["errors"][0]["code"], "missing_required")
 
+    def test_validate_project_rejects_duplicate_stable_support_resource_identity_and_dangling_job_key(self) -> None:
+        project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
+        product_id = project["products"][0]["id"]
+        project["supportOrganization"] = {
+            "tree": {
+                "id": "support-org-root",
+                "name": "保障组织",
+                "children": [{"id": "leaf-a", "name": "基层A", "children": []}],
+            }
+        }
+        project["supportResources"].extend([
+            {
+                "id": "support-spare:leaf-a:product-a",
+                "organizationNodeName": "leaf-a",
+                "supportNodeName": "基层A",
+                "type": "spare",
+                "productId": product_id,
+                "name": "备件A",
+                "quantity": 2,
+            },
+            {
+                "id": "support-spare:leaf-a:product-a:legacy-2",
+                "organizationNodeName": "leaf-a",
+                "supportNodeName": "基层A",
+                "type": "spare",
+                "productId": product_id,
+                "name": "备件A冲突记录",
+                "quantity": 3,
+            },
+        ])
+        project["supportActivityJobs"] = [{
+            "activityCode": "USE-001",
+            "spare": [{"key": "missing-resource", "productId": product_id, "quantity": 1}],
+        }]
+
+        result = self.adapter.validate_project(project)
+        codes = {error["code"] for error in result["errors"]}
+
+        self.assertIn("duplicate_support_resource_identity", codes)
+        self.assertIn("missing_support_resource_key_reference", codes)
+
+    def test_validate_project_rejects_duplicate_support_resource_ids_and_unknown_explicit_org(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        duplicate = copy.deepcopy(project["supportResources"][0])
+        duplicate["type"] = "spare"
+        duplicate["productId"] = "product-unknown"
+        duplicate["organizationNodeName"] = "missing-org"
+        project["supportResources"].append(duplicate)
+        project["supportOrganization"] = {
+            "tree": {"id": "root", "name": "保障组织", "children": []}
+        }
+
+        result = self.adapter.validate_project(project)
+        codes = {error["code"] for error in result["errors"]}
+
+        self.assertIn("duplicate_support_resource_id", codes)
+        self.assertIn("unknown_support_resource_organization", codes)
+
     def test_aircraft_support_v1_compiles_product_ids_and_product_display_names(self) -> None:
         project = self._with_product_catalog(self._load_fixture("aircraft_support_v1_project.json"))
 

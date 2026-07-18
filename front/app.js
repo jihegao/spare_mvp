@@ -154,6 +154,8 @@ const RUN_CONTEXT_STORAGE_KEY = "spare-mvp:selectedRunContextByProject";
 const SYSTEM_RUNTIME_CONFIG_KEY = "system-runtime-support";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
 const SUPPORT_SPARE_TOMBSTONE_ID_PREFIX = "support-spare-tombstone:";
+const SUPPORT_SPARE_RESOURCE_ID_PREFIX = "support-spare:";
+const CURRENT_PROJECT_STORAGE_KEY = "spare-mvp.current-project-id";
 let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
@@ -736,6 +738,8 @@ let projectDraftSaveStatus = "未保存";
 let projectDraftHydrateStatus = "";
 let projectDraftAutosaveTimer = null;
 let projectDraftLastSavedAt = "";
+let projectDraftRevision = 0;
+let projectDraftSaveQueue = Promise.resolve();
 let backendRun = null;
 let backendRunResult = null;
 let backendArtifactManifest = null;
@@ -1700,7 +1704,7 @@ function bindEvents() {
     if (systemManagementButton) {
       selectedRoute = "workbench";
       selectedFeatureId = accessibleFeaturePageId("system-management-project-data-management");
-      location.hash = `feature=${selectedFeatureId}`;
+      location.hash = workbenchHash(selectedFeatureId);
       render();
       return;
     }
@@ -1732,7 +1736,7 @@ function bindEvents() {
       selectedRoute = "workbench";
       experimentPlanManagementMode = "list";
       selectedFeatureId = getPlanListFeatureId(page.module);
-      location.hash = `feature=${getPlanListFeatureId(page.module)}`;
+      location.hash = workbenchHash(getPlanListFeatureId(page.module));
       render();
       return;
     }
@@ -1806,7 +1810,7 @@ function bindEvents() {
 
     const projectDraftSaveButton = event.target.closest("[data-project-draft-save]");
     if (projectDraftSaveButton) {
-      saveCurrentProjectDraftThroughApi().finally(() => render());
+      saveProjectDraftNow().finally(() => render());
       return;
     }
 
@@ -2199,7 +2203,7 @@ function bindEvents() {
       openNewExperimentPlanEditor();
       selectedRoute = "workbench";
       selectedFeatureId = getPlanListFeatureId(page.module);
-      location.hash = `feature=${selectedFeatureId}`;
+      location.hash = workbenchHash(selectedFeatureId);
       render();
       return;
     }
@@ -2213,7 +2217,7 @@ function bindEvents() {
       );
       selectedRoute = "workbench";
       selectedFeatureId = getPlanListFeatureId(page.module);
-      location.hash = `feature=${selectedFeatureId}`;
+      location.hash = workbenchHash(selectedFeatureId);
       render();
       return;
     }
@@ -2244,7 +2248,7 @@ function bindEvents() {
         syncLiteMesaSettingsFromMonteCarloExperiment(currentMonteCarloExperiment(selectedPage.module));
       }
       createExperimentPlanBranchFromCurrentProject();
-      location.hash = `feature=${selectedFeatureId}`;
+      location.hash = workbenchHash(selectedFeatureId);
       render();
     }
   });
@@ -7606,6 +7610,9 @@ function renderSupportOrganizationWorkbench(page) {
     selectedSupportOrgNode,
     spareSelection ? { orgNodes: spareSelection.resourceOrgNodes } : undefined
   ).filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const supportResourceConflictMessage = visibleResourceRows.some((row) => row.conflict)
+    ? "检测到同一组织和产品的多条备件记录；为防止覆盖，冲突行已禁用，请先清理重复记录。"
+    : "";
   const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
   const resourceColumns = supportResourceDataColumns(activeResourceType);
@@ -7647,7 +7654,7 @@ function renderSupportOrganizationWorkbench(page) {
                 <span class="badge">${locked ? "当前颗粒度只读" : selectedIsLeaf ? "叶子节点可编辑" : "汇总视图只读"}</span>
               </div>
               ${spareSelection ? renderSpareSupportOrganizationGuidance(spareSelection, locked) : ""}
-              <p class="rms-import-status">${htmlEscape(supportResourceImportStatus)}</p>
+              <p class="rms-import-status">${htmlEscape(supportResourceConflictMessage || supportResourceImportStatus)}</p>
               <div class="table-wrap">
                 <table>
                   <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
@@ -7723,16 +7730,15 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode, options =
   const orgNodes = Array.isArray(options.orgNodes)
     ? options.orgNodes
     : (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
-  if (activeResourceType === "备件") {
-    syncSupportSpareResourcesFromHardwareTree(orgNodes);
-  }
   const supportResources = Array.isArray(scenario.supportResources) ? scenario.supportResources : [];
   if (!supportResources.length && Array.isArray(scenario.supportNodes)) {
     return supportResourceRowsFromSupportNodes(scenario.supportNodes, activeResourceType);
   }
   return orgNodes.flatMap((orgNode, orgIndex) => {
-    const rows = supportResources
-      .filter((resource) => supportResourceBelongsToOrg(resource, orgNode))
+    const resourcesForOrg = activeResourceType === "备件"
+      ? supportSpareResourcesForOrg(orgNode)
+      : supportResources.filter((resource) => supportResourceBelongsToOrg(resource, orgNode));
+    const rows = resourcesForOrg
       .map((resource, resourceIndex) => supportResourceRow(resource, orgNode, orgIndex, resourceIndex));
     return activeResourceType ? rows.filter((row) => row.type === activeResourceType) : rows;
   });
@@ -7740,7 +7746,7 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode, options =
 
 function supportResourceBelongsToOrg(resource, orgNode) {
   if (!resource || !orgNode) return false;
-  const organizationNodeId = String(resource.organizationNodeId || "").trim();
+  const organizationNodeId = String(resource.organizationNodeId || resource.organizationNodeName || "").trim();
   if (organizationNodeId) return organizationNodeId === String(orgNode.id || "").trim();
   const nodeName = String(resource.supportNodeName || "").trim();
   return nodeName === String(orgNode.name || "").trim()
@@ -7760,7 +7766,8 @@ function supportResourceRow(resource, orgNode, orgIndex, resourceIndex) {
     quantity: Number(resource.quantity || 0),
     productId: resource.productId || "",
     equipment: resource.equipment || resource.equipmentId || "",
-    lockIdentity: true
+    lockIdentity: true,
+    conflict: Boolean(resource._identityConflict)
   };
 }
 
@@ -7795,13 +7802,14 @@ function resetSupportResourceSelectionForFeatureChange(previousFeatureId, nextFe
 }
 
 function lruSpareRows() {
-  normalizeProjectProducts(scenario);
+  const project = cloneScenario(scenario);
+  normalizeProjectProducts(project);
   const seen = new Set();
-  return (scenario.components || [])
+  return (project.components || [])
     .filter((component) => component && typeof component === "object" && !Array.isArray(component))
     .filter((component) => String(component.productType || "").trim().toUpperCase() === "LRU")
     .map((component, index) => {
-      const product = projectProductById(scenario, component.productId) || ensureProductForComponent(scenario, component);
+      const product = projectProductById(project, component.productId) || ensureProductForComponent(project, component);
       return {
         productId: product.id,
         name: String(product.name || component.name || component.id || `未命名LRU${index + 1}`).trim(),
@@ -7817,75 +7825,63 @@ function lruSpareRows() {
     });
 }
 
-function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
-  if (!Array.isArray(scenario.supportResources)) scenario.supportResources = [];
+function supportSpareResourcesForOrg(orgNode) {
   const hardwareSpares = lruSpareRows();
-  const targetOrgNodes = (Array.isArray(orgNodes) ? orgNodes : []).filter(Boolean);
-  if (!hardwareSpares.length || !targetOrgNodes.length) return;
-
-  const targetOrgNames = new Set(targetOrgNodes.map((node) => String(node.name || node.id || "").trim()).filter(Boolean));
-  const targetOrgIds = new Set(targetOrgNodes.map((node) => String(node.id || "").trim()).filter(Boolean));
-  const targetTombstones = scenario.supportResources
+  if (!hardwareSpares.length || !orgNode) return [];
+  const resources = Array.isArray(scenario.supportResources) ? scenario.supportResources : [];
+  const tombstones = resources
     .filter((resource) => isDeletedSupportSpareResource(resource))
-    .filter((resource) => targetOrgNodes.some((orgNode) => supportSpareTombstoneBelongsToOrg(resource, orgNode)))
-    .map((resource) => {
-      const orgNode = targetOrgNodes.find((node) => supportSpareTombstoneBelongsToOrg(resource, node));
-      return {
-        ...resource,
-        organizationNodeId: orgNode?.id || resource.organizationNodeId || "",
-        supportNodeName: orgNode?.name || orgNode?.id || resource.supportNodeName || ""
-      };
-    });
-  const existingSpareByKey = new Map();
-  for (const resource of scenario.supportResources) {
-    if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
-    const key = supportSpareResourceIdentityKey(
-      resource.supportNodeName,
-      resource.name,
-      resource.model,
-      resource.equipment || resource.equipmentId
-    );
-    if (!existingSpareByKey.has(key)) existingSpareByKey.set(key, resource);
-    const fallbackKey = supportSpareResourceIdentityKey(
-      resource.supportNodeName,
-      resource.name,
-      resource.model,
-      ""
-    );
-    if (!existingSpareByKey.has(fallbackKey)) existingSpareByKey.set(fallbackKey, resource);
-  }
-
-  const nextTargetSpares = targetOrgNodes.flatMap((orgNode, orgIndex) => {
-    const nodeName = String(orgNode.name || orgNode.id || "保障节点").trim();
-    return hardwareSpares.flatMap((spare, spareIndex) => {
-      if (targetTombstones.some((resource) => supportSpareTombstoneMatches(resource, orgNode, spare))) return [];
-      const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.aircraft);
-      const fallbackKey = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, "");
-      const existing = existingSpareByKey.get(key) || existingSpareByKey.get(fallbackKey);
+    .filter((resource) => supportSpareTombstoneBelongsToOrg(resource, orgNode));
+  return hardwareSpares.flatMap((spare) => {
+    if (tombstones.some((resource) => supportSpareTombstoneMatches(resource, orgNode, spare))) return [];
+    const matches = resources.filter((resource) => (
+      isSpareSupportResource(resource)
+      && !isDeletedSupportSpareResource(resource)
+      && supportResourceBelongsToOrg(resource, orgNode)
+      && supportSpareMatchesHardware(resource, spare)
+    ));
+    const stableId = supportSpareResourceId(orgNode, spare);
+    if (matches.length > 1) {
       return [{
-        id: String(existing?.id || `support-resource-${orgIndex + 1}-spare-${spareIndex + 1}`),
+        ...matches[0],
+        id: stableId,
         organizationNodeId: orgNode.id || "",
-        supportNodeName: nodeName,
-        type: "spare",
+        supportNodeName: orgNode.name || orgNode.id || "保障节点",
         productId: spare.productId,
         name: spare.name,
         model: spare.model,
         equipment: spare.aircraft || "",
-        quantity: Math.max(0, Number(existing?.quantity ?? 0) || 0)
+        quantity: 0,
+        _identityConflict: true
       }];
-    });
+    }
+    const existing = matches[0];
+    return [{
+      ...(existing || {}),
+      id: stableId,
+      organizationNodeId: orgNode.id || "",
+      supportNodeName: orgNode.name || orgNode.id || "保障节点",
+      type: "spare",
+      productId: spare.productId,
+      name: spare.name,
+      model: spare.model,
+      equipment: spare.aircraft || "",
+      quantity: Math.max(0, Number(existing?.quantity ?? 0) || 0),
+      _virtual: !existing
+    }];
   });
+}
 
-  scenario.supportResources = [
-    ...scenario.supportResources.filter((resource) => {
-      if (!isSpareSupportResource(resource)) return true;
-      const nodeName = String(resource.supportNodeName || "").trim();
-      const nodeId = String(resource.organizationNodeId || "").trim();
-      return !targetOrgNames.has(nodeName) && !targetOrgIds.has(nodeId);
-    }),
-    ...targetTombstones,
-    ...nextTargetSpares
-  ];
+function supportSpareMatchesHardware(resource, spare) {
+  const productId = String(resource?.productId || "").trim();
+  return Boolean(productId && productId === String(spare?.productId || "").trim());
+}
+
+function supportSpareResourceId(orgNode, spare) {
+  const orgId = String(orgNode?.id || orgNode?.name || "").trim();
+  const productId = String(spare?.productId || "").trim()
+    || supportSpareResourceIdentityKey("", spare?.name, spare?.model, spare?.aircraft);
+  return `${SUPPORT_SPARE_RESOURCE_ID_PREFIX}${encodeURIComponent(orgId)}:${encodeURIComponent(productId)}`;
 }
 
 function isSpareSupportResource(resource) {
@@ -8056,13 +8052,13 @@ function supportResourceDataColumns(activeResourceType) {
 
 function supportResourceDataCell(row, column, disabled = false) {
   if (column.type === "select") {
-    return supportResourceSelect(row, column, disabled);
+    return supportResourceSelect(row, column, disabled || row.conflict);
   }
   return supportResourceInput(
     row,
     column.field,
     column.type || "text",
-    disabled || (column.lockIdentity && row.lockIdentity)
+    disabled || row.conflict || (column.lockIdentity && row.lockIdentity)
   );
 }
 
@@ -8108,9 +8104,54 @@ function supportOrganizationSelect(key, selectedNodeId, disabled = false) {
 function updateSupportResourceOverride(key, fieldName, value) {
   if (!key || !fieldName) return false;
   if (!Array.isArray(scenario.supportResources)) scenario.supportResources = [];
-  const resource = scenario.supportResources.find((item) => item && item.id === key);
-  if (!resource) return false;
-  if (isSpareSupportResource(resource) && !selectedSpareResourceIsEditable(resource)) return false;
+  let resource = null;
+  if (String(key).startsWith(SUPPORT_SPARE_RESOURCE_ID_PREFIX)) {
+    const selectedNode = selectedEditableSpareSupportOrgNode();
+    const spare = lruSpareRows().find((item) => supportSpareResourceId(selectedNode, item) === key);
+    const matches = selectedNode && spare
+      ? scenario.supportResources.filter((item) => (
+        isSpareSupportResource(item)
+        && !isDeletedSupportSpareResource(item)
+        && supportResourceBelongsToOrg(item, selectedNode)
+        && supportSpareMatchesHardware(item, spare)
+      ))
+      : [];
+    if (!selectedNode || !spare || matches.length > 1) {
+      supportResourceImportStatus = matches.length > 1
+        ? "备件编辑失败：当前组织和产品存在多条资源记录，请先消除身份冲突。"
+        : "备件编辑失败：当前行与所选叶子组织不匹配。";
+      return false;
+    }
+    resource = matches[0] || {
+      id: key,
+      organizationNodeId: selectedNode.id || "",
+      supportNodeName: selectedNode.name || selectedNode.id || "保障节点",
+      type: "spare",
+      productId: spare.productId,
+      name: spare.name,
+      model: spare.model,
+      equipment: spare.aircraft || "",
+      quantity: 0
+    };
+    if (!matches.length) scenario.supportResources.push(resource);
+    resource.id = key;
+    resource.organizationNodeId = selectedNode.id || "";
+    resource.supportNodeName = selectedNode.name || selectedNode.id || "保障节点";
+    resource.productId = spare.productId;
+  } else {
+    const matches = scenario.supportResources.filter((item) => item && item.id === key);
+    if (matches.length !== 1) {
+      supportResourceImportStatus = matches.length
+        ? "资源编辑失败：资源 ID 不唯一，请先修复重复记录。"
+        : "资源编辑失败：未找到对应资源。";
+      return false;
+    }
+    resource = matches[0];
+  }
+  if (isSpareSupportResource(resource) && !selectedSpareResourceIsEditable(resource)) {
+    supportResourceImportStatus = "备件编辑失败：资源不属于当前选中的叶子组织。";
+    return false;
+  }
   const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : value;
   if (fieldName === "organizationNodeId") {
     const orgNode = findSupportOrgTreeNode(nextValue);
@@ -8125,6 +8166,7 @@ function updateSupportResourceOverride(key, fieldName, value) {
     if (autofill.name) resource.name = autofill.name;
   }
   updatePreviewResultsThroughApiClient();
+  supportResourceImportStatus = "资源修改已记录，等待保存。";
   return true;
 }
 
@@ -12107,8 +12149,12 @@ async function restoreStoredBackendSessionOnBoot() {
       location.hash = "route=projects";
     }
     backendApiStatus = "M4 会话已恢复";
-    await hydrateProjectCatalogFromBackend();
+    const restoredProjectId = readProjectIdFromHash() || readStoredCurrentProjectId();
+    await hydrateProjectCatalogFromBackend({ forceProjectId: restoredProjectId });
     if (selectedRoute === "workbench" && currentProject) {
+      persistCurrentProjectId(currentProject.projectBackendId || currentProject.id);
+      normalizeSelectedFeatureHash(selectedFeatureId);
+      resetWorkbenchStateForCurrentProject();
       await hydrateCurrentProjectDraftFromApi();
       replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
     }
@@ -12126,9 +12172,11 @@ async function saveCurrentProjectThroughApi() {
 
 async function handleEnterWorkbench(projectId) {
   await flushPendingProjectDraftAutosave();
-  currentProject = demoProjects.find((project) => project.id === projectId) || demoProjects[0];
+  currentProject = demoProjects.find((project) => (
+    project.id === projectId || project.projectBackendId === projectId
+  )) || null;
   if (!currentProject) {
-    projectListStatus = "请先选择项目模板创建项目";
+    projectListStatus = "未找到所选项目，请从项目列表重新选择。";
     selectedRoute = "projects";
     location.hash = "route=projects";
     return;
@@ -12136,6 +12184,16 @@ async function handleEnterWorkbench(projectId) {
   isLoggedIn = true;
   selectedRoute = "workbench";
   selectedFeatureId = defaultFeaturePageIdForCurrentUser();
+  resetWorkbenchStateForCurrentProject();
+  persistCurrentProjectId(currentProject.projectBackendId || currentProject.id);
+  location.hash = workbenchHash(selectedFeatureId, currentProject.projectBackendId || currentProject.id);
+  projectDraftHydrateStatus = "正在读取 Project draft";
+  await hydrateCurrentProjectDraftFromApi();
+  replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
+  if (!selectedRunContextKey) resetRunContextToCurrentProject();
+}
+
+function resetWorkbenchStateForCurrentProject() {
   isProjectMenuOpen = false;
   resetExperimentPlanListLoadState();
   selectedExperimentPlanKeys = new Set();
@@ -12147,11 +12205,6 @@ async function handleEnterWorkbench(projectId) {
   analysisXlsxExportState = {};
   aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
   liteMesaMonteCarloStatus = "项目已切换，请重新运行 Mesa 分析。";
-  location.hash = `feature=${selectedFeatureId}`;
-  projectDraftHydrateStatus = "正在读取 Project draft";
-  await hydrateCurrentProjectDraftFromApi();
-  replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
-  if (!selectedRunContextKey) resetRunContextToCurrentProject();
 }
 
 async function createProjectFromSelectedProjectTemplate() {
@@ -12401,7 +12454,7 @@ function templateSummaryFromModelingImportRecord(record) {
 }
 
 async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
-  const focusProjectId = forceProjectId || (currentProject?.id ? String(currentProject.id) : "");
+  const focusProjectId = String(forceProjectId || (currentProject?.id ? String(currentProject.id) : "")).trim();
   projectListStatus = "正在从后端读取项目列表";
   try {
     const result = await backendApi.listProjects();
@@ -12411,9 +12464,14 @@ async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
         .filter(Boolean)
       : [];
     demoProjects = mergeProjectsById(backendProjects);
-    currentProject = demoProjects.find((project) => project.id === focusProjectId) || demoProjects[0];
+    const restoredProject = demoProjects.find((project) => (
+      project.id === focusProjectId || project.projectBackendId === focusProjectId
+    )) || null;
+    currentProject = restoredProject || demoProjects[0] || null;
     if (backendProjects.length) {
-      projectListStatus = `已加载 ${backendProjects.length} 个后端项目`;
+      projectListStatus = focusProjectId && !restoredProject
+        ? `未找到上次项目 ${focusProjectId}，已回退到 ${currentProject?.name || "项目列表首项"}，请确认项目选择。`
+        : `已加载 ${backendProjects.length} 个后端项目`;
     } else {
       projectListStatus = "后端未返回项目，请先选择项目模板创建项目";
     }
@@ -12580,12 +12638,23 @@ function normalizeProjectFileSegment(value) {
 }
 
 async function flushPendingProjectDraftAutosave() {
-  if (!projectDraftAutosaveTimer) return;
-  clearTimeout(projectDraftAutosaveTimer);
-  projectDraftAutosaveTimer = null;
+  if (projectDraftAutosaveTimer) {
+    clearTimeout(projectDraftAutosaveTimer);
+    projectDraftAutosaveTimer = null;
+  }
+  await projectDraftSaveQueue.catch(() => {});
   if (projectDraftSaveStatus === "有未保存修改") {
     await saveCurrentProjectDraftThroughApi();
   }
+}
+
+async function saveProjectDraftNow() {
+  if (projectDraftAutosaveTimer) {
+    clearTimeout(projectDraftAutosaveTimer);
+    projectDraftAutosaveTimer = null;
+  }
+  await projectDraftSaveQueue.catch(() => {});
+  await saveCurrentProjectDraftThroughApi();
 }
 
 function currentBackendProjectId() {
@@ -12694,6 +12763,7 @@ function isCurrentModelingPage() {
 function markProjectDraftChanged() {
   if (!isCurrentModelingPage()) return;
   experimentPlanBranchActive = false;
+  projectDraftRevision += 1;
   projectDraftSaveStatus = "有未保存修改";
   scheduleProjectDraftAutosave();
 }
@@ -12707,8 +12777,10 @@ function scheduleProjectDraftAutosave() {
 }
 
 async function hydrateCurrentProjectDraftFromApi() {
+  const requestedProjectId = currentBackendProjectId();
   try {
-    const rawProjectJson = await backendApi.getProject(currentBackendProjectId());
+    const rawProjectJson = await backendApi.getProject(requestedProjectId);
+    if (currentBackendProjectId() !== requestedProjectId) return;
     const projectJson = normalizeProjectJsonForClientDraft(rawProjectJson);
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(projectJson);
@@ -12742,20 +12814,35 @@ function resetSupportOrganizationWorkbenchSelection() {
 }
 
 async function saveCurrentProjectDraftThroughApi() {
+  const guardedProjectId = currentBackendProjectId();
+  const guardedRevision = projectDraftRevision;
   const projectJson = buildBackendProjectJson(scenario, currentProject);
-  try {
-    savedProject = await backendApi.saveProject(projectJson);
-    projectDraftSaveStatus = "已保存";
-    projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-    projectDraftHydrateStatus = "";
-    backendApiStatus = "Project draft 已保存";
-  } catch (err) {
-    savedProject = null;
-    projectDraftSaveStatus = "保存失败";
-    const failureText = projectDraftSaveFailureText(err);
-    projectDraftHydrateStatus = `自动保存未成功：${failureText}`;
-    backendApiStatus = `后端保存失败，Project draft 未保存：${failureText}`;
-  }
+  const saveTask = async () => {
+    try {
+      const result = await backendApi.saveProject(projectJson);
+      if (currentBackendProjectId() !== guardedProjectId) return result;
+      savedProject = result;
+      if (projectDraftRevision === guardedRevision) {
+        projectDraftSaveStatus = "已保存";
+        projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        projectDraftHydrateStatus = "";
+        backendApiStatus = "Project draft 已保存";
+      } else {
+        projectDraftSaveStatus = "有未保存修改";
+      }
+      return result;
+    } catch (err) {
+      if (currentBackendProjectId() !== guardedProjectId) return null;
+      savedProject = null;
+      projectDraftSaveStatus = "保存失败";
+      const failureText = projectDraftSaveFailureText(err);
+      projectDraftHydrateStatus = `自动保存未成功：${failureText}`;
+      backendApiStatus = `后端保存失败，Project draft 未保存：${failureText}`;
+      return null;
+    }
+  };
+  projectDraftSaveQueue = projectDraftSaveQueue.catch(() => {}).then(saveTask);
+  return projectDraftSaveQueue;
 }
 
 function projectDraftSaveFailureText(err) {
@@ -14320,10 +14407,13 @@ function applySupportResourceImportRows(resourceType, rawRows, options = {}) {
     rowCountsByOrg.set(orgId, rowIndex + 1);
     supportNodeForOrgNode(row.organizationNode, true);
     if (resourceType === "备件") {
+      const spare = resolveImportedHardwareSpare(row);
       const resource = createSupportResourceImportNode(row.organizationNode, resourceType, index);
-      resource.name = row.name;
-      resource.model = row.model || row.name;
-      resource.equipment = row.equipment || "";
+      resource.id = supportSpareResourceId(row.organizationNode, spare);
+      resource.productId = spare.productId;
+      resource.name = spare.name;
+      resource.model = spare.model;
+      resource.equipment = spare.aircraft || "";
       resource.quantity = row.quantity;
       return;
     }
@@ -14349,6 +14439,7 @@ function normalizeSupportResourceImportRow(resourceType, row, targetOrgNodes, in
     const name = pickImportText(row, ["备件名称", "备件", "spareName", "spareType", "name", "名称", "spareId"], `导入备件${index + 1}`);
     return {
       organizationNode,
+      productId: pickImportText(row, ["productId", "product_id", "产品 ID", "产品ID"], ""),
       name,
       model: pickImportText(row, ["型号", "备件型号", "model", "partNo", "规格型号"], name),
       equipment: pickImportText(row, ["所属装备", "适用飞机", "适用装备", "equipment", "equipmentId", "aircraftModel"], ""),
@@ -14368,6 +14459,20 @@ function normalizeSupportResourceImportRow(resourceType, row, targetOrgNodes, in
     model: pickImportText(row, ["型号", "设备型号", "resourceModel", "model", "nodeType", "规格型号"], "保障设备"),
     quantity: pickImportNumber(row, ["数量", "设备数量", "quantity", "equipmentCapacity", "capacity"], 0)
   };
+}
+
+function resolveImportedHardwareSpare(row) {
+  const candidates = lruSpareRows().filter((spare) => {
+    if (row.productId) return spare.productId === row.productId;
+    if (spare.name !== row.name || spare.model !== row.model) return false;
+    return !row.equipment || !spare.aircraft || spare.aircraft === row.equipment;
+  });
+  if (candidates.length !== 1) {
+    throw new Error(candidates.length
+      ? `备件 ${row.productId || `${row.name}/${row.model}`} 对应多个产品，请提供唯一 productId`
+      : `备件 ${row.productId || `${row.name}/${row.model}`} 未匹配装备树中的 LRU 产品`);
+  }
+  return candidates[0];
 }
 
 function selectedSupportImportOrgNodes() {
@@ -19478,11 +19583,43 @@ function readRawFeatureIdFromHash() {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
+function readProjectIdFromHash() {
+  if (typeof location === "undefined") return "";
+  const match = location.hash.match(/project=([^&]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function readStoredCurrentProjectId() {
+  try {
+    return String(localStorage.getItem(CURRENT_PROJECT_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function persistCurrentProjectId(projectId) {
+  try {
+    const normalized = String(projectId || "").trim();
+    if (normalized) localStorage.setItem(CURRENT_PROJECT_STORAGE_KEY, normalized);
+  } catch {
+    // Storage is optional; the URL remains the authoritative refresh state.
+  }
+}
+
+function workbenchHash(featureId, projectId = currentProject?.projectBackendId || currentProject?.id) {
+  const parts = [`feature=${encodeURIComponent(featureId)}`];
+  const normalizedProjectId = String(projectId || "").trim();
+  if (normalizedProjectId) parts.push(`project=${encodeURIComponent(normalizedProjectId)}`);
+  return parts.join("&");
+}
+
 function normalizeSelectedFeatureHash(featureId) {
   if (typeof location === "undefined" || typeof window === "undefined") return;
   const rawFeatureId = readRawFeatureIdFromHash();
-  if (!rawFeatureId || rawFeatureId === featureId) return;
-  const normalizedHash = `feature=${encodeURIComponent(featureId)}`;
+  const projectId = readProjectIdFromHash() || currentProject?.projectBackendId || currentProject?.id;
+  const currentHashProjectId = String(currentProject?.projectBackendId || currentProject?.id || "");
+  if (!rawFeatureId || (rawFeatureId === featureId && (!currentProject || readProjectIdFromHash() === currentHashProjectId))) return;
+  const normalizedHash = workbenchHash(featureId, projectId);
   if (window.history?.replaceState) {
     window.history.replaceState(null, "", `${location.pathname}${location.search}#${normalizedHash}`);
     return;

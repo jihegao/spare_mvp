@@ -128,6 +128,27 @@ test("frontend app restores stored backend session and hydrates project catalog 
   }
 });
 
+test("cold workbench refresh restores the project encoded in the URL instead of catalog order", async () => {
+  const case1 = createRuntimeProjectJson({ project_id: "project-case1", scenarioId: "case1-runtime" });
+  const caseLarge = createRuntimeProjectJson({ project_id: "project-case-large", scenarioId: "case-large-runtime" });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-part&project=project-case-large",
+    projectJson: case1,
+    projectJsonById: { "project-case-large": caseLarge },
+    backendProjects: [
+      runtimeBackendProjectEntry("project-case1", "Case1"),
+      runtimeBackendProjectEntry("project-case-large", "Case-large")
+    ]
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /<p>Case-large<\/p>/);
+    assert.ok(runtime.requests.some((request) => request.url === "/api/projects/project-case-large"));
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<p>Case1<\/p>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("legacy support activity references hydrate into the basic mission page and autosave canonically", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-basic-mission",
@@ -471,7 +492,16 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
         aircraftModel: "J-15",
         productType: "LRU"
       }],
-      supportResources: []
+      supportResources: [{
+        id: "legacy-base-1-pump-stock",
+        organizationNodeId: "base-1",
+        supportNodeName: "基层1",
+        type: "spare",
+        productId: "product-pump-lru",
+        name: "液压泵",
+        model: "PUMP-1",
+        quantity: 3
+      }]
     }),
     backendProjects: [{
       project_id: projectId,
@@ -489,11 +519,11 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
 
     assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层1”的备件数量。/);
     assert.match(runtime.appNode.innerHTML, /class="tree-node-label selected"[^>]*data-select-support-org-node="base-1"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-1-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-1:product-pump-lru", supportResourceField: "quantity" },
       { value: "11", type: "number" }
     );
     await runtime.click("[data-project-draft-save]");
@@ -508,8 +538,8 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
     await runtime.setHash("feature=spare-planning-spare-part");
 
     assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层1”的备件数量。/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity" type="number" value="11"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity" type="number" value="11"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
   } finally {
     runtime.restore();
   }
@@ -622,15 +652,15 @@ test("support spare batch delete persists a leaf-scoped hardware tombstone throu
   try {
     await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-spare-part");
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1"/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru"/);
 
     await runtime.change(
       "[data-support-resource-select]",
-      { supportResourceSelect: "support-resource-1-spare-1" },
+      { supportResourceSelect: "support-spare:base-a:product-pump-lru" },
       { checked: true }
     );
     await runtime.click("[data-support-resource-batch-delete]", { supportResourceBatchDelete: "备件" });
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru"/);
 
     await runtime.click("[data-project-draft-save]");
     savedProject = await waitForProjectSave(runtime, (body) => (
@@ -643,7 +673,7 @@ test("support spare batch delete persists a leaf-scoped hardware tombstone throu
         && resource.quantity === 0
         && resource.productId
       ))
-      && body.supportResources?.every((resource) => resource.id !== "support-resource-1-spare-1")
+      && body.supportResources?.every((resource) => resource.id !== "support-spare:base-a:product-pump-lru")
     ), "expected the deleted hardware spare tombstone and unrelated resources to persist");
   } finally {
     runtime.restore();
@@ -659,7 +689,7 @@ test("support spare batch delete persists a leaf-scoped hardware tombstone throu
     await rehydratedRuntime.click("[data-project-draft-save]");
     const resavedProject = await waitForProjectSave(rehydratedRuntime, (body) => (
       body.supportResources?.some((resource) => resource.id?.startsWith("support-spare-tombstone:"))
-      && body.supportResources?.every((resource) => resource.id !== "support-resource-1-spare-1")
+      && body.supportResources?.every((resource) => resource.id !== "support-spare:base-a:product-pump-lru")
     ), "expected a fresh rehydrate and save not to resurrect the deleted hardware spare");
     assert.equal(resavedProject.supportResources.find((resource) => resource.id === "personnel-a").quantity, 3);
     assert.equal(resavedProject.supportResources.find((resource) => resource.id === "equipment-a").quantity, 2);
@@ -835,38 +865,38 @@ test("support spare summary stays read-only until a concrete leaf is selected", 
 
     assert.match(runtime.appNode.innerHTML, /请选择具体叶子组织节点后编辑备件数量；当前为汇总视图，所有资源字段只读。/);
     assert.match(runtime.appNode.innerHTML, /class="tree-node-label selected"[^>]*data-select-support-org-node="support-org-root"/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-2-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-b:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-1-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-a:product-pump-lru", supportResourceField: "quantity" },
       { value: "99", type: "number" }
     );
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-a" });
     assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层A”的备件数量。/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity" type="number" value="0"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity" type="number" value="0"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-1-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-a:product-pump-lru", supportResourceField: "quantity" },
       { value: "7", type: "number" }
     );
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-b" });
     assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层B”的备件数量。/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-2-spare-1" data-support-resource-field="quantity" type="number" value="0"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1"/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-b:product-pump-lru" data-support-resource-field="quantity" type="number" value="0"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru"/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-1-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-a:product-pump-lru", supportResourceField: "quantity" },
       { value: "88", type: "number" }
     );
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-2-spare-1", supportResourceField: "quantity" },
+      { supportResourceKey: "support-spare:base-b:product-pump-lru", supportResourceField: "quantity" },
       { value: "5", type: "number" }
     );
 
@@ -880,8 +910,8 @@ test("support spare summary stays read-only until a concrete leaf is selected", 
 
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "support-org-root" });
     assert.match(runtime.appNode.innerHTML, /汇总视图只读/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-1-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
-    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-resource-2-spare-1" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-b:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
   } finally {
     runtime.restore();
   }
@@ -6830,10 +6860,14 @@ async function setupRuntimeApp({
   };
 
   await import(`../front/app.js?runtime-app=${Date.now()}-${++runtimeImportCounter}`);
+  const hashProjectMatch = String(hash || "").match(/project=([^&]+)/);
+  const bootstrapProjectId = hashProjectMatch
+    ? decodeURIComponent(hashProjectMatch[1])
+    : backendProjects[0]?.project_id || projectJson.project_id || "project-runtime";
   await waitForRuntimeAppBootstrap({
     requests,
     hash,
-    projectId: backendProjects[0]?.project_id || projectJson.project_id || "project-runtime",
+    projectId: bootstrapProjectId,
     expectProjectDraft: String(hash || "").includes("feature=") && backendProjects.length > 0
   });
 

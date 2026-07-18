@@ -13,6 +13,7 @@ const LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS = 900;
 const LITE_MESA_RESPONSE_GRACE_MS = 30000;
 const DEFAULT_FORMAL_MODEL_FAMILY = "aircraft_support_v1";
 const SUPPORT_SPARE_TOMBSTONE_ID_PREFIX = "support-spare-tombstone:";
+const SUPPORT_SPARE_RESOURCE_ID_PREFIX = "support-spare:";
 export const MAX_MONTE_CARLO_PARALLEL_CORES = 32;
 
 export function normalizeMonteCarloParallelCores(value, { fallback = 1 } = {}) {
@@ -297,6 +298,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
 }
 
 export function buildBackendProjectJson(scenario, project = {}) {
+  project ||= {};
   const projectJson = normalizeProjectJsonForClientDraft(scenario);
   ensureUniqueSupportActivityNames(projectJson);
   stripProjectRuntimeConfig(projectJson);
@@ -613,12 +615,12 @@ function normalizeSupportModelTables(projectJson) {
   const organization = normalizeSupportOrganization(projectJson.supportOrganization, legacyNameByRef);
   const nameByRef = new Map([...legacyNameByRef, ...organization.nameByRef]);
   const nodeScopeByName = supportNodeScopeByName(nodeScopeByRef, nameByRef);
-  normalizeSupportResourceNodeRefs(projectJson, nameByRef);
+  normalizeSupportResourceNodeRefs(projectJson, nameByRef, organization.idByRef);
   const supportNodeNames = organization.supportNodeNames.length
     ? organization.supportNodeNames
     : supportNodeNamesFromSupportNodes(projectJson.supportNodes);
   normalizeSupportResourcePersonnelModels(projectJson);
-  normalizeSupportResourceSpareRows(projectJson, supportNodeNames, organization.nameByRef);
+  normalizeSupportResourceSpareRows(projectJson, organization.leafNodes, organization.nodes, organization.nameByRef);
   projectJson.supportNodes = supportNodeNames.map((name, index) => ({
     id: `support-node-${index + 1}`,
     name,
@@ -674,18 +676,24 @@ function legacySupportNodeNameByRef(supportNodes) {
 function normalizeSupportOrganization(supportOrganization, fallbackNameByRef) {
   const supportNodeNames = [];
   const nameByRef = new Map();
+  const idByRef = new Map();
+  const leafNodes = [];
+  const nodes = [];
   if (!supportOrganization || typeof supportOrganization !== "object" || Array.isArray(supportOrganization)) {
-    return { supportNodeNames, nameByRef };
+    return { supportNodeNames, nameByRef, idByRef, leafNodes, nodes };
   }
   const rawTree = Array.isArray(supportOrganization.tree) ? supportOrganization.tree[0] : supportOrganization.tree;
-  if (!rawTree || typeof rawTree !== "object" || Array.isArray(rawTree)) return { supportNodeNames, nameByRef };
+  if (!rawTree || typeof rawTree !== "object" || Array.isArray(rawTree)) return { supportNodeNames, nameByRef, idByRef, leafNodes, nodes };
   supportOrganization.tree = normalizeSupportOrganizationNode(rawTree, {
     fallbackNameByRef,
     nameByRef,
+    idByRef,
+    leafNodes,
+    nodes,
     supportNodeNames,
     index: { value: 0 }
   }, true);
-  return { supportNodeNames, nameByRef };
+  return { supportNodeNames, nameByRef, idByRef, leafNodes, nodes };
 }
 
 function normalizeSupportOrganizationNode(node, context, isRoot) {
@@ -696,8 +704,14 @@ function normalizeSupportOrganizationNode(node, context, isRoot) {
   if (description) normalized.description = description;
   for (const ref of [node.id, node.name, node.supportNodeId, node.code, node.sourceId]) {
     const key = cleanText(ref);
-    if (key) context.nameByRef.set(key, name);
+    if (key) {
+      context.nameByRef.set(key, name);
+      setUniqueOrganizationRef(context.idByRef, key, id);
+    }
   }
+  context.nameByRef.set(id, name);
+  context.idByRef.set(id, id);
+  setUniqueOrganizationRef(context.idByRef, name, id);
   if (!isRoot) {
     context.index.value += 1;
     if (!context.supportNodeNames.includes(name)) context.supportNodeNames.push(name);
@@ -706,14 +720,37 @@ function normalizeSupportOrganizationNode(node, context, isRoot) {
   normalized.children = children
     .filter((child) => child && typeof child === "object" && !Array.isArray(child))
     .map((child) => normalizeSupportOrganizationNode(child, context, false));
+  const descendantLeafIds = normalized.children.length
+    ? normalized.children.flatMap((child) => context.nodes.find((item) => item.id === child.id)?.descendantLeafIds || [])
+    : [id];
+  if (!isRoot && normalized.children.length === 0) context.leafNodes.push({ id, name });
+  context.nodes.push({ id, name, isRoot, descendantLeafIds });
   return normalized;
 }
 
-function normalizeSupportResourceNodeRefs(projectJson, nameByRef) {
+function setUniqueOrganizationRef(idByRef, ref, id) {
+  const key = cleanText(ref);
+  if (!key) return;
+  if (!idByRef.has(key)) {
+    idByRef.set(key, id);
+  } else if (idByRef.get(key) !== id) {
+    idByRef.set(key, "");
+  }
+}
+
+function normalizeSupportResourceNodeRefs(projectJson, nameByRef, idByRef = new Map()) {
   if (!Array.isArray(projectJson.supportResources)) return;
   for (const resource of projectJson.supportResources) {
     if (!resource || typeof resource !== "object" || Array.isArray(resource)) continue;
-    resource.supportNodeName = supportNodeNameForRef(resource.supportNodeName || resource.supportNodeId || resource.organizationNodeId, nameByRef);
+    const organizationRef = cleanText(
+      resource.organizationNodeId
+      || resource.organizationNodeName
+      || resource.supportNodeId
+      || resource.supportNodeName
+    );
+    resource.supportNodeName = supportNodeNameForRef(resource.supportNodeName || resource.supportNodeId || organizationRef, nameByRef);
+    const organizationId = cleanText(idByRef.get(organizationRef) || idByRef.get(resource.supportNodeName));
+    if (organizationId && isSpareSupportResource(resource)) resource.organizationNodeName = organizationId;
     delete resource.supportNodeId;
     delete resource.organizationNodeId;
   }
@@ -761,51 +798,130 @@ function isPersonnelSupportResource(resource) {
     && cleanText(resource.type).toLowerCase() === "personnel";
 }
 
-function normalizeSupportResourceSpareRows(projectJson, supportNodeNames, organizationNameByRef = new Map()) {
+function normalizeSupportResourceSpareRows(projectJson, leafNodes, organizationNodes, organizationNameByRef = new Map()) {
   if (!Array.isArray(projectJson.supportResources)) return;
   const hardwareSpares = projectHardwareSpareRows(projectJson);
-  if (!hardwareSpares.length || !Array.isArray(supportNodeNames) || !supportNodeNames.length) return;
+  if (!hardwareSpares.length || !Array.isArray(leafNodes) || !leafNodes.length) return;
   const tombstones = projectJson.supportResources
     .filter((resource) => isDeletedSupportSpareResource(resource))
     .map((resource) => {
       const organizationId = supportSpareTombstoneOrganizationId(resource);
       return {
         ...resource,
+        organizationNodeName: organizationId || cleanText(resource.organizationNodeName),
         supportNodeName: cleanText(organizationNameByRef.get(organizationId) || resource.supportNodeName)
       };
     });
   const existingSpareByKey = new Map();
+  const resourceIdAliases = new Map();
+  const leafIds = new Set(leafNodes.map((node) => cleanText(node.id)));
+  const nodeById = new Map((Array.isArray(organizationNodes) ? organizationNodes : []).map((node) => [cleanText(node.id), node]));
+  const hardwareProductIds = new Set(hardwareSpares.map((spare) => cleanText(spare.productId)).filter(Boolean));
+  const legacyAncestorOrUnresolved = [];
   for (const resource of projectJson.supportResources) {
     if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
-    const key = supportSpareResourceIdentityKey(
-      resource.supportNodeName,
-      resource.name,
-      resource.model,
-      resource.equipment || resource.equipmentId
-    );
-    if (!existingSpareByKey.has(key)) existingSpareByKey.set(key, resource);
-    const fallbackKey = supportSpareResourceIdentityKey(resource.supportNodeName, resource.name, resource.model, "");
-    if (!existingSpareByKey.has(fallbackKey)) existingSpareByKey.set(fallbackKey, resource);
+    const organizationId = cleanText(resource.organizationNodeName);
+    const productId = cleanText(resource.productId);
+    const node = nodeById.get(organizationId);
+    let targetOrganizationId = leafIds.has(organizationId) ? organizationId : "";
+    if (!targetOrganizationId && node?.descendantLeafIds?.length === 1 && hardwareProductIds.has(productId)) {
+      const candidateLeafId = cleanText(node.descendantLeafIds[0]);
+      const candidateLeafName = cleanText(organizationNameByRef.get(candidateLeafId));
+      const blockedByTombstone = tombstones.some((item) => (
+        supportSpareTombstoneOrganizationId(item) === candidateLeafId
+        && cleanText(item.productId) === productId
+        && cleanText(item.supportNodeName) === candidateLeafName
+      ));
+      if (!blockedByTombstone) targetOrganizationId = candidateLeafId;
+    }
+    if (!targetOrganizationId || !productId) {
+      legacyAncestorOrUnresolved.push(resource);
+      continue;
+    }
+    const key = supportSpareSemanticKey(targetOrganizationId, productId);
+    const matches = existingSpareByKey.get(key) || [];
+    matches.push(resource);
+    existingSpareByKey.set(key, matches);
   }
   const nonSpareResources = projectJson.supportResources.filter((resource) => !isSpareSupportResource(resource));
-  const nextSpareResources = supportNodeNames.flatMap((nodeName, nodeIndex) => {
-    return hardwareSpares.flatMap((spare, spareIndex) => {
+  const nextSpareResources = leafNodes.flatMap((node) => {
+    const organizationId = cleanText(node.id);
+    const nodeName = cleanText(node.name);
+    return hardwareSpares.flatMap((spare) => {
       if (tombstones.some((resource) => supportSpareTombstoneMatches(resource, nodeName, spare))) return [];
-      const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.equipment);
-      const fallbackKey = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, "");
-      const existing = existingSpareByKey.get(key) || existingSpareByKey.get(fallbackKey);
-      return [{
-        id: cleanText(existing?.id) || `support-resource-${nodeIndex + 1}-spare-${spareIndex + 1}`,
-        supportNodeName: nodeName,
-        type: "spare",
-        productId: cleanText(existing?.productId || spare.productId),
-        name: spare.name,
-        model: spare.model,
-        quantity: nonNegativeInteger(existing?.quantity ?? 0)
-      }];
+      const semanticKey = supportSpareSemanticKey(organizationId, spare.productId);
+      const existing = existingSpareByKey.get(semanticKey) || [];
+      const nonZeroSources = existing.filter((source) => nonNegativeInteger(source?.quantity) > 0);
+      const resolvedSources = nonZeroSources.length <= 1
+        ? [nonZeroSources[0] || existing[0] || null]
+        : existing;
+      const stableId = supportSpareResourceId(organizationId, spare.productId);
+      if (nonZeroSources.length <= 1) {
+        for (const source of existing) {
+          const oldId = cleanText(source?.id);
+          if (oldId && oldId !== stableId) setUniqueResourceIdAlias(resourceIdAliases, oldId, stableId);
+        }
+      }
+      return resolvedSources.map((source, sourceIndex) => {
+        const id = sourceIndex === 0 ? stableId : `${stableId}:legacy-${sourceIndex + 1}`;
+        const oldId = cleanText(source?.id);
+        if (oldId && oldId !== id) setUniqueResourceIdAlias(resourceIdAliases, oldId, id);
+        return {
+          id,
+          organizationNodeName: organizationId,
+          supportNodeName: nodeName,
+          type: "spare",
+          productId: cleanText(spare.productId),
+          name: spare.name,
+          model: spare.model,
+          quantity: nonNegativeInteger(source?.quantity ?? 0)
+        };
+      });
     });
   });
-  projectJson.supportResources = [...nonSpareResources, ...tombstones, ...nextSpareResources];
+  projectJson.supportResources = [
+    ...nonSpareResources,
+    ...legacyAncestorOrUnresolved,
+    ...tombstones,
+    ...nextSpareResources
+  ];
+  rewriteSupportActivitySpareResourceKeys(projectJson, resourceIdAliases);
+}
+
+function setUniqueResourceIdAlias(aliases, oldId, newId) {
+  if (!aliases.has(oldId)) aliases.set(oldId, newId);
+  else if (aliases.get(oldId) !== newId) aliases.set(oldId, "");
+}
+
+function rewriteSupportActivitySpareResourceKeys(projectJson, aliases) {
+  if (!Array.isArray(projectJson.supportActivityJobs)) return;
+  const resourceIds = new Set((projectJson.supportResources || []).map((resource) => cleanText(resource?.id)).filter(Boolean));
+  const resourceIdsByProduct = new Map();
+  for (const resource of projectJson.supportResources || []) {
+    if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
+    const productId = cleanText(resource.productId);
+    if (!productId) continue;
+    const ids = resourceIdsByProduct.get(productId) || [];
+    ids.push(cleanText(resource.id));
+    resourceIdsByProduct.set(productId, ids);
+  }
+  for (const job of projectJson.supportActivityJobs) {
+    if (!job || typeof job !== "object" || !Array.isArray(job.spare)) continue;
+    for (const requirement of job.spare) {
+      if (!requirement || typeof requirement !== "object") continue;
+      const oldKey = cleanText(requirement.key);
+      const replacement = aliases.get(oldKey);
+      if (replacement) requirement.key = replacement;
+      else if (oldKey && aliases.has(oldKey) && cleanText(requirement.productId)) {
+        const productMatches = resourceIdsByProduct.get(cleanText(requirement.productId)) || [];
+        requirement.key = productMatches.length === 1 ? productMatches[0] : "";
+      }
+      else if (oldKey && !resourceIds.has(oldKey)) {
+        const productMatches = resourceIdsByProduct.get(cleanText(requirement.productId)) || [];
+        if (productMatches.length === 1) requirement.key = productMatches[0];
+      }
+    }
+  }
 }
 
 function stripModelingImportValidationNonModelFields(projectJson) {
@@ -873,6 +989,16 @@ function supportSpareTombstoneMatches(resource, nodeName, spare) {
 
 function supportSpareResourceIdentityKey(nodeName, name, model, equipment) {
   return [nodeName, name, model, equipment].map((value) => cleanText(value)).join("\u0001");
+}
+
+function supportSpareSemanticKey(organizationId, productId) {
+  const org = cleanText(organizationId);
+  const product = cleanText(productId);
+  return org && product ? `product\u0001${org}\u0001${product}` : "";
+}
+
+function supportSpareResourceId(organizationId, productId) {
+  return `${SUPPORT_SPARE_RESOURCE_ID_PREFIX}${encodeURIComponent(cleanText(organizationId))}:${encodeURIComponent(cleanText(productId))}`;
 }
 
 function supportNodeNamesFromSupportNodes(supportNodes) {

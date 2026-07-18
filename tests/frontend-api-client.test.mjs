@@ -1449,6 +1449,131 @@ test("buildBackendProjectJson derives spare resources from equipment hardware tr
   assert.equal(projectJson.supportResources.some((resource) => ["发动机备件", "液压备件", "航电模块"].includes(resource.name)), false);
 });
 
+test("support spare migration moves a unique ancestor stock to its only leaf and rewrites job references", () => {
+  const loaded = normalizeProjectJsonForClientDraft({
+    supportOrganization: {
+      tree: {
+        id: "root",
+        name: "保障组织",
+        children: [{
+          id: "relay",
+          name: "中继",
+          children: [{ id: "leaf", name: "基层", children: [] }]
+        }]
+      }
+    },
+    products: [{ id: "product-pump", name: "液压泵", model: "PUMP-1" }],
+    components: [{ id: "pump-lru", name: "液压泵", model: "PUMP-1", productId: "product-pump", productType: "LRU" }],
+    supportResources: [{
+      id: "support-resource-1-spare-1",
+      organizationNodeId: "relay",
+      supportNodeName: "中继",
+      type: "spare",
+      productId: "product-pump",
+      name: "液压泵",
+      model: "PUMP-1",
+      quantity: 9
+    }],
+    supportActivityJobs: [{
+      activityCode: "USE-001",
+      spare: [{ key: "support-resource-1-spare-1", productId: "product-pump", quantity: 1 }]
+    }]
+  });
+
+  assert.deepEqual(loaded.supportResources.map((resource) => ({
+    id: resource.id,
+    organization: resource.organizationNodeName,
+    quantity: resource.quantity
+  })), [{ id: "support-spare:leaf:product-pump", organization: "leaf", quantity: 9 }]);
+  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:leaf:product-pump");
+});
+
+test("support spare migration never distributes an ancestor quantity across multiple leaves", () => {
+  const loaded = normalizeProjectJsonForClientDraft({
+    supportOrganization: {
+      tree: {
+        id: "root",
+        name: "保障组织",
+        children: [{
+          id: "relay",
+          name: "中继",
+          children: [
+            { id: "leaf-a", name: "基层A", children: [] },
+            { id: "leaf-b", name: "基层B", children: [] }
+          ]
+        }]
+      }
+    },
+    products: [{ id: "product-pump", name: "液压泵", model: "PUMP-1" }],
+    components: [{ id: "pump-lru", name: "液压泵", model: "PUMP-1", productId: "product-pump", productType: "LRU" }],
+    supportResources: [{
+      id: "legacy-relay-stock",
+      organizationNodeId: "relay",
+      supportNodeName: "中继",
+      type: "spare",
+      productId: "product-pump",
+      name: "液压泵",
+      model: "PUMP-1",
+      quantity: 12
+    }]
+  });
+
+  const quantities = new Map(loaded.supportResources.map((resource) => [resource.organizationNodeName, resource.quantity]));
+  assert.equal(loaded.supportResources.find((resource) => resource.id === "legacy-relay-stock").quantity, 12);
+  assert.equal(quantities.get("leaf-a"), 0);
+  assert.equal(quantities.get("leaf-b"), 0);
+});
+
+test("stable spare IDs are order-independent and separate legacy collisions by organization", () => {
+  const scenario = {
+    supportOrganization: {
+      tree: {
+        id: "root",
+        name: "保障组织",
+        children: [
+          { id: "leaf-a", name: "同名基层", children: [] },
+          { id: "leaf-b", name: "同名基层", children: [] }
+        ]
+      }
+    },
+    products: [{ id: "product-pump", name: "液压泵", model: "PUMP-1" }],
+    components: [{ id: "pump-lru", name: "液压泵", model: "PUMP-1", productId: "product-pump", productType: "LRU" }],
+    supportResources: [
+      { id: "duplicate-old-id", organizationNodeId: "leaf-a", supportNodeName: "同名基层", type: "spare", productId: "product-pump", name: "液压泵", model: "PUMP-1", quantity: 4 },
+      { id: "duplicate-old-id", organizationNodeId: "leaf-b", supportNodeName: "同名基层", type: "spare", productId: "product-pump", name: "液压泵", model: "PUMP-1", quantity: 7 }
+    ]
+  };
+  const forward = normalizeProjectJsonForClientDraft(scenario).supportResources;
+  const reverse = normalizeProjectJsonForClientDraft({ ...scenario, supportResources: [...scenario.supportResources].reverse() }).supportResources;
+  const identity = (rows) => rows.map((row) => `${row.id}=${row.quantity}`).sort();
+
+  assert.deepEqual(identity(forward), [
+    "support-spare:leaf-a:product-pump=4",
+    "support-spare:leaf-b:product-pump=7"
+  ]);
+  assert.deepEqual(identity(reverse), identity(forward));
+});
+
+test("Case-large export migrates old resource collisions without dangling activity references", async () => {
+  const caseLarge = JSON.parse(await readFile(new URL("../exports/project-case-large.json", import.meta.url), "utf8"));
+
+  const loaded = normalizeProjectJsonForClientDraft(caseLarge);
+  const liveSpares = loaded.supportResources.filter((resource) => (
+    resource.type === "spare" && !resource.id.startsWith("support-spare-tombstone:")
+  ));
+  const logicalKeys = liveSpares.map((resource) => `${resource.organizationNodeName}\u0001${resource.productId}`);
+  const resourceIds = new Set(loaded.supportResources.map((resource) => resource.id));
+  const keyedRequirements = loaded.supportActivityJobs
+    .flatMap((job) => job.spare || [])
+    .filter((requirement) => requirement.key);
+
+  assert.ok(liveSpares.length > 0);
+  assert.ok(liveSpares.every((resource) => resource.id.startsWith("support-spare:")));
+  assert.equal(new Set(logicalKeys).size, logicalKeys.length);
+  assert.ok(keyedRequirements.every((requirement) => resourceIds.has(requirement.key)));
+  assert.ok(loaded.supportActivityJobs.flatMap((job) => job.spare || []).every((requirement) => requirement.productId));
+});
+
 test("buildBackendProjectJson preserves aircraft type catalog and strips redundant equipment runtime fields", () => {
   const scenario = {
     scenarioId: "combat-unit-is-source",
@@ -2036,7 +2161,7 @@ test("app hydrates and saves current project draft through project API", async (
   assert.match(appSource, /function currentBackendProjectId/);
   assert.match(appSource, /async function hydrateCurrentProjectDraftFromApi/);
   assert.match(appSource, /async function saveCurrentProjectDraftThroughApi/);
-  assert.match(appSource, /backendApi\.getProject\(currentBackendProjectId\(\)\)/);
+  assert.match(appSource, /backendApi\.getProject\(requestedProjectId\)/);
   assert.match(appSource, /backendApi\.saveProject\(projectJson\)/);
 });
 

@@ -443,7 +443,7 @@ test("equipment system modeling is the post-project landing page and plan name l
   assert.match(appSource, /data-enter-workbench/);
   assert.match(appSource, /selectedFeatureId = readFeatureIdFromHash\(\) \|\| DEFAULT_FEATURE_ID/);
   assert.match(appSource, /data-plan-list-link/);
-  assert.match(appSource, /location\.hash = `feature=\$\{getPlanListFeatureId\(page\.module\)\}`/);
+  assert.match(appSource, /location\.hash = workbenchHash\(getPlanListFeatureId\(page\.module\)\)/);
   assert.match(appSource, /function renderExperimentPlanList/);
   assert.match(appSource, /function renderExperimentPlanEditor/);
   assert.match(appSource, /data-project-menu-toggle/);
@@ -2744,7 +2744,8 @@ test("monte carlo experiment navigation goes directly to embedded Mesa detail", 
   assert.doesNotMatch(appSource, /data-mc-experiment-action="edit"/);
   assert.doesNotMatch(appSource, /data-mc-experiment-action="list"/);
   assert.match(appSource, /function normalizeSelectedFeatureHash/);
-  assert.match(appSource, /const normalizedHash = `feature=\$\{encodeURIComponent\(featureId\)\}`/);
+  assert.match(appSource, /const normalizedHash = workbenchHash\(featureId, projectId\)/);
+  assert.match(appSource, /parts\.push\(`project=\$\{encodeURIComponent\(normalizedProjectId\)\}`\)/);
   assert.match(appSource, /window\.history\.replaceState\(null, "", `\$\{location\.pathname\}\$\{location\.search\}#\$\{normalizedHash\}`\)/);
   assert.match(appSource, /location\.hash = normalizedHash/);
   assert.match(liteMesaSource, /蒙特卡洛分析/);
