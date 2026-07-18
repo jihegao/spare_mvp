@@ -138,11 +138,17 @@ test("normalizes mission reliability projection payload as mission wave aggregat
     run_id: "run-ui",
     model_family: "aircraft_support_v1",
     data: {
-      mission_success_probability: 0.91,
-      sortie_rate: 0.88,
+      mission_success_probability: 0.8,
+      sortie_rate: 0.8125,
       target_met: true,
-      period_completion_probability: 2 / 3,
-      period_duration_days: 21,
+      period_completion_probability: 0.9225,
+      period_duration_days: 2.125,
+      result_fields: [
+        { key: "sortie_rate", value: 0.8125, display_value: "0.813" },
+        { key: "wave_success_rate", value: 0.8, display_value: "80%" },
+        { key: "period_completion_probability", value: 0.9225, display_value: "92.3%" },
+        { key: "period_duration_days", value: 2.125, display_value: "2.13 天" }
+      ],
       total_samples: 3,
       successful_samples: 2,
       failed_samples: 1,
@@ -157,10 +163,16 @@ test("normalizes mission reliability projection payload as mission wave aggregat
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.deepEqual(view.metrics, [
-    ["任务成功概率", "0.91"],
-    ["出动架次率", "0.88"],
-    ["目标达成", "满足"],
-    ["最大下降波次", "T2 → T3 (-0.08)"]
+    ["出动架次率", "0.812"],
+    ["波次成功率", "80%"],
+    ["整周期任务可靠度", "92.2%"],
+    ["任务周期", "2.12 天"]
+  ]);
+  assert.deepEqual(view.resultFields.map(({ key, displayValue }) => [key, displayValue]), [
+    ["sortie_rate", "0.812"],
+    ["wave_success_rate", "80%"],
+    ["period_completion_probability", "92.2%"],
+    ["period_duration_days", "2.12 天"]
   ]);
   assert.deepEqual(view.steepestDrop, {
     fromIndex: 2,
@@ -169,8 +181,8 @@ test("normalizes mission reliability projection payload as mission wave aggregat
     toTime: "第2天 第1波",
     drop: 0.07999999999999996
   });
-  assert.equal(view.periodCompletionProbability, 2 / 3);
-  assert.equal(view.periodDurationDays, 21);
+  assert.equal(view.periodCompletionProbability, 0.9225);
+  assert.equal(view.periodDurationDays, 2.125);
   assert.equal(view.totalSamples, 3);
   assert.equal(view.successfulSamples, 2);
   assert.equal(view.failedSamples, 1);
@@ -213,18 +225,42 @@ test("normalizes downtime factor projection payload for formal KPI and table ren
   assert.equal(view.snapshots.length, 1);
   assert.deepEqual(view.snapshots[0], {
     id: "downtime-run-ui-0001",
-    timeLabel: "60",
+    simulationTime: 60,
+    timeLabel: "DAY_1 01:00",
     eventType: "spare_shortage",
     eventLabel: "备件短缺",
-    result: "mission_delayed",
+    result: "已记录停机事件",
     activeJobs: 2,
     repairBacklog: 1,
     spareFillRate: 0.72,
     jobNodeId: "job-7",
     jobNodeLabel: "更换液压泵",
-    jobState: "waiting",
-    frameRef: "sample=0; sample_step=2; step=2"
+    jobState: "等待中",
+    frameRef: "sample=0; sample_step=2; step=2",
+    frameLabel: "第1个样本；采样步 2；仿真步 2"
   });
+});
+
+test("localizes fallback downtime job enums without leaking them into display or export snapshots", () => {
+  const internalJobKind = "mission_delayed_by_spare_shortage";
+  const view = normalizeAnalysisProjectionPayload("downtime_factors", {
+    projection_type: "downtime_factors",
+    run_id: "run-fallback-job",
+    model_family: "aircraft_support_v1",
+    data: [{ factor: "spare_shortage", contribution: 1 }],
+    anomaly_snapshots: [{
+      snapshot_id: "downtime-fallback-job",
+      simulation_time: 75,
+      event_type: "spare_shortage",
+      result: "mission_delayed_by_spare_shortage",
+      support_activity_state: { active_jobs: 1, repair_backlog: 0, spare_fill_rate: 0 },
+      job_node: { job_id: "job-internal-1", kind: internalJobKind, state: "waiting" },
+      frame_ref: { sample_index: 0, sample_step: 1, step: 1 }
+    }]
+  }, { runId: "run-fallback-job", modelFamily: "aircraft_support_v1" });
+
+  assert.equal(view.snapshots[0].jobNodeLabel, "任务因备件短缺延误");
+  assert.doesNotMatch(JSON.stringify(view.snapshots[0]), new RegExp(internalJobKind));
 });
 
 test("rejects mismatched or malformed projection payloads fail closed", () => {

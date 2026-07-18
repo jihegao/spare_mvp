@@ -803,7 +803,7 @@ test("results analysis pages route to independent Mesa session wrappers", async 
   assert.match(appSource, /lite-mesa-analysis-setting-line/);
   assert.match(appSource, /备件满足率下限/);
   assert.match(appSource, /data-lite-mesa-analysis-field="missionConfidenceTarget"/);
-  assert.match(appSource, /data-lite-mesa-analysis-field="maxTimeWindow"/);
+  assert.doesNotMatch(appSource, /data-lite-mesa-analysis-field="maxTimeWindow"|<span>时间窗口<\/span>/);
   assert.match(appSource, /data-lite-mesa-analysis-field="topN"/);
   assert.match(appSource, /function updateLiteMesaAnalysisSetting/);
   assert.doesNotMatch(appSource, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
@@ -3842,11 +3842,12 @@ test("phase 6C mission reliability chart uses formal projection and wave aggrega
   assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
-  assert.match(formalReliabilitySource, /renderLineChart\(rows\.map\(\(row\) => \(\{ x: row\.sequence, y: row\.probability \}\)\)\)/);
+  assert.match(formalReliabilitySource, /renderLiteMesaMissionReliabilityWaveChart\(rows\.map/);
+  assert.match(formalReliabilitySource, /meanMissionSuccessRate: row\.probability/);
   assert.match(appSource, /function renderLiteMesaMissionReliabilityWaveChart/);
   assert.match(appSource, /meanMissionSuccessRate/);
-  assert.match(formalReliabilitySource, /最大下降波次/);
-  assert.match(formalReliabilitySource, /任务波次/);
+  assert.match(lineChartSource, /point\.tooltip/);
+  assert.doesNotMatch(formalReliabilitySource, /最大下降波次|任务波次|样本数|状态/);
   assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
   assert.doesNotMatch(dashboardSource + formalReliabilitySource, /具体需求待甲方确定/);
 });
@@ -3869,9 +3870,9 @@ test("phase 6D downtime analysis renders formal anomaly snapshots with export an
   assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.downtimeFactors/);
-  assert.match(formalDowntimeSource, /异常停机事件快照/);
-  assert.match(formalDowntimeSource, /support_activity_state/);
-  assert.match(formalDowntimeSource, /jobNodeId|jobNodeLabel/);
+  assert.match(formalDowntimeSource, /保障活动状态/);
+  assert.match(formalDowntimeSource, /jobNodeLabel/);
+  assert.doesNotMatch(formalDowntimeSource, /support_activity_state|jobNodeId/);
   assert.match(formalDowntimeSource, /data-downtime-snapshot-export/);
   assert.match(formalDowntimeSource, /data-downtime-snapshot-delete/);
   assert.match(appSource, /function exportDowntimeAnomalySnapshots/);
@@ -3916,10 +3917,10 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
   );
 
   assert.match(metricSource, /key: "sortie_rate", label: "出动架次率"/);
-  assert.match(reliabilitySource, /metricLabels: \["仿真实验总次数", "整周期任务成功次数", "整周期任务失败次数", "整周期任务可靠度", "任务可靠度百分比"\]/);
-  assert.match(reliabilityTableSource, /<th>平均出动架次率<\/th>/);
-  assert.match(reliabilityTableSource, /formatLiteMesaAnalysisMetricValue\("出动架次率", row\.meanSortieRate \?\? row\.sortieRate\)/);
-  assert.doesNotMatch(reliabilityTableSource, /<td>\$\{pct\(row\.sortieRate\)\}<\/td>/);
+  assert.match(reliabilitySource, /metricLabels: \["出动架次率", "波次成功率", "整周期任务可靠度", "任务周期"\]/);
+  assert.match(reliabilityTableSource, /task-reliability-result-table/);
+  assert.match(reliabilityTableSource, /fields\.map\(\(field\) => `<th>/);
+  assert.doesNotMatch(reliabilityTableSource, /平均出动架次率|formatLiteMesaAnalysisMetricValue|样本明细/);
   assert.doesNotMatch(metricSource + reliabilitySource + reliabilityTableSource, /出动完成率/);
 });
 
@@ -3935,15 +3936,11 @@ test("lite Mesa analysis visible copy omits Mesa session wording and collapses s
   );
 
   assert.match(analysisSource, /后端内存运行/);
-  assert.match(reliabilityTableSource, /<details class="lite-mesa-collapsible-table">/);
-  assert.match(reliabilityTableSource, /<summary>样本明细/);
-  assert.match(reliabilityTableSource, /<th>任务波次<\/th>/);
-  assert.match(reliabilityTableSource, /<th>样本数<\/th>/);
-  assert.match(reliabilityTableSource, /<th>平均任务成功率<\/th>/);
-  assert.match(reliabilityTableSource, /任务周期/);
-  assert.match(reliabilityTableSource, /成功 \/ 总实验/);
-  assert.match(reliabilityTableSource, /整周期任务可靠度/);
-  assert.doesNotMatch(reliabilityTableSource, /<th>seed<\/th>|row\.seed|readyRate/);
+  assert.match(reliabilityTableSource, /task-reliability-result-table/);
+  assert.match(reliabilityTableSource, /fields\.map\(\(field\) => `<th>/);
+  assert.match(reliabilityTableSource, /renderLiteMesaMissionReliabilityWaveChart/);
+  assert.doesNotMatch(reliabilityTableSource, /样本明细|平均任务成功率|成功 \/ 总实验|失败实验|row\.seed|readyRate/);
+  assert.doesNotMatch(appSource, /任务剖面可靠性/);
   assert.doesNotMatch(analysisSource, /Mesa 分析运行中|Mesa 分析失败|会话内 Mesa|后端内存会话/);
 });
 
@@ -4016,11 +4013,8 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
 
 test("downtime analysis exposes four-factor multi-select, linked summaries, and typed event details", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const downtimeSource = await readFile(new URL("../front/downtime-analysis.mjs", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
-  const optionsSource = appSource.slice(
-    appSource.indexOf("const DOWNTIME_FACTOR_OPTIONS"),
-    appSource.indexOf("let demoProjects")
-  );
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaDowntimeFactorAnalysis"),
     appSource.indexOf("function formatPeriodDurationDays")
@@ -4036,7 +4030,7 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
     ["equipment_shortage", "保障设备短缺"],
     ["preventive", "预防性维修"]
   ]) {
-    assert.match(optionsSource, new RegExp(`value: "${factor}", label: "${label}"`));
+    assert.match(downtimeSource, new RegExp(`value: "${factor}", label: "${label}"`));
   }
   assert.match(appSource, /selectedDowntimeFactorTypes = new Set\(DOWNTIME_FACTOR_OPTIONS/);
   assert.match(changeSource, /selectedDowntimeFactorTypes\.add/);
@@ -4045,10 +4039,11 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
   assert.match(renderSource, /暂无该类型停机事件/);
   assert.match(renderSource, /累计停机时长（小时）/);
   assert.match(renderSource, /持续时长（小时）/);
-  assert.match(renderSource, /分钟/);
-  assert.match(renderSource, /repair: "修复性维修"/);
-  assert.match(renderSource, /preventive: "预防性维修"/);
-  assert.match(renderSource, /未配置任务/);
+  assert.match(downtimeSource, /formatDowntimeSimulationTime/);
+  assert.match(downtimeSource, /repair: "修复性维修"/);
+  assert.match(downtimeSource, /preventive: "预防性维修"/);
+  assert.match(downtimeSource, /任务名称未解析|不在任务阶段/);
+  assert.doesNotMatch(renderSource + downtimeSource, /未配置任务/);
   assert.doesNotMatch(renderSource, /`\$\{fixed\(minute, 0\)\} min`|持续时长\(h\)|累计停机时长\(h\)/);
   assert.match(renderSource, /当前范围时长占比/);
   assert.match(renderSource, /\.sort\(\(left, right\) => right\.downtimeHours - left\.downtimeHours\)/);

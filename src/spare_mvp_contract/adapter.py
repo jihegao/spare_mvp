@@ -20,11 +20,13 @@ import re
 from typing import Any
 
 from src.spare_mvp_backend.project_payload import normalize_project_products
+from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
 
 from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     mission_period_outcome,
     period_completion_summary,
 )
+from src.spare_mvp_contract.task_reliability import build_task_reliability_result_fields
 
 PROJECT_SCHEMA_VERSION = "project-v0"
 SCENARIO_SCHEMA_VERSION = "scenario-v0"
@@ -2752,7 +2754,7 @@ class SimulationAdapter:
             for event in sample.get("downtime_events") or []:
                 if not isinstance(event, dict) or event.get("factor") not in downtime_values:
                     continue
-                item = copy.deepcopy(event)
+                item = normalize_downtime_event_for_analysis(event)
                 item["sample_index"] = int(sample.get("sample_index", 0) or 0)
                 item["seed"] = sample.get("seed")
                 item["source_event_id"] = str(event.get("event_id") or "")
@@ -2783,6 +2785,12 @@ class SimulationAdapter:
         mission_wave_rows = self._aircraft_support_v1_mission_reliability_series(
             metrics=metrics,
             samples=samples or [],
+        )
+        task_reliability_result_fields = build_task_reliability_result_fields(
+            sortie_rate=sortie_rate,
+            wave_success_rate=mission_success,
+            period_completion_probability=period_completion_probability,
+            period_duration_days=period_summary["duration_days"],
         )
         return {
             "large_sample_summary": {
@@ -2877,8 +2885,10 @@ class SimulationAdapter:
                     "in_flight_failures": metrics.get("in_flight_failures", 0),
                     "target_met": mission_success >= 0.9,
                     "profile_reliability": mission_success,
+                    "wave_success_rate": mission_success,
                     "period_completion_probability": period_completion_probability,
                     "period_duration_days": period_summary["duration_days"],
+                    "result_fields": task_reliability_result_fields,
                     "total_samples": total_period_samples,
                     "successful_samples": successful_period_samples,
                     "failed_samples": failed_period_samples,

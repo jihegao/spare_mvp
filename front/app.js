@@ -23,6 +23,11 @@ import {
   projectionArtifactKindForAnalysisType
 } from "./analysis-projection-adapters.mjs";
 import {
+  formatReliabilityPercent,
+  normalizeTaskReliabilityResultFields,
+  taskReliabilityMetricPairs
+} from "./task-reliability-contract.mjs";
+import {
   createDefaultCurrentAnalysisProfiles,
   createEmptyCurrentAnalysisResult,
   createEmptyCurrentAnalysisResults,
@@ -122,6 +127,18 @@ import {
   parseEquipmentStructureImportText,
   validateEquipmentStructureProductReferences
 } from "./equipment-structure-transfer.mjs";
+import {
+  DOWNTIME_FACTOR_OPTIONS,
+  downtimeAircraftStateLabel,
+  downtimeDisplayValue,
+  downtimeEventDisplayRow,
+  downtimeEventDurationHours,
+  downtimeEventFactor,
+  downtimeFactorLabel,
+  downtimeOperationalEventLabel,
+  downtimeSnapshotResultLabel,
+  formatDowntimeSimulationTime
+} from "./downtime-analysis.mjs";
 
 const app = document.querySelector("#app");
 const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
@@ -181,7 +198,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     subtitle: "按完整任务周期统计全部任务均成功的实验比例",
     settingSubject: "任务维度与时间维度",
     settingMethod: "目标达成统计",
-    metricLabels: ["仿真实验总次数", "整周期任务成功次数", "整周期任务失败次数", "整周期任务可靠度", "任务可靠度百分比"]
+    metricLabels: ["出动架次率", "波次成功率", "整周期任务可靠度", "任务周期"]
   },
   downtime_factors: {
     experimentId: "project_baseline_at_current_granularity",
@@ -192,12 +209,6 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     metricLabels: ["停机因素项", "首要因素", "最高贡献度"]
   }
 });
-const DOWNTIME_FACTOR_OPTIONS = Object.freeze([
-  { value: "spare_shortage", label: "备件短缺" },
-  { value: "failure", label: "装备故障" },
-  { value: "equipment_shortage", label: "保障设备短缺" },
-  { value: "preventive", label: "预防性维修" }
-]);
 let demoProjects = [];
 let deletedDowntimeSnapshotIds = new Set();
 const ANALYSIS_PROJECTION_TYPES = [
@@ -17221,16 +17232,12 @@ function renderFormalProjectionBody(formalProjection) {
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
-    const drop = formalProjection.steepestDrop;
     return `
-      <div class="kpi-strip"><div class="kpi-card"><span>任务剖面可靠性</span><strong>${pct(formalProjection.profileReliability)}</strong></div><div class="kpi-card"><span>整周期任务可靠度</span><strong>${pct(formalProjection.periodCompletionProbability)}</strong></div><div class="kpi-card"><span>成功/总样本</span><strong>${formalProjection.successfulSamples}/${formalProjection.totalSamples}</strong></div><div class="kpi-card"><span>失败样本</span><strong>${formalProjection.failedSamples}</strong></div></div><div class="analysis-chart-panel"><div class="chart-title">projection payload 任务波次平均成功率</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
-      <div class="decision-support-card"><strong>最大下降波次</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，${htmlEscape(drop.fromTime)} 到 ${htmlEscape(drop.toTime)}，下降 ${fixed(drop.drop, 3)}` : "未发现下降波次"}</span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>状态</th></tr></thead>
-          <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.timeLabel)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.probability, 3)}</td><td>${fixed(row.sortieRate, 3)}</td><td><span class="status-badge ${row.state === "未达标" ? "warn" : "success"}">${htmlEscape(row.state)}</span></td></tr>`).join("")}</tbody>
-        </table>
-      </div>
+      ${renderLiteMesaMissionReliabilityWaveChart(rows.map((row) => ({
+        sequence: row.sequence,
+        waveLabel: row.waveLabel || row.timeLabel,
+        meanMissionSuccessRate: row.probability
+      })))}
     `;
   }
   if (formalProjection.analysisType === "downtime_factors") {
@@ -17242,7 +17249,7 @@ function renderFormalProjectionBody(formalProjection) {
       <div class="factor-grid">
         <div class="factor-column"><h4>停机因素</h4><div class="factor-list">${primaryFactors.map((row) => `<div class="factor-item"><span>${htmlEscape(row.label)}</span><span>${row.contributionLabel}</span></div>`).join("")}</div></div>
         <div class="factor-column"><h4>二级因素</h4><div class="factor-list">${rows.map((row) => `<div class="factor-item"><span>${htmlEscape(row.label)}</span><span>${row.count}</span></div>`).join("")}</div></div>
-        <div class="factor-column"><h4>正式来源</h4><div class="factor-list"><div class="factor-item"><span>projection payload</span><span>downtime_factors</span></div></div></div>
+        <div class="factor-column"><h4>结果来源</h4><div class="factor-list"><div class="factor-item"><span>正式分析投影</span><span>停机因素结果</span></div></div></div>
       </div>
       <div class="table-wrap">
         <table>
@@ -17255,17 +17262,17 @@ function renderFormalProjectionBody(formalProjection) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>异常停机事件快照</th><th>时间</th><th>事件</th><th>结果</th><th>support_activity_state</th><th>作业节点</th><th>状态</th><th>定位</th><th>快照动作</th></tr></thead>
-          <tbody>${snapshots.map((snapshot) => `
+          <thead><tr><th>序号</th><th>时间</th><th>事件</th><th>结果</th><th>保障活动状态</th><th>作业</th><th>状态</th><th>采样位置</th><th>快照动作</th></tr></thead>
+          <tbody>${snapshots.map((snapshot, index) => `
             <tr>
-              <td>${htmlEscape(snapshot.id)}</td>
+              <td>${index + 1}</td>
               <td>${htmlEscape(snapshot.timeLabel)}</td>
               <td>${htmlEscape(snapshot.eventLabel)}</td>
               <td>${htmlEscape(snapshot.result)}</td>
-              <td>${htmlEscape(`active=${snapshot.activeJobs}; repair=${snapshot.repairBacklog}; spare=${fixed(snapshot.spareFillRate, 2)}`)}</td>
+              <td>${htmlEscape(`进行中作业 ${snapshot.activeJobs}；维修积压 ${snapshot.repairBacklog}；备件满足率 ${pct(snapshot.spareFillRate)}`)}</td>
               <td>${htmlEscape(snapshot.jobNodeLabel)}</td>
               <td>${htmlEscape(snapshot.jobState)}</td>
-              <td>${htmlEscape(`${snapshot.jobNodeId}; ${snapshot.frameRef}`)}</td>
+              <td>${htmlEscape(snapshot.frameLabel)}</td>
               <td><button type="button" class="btn-danger" data-downtime-snapshot-delete="${htmlEscape(snapshot.id)}">删除</button></td>
             </tr>
           `).join("")}</tbody>
@@ -17358,7 +17365,7 @@ function renderBar(value, max, color) {
   return `<div class="bar-track"><span class="bar-fill ${color}" style="width:${width}%"></span></div>`;
 }
 
-function renderLineChart(points) {
+function renderLineChart(points, { ariaLabel = "任务可靠度趋势" } = {}) {
   const width = 640;
   const height = 180;
   const plotLeft = 52;
@@ -17381,12 +17388,12 @@ function renderLineChart(points) {
   const line = points.map((point) => `${xScale(point.x).toFixed(1)},${yScale(point.y).toFixed(1)}`).join(" ");
   const yTicks = [0, 0.5, 1];
   return `
-    <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="任务可靠度趋势">
+    <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${htmlEscape(ariaLabel)}">
       <line class="line-chart-axis line-chart-y-axis" x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}"></line>
       <line class="line-chart-axis line-chart-x-axis" x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}"></line>
       ${yTicks.map((tick) => `<line class="line-chart-tick" x1="${plotLeft - 4}" y1="${yScale(tick).toFixed(1)}" x2="${plotRight}" y2="${yScale(tick).toFixed(1)}"></line><text class="line-chart-y-label" x="${plotLeft - 10}" y="${(yScale(tick) + 4).toFixed(1)}">${tick.toFixed(1)}</text>`).join("")}
       <polyline points="${line}"></polyline>
-      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"></circle><text class="line-chart-x-label" x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
+      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"><title>${htmlEscape(point.tooltip || `${point.x}：${point.y}`)}</title></circle><text class="line-chart-x-label" x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
     </svg>
   `;
 }
@@ -17801,7 +17808,7 @@ function createDefaultLiteMesaAnalysisSettings() {
   return {
     spare_shortfall: { samples: 27, seed: 20260621 },
     carry_list: { samples: 27, seed: 20260621, missionConfidenceTarget: 0.9 },
-    mission_reliability: { samples: 27, seed: 20260621, maxTimeWindow: "" },
+    mission_reliability: { samples: 27, seed: 20260621 },
     downtime_factors: { samples: 1, seed: 20260621, topN: 4 }
   };
 }
@@ -17851,14 +17858,6 @@ function renderLiteMesaAnalysisEditableSettings(definition, settings) {
       </label>
     `;
   }
-  if (definition.analysisType === "mission_reliability") {
-    return `
-      <label class="lite-mesa-setting-chip editable">
-        <span>时间窗口</span>
-        <input data-lite-mesa-analysis-field="maxTimeWindow" type="number" min="1" step="1" value="${htmlEscape(settings.maxTimeWindow ?? "")}" placeholder="全任务窗口">
-      </label>
-    `;
-  }
   if (definition.analysisType === "downtime_factors") {
     return `
       <label class="lite-mesa-setting-chip editable">
@@ -17877,8 +17876,6 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
   const next = { ...current };
   if (field === "missionConfidenceTarget") {
     next.missionConfidenceTarget = Math.max(0, Math.min(1, Number(value) || 0));
-  } else if (field === "maxTimeWindow") {
-    next.maxTimeWindow = Number(value) > 0 ? Math.trunc(Number(value)) : "";
   } else if (field === "topN") {
     next.topN = Math.max(1, Math.min(20, Math.trunc(Number(value) || 1)));
   } else {
@@ -17905,6 +17902,9 @@ async function runLiteMesaAnalysisPage(page) {
     seed,
     ...(definition.analysisType === "downtime_factors" ? { write_event_snapshots: true } : {})
   };
+  if (definition.analysisType === "mission_reliability") {
+    delete normalizedSettings.maxTimeWindow;
+  }
   liteMesaAnalysisResults = {
     ...liteMesaAnalysisResults,
     [definition.analysisType]: {
@@ -17964,6 +17964,10 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
       ? payload.mission_wave_rows
       : [];
   const rows = Array.isArray(payload.rows) ? payload.rows : waveRows;
+  const taskReliabilityResultFields = definition.analysisType === "mission_reliability"
+    ? normalizeTaskReliabilityResultFields(payload)
+    : [];
+  const taskReliabilityValue = (key) => taskReliabilityResultFields.find((field) => field.key === key)?.value ?? null;
   return {
     status: payload.status === "session_complete" ? "session_complete" : "blocked",
     source: payload.source || "lite_mesa_aircraft_support_v1",
@@ -17971,18 +17975,23 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     experimentId: payload.experiment_id || definition.experimentId,
     sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
-    metrics: Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
+    metrics: definition.analysisType === "mission_reliability"
+      ? taskReliabilityMetricPairs(taskReliabilityResultFields)
+      : Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
+    resultFields: taskReliabilityResultFields,
     rows,
     waveRows: waveRows.length ? waveRows : rows,
     dailyRows: Array.isArray(payload.daily_rows) ? payload.daily_rows : [],
     eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
     eventDetails: Array.isArray(payload.event_details) ? payload.event_details : [],
     eventDetailsComplete: Array.isArray(payload.event_details),
-    periodDurationDays: Number(payload.period_duration_days || 0),
+    sortieRate: taskReliabilityValue("sortie_rate"),
+    waveSuccessRate: taskReliabilityValue("wave_success_rate"),
+    periodDurationDays: taskReliabilityValue("period_duration_days"),
     periodTotalSamples: Number(payload.period_total_samples || payload.sample_count || 0),
     periodSuccessfulSamples: Number(payload.successful_samples || 0),
     periodFailedSamples: Number(payload.period_failed_samples || 0),
-    periodCompletionProbability: Number(payload.period_completion_probability || 0),
+    periodCompletionProbability: taskReliabilityValue("period_completion_probability"),
     limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
     message: payload.message || ""
   };
@@ -18009,7 +18018,6 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 function liteMesaAnalysisVisibleMetrics(definition, metrics) {
   const hiddenLabels = {
     carry_list: new Set(["备件满足率下限", "置信度目标", "样本数"]),
-    mission_reliability: new Set(["任务成功率", "战备完好率"]),
     downtime_factors: new Set(["样本数"])
   }[definition.analysisType] || new Set();
   return (metrics || []).filter(([label]) => !hiddenLabels.has(String(label)));
@@ -18070,21 +18078,13 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     `;
   }
   if (definition.analysisType === "mission_reliability") {
+    const fields = result.resultFields || normalizeTaskReliabilityResultFields(result);
     return `
-      <div class="kpi-strip">
-        <div class="kpi-card"><span>任务周期</span><strong>${formatPeriodDurationDays(result.periodDurationDays)}</strong></div>
-        <div class="kpi-card"><span>成功 / 总实验</span><strong>${result.periodSuccessfulSamples} / ${result.periodTotalSamples}</strong></div>
-        <div class="kpi-card"><span>失败实验</span><strong>${result.periodFailedSamples}</strong></div>
-        <div class="kpi-card"><span>整周期任务可靠度</span><strong>${pct(result.periodCompletionProbability)}</strong></div>
-      </div>
+      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
+        <thead><tr>${fields.map((field) => `<th>${htmlEscape(field.label)}</th>`).join("")}</tr></thead>
+        <tbody><tr>${fields.map((field) => `<td>${htmlEscape(field.displayValue)}</td>`).join("")}</tr></tbody>
+      </table></div>
       ${renderLiteMesaMissionReliabilityWaveChart(rows)}
-      <details class="lite-mesa-collapsible-table">
-        <summary>样本明细（${rows.length}）</summary>
-        <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均应执行波次</th><th>平均成功波次</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || `波次${row.sequence ?? "-"}`)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.meanMissionSuccessRate ?? row.missionSuccessRate, 3)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.meanSortieRate ?? row.sortieRate)}</td><td>${fixed(row.plannedWaves ?? row.planned_waves, 1)}</td><td>${fixed(row.successfulWaves ?? row.successful_waves, 1)}</td></tr>`).join("")}</tbody>
-        </table></div>
-      </details>
     `;
   }
   if (definition.analysisType === "downtime_factors") {
@@ -18186,17 +18186,6 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
   `;
 }
 
-function downtimeEventFactor(event) {
-  return String(event?.factor || event?.event_type || event?.reason || "");
-}
-
-function downtimeEventDurationHours(event) {
-  const hours = Number(event?.duration_hours);
-  if (Number.isFinite(hours) && hours >= 0) return hours;
-  const minutes = Number(event?.duration_minutes);
-  return Number.isFinite(minutes) && minutes >= 0 ? minutes / 60 : 0;
-}
-
 function renderLiteMesaDowntimeEventDetails(events) {
   if (!events.length) {
     return `<div class="empty-state"><strong>暂无该类型停机事件</strong><p>当前筛选范围内没有可展示的停机事件明细。</p></div>`;
@@ -18205,89 +18194,41 @@ function renderLiteMesaDowntimeEventDetails(events) {
     <div class="section-head downtime-event-detail-head"><h3>停机事件明细</h3><span>${events.length} 条</span></div>
     <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table">
       <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长（小时）</th><th>事件说明</th><th>分类信息</th></tr></thead>
-      <tbody>${events.map((event) => `<tr>
-        <td>${htmlEscape(downtimeFactorLabel(downtimeEventFactor(event)))}</td>
-        <td>${htmlEscape(downtimeDisplayValue(event.equipment_name || event.aircraft_type || event.tail_number))}</td>
-        <td>${htmlEscape(downtimeTaskLabel(event))}</td>
-        <td>${htmlEscape(downtimeDisplayValue(event.support_node_name || event.support_node_id))}</td>
-        <td>${htmlEscape(downtimeTimeLabel(event.start_minute ?? event.start_time))}</td>
-        <td>${htmlEscape(downtimeTimeLabel(event.end_minute ?? event.end_time))}</td>
-        <td>${fixed(downtimeEventDurationHours(event), 2)} 小时</td>
-        <td>${htmlEscape(downtimeDisplayValue(event.description || event.message))}</td>
-        <td>${renderDowntimeFactorSpecificDetails(event)}</td>
-      </tr>`).join("")}</tbody>
+      <tbody>${events.map((event) => {
+        const row = downtimeEventDisplayRow(event);
+        return `<tr>
+          <td>${htmlEscape(row.factorLabel)}</td>
+          <td>${htmlEscape(row.equipmentName)}</td>
+          <td>${htmlEscape(row.taskPhaseLabel)}</td>
+          <td>${htmlEscape(row.supportNodeName)}</td>
+          <td>${htmlEscape(row.startTimeLabel)}</td>
+          <td>${htmlEscape(row.endTimeLabel)}</td>
+          <td>${fixed(row.durationHours, 2)} 小时</td>
+          <td>${htmlEscape(row.description)}</td>
+          <td>${renderDowntimeFactorSpecificDetails(row.specificDetails)}</td>
+        </tr>`;
+      }).join("")}</tbody>
     </table></div>
   `;
 }
 
-function downtimeFactorLabel(factor) {
-  return DOWNTIME_FACTOR_OPTIONS.find((item) => item.value === factor)?.label || downtimeDisplayValue(factor);
-}
-
-function downtimeDisplayValue(value) {
-  return value === null || value === undefined || value === "" ? "--" : String(value);
-}
-
-function downtimeTimeLabel(value) {
-  if (value === null || value === undefined || value === "") return "--";
-  const minute = Number(value);
-  return Number.isFinite(minute) ? `${fixed(minute, 0)} 分钟` : "--";
-}
-
-function downtimeTaskLabel(event) {
-  const mission = String(event?.mission_name || "").trim() || "未配置任务";
-  const phase = downtimeMissionPhaseLabel(event?.mission_phase);
-  return phase ? `${mission}；阶段：${phase}` : mission;
-}
-
-function downtimeMissionPhaseLabel(value) {
-  const phase = String(value || "").trim();
-  return {
-    repair: "修复性维修",
-    corrective: "修复性维修",
-    preventive: "预防性维修"
-  }[phase] || phase;
-}
-
-function renderDowntimeFactorSpecificDetails(event) {
-  const details = event.details && typeof event.details === "object" ? event.details : {};
-  const factor = downtimeEventFactor(event);
-  let rows = [];
-  if (factor === "spare_shortage") {
-    rows = [["备件", details.spare_name || details.spare_type], ["需求", details.required_quantity], ["可用", details.available_quantity], ["短缺", details.shortage_quantity], ["到货/等待结束", downtimeTimeLabel(details.arrival_minute ?? details.wait_end_minute)]];
-  } else if (factor === "failure") {
-    rows = [["故障部件", details.component_name || details.component_id], ["故障模式", details.failure_mode], ["故障发生", downtimeTimeLabel(details.failure_minute)], ["修复完成", downtimeTimeLabel(details.repair_completed_minute)]];
-  } else if (factor === "equipment_shortage") {
-    rows = [["保障设备", details.equipment_name || details.equipment_model], ["需求", details.required_quantity], ["可用", details.available_quantity], ["短缺", details.shortage_quantity], ["等待时长", details.wait_minutes === null || details.wait_minutes === undefined ? "--" : `${details.wait_minutes} 分钟`]];
-  } else if (factor === "preventive") {
-    rows = [["维修项目", details.maintenance_item || details.maintenance_type], ["触发条件", details.trigger_condition], ["计划开始", downtimeTimeLabel(details.planned_start_minute)], ["实际完成", downtimeTimeLabel(details.completed_minute)]];
-  }
+function renderDowntimeFactorSpecificDetails(rows) {
   return `<details class="downtime-factor-specific"><summary>查看</summary>${rows.map(([label, value]) => `<div><span>${htmlEscape(label)}</span><strong>${htmlEscape(downtimeDisplayValue(value))}</strong></div>`).join("")}</details>`;
-}
-
-function formatPeriodDurationDays(value) {
-  const days = Number(value || 0);
-  if (!(days > 0)) return "--";
-  return `${Number.isInteger(days) ? days : fixed(days, 2)} 天`;
-}
-
-function formatLiteMesaAnalysisMetricValue(label, value) {
-  if (String(label || "").includes("出动架次率")) return fixed(value, 3);
-  return pct(value);
 }
 
 function renderLiteMesaMissionReliabilityWaveChart(rows) {
   if (!rows.length) {
-    return `<div class="empty-state"><strong>任务波次平均成功率</strong><p>当前会话未返回按任务波次聚合的任务成功率。</p></div>`;
+    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>当前会话未返回按任务波次聚合的成功率。</p></div>`;
   }
   const points = rows.map((row, index) => ({
     x: Number(row.sequence || index + 1),
-    y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0)
+    y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0),
+    tooltip: `${row.waveLabel || row.waveKey || `波次${row.sequence ?? index + 1}`}：${formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)}`
   }));
   return `
     <div class="analysis-chart-panel">
-      <div class="chart-title">任务波次平均成功率</div>
-      ${renderLineChart(points)}
+      <div class="chart-title">波次成功率趋势</div>
+      ${renderLineChart(points, { ariaLabel: "波次成功率趋势" })}
     </div>
   `;
 }
@@ -18312,11 +18253,16 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
   const aircraftSummary = snapshot.aircraft_state?.summary || snapshot.aircraft_state || {};
   const resources = Array.isArray(snapshot.support_resources) ? snapshot.support_resources : [];
   const shortages = Array.isArray(snapshot.spare_shortages) ? snapshot.spare_shortages : [];
+  const sourceEventType = snapshot.event?.event_type || snapshot.event?.event || snapshot.event_type;
+  const businessNames = downtimeSnapshotBusinessNameIndex(
+    currentProjectJsonForExperimentContext(),
+    selectedExperimentPlanProjectJson()
+  );
   return `
     <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
       <summary>
-        <strong>${htmlEscape(snapshot.event_label || snapshot.event_type || "停机事件")}</strong>
-        <span>随机种子 ${htmlEscape(snapshot.seed ?? "-")} / 仿真时刻 ${htmlEscape(downtimeTimeLabel(snapshot.simulation_time))} / ${htmlEscape(downtimeSnapshotResultLabel(snapshot.result))}</span>
+        <strong>${htmlEscape(downtimeFactorLabel(downtimeEventFactor(snapshot)))} · ${htmlEscape(downtimeOperationalEventLabel(sourceEventType))}</strong>
+        <span>随机种子 ${htmlEscape(snapshot.seed ?? "-")} / 仿真时刻 ${htmlEscape(formatDowntimeSimulationTime(snapshot.simulation_time))} / ${htmlEscape(downtimeSnapshotResultLabel(snapshot.result))}</span>
       </summary>
       <div class="downtime-snapshot-grid">
         <section>
@@ -18332,10 +18278,10 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
           <h4>保障资源占用</h4>
           <table><thead><tr><th>资源</th><th>人员</th><th>设备</th><th>库存</th></tr></thead><tbody>
             ${resources.map((resource) => `<tr>
-              <td>${htmlEscape(resource.name || resource.resource_id || "-")}</td>
+              <td>${htmlEscape(downtimeSnapshotResourceDisplayName(resource, businessNames))}</td>
               <td>${htmlEscape(resource.personnel_in_use ?? resource.in_use ?? 0)} / ${htmlEscape(resource.personnel_capacity ?? resource.capacity ?? "-")}</td>
               <td>${htmlEscape(resource.equipment_in_use ?? 0)} / ${htmlEscape(resource.equipment_capacity ?? "-")}</td>
-              <td>${htmlEscape(formatSnapshotInventory(resource.inventory))}</td>
+              <td>${htmlEscape(formatSnapshotInventory(resource.inventory, businessNames))}</td>
             </tr>`).join("") || `<tr><td colspan="4">无资源明细</td></tr>`}
           </tbody></table>
         </section>
@@ -18343,10 +18289,10 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
           <h4>备件短缺</h4>
           <table><thead><tr><th>备件</th><th>需求</th><th>可用</th><th>作业</th></tr></thead><tbody>
             ${shortages.map((item) => `<tr>
-              <td>${htmlEscape(item.spare_type || "-")}</td>
+              <td>${htmlEscape(downtimeSnapshotSpareDisplayName(item, businessNames))}</td>
               <td>${htmlEscape(item.required_quantity ?? "-")}</td>
               <td>${htmlEscape(item.available_quantity ?? "-")}</td>
-              <td>${htmlEscape(item.job_id || item.reason || "-")}</td>
+              <td>${htmlEscape(item.job_name || "保障作业")}</td>
             </tr>`).join("") || `<tr><td colspan="4">无备件短缺</td></tr>`}
           </tbody></table>
         </section>
@@ -18355,32 +18301,59 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
   `;
 }
 
-function downtimeSnapshotResultLabel(value) {
-  const result = String(value || "");
-  return {
-    mission_delayed_by_spare_shortage: "任务因备件短缺延误",
-    mission_delayed_by_equipment_shortage: "任务因保障设备短缺延误",
-    aircraft_unavailable_for_preventive_maintenance: "飞机因预防性维修不可用",
-    aircraft_unavailable_after_failure: "飞机故障后不可用",
-    downtime_anomaly_recorded: "已记录停机异常"
-  }[result] || "已记录停机事件";
+function downtimeSnapshotBusinessNameIndex(...projectSources) {
+  const resourceNames = new Map();
+  const productNames = new Map();
+  for (const projectJson of projectSources) {
+    for (const node of projectJson?.supportNodes || []) {
+      const displayName = String(node?.display_name || node?.displayName || node?.name || node?.supportNodeName || "").trim();
+      for (const ref of [node?.id, node?.display_name, node?.displayName, node?.name, node?.supportNodeName]) {
+        if (displayName && String(ref || "").trim()) resourceNames.set(String(ref).trim(), displayName);
+      }
+    }
+    for (const resource of projectJson?.supportResources || []) {
+      const displayName = String(resource?.display_name || resource?.displayName || resource?.name || resource?.spareName || resource?.model || "").trim();
+      for (const ref of [resource?.id, resource?.display_name, resource?.displayName, resource?.name]) {
+        if (displayName && String(ref || "").trim()) resourceNames.set(String(ref).trim(), displayName);
+      }
+      if (String(resource?.type || "").trim().toLowerCase() === "spare") {
+        for (const ref of [resource?.productId, resource?.id, resource?.name, resource?.spareName, resource?.spareType, resource?.model]) {
+          if (displayName && String(ref || "").trim()) productNames.set(String(ref).trim(), displayName);
+        }
+      }
+    }
+    for (const product of projectJson?.products || []) {
+      const productId = String(product?.id || "").trim();
+      if (productId) productNames.set(productId, productDisplayName(product));
+    }
+  }
+  return { resourceNames, productNames };
 }
 
-function downtimeAircraftStateLabel(value) {
-  const state = String(value || "");
-  return {
-    available: "可用",
-    maintenance: "维修中",
-    repairing: "修复中",
-    failed: "故障",
-    waiting: "等待中"
-  }[state] || (state || "未知状态");
+function downtimeSnapshotResourceDisplayName(resource, businessNames) {
+  const resourceId = String(resource?.resource_id || "").trim();
+  const displayName = String(resource?.display_name || resource?.displayName || "").trim();
+  const explicitName = String(resource?.name || "").trim();
+  return (displayName && displayName !== resourceId ? displayName : "")
+    || businessNames.resourceNames.get(resourceId)
+    || businessNames.resourceNames.get(explicitName)
+    || (explicitName && explicitName !== resourceId ? explicitName : "未记录保障资源名称");
 }
 
-function formatSnapshotInventory(inventory) {
-  if (!inventory || typeof inventory !== "object") return "-";
+function downtimeSnapshotSpareDisplayName(item, businessNames) {
+  const productId = String(item?.product_id || "").trim();
+  const spareType = String(item?.spare_type || "").trim();
+  return businessNames.productNames.get(productId)
+    || businessNames.productNames.get(spareType)
+    || (/[㐀-鿿]/u.test(spareType) ? spareType : "未记录备件名称");
+}
+
+function formatSnapshotInventory(inventory, businessNames) {
+  if (!inventory || typeof inventory !== "object") return "暂无库存明细";
   const entries = Object.entries(inventory).slice(0, 4);
-  return entries.length ? entries.map(([key, value]) => `${key}:${value}`).join(" / ") : "-";
+  return entries.length
+    ? entries.map(([key, value]) => `${downtimeSnapshotSpareDisplayName({ product_id: key }, businessNames)}:${value}`).join(" / ")
+    : "暂无库存明细";
 }
 
 function field(label, path, type = "text", attrs = {}) {

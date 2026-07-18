@@ -35,6 +35,11 @@ from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     period_completion_summary,
 )
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
+from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
+from src.spare_mvp_contract.task_reliability import (
+    build_task_reliability_result_fields,
+    task_reliability_metrics,
+)
 
 
 ANALYSIS_PROJECTION_ARTIFACT_KINDS = {
@@ -963,11 +968,14 @@ class BackendApi:
             "aggregate_metrics": aggregate,
             "projection": projections[normalized_analysis_type],
             "metrics": page_result["metrics"],
+            "result_fields": page_result.get("result_fields", []),
             "rows": page_result["rows"],
             "wave_rows": page_result.get("wave_rows", []),
             "daily_rows": page_result.get("daily_rows", []),
             "event_details": page_result.get("event_details", []),
             "event_snapshots": page_result.get("event_snapshots", []),
+            "sortie_rate": page_result.get("sortie_rate"),
+            "wave_success_rate": page_result.get("wave_success_rate"),
             "profile_reliability": page_result.get("profile_reliability"),
             "period_completion_probability": page_result.get("period_completion_probability"),
             "period_duration_days": page_result.get("period_duration_days"),
@@ -1672,7 +1680,6 @@ def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str
         minimum=0.0,
         maximum=1.0,
     )
-    max_time_window = _bounded_int(settings.get("maxTimeWindow"), default=0, minimum=0, maximum=10000)
     top_n = _bounded_int(settings.get("topN"), default=4, minimum=1, maximum=20)
     parallel_cores = normalize_monte_carlo_parallel_cores(
         settings.get("parallelCores"),
@@ -1702,7 +1709,6 @@ def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str
         "samples": samples,
         "seed": seed,
         "missionConfidenceTarget": confidence_target,
-        "maxTimeWindow": max_time_window,
         "topN": top_n,
         "parallelCores": parallel_cores,
         "sampleTimeoutSeconds": sample_timeout_seconds,
@@ -2340,33 +2346,29 @@ def _lite_mesa_mission_reliability_result(
 ) -> dict[str, Any]:
     data = projection.get("data") if isinstance(projection.get("data"), dict) else {}
     rows = _mean_mission_wave_reliability(samples)
-    max_rows = settings.get("maxTimeWindow")
-    if max_rows:
-        rows = rows[: max(1, _metric_int(max_rows, default=len(rows)))]
     period_summary = period_completion_summary(samples)
     total_samples = period_summary["total_samples"]
     successful_samples = period_summary["successful_samples"]
     failed_samples = period_summary["failed_samples"]
     profile_reliability = _clamp01(data.get("mission_success_probability"))
+    sortie_rate = max(0.0, _metric_float(data.get("sortie_rate"), default=0))
     period_completion_probability = period_summary["completion_probability"]
     period_duration_days = period_summary["duration_days"]
+    result_fields = build_task_reliability_result_fields(
+        sortie_rate=sortie_rate,
+        wave_success_rate=profile_reliability,
+        period_completion_probability=period_completion_probability,
+        period_duration_days=period_duration_days,
+    )
     return {
         "experiment_id": "project_baseline_at_current_granularity",
-        "metrics": [
-            ["任务成功率", _pct(data.get("mission_success_probability"))],
-            ["出动架次率", _decimal(data.get("sortie_rate"))],
-            ["战备完好率", _pct(_sample_mean(samples, "ready_rate"))],
-            ["任务失败次数", str(int(round(_sample_metric_sum(samples, "failed_sorties"))))],
-            ["任务剖面可靠性", _pct(profile_reliability)],
-            ["仿真实验总次数", str(total_samples)],
-            ["整周期任务成功次数", str(successful_samples)],
-            ["整周期任务失败次数", str(failed_samples)],
-            ["整周期任务可靠度", _decimal(period_completion_probability)],
-            ["任务可靠度百分比", _pct(period_completion_probability)],
-        ],
+        "metrics": task_reliability_metrics(result_fields),
+        "result_fields": result_fields,
         "rows": rows,
         "wave_rows": rows,
         "daily_rows": _mean_daily_mission_reliability(samples),
+        "sortie_rate": sortie_rate,
+        "wave_success_rate": profile_reliability,
         "profile_reliability": profile_reliability,
         "period_completion_probability": period_completion_probability,
         "period_duration_days": period_duration_days,
@@ -2459,7 +2461,7 @@ def _lite_mesa_downtime_event_details(samples: list[dict[str, Any]]) -> list[dic
             factor = str(event.get("factor") or "")
             if factor not in {"failure", "equipment_shortage", "spare_shortage", "preventive"}:
                 continue
-            item = copy.deepcopy(event)
+            item = normalize_downtime_event_for_analysis(event)
             item["sample_index"] = sample_index
             item["seed"] = seed
             item["source_event_id"] = str(event.get("event_id") or "")
@@ -2859,10 +2861,6 @@ def _sample_mean(samples: list[dict[str, Any]], metric: str) -> float:
 
 def _sample_metric_sum(samples: list[dict[str, Any]], metric: str) -> float:
     return sum(_metric_float(sample.get("metrics", {}).get(metric), default=0) for sample in samples)
-
-
-def _decimal(value: Any) -> str:
-    return f"{_metric_float(value, default=0):.3f}"
 
 
 def _pct(value: Any) -> str:

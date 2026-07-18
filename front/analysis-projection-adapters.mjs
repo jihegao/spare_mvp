@@ -1,3 +1,15 @@
+import {
+  downtimeFactorLabel,
+  downtimeJobLabel,
+  downtimeJobStateLabel,
+  downtimeSnapshotResultLabel,
+  formatDowntimeSimulationTime
+} from "./downtime-analysis.mjs";
+import {
+  normalizeTaskReliabilityResultFields,
+  taskReliabilityMetricPairs
+} from "./task-reliability-contract.mjs";
+
 const PROJECTION_KINDS = Object.freeze({
   spare_shortfall: "analysis_projection_spare_shortfall",
   carry_list: "analysis_projection_carry_list",
@@ -205,12 +217,20 @@ function normalizeMissionReliability(payload) {
   const state = data.target_met ? "满足" : "未达标";
   const seriesRows = normalizeMissionReliabilitySeries(data, { probability, sortieRate, state });
   const steepestDrop = missionReliabilitySteepestDrop(seriesRows);
+  const resultFields = normalizeTaskReliabilityResultFields({
+    result_fields: data.result_fields,
+    sortie_rate: sortieRate,
+    wave_success_rate: data.wave_success_rate ?? data.profile_reliability ?? probability,
+    period_completion_probability: data.period_completion_probability,
+    period_duration_days: data.period_duration_days
+  });
   return {
     analysisType: "mission_reliability",
     formal: true,
     source: "projection payload",
     rows: seriesRows,
     steepestDrop,
+    resultFields,
     profileReliability: clamp01(numberOrZero(data.profile_reliability ?? probability)),
     periodCompletionProbability: clamp01(numberOrZero(data.period_completion_probability)),
     periodDurationDays: Math.max(0, numberOrZero(data.period_duration_days)),
@@ -218,12 +238,7 @@ function normalizeMissionReliability(payload) {
     successfulSamples: Math.max(0, Math.round(numberOrZero(data.successful_samples))),
     failedSamples: Math.max(0, Math.round(numberOrZero(data.failed_samples))),
     validSamples: Math.max(0, Math.round(numberOrZero(data.valid_samples))),
-    metrics: [
-      ["任务成功概率", fixed(probability, 2)],
-      ["出动架次率", fixed(sortieRate, 2)],
-      ["目标达成", state],
-      ["最大下降波次", missionReliabilityDropLabel(steepestDrop)]
-    ]
+    metrics: taskReliabilityMetricPairs(resultFields)
   };
 }
 
@@ -289,11 +304,6 @@ function missionReliabilitySteepestDrop(rows) {
   return best && best.drop > 0 ? best : null;
 }
 
-function missionReliabilityDropLabel(drop) {
-  if (!drop) return "无下降区间";
-  return `T${drop.fromIndex} → T${drop.toIndex} (-${fixed(drop.drop, 2)})`;
-}
-
 function normalizeDowntimeFactors(payload) {
   const rows = requireArray(payload.data, "downtime_factors data must be an array")
     .map((row) => {
@@ -335,20 +345,22 @@ function normalizeDowntimeAnomalySnapshots(value) {
       const frameRef = requireObject(row.frame_ref, "frame_ref must be an object");
       return {
         id: stringValue(row.snapshot_id, `downtime-${time}`),
-        timeLabel: stringValue(time, "0"),
+        simulationTime: time,
+        timeLabel: formatDowntimeSimulationTime(time),
         eventType: stringValue(row.event_type, "downtime_event"),
-        eventLabel: stringValue(row.event_label, DOWNTIME_FACTOR_LABELS[row.event_type] || row.event_type || "停机事件"),
-        result: stringValue(row.result, "recorded"),
+        eventLabel: downtimeFactorLabel(row.event_type),
+        result: downtimeSnapshotResultLabel(row.result),
         activeJobs: Math.max(0, Math.round(numberOrZero(state.active_jobs))),
         repairBacklog: Math.max(0, Math.round(numberOrZero(state.repair_backlog))),
         spareFillRate: clamp01(numberOrZero(state.spare_fill_rate)),
         jobNodeId: stringValue(job.job_id || job.node_id, "unknown_job"),
-        jobNodeLabel: stringValue(job.task || job.label || job.kind, "未定位作业"),
-        jobState: stringValue(job.state, "unknown"),
-        frameRef: `sample=${stringValue(frameRef.sample_index, "0")}; sample_step=${stringValue(frameRef.sample_step, "0")}; step=${stringValue(frameRef.step, "0")}`
+        jobNodeLabel: downtimeJobLabel(job.task, job.label, job.kind),
+        jobState: downtimeJobStateLabel(job.state),
+        frameRef: `sample=${stringValue(frameRef.sample_index, "0")}; sample_step=${stringValue(frameRef.sample_step, "0")}; step=${stringValue(frameRef.step, "0")}`,
+        frameLabel: `第${Math.max(0, Math.round(numberOrZero(frameRef.sample_index))) + 1}个样本；采样步 ${stringValue(frameRef.sample_step, "0")}；仿真步 ${stringValue(frameRef.step, "0")}`
       };
     })
-    .sort((left, right) => Number(left.timeLabel) - Number(right.timeLabel));
+    .sort((left, right) => left.simulationTime - right.simulationTime);
 }
 
 function requireArray(value, message) {
