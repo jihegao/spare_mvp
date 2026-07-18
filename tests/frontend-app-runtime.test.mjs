@@ -1549,10 +1549,10 @@ test("task reliability analysis renders the ordered four-field contract and igno
     projectJson: createRuntimeProjectJson(),
     liteMesaAnalysisResponseOverrides: {
       result_fields: [
-        { key: "period_duration_days", value: 21, display_value: "21 天" },
-        { key: "period_completion_probability", value: 0.923, display_value: "92.3%" },
+        { key: "period_duration_days", value: 2.125, display_value: "2.12 天" },
+        { key: "period_completion_probability", value: 0.9225, display_value: "92.2%" },
         { key: "wave_success_rate", value: 0.8, display_value: "80%" },
-        { key: "sortie_rate", value: 0.75, display_value: "0.750" }
+        { key: "sortie_rate", value: 0.8125, display_value: "0.812" }
       ]
     }
   });
@@ -1569,7 +1569,7 @@ test("task reliability analysis renders the ordered four-field contract and igno
 
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(detailPanel, /<thead><tr><th>出动架次率<\/th><th>波次成功率<\/th><th>整周期任务可靠度<\/th><th>任务周期<\/th><\/tr><\/thead>/);
-    assert.match(detailPanel, /<tbody><tr><td>0\.750<\/td><td>80%<\/td><td>92\.3%<\/td><td>21 天<\/td><\/tr><\/tbody>/);
+    assert.match(detailPanel, /<tbody><tr><td>0\.812<\/td><td>80%<\/td><td>92\.2%<\/td><td>2\.12 天<\/td><\/tr><\/tbody>/);
     assert.match(detailPanel, /波次成功率趋势/);
     assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
     assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);

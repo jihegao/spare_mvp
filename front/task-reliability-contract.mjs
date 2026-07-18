@@ -30,10 +30,27 @@ export function normalizeTaskReliabilityResultFields(payload = {}) {
   );
 
   return [
-    resultField("sortie_rate", sortieRate, formatSortieRate(sortieRate)),
-    resultField("wave_success_rate", waveSuccessRate, formatReliabilityPercent(waveSuccessRate)),
-    resultField("period_completion_probability", periodReliability, formatReliabilityPercent(periodReliability)),
-    resultField("period_duration_days", periodDays, formatTaskPeriodDays(periodDays))
+    resultField(
+      "sortie_rate",
+      sortieRate,
+      canonicalDisplayValue("sortie_rate", fields.get("sortie_rate"), sortieRate) ?? formatSortieRate(sortieRate)
+    ),
+    resultField(
+      "wave_success_rate",
+      waveSuccessRate,
+      canonicalDisplayValue("wave_success_rate", fields.get("wave_success_rate"), waveSuccessRate) ?? formatReliabilityPercent(waveSuccessRate)
+    ),
+    resultField(
+      "period_completion_probability",
+      periodReliability,
+      canonicalDisplayValue("period_completion_probability", fields.get("period_completion_probability"), periodReliability)
+        ?? formatReliabilityPercent(periodReliability)
+    ),
+    resultField(
+      "period_duration_days",
+      periodDays,
+      canonicalDisplayValue("period_duration_days", fields.get("period_duration_days"), periodDays) ?? formatTaskPeriodDays(periodDays)
+    )
   ];
 }
 
@@ -114,9 +131,44 @@ function numericValue(value) {
 
 function formatSortieRate(value) {
   const numeric = numericValue(value);
-  return numeric === null ? "--" : numeric.toFixed(3);
+  return numeric === null ? "--" : roundHalfEven(numeric, 3).toFixed(3);
 }
 
 function trimmedDecimal(value, digits) {
-  return Number(value).toFixed(digits).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+  return roundHalfEven(Number(value), digits).toFixed(digits).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+}
+
+function canonicalDisplayValue(key, field, value) {
+  const displayValue = String(field?.display_value ?? field?.displayValue ?? "").trim();
+  if (!displayValue) return null;
+  if (key === "period_duration_days" && value === null) return displayValue === "--" ? displayValue : null;
+  const parsed = numericValue(displayValue);
+  if (value === null || parsed === null) return null;
+  if (key === "sortie_rate") {
+    return /^\d+\.\d{3}$/.test(displayValue) && nearlyEqual(parsed, value, 0.0005) ? displayValue : null;
+  }
+  if (key === "wave_success_rate" || key === "period_completion_probability") {
+    return /^\d+(?:\.\d)?%$/.test(displayValue) && nearlyEqual(parsed, value, 0.0005) ? displayValue : null;
+  }
+  if (key === "period_duration_days") {
+    return /^\d+(?:\.\d{1,2})? 天$/.test(displayValue) && nearlyEqual(parsed, value, 0.005) ? displayValue : null;
+  }
+  return null;
+}
+
+function nearlyEqual(left, right, tolerance) {
+  return Math.abs(Number(left) - Number(right)) <= tolerance + Number.EPSILON * 8;
+}
+
+function roundHalfEven(value, digits) {
+  const factor = 10 ** digits;
+  const scaled = Number(value) * factor;
+  if (!Number.isFinite(scaled)) return 0;
+  const lower = Math.floor(scaled);
+  const fraction = scaled - lower;
+  const tieTolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
+  if (Math.abs(fraction - 0.5) <= tieTolerance) {
+    return (lower % 2 === 0 ? lower : lower + 1) / factor;
+  }
+  return Math.round(scaled) / factor;
 }
