@@ -228,6 +228,8 @@ function normalizeMissionReliability(payload) {
     period_completion_probability: data.period_completion_probability,
     period_duration_days: data.period_duration_days
   });
+  const totalSamples = optionalNonNegativeInteger(data.total_samples, "total_samples");
+  const successfulSamples = optionalNonNegativeInteger(data.successful_samples, "successful_samples");
   return {
     analysisType: "mission_reliability",
     formal: true,
@@ -238,25 +240,20 @@ function normalizeMissionReliability(payload) {
     profileReliability: clamp01(numberOrZero(data.profile_reliability ?? probability)),
     periodCompletionProbability: clamp01(numberOrZero(data.period_completion_probability)),
     periodDurationDays: Math.max(0, numberOrZero(data.period_duration_days)),
-    totalSamples: Math.max(0, Math.round(numberOrZero(data.total_samples ?? data.valid_samples))),
-    successfulSamples: Math.max(0, Math.round(numberOrZero(data.successful_samples))),
-    failedSamples: Math.max(0, Math.round(numberOrZero(data.failed_samples))),
-    validSamples: Math.max(0, Math.round(numberOrZero(data.valid_samples))),
-    metrics: taskReliabilityMetricPairs(resultFields)
+    totalSamples,
+    successfulSamples,
+    failedSamples: optionalNonNegativeInteger(data.failed_samples, "failed_samples"),
+    validSamples: optionalNonNegativeInteger(data.valid_samples, "valid_samples"),
+    metrics: [
+      ...taskReliabilityMetricPairs(resultFields),
+      ["仿真总次数", totalSamples === null ? "不可用" : String(totalSamples)],
+      ["成功次数", successfulSamples === null ? "不可用" : String(successfulSamples)]
+    ]
   };
 }
 
 function normalizeMissionReliabilitySeries(data, fallback) {
-  const rawRows = Array.isArray(data.mission_wave_rows) && data.mission_wave_rows.length
-    ? data.mission_wave_rows
-    : Array.isArray(data.series) && data.series.length
-      ? data.series
-      : [{
-          wave_label: "projection",
-          sample_count: 1,
-          mission_success_probability: fallback.probability,
-          sortie_rate: fallback.sortieRate
-        }];
+  const rawRows = Array.isArray(data.mission_wave_rows) ? data.mission_wave_rows : [];
   return rawRows.map((row, index) => {
     const probability = clamp01(requireFiniteNumber(
       row.mean_mission_success_rate ?? row.mission_success_probability,
@@ -269,7 +266,9 @@ function normalizeMissionReliabilitySeries(data, fallback) {
       row.wave_label ?? (dayIndex && waveIndex ? `第${dayIndex}天 第${waveIndex}波` : row.simulation_time),
       `${index + 1}`
     );
-    const sampleCount = Number.isFinite(row.sample_count) ? Math.max(0, Math.round(row.sample_count)) : 1;
+    const sampleIndex = optionalNonNegativeInteger(row.sample_index, "series sample_index");
+    if (sampleIndex === null) throw new Error("series sample_index is required for per-sample wave detail");
+    const sampleLabel = stringValue(row.sample_label, `样本 ${sampleIndex + 1}`);
     return {
       sequence: index + 1,
       timeLabel: waveLabel,
@@ -277,7 +276,8 @@ function normalizeMissionReliabilitySeries(data, fallback) {
       waveKey: stringValue(row.wave_key, dayIndex && waveIndex ? `d${dayIndex}-w${waveIndex}` : `wave-${index + 1}`),
       dayIndex,
       waveIndex,
-      sampleCount,
+      sampleIndex,
+      sampleLabel,
       probability,
       meanMissionSuccessRate: probability,
       sortieRate,
@@ -380,6 +380,13 @@ function requireObject(value, message) {
 function requireFiniteNumber(value, fieldName) {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${fieldName} must be a finite number`);
   return value;
+}
+
+function optionalNonNegativeInteger(value, fieldName) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = requireFiniteNumber(value, fieldName);
+  if (!Number.isInteger(numeric) || numeric < 0) throw new Error(`${fieldName} must be a non-negative integer`);
+  return numeric;
 }
 
 function numberOrZero(value) {

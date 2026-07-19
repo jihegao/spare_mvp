@@ -1257,9 +1257,10 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(mission_reliability_payload["data"]["wave_success_rate"], mission_reliability_payload["data"]["profile_reliability"])
         self.assertGreaterEqual(len(mission_series), 1)
         wave_keys = [(row["day_index"], row["wave_index"]) for row in mission_series]
-        self.assertEqual(wave_keys, sorted(wave_keys))
+        sample_wave_keys = [(row["sample_index"], row["day_index"], row["wave_index"]) for row in mission_series]
+        self.assertEqual(sample_wave_keys, sorted(sample_wave_keys))
         self.assertEqual(wave_keys[0], (1, 1))
-        self.assertTrue(all(row["sample_count"] <= 4 for row in mission_series))
+        self.assertEqual({row["sample_index"] for row in mission_series}, {0, 1, 2, 3})
         self.assertTrue(
             all(
                 0 <= row["mission_success_probability"] <= 1
@@ -1309,7 +1310,7 @@ class SimulationAdapterTest(unittest.TestCase):
         )
         self.assertEqual(len(state_payload["frames"]), state_artifact["representative_sample_frame_count"])
 
-    def test_aircraft_support_v1_mission_reliability_series_aggregates_waves_across_samples(self) -> None:
+    def test_aircraft_support_v1_mission_reliability_series_preserves_every_sample_wave(self) -> None:
         rows = self.adapter._aircraft_support_v1_mission_reliability_series(
             metrics={"mission_success_rate": 0.8, "sortie_rate": 0.9, "planned_sorties": 4},
             samples=[
@@ -1327,16 +1328,26 @@ class SimulationAdapterTest(unittest.TestCase):
             ],
         )
 
-        self.assertEqual([row["wave_key"] for row in rows], ["d1-w1", "d1-w2"])
-        self.assertEqual([row["sample_count"] for row in rows], [2, 1])
-        self.assertAlmostEqual(rows[0]["planned_sorties"], 4)
-        self.assertAlmostEqual(rows[0]["successful_sorties"], 0.5)
+        self.assertEqual([row["wave_key"] for row in rows], ["d1-w1", "d1-w2", "d1-w1"])
+        self.assertEqual([row["sample_index"] for row in rows], [0, 0, 1])
+        self.assertEqual([row["sample_label"] for row in rows], ["样本 1", "样本 1", "样本 2"])
+        self.assertAlmostEqual(rows[0]["planned_sorties"], 2)
+        self.assertAlmostEqual(rows[0]["successful_sorties"], 1)
         self.assertAlmostEqual(rows[0]["planned_waves"], 1)
-        self.assertAlmostEqual(rows[0]["successful_waves"], 0.5)
-        self.assertAlmostEqual(rows[0]["mean_mission_success_rate"], 1 / 2)
-        self.assertAlmostEqual(rows[0]["sortie_rate"], 6 / 8)
+        self.assertAlmostEqual(rows[0]["successful_waves"], 1)
+        self.assertAlmostEqual(rows[0]["mean_mission_success_rate"], 1)
+        self.assertAlmostEqual(rows[0]["sortie_rate"], 1)
         self.assertEqual(rows[1]["mean_mission_success_rate"], 0)
+        self.assertEqual(rows[2]["mean_mission_success_rate"], 0)
         self.assertTrue(all(0 <= row["mission_success_probability"] <= 1 for row in rows))
+
+        self.assertEqual(
+            self.adapter._aircraft_support_v1_mission_reliability_series(
+                metrics={"mission_success_rate": 0.8, "sortie_rate": 0.9},
+                samples=[],
+            ),
+            [],
+        )
 
     def test_aircraft_support_v1_monte_carlo_isolates_failed_samples(self) -> None:
         class FailingSampleAdapter(SimulationAdapter):

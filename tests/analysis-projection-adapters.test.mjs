@@ -134,7 +134,7 @@ test("normalizes carry list projection payload for formal KPI and table renderin
   assert.equal(view.rows[1].utilization, null);
 });
 
-test("normalizes mission reliability projection payload as mission wave aggregates for formal KPI and trend rendering", () => {
+test("normalizes mission reliability projection payload as per-sample wave rows for formal KPI and trend rendering", () => {
   const view = normalizeAnalysisProjectionPayload("mission_reliability", {
     projection_type: "mission_reliability",
     run_id: "run-ui",
@@ -156,10 +156,10 @@ test("normalizes mission reliability projection payload as mission wave aggregat
       failed_samples: 1,
       valid_samples: 3,
       mission_wave_rows: [
-        { day_index: 1, wave_index: 1, wave_label: "第1天 第1波", sample_count: 3, mean_mission_success_rate: 0.96, mean_sortie_rate: 0.92 },
-        { day_index: 1, wave_index: 2, wave_label: "第1天 第2波", sample_count: 3, mean_mission_success_rate: 0.94, mean_sortie_rate: 0.91 },
-        { day_index: 2, wave_index: 1, wave_label: "第2天 第1波", sample_count: 2, mean_mission_success_rate: 0.86, mean_sortie_rate: 0.84 },
-        { day_index: 2, wave_index: 2, wave_label: "第2天 第2波", sample_count: 1, mean_mission_success_rate: 0.85, mean_sortie_rate: 0.83 }
+        { sample_index: 0, sample_label: "样本 1", day_index: 1, wave_index: 1, wave_label: "第1天 第1波", mean_mission_success_rate: 0.96, mean_sortie_rate: 0.92 },
+        { sample_index: 0, sample_label: "样本 1", day_index: 1, wave_index: 2, wave_label: "第1天 第2波", mean_mission_success_rate: 0.94, mean_sortie_rate: 0.91 },
+        { sample_index: 1, sample_label: "样本 2", day_index: 1, wave_index: 1, wave_label: "第1天 第1波", mean_mission_success_rate: 0.86, mean_sortie_rate: 0.84 },
+        { sample_index: 1, sample_label: "样本 2", day_index: 1, wave_index: 2, wave_label: "第1天 第2波", mean_mission_success_rate: 0.85, mean_sortie_rate: 0.83 }
       ]
     }
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
@@ -168,7 +168,9 @@ test("normalizes mission reliability projection payload as mission wave aggregat
     ["出动架次率", "0.812"],
     ["波次成功率", "80%"],
     ["整周期任务可靠度", "92.2%"],
-    ["任务周期", "2.12 天"]
+    ["任务周期", "2.12 天"],
+    ["仿真总次数", "3"],
+    ["成功次数", "2"]
   ]);
   assert.deepEqual(view.resultFields.map(({ key, displayValue }) => [key, displayValue]), [
     ["sortie_rate", "0.812"],
@@ -180,7 +182,7 @@ test("normalizes mission reliability projection payload as mission wave aggregat
     fromIndex: 2,
     toIndex: 3,
     fromTime: "第1天 第2波",
-    toTime: "第2天 第1波",
+    toTime: "第1天 第1波",
     drop: 0.07999999999999996
   });
   assert.equal(view.periodCompletionProbability, 0.9225);
@@ -188,12 +190,38 @@ test("normalizes mission reliability projection payload as mission wave aggregat
   assert.equal(view.totalSamples, 3);
   assert.equal(view.successfulSamples, 2);
   assert.equal(view.failedSamples, 1);
-  assert.deepEqual(view.rows.map((row) => [row.sequence, row.waveLabel, row.sampleCount, row.probability, row.sortieRate, row.state]), [
-    [1, "第1天 第1波", 3, 0.96, 0.92, "满足"],
-    [2, "第1天 第2波", 3, 0.94, 0.91, "满足"],
-    [3, "第2天 第1波", 2, 0.86, 0.84, "满足"],
-    [4, "第2天 第2波", 1, 0.85, 0.83, "满足"]
+  assert.deepEqual(view.rows.map((row) => [row.sequence, row.sampleIndex, row.sampleLabel, row.waveLabel, row.probability, row.sortieRate, row.state]), [
+    [1, 0, "样本 1", "第1天 第1波", 0.96, 0.92, "满足"],
+    [2, 0, "样本 1", "第1天 第2波", 0.94, 0.91, "满足"],
+    [3, 1, "样本 2", "第1天 第1波", 0.86, 0.84, "满足"],
+    [4, 1, "样本 2", "第1天 第2波", 0.85, 0.83, "满足"]
   ]);
+});
+
+test("mission reliability does not invent counts or per-sample rows when source detail is missing", () => {
+  const view = normalizeAnalysisProjectionPayload("mission_reliability", {
+    projection_type: "mission_reliability",
+    run_id: "run-ui",
+    model_family: "aircraft_support_v1",
+    data: {
+      mission_success_probability: 0.8,
+      sortie_rate: 0.75,
+      period_completion_probability: 0.5,
+      period_duration_days: 1,
+      result_fields: [
+        { key: "sortie_rate", value: 0.75, display_value: "0.750" },
+        { key: "wave_success_rate", value: 0.8, display_value: "80%" },
+        { key: "period_completion_probability", value: 0.5, display_value: "50%" },
+        { key: "period_duration_days", value: 1, display_value: "1 天" }
+      ],
+      series: [{ mission_success_probability: 0.8, sortie_rate: 0.75 }]
+    }
+  }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
+
+  assert.equal(view.totalSamples, null);
+  assert.equal(view.successfulSamples, null);
+  assert.deepEqual(view.metrics.slice(-2), [["仿真总次数", "不可用"], ["成功次数", "不可用"]]);
+  assert.deepEqual(view.rows, []);
 });
 
 test("normalizes downtime factor projection payload for formal KPI and table rendering", () => {
