@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import base64
 from contextlib import contextmanager
 import hashlib
 import io
@@ -28,6 +29,9 @@ from src.spare_mvp_backend.project_payload import (
     project_k_out_of_n_errors,
     project_runtime_config_paths,
     strip_project_sweep,
+)
+from src.spare_mvp_backend.project_xlsx import (
+    MAX_XLSX_BYTES, ProjectXlsxError, locate_issues, parse_project_xlsx, preview_counts, validate_import_relations,
 )
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRED_FORMAL_MODEL_FAMILIES, RunService, RunServiceError
@@ -110,6 +114,34 @@ class BackendApi:
             validation["ok"] = False
             validation["errors"] = [*validation.get("errors", []), *support_activity_name_errors]
         return validation
+
+    def preview_project_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:
+        encoded = str(payload.get("content_base64") or "")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except ValueError as exc:
+            raise BackendApiError("invalid_project_xlsx", "XLSX 内容不是有效的 base64") from exc
+        if len(content) > MAX_XLSX_BYTES:
+            raise BackendApiError(
+                "project_xlsx_too_large", "XLSX 文件超过导入上限",
+                limit_bytes=MAX_XLSX_BYTES, received_bytes=len(content),
+            )
+        try:
+            project, locations, parse_errors = parse_project_xlsx(content)
+        except ProjectXlsxError as exc:
+            raise BackendApiError("invalid_project_xlsx", str(exc)) from exc
+        project = normalize_project_basic_mission_support_activity_names(project)
+        validation = self.validate_project(project)
+        relation_errors = validate_import_relations(project)
+        compile_errors = self.adapter._aircraft_support_v1_compile_issues(project)
+        errors = locate_issues([*parse_errors, *validation.get("errors", []), *relation_errors, *compile_errors], locations)
+        return {
+            "ok": not errors,
+            "project_json": project,
+            "errors": errors,
+            "counts": preview_counts(project),
+            "sheets": sorted({location["sheet"] for location in locations.values()}),
+        }
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         try:
@@ -330,6 +362,44 @@ class BackendApi:
             "project_version": project["project_version"],
             "schema_version": project["schema_version"],
             "status": "saved",
+        }
+
+    def create_imported_project(self, project_json: dict[str, Any], *, actor_user_id: str) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="project.import_xlsx.create",
+            resource_type="project",
+            resource_id=str(project_json.get("project_id") or ""),
+        )
+        project_json = normalize_project_basic_mission_support_activity_names(project_json)
+        validation = self.validate_project(project_json)
+        import_errors = [
+            *validation.get("errors", []),
+            *validate_import_relations(project_json),
+            *self.adapter._aircraft_support_v1_compile_issues(project_json),
+        ]
+        if import_errors:
+            raise BackendApiError("invalid_project", "Project JSON failed validation", errors=import_errors)
+        project = strip_project_sweep(project_json)
+        project["project_id"] = validation["project_id"]
+        project["schema_version"] = validation["project_schema_version"]
+        project["project_version"] = validation["project_version"]
+        create_result = self.repository.create_project_if_absent(project, actor_user_id=actor_user_id)
+        if create_result is None:
+            raise BackendApiError(
+                "project_already_exists",
+                "Project ID already exists; import as new cannot overwrite it",
+                project_id=project["project_id"],
+            )
+        audit = create_result["audit"]
+        return {
+            "project_id": project["project_id"],
+            "project_version": project["project_version"],
+            "schema_version": project["schema_version"],
+            "updated_at": create_result["updated_at"],
+            "audit_event_id": audit.get("audit_event_id") or audit.get("event_id"),
+            "status": "created",
         }
 
     def export_rms_allocation_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:

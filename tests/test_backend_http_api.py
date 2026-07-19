@@ -1751,6 +1751,42 @@ class BackendHttpApiTest(unittest.TestCase):
                 connection.close()
                 self.assertEqual(response.status, 413)
                 self.assertEqual(payload["code"], "request_too_large")
+
+                connection = http.client.HTTPConnection(
+                    "127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS
+                )
+                connection.putrequest("POST", "/api/projects/import-xlsx/preview")
+                connection.putheader("content-type", "application/json")
+                connection.putheader("content-length", str(2 * 1024 * 1024))
+                connection.endheaders()
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.close()
+                self.assertEqual(response.status, 401)
+                self.assertEqual(payload["code"], "unauthorized")
+
+                auth_token = self._login_token(
+                    f"http://127.0.0.1:{server.server_address[1]}/api",
+                    "data",
+                    "data",
+                )
+                xlsx_body = json.dumps({
+                    "content_base64": "A" * (1024 * 1024 + 4),
+                    "file_name": "large-but-route-allowed.xlsx",
+                }).encode("utf-8")
+                connection = http.client.HTTPConnection(
+                    "127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS
+                )
+                connection.putrequest("POST", "/api/projects/import-xlsx/preview")
+                connection.putheader("content-type", "application/json")
+                connection.putheader("authorization", f"Bearer {auth_token}")
+                connection.putheader("content-length", str(len(xlsx_body)))
+                connection.endheaders(xlsx_body)
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.close()
+                self.assertEqual(response.status, 400)
+                self.assertEqual(payload["code"], "invalid_project_xlsx")
             finally:
                 server.shutdown()
                 server.server_close()
@@ -2330,6 +2366,72 @@ class BackendHttpApiTest(unittest.TestCase):
                     error["details"]["issues"][0]["field_path"],
                     "objects.supportActivities[0].resourceId",
                 )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_project_xlsx_preview_parses_real_workbook_and_returns_located_errors(self) -> None:
+        import base64
+        from io import BytesIO
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        project_sheet = workbook.active
+        project_sheet.title = "Project"
+        project_sheet.append(["field", "value"])
+        project_sheet.append(["schema_version", "project-v0"])
+        project_sheet.append(["project_id", "xlsx-http-project"])
+        project_sheet.append(["project_version", "import-v1"])
+        project_sheet.append(["missionProfile", json.dumps({"durationHours": 8, "compositeTasks": [], "periodicTasks": []})])
+        products = workbook.create_sheet("products")
+        products.append(["id", "name"])
+        products.append(["product-1", "Product"])
+        components = workbook.create_sheet("components")
+        components.append(["id", "name", "productId", "quantity", "failureDistribution"])
+        components.append(["component-1", "Component", "missing-product", 1, '{"distributionType":"exponential","rate":0.01}'])
+        output = BytesIO()
+        workbook.save(output)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0), repo_root=REPO_ROOT, database_path=":memory:", output_dir=Path(tmp) / "artifacts"
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                auth_token = self._login_token(base_url, "data", "data")
+                preview = self._json(
+                    base_url,
+                    "POST",
+                    "/projects/import-xlsx/preview",
+                    {"content_base64": base64.b64encode(output.getvalue()).decode("ascii"), "file_name": "project.xlsx"},
+                    auth_token=auth_token,
+                )
+                self.assertFalse(preview["ok"])
+                product_error = next(error for error in preview["errors"] if error["code"] == "missing_product_reference")
+                self.assertEqual((product_error["sheet"], product_error["row"], product_error["field"]), ("components", 2, "productId"))
+                self.assertEqual(product_error["reference_value"], "missing-product")
+
+                project = small_aircraft_support_project("project-http-xlsx-create-only")
+                created = self._json(
+                    base_url,
+                    "POST",
+                    "/projects/import-xlsx/create",
+                    {"project_json": project},
+                    auth_token=auth_token,
+                )
+                self.assertEqual(created["status"], "created")
+                status, conflict = self._json_error_with_status(
+                    base_url,
+                    "POST",
+                    "/projects/import-xlsx/create",
+                    {"project_json": {**project, "projectInfo": {"name": "must not overwrite"}}},
+                    auth_token=auth_token,
+                )
+                self.assertEqual(status, 409)
+                self.assertEqual(conflict["code"], "project_already_exists")
             finally:
                 server.shutdown()
                 server.server_close()

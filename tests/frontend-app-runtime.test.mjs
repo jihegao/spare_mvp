@@ -1286,7 +1286,8 @@ test("project data management omits raw JSON while keeping overview and replacem
     await runtime.flush();
 
     assert.match(runtime.appNode.innerHTML, /data-project-template-management/);
-    assert.match(runtime.appNode.innerHTML, /<label class="btn-primary project-replacement-file-button">数据管理<input type="file" hidden data-project-replacement-file/);
+    assert.match(runtime.appNode.innerHTML, /<label class="btn-primary project-replacement-file-button">导入项目数据<input type="file" hidden data-project-replacement-file/);
+    assert.match(runtime.appNode.innerHTML, /accept="\.json,\.xlsx,/);
     assert.match(runtime.appNode.innerHTML, /data-project-replacement-file/);
     assert.match(runtime.appNode.innerHTML, /data-project-data-overview/);
     assert.match(runtime.appNode.innerHTML, /项目数据概览/);
@@ -1413,6 +1414,58 @@ test("project data replacement preserves the opaque backend version token", asyn
     assert.equal(body.expected_updated_at, "2026-06-26 00:00:00.123-opaque");
     assert.equal(body.project_json.projectInfo.name, "覆盖后的项目");
     assert.match(runtime.appNode.innerHTML, /覆盖完成，审计记录 audit-runtime-replace/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("project XLSX preview shows located errors and blocks both write actions", async () => {
+  const file = {
+    name: "invalid-project.xlsx",
+    async arrayBuffer() {
+      return Uint8Array.from([80, 75, 3, 4]).buffer;
+    }
+  };
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-project-data-management",
+    projectJson: createRuntimeProjectJson({ project_id: "project-runtime" })
+  });
+
+  try {
+    await runtime.change("[data-project-replacement-file]", {}, { files: [file], value: file.name });
+    const request = runtime.requests.find((item) => item.url === "/api/projects/import-xlsx/preview");
+    assert.ok(request, "expected XLSX preview request");
+    assert.equal(JSON.parse(request.options.body).content_base64, "UEsDBA==");
+    assert.match(runtime.appNode.innerHTML, /components 第 3 行 \/ components\[0\]\.productId/);
+    assert.match(runtime.appNode.innerHTML, /引用值：missing-product/);
+    assert.match(runtime.appNode.innerHTML, /data-project-replacement-confirm disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-project-xlsx-create disabled/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("valid project XLSX preview can be confirmed as a new project with success feedback", async () => {
+  const file = {
+    name: "valid-project.xlsx",
+    async arrayBuffer() {
+      return Uint8Array.from([80, 75, 3, 4]).buffer;
+    }
+  };
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-project-data-management",
+    projectJson: createRuntimeProjectJson({ project_id: "project-runtime" })
+  });
+
+  try {
+    await runtime.change("[data-project-replacement-file]", {}, { files: [file], value: file.name });
+    assert.match(runtime.appNode.innerHTML, /项目数据校验通过，请确认覆盖/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-xlsx-create disabled/);
+    await runtime.click("[data-project-xlsx-create]");
+    const save = runtime.requests.findLast((item) => item.url === "/api/projects/import-xlsx/create" && item.options.method === "POST");
+    assert.ok(save, "expected imported Project save request");
+    assert.match(JSON.parse(save.options.body).project_json.project_id, /^xlsx-preview-xlsx-\d+$/);
+    assert.match(runtime.appNode.innerHTML, /已导入为新项目/);
   } finally {
     runtime.restore();
   }
@@ -7138,6 +7191,51 @@ async function setupRuntimeApp({
     if (url === "/api/projects/validate") {
       return jsonResponse({ ok: true, status: "valid", issues: [] });
     }
+    if (url === "/api/projects/import-xlsx/preview" && method === "POST") {
+      const requestBody = JSON.parse(options.body || "{}");
+      if (requestBody.file_name === "valid-project.xlsx") {
+        return jsonResponse({
+          ok: true,
+          project_json: createRuntimeProjectJson({ project_id: "xlsx-preview", projectInfo: { name: "XLSX 新项目" } }),
+          sheets: ["Project", "components", "products"],
+          counts: { components: 1, products: 1 },
+          errors: []
+        });
+      }
+      return jsonResponse({
+        ok: false,
+        project_json: createRuntimeProjectJson({ project_id: "xlsx-preview" }),
+        sheets: ["Project", "components", "products"],
+        counts: { components: 1, products: 0 },
+        errors: [{
+          code: "missing_product_reference",
+          sheet: "components",
+          row: 3,
+          column: 4,
+          field: "productId",
+          path: "components[0].productId",
+          reference_value: "missing-product",
+          message: "组件 productId 必须引用存在的产品"
+        }]
+      });
+    }
+	    if (url === "/api/projects/import-xlsx/create" && method === "POST") {
+	      const requestBody = JSON.parse(options.body || "{}");
+	      const body = requestBody.project_json || {};
+	      const projectId = body.project_id || "project-runtime-imported-xlsx";
+	      if (projectPayloads.has(projectId)) throw new Error("Project ID already exists");
+	      projectPayloads.set(projectId, body);
+	      backendProjectCatalog.unshift({
+	        project_id: projectId,
+	        experiment_name: body.experiment?.name || body.projectInfo?.name || projectId,
+	        base_code: body.projectInfo?.baseCode || "RT",
+	        summary: body.projectInfo?.summary || "runtime test",
+	        source_import_id: body.missionProfile?.sourceImportId || "",
+	        is_template: false,
+	        updated_at: "2026-06-26 00:00:00"
+	      });
+	      return jsonResponse({ project_id: projectId, project_version: "project-v0.1", status: "created" });
+	    }
 	    if (url === "/api/projects" && method === "POST") {
 	      const body = JSON.parse(options.body || "{}");
       const saveIndex = projectSaveCount++;

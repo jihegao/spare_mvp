@@ -347,6 +347,26 @@ test("frontend API client reads current analysis result records", async () => {
   assert.equal(calls[0].responseType, "json");
 });
 
+test("frontend API client creates imported XLSX projects through the create-only route", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      return { project_id: request.body.project_json.project_id, status: "created" };
+    }
+  });
+  const project = { project_id: "project-xlsx-create-only" };
+
+  const created = await client.createImportedProject(project);
+
+  assert.equal(created.status, "created");
+  assert.deepEqual(calls, [{
+    method: "POST",
+    path: "/projects/import-xlsx/create",
+    body: { project_json: project }
+  }]);
+});
+
 test("frontend API client preserves formal M6.2 monte carlo SimulationExperimentBase fields", async () => {
   const calls = [];
   const client = createBackendApiClient({

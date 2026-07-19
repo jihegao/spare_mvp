@@ -348,6 +348,45 @@ class ContractRepository:
         )
         self.connection.commit()
 
+    def create_project_if_absent(
+        self,
+        project: dict[str, Any],
+        *,
+        actor_user_id: str,
+    ) -> dict[str, Any] | None:
+        """Create a project without allowing an existing project to be overwritten."""
+        project_id = _required(project, "project_id")
+        updated_at = f"create-{uuid4()}"
+        with self.connection:
+            cursor = self.connection.execute(
+                """
+                INSERT OR IGNORE INTO projects (
+                  project_id, schema_version, project_version, scenario_id,
+                  active_module, payload_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    str(project.get("schema_version") or "project-v0"),
+                    str(project.get("project_version") or "project-v0.1"),
+                    project.get("scenarioId"),
+                    project.get("activeModule"),
+                    _to_json(project),
+                    updated_at,
+                ),
+            )
+            if cursor.rowcount != 1:
+                return None
+            audit = self._insert_audit_event_no_commit(
+                actor_user_id=actor_user_id,
+                action="project.import_xlsx.create",
+                resource_type="project",
+                resource_id=project_id,
+                outcome="allowed",
+                details={"updated_at": updated_at},
+            )
+        return {"updated_at": updated_at, "audit": audit}
+
     def project_updated_at(self, project_id: str) -> str:
         cursor = self.connection.execute(
             "SELECT updated_at FROM projects WHERE project_id = ?",
