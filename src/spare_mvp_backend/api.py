@@ -36,7 +36,10 @@ from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     period_completion_summary,
 )
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
-from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
+from src.spare_mvp_contract.downtime import (
+    normalize_downtime_event_for_analysis,
+    sanitize_downtime_user_projection,
+)
 from src.spare_mvp_contract.monte_carlo_moments import build_monte_carlo_metric_moments
 from src.spare_mvp_contract.task_reliability import (
     build_task_reliability_result_fields,
@@ -2569,7 +2572,7 @@ def _lite_mesa_downtime_event_log_snapshot(
     metrics = event_snapshot.get("metrics") if isinstance(event_snapshot.get("metrics"), dict) else {}
     simulation_time = _metric_float(event.get("time", event_snapshot.get("time", 0)), default=0)
     job_id = str(job.get("job_id") or details.get("job_id") or f"{event_type}-node")
-    return {
+    return sanitize_downtime_user_projection({
         "snapshot_id": f"lite-downtime-{seed or 'run'}-{ordinal:04d}",
         "source": "model_event_log",
         "sample_index": sample_index,
@@ -2578,7 +2581,7 @@ def _lite_mesa_downtime_event_log_snapshot(
         "simulation_time": simulation_time,
         "event_type": event_type,
         "event_label": _downtime_factor_label(event_type),
-        "event": copy.deepcopy(event),
+        "event": sanitize_downtime_user_projection(event),
         "result": _lite_mesa_downtime_snapshot_result(event_type),
         "aircraft_state": aircraft_state,
         "support_resources": support_resources,
@@ -2602,7 +2605,7 @@ def _lite_mesa_downtime_event_log_snapshot(
             "sample_step": int(simulation_time),
             "step": int(simulation_time),
         },
-    }
+    })
 
 
 def _lite_mesa_downtime_snapshot_events(frame: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
@@ -2653,7 +2656,7 @@ def _lite_mesa_downtime_frame_snapshot(
     jobs = [job for job in frame.get("jobs") or [] if isinstance(job, dict)]
     job = jobs[0] if jobs else {}
     simulation_time = _metric_float(frame.get("simulation_time", event.get("time", frame.get("step", 0))), default=0)
-    return {
+    return sanitize_downtime_user_projection({
         "snapshot_id": f"lite-downtime-{seed or 'run'}-{ordinal:04d}",
         "source": "state_series_frame",
         "sample_index": sample_index,
@@ -2662,7 +2665,7 @@ def _lite_mesa_downtime_frame_snapshot(
         "simulation_time": simulation_time,
         "event_type": event_type,
         "event_label": _downtime_factor_label(event_type),
-        "event": copy.deepcopy(event),
+        "event": sanitize_downtime_user_projection(event),
         "result": _lite_mesa_downtime_snapshot_result(event_type),
         "aircraft_state": copy.deepcopy(frame.get("aircraft_state") or {}),
         "support_resources": copy.deepcopy(frame.get("resources") or frame.get("support_resources") or []),
@@ -2686,7 +2689,7 @@ def _lite_mesa_downtime_frame_snapshot(
             "sample_step": _metric_int(frame.get("sample_step", frame.get("step")), default=0),
             "step": _metric_int(frame.get("step", frame.get("sample_step")), default=0),
         },
-    }
+    })
 
 
 def _lite_mesa_downtime_frame_spare_shortages(frame: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:

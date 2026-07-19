@@ -63,11 +63,10 @@ test("builds one Chinese display row shared by filtered details and export consu
   assert.equal(row.description, "飞机J15-101装备发生故障，当前不可用并等待修复");
   assert.deepEqual(row.specificDetails, [
     ["故障部件", "液压泵"],
-    ["故障模式", "随机故障"],
     ["故障发生", "DAY_2 00:25"],
     ["修复完成", "DAY_2 01:35"]
   ]);
-  assert.doesNotMatch(JSON.stringify(row), /unavailable_after_failure|random_failure/);
+  assert.doesNotMatch(JSON.stringify(row), /unavailable_after_failure|random_failure|failure_mode|故障模式/);
 });
 
 test("uses stable Chinese fallbacks for unknown event codes", () => {

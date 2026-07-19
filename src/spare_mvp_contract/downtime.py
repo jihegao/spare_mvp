@@ -33,6 +33,24 @@ _PHASE_LABELS = {
     "transport": "备件运输",
 }
 
+_HIDDEN_ANALYSIS_KEYS = {"failure_mode", "failureMode", "故障模式"}
+
+
+def sanitize_downtime_user_projection(value: Any) -> Any:
+    """Return a detached downtime projection without user-hidden fault-mode fields."""
+
+    if isinstance(value, dict):
+        return {
+            key: sanitize_downtime_user_projection(item)
+            for key, item in value.items()
+            if key not in _HIDDEN_ANALYSIS_KEYS
+        }
+    if isinstance(value, list):
+        return [sanitize_downtime_user_projection(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(sanitize_downtime_user_projection(item) for item in value)
+    return copy.deepcopy(value)
+
 
 def format_simulation_minute(value: Any, *, empty: str = "暂无时间") -> str:
     """Format a simulation minute as the single user-facing DAY_n HH:MM form."""
@@ -54,7 +72,7 @@ def format_simulation_minute(value: Any, *, empty: str = "暂无时间") -> str:
 def normalize_downtime_event_for_analysis(event: dict[str, Any]) -> dict[str, Any]:
     """Preserve trace fields while adding stable Chinese analysis display fields."""
 
-    item = copy.deepcopy(event)
+    item = sanitize_downtime_user_projection(event)
     factor = str(_first(item, "factor", "event_type", "eventType", "reason") or "").strip()
     mission_id = _text(_first(item, "mission_id", "missionId", "task_id", "taskId"))
     mission_name = _text(
