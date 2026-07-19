@@ -21,6 +21,7 @@ from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
 MAX_JSON_BODY_BYTES = 1024 * 1024
+MAX_PROJECT_XLSX_JSON_BODY_BYTES = 16 * 1024 * 1024
 LEGACY_RUN_API_MIGRATION = {
     "docs": "docs/archive/deprecated/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
     "mapping": {
@@ -121,6 +122,8 @@ def create_backend_server(
                     status = 410
                 elif exc.code == "request_too_large":
                     status = 413
+                elif exc.code in {"project_already_exists", "project_version_conflict"}:
+                    status = 409
                 self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
             except RetiredRouteError as exc:
                 self._send_json(
@@ -155,6 +158,15 @@ def create_backend_server(
             parts = [unquote(part) for part in route.split("/") if part]
             if decoded_route == "/simulation-runs" or decoded_route.startswith("/simulation-runs/"):
                 raise RetiredRouteError("/api/simulation-runs", "/api/runs")
+            if self.command == "POST" and route in {
+                "/projects/import-xlsx/preview",
+                "/projects/import-xlsx/create",
+            }:
+                actor = self._require_user({"系统管理员", "数据管理员"})
+                body = self._read_json()
+                if route == "/projects/import-xlsx/preview":
+                    return api.preview_project_xlsx(body)
+                return api.create_imported_project(body.get("project_json", body), actor_user_id=actor["user_id"])
             body = self._read_json()
 
             if self.command == "POST" and route == "/auth/login":
@@ -362,11 +374,16 @@ def create_backend_server(
             length = int(self.headers.get("content-length", "0") or "0")
             if length == 0:
                 return {}
-            if length > MAX_JSON_BODY_BYTES:
+            route = urlparse(self.path).path.rstrip("/")
+            limit = MAX_PROJECT_XLSX_JSON_BODY_BYTES if route in {
+                "/api/projects/import-xlsx/preview",
+                "/api/projects/import-xlsx/create",
+            } else MAX_JSON_BODY_BYTES
+            if length > limit:
                 raise BackendApiError(
                     "request_too_large",
-                    f"JSON request body exceeds {MAX_JSON_BODY_BYTES} bytes",
-                    limit_bytes=MAX_JSON_BODY_BYTES,
+                    f"JSON request body exceeds {limit} bytes",
+                    limit_bytes=limit,
                     received_bytes=length,
                 )
             raw = self.rfile.read(length).decode("utf-8")

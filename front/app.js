@@ -799,6 +799,7 @@ let projectDataProjectJsonLoading = false;
 let projectDataManagementStatus = "选择项目查看项目数据。";
 let pendingProjectDataManagementSuccessStatus = "";
 let projectReplacementPreview = null;
+const reservedProjectImportIds = new Set();
 let selectedProjectDataRelationFocus = "task";
 let projectEditorDraft = null;
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
@@ -1662,6 +1663,12 @@ function bindEvents() {
     const projectReplacementConfirm = event.target.closest("[data-project-replacement-confirm]");
     if (projectReplacementConfirm) {
       confirmProjectReplacement().finally(() => render());
+      return;
+    }
+
+    const projectImportCreate = event.target.closest("[data-project-xlsx-create]");
+    if (projectImportCreate) {
+      confirmProjectImportAsNew().finally(() => render());
       return;
     }
 
@@ -4021,7 +4028,7 @@ function renderProjectTemplateManagement(project) {
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-project-template-action="set" data-project-id="${htmlEscape(projectId)}" ${project && !isTemplate ? "" : "disabled"}>设为模板</button>
         <button type="button" data-project-template-action="unset" data-project-id="${htmlEscape(projectId)}" ${project && isTemplate ? "" : "disabled"}>取消设为模板</button>
-        <label class="btn-primary project-replacement-file-button">数据管理<input type="file" hidden data-project-replacement-file accept=".json,application/json" ${project ? "" : "disabled"}></label>
+        <label class="btn-primary project-replacement-file-button">导入项目数据<input type="file" hidden data-project-replacement-file accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ${project ? "" : "disabled"}></label>
       </div>
       ${renderProjectReplacementPreview()}
       <p class="inline-status">${htmlEscape(projectDataManagementStatus)}</p>
@@ -4107,14 +4114,17 @@ function renderProjectReplacementPreview() {
   if (error) return `<div class="alert warn"><strong>${htmlEscape(fileName)}</strong><p>${htmlEscape(error)}</p></div>`;
   const overview = projectDataOverviewRows(projectJson);
   const errors = Array.isArray(validation?.errors) ? validation.errors : [];
+  const isXlsx = projectReplacementPreview.fileType === "xlsx";
   return `
     <div class="project-replacement-preview">
-      <div class="section-head"><h4>覆盖预览</h4><span>${validation?.ok ? "校验通过" : `发现 ${errors.length} 个错误`}</span></div>
+      <div class="section-head"><h4>导入预览</h4><span>${validation?.ok ? "校验通过" : `发现 ${errors.length} 个错误`}</span></div>
       <p><strong>${htmlEscape(projectJson?.projectInfo?.name || projectJson?.name || fileName)}</strong></p>
+      ${isXlsx ? `<p class="inline-status">已解析 sheet：${htmlEscape((projectReplacementPreview.sheets || []).join("、") || "无")}</p>` : ""}
       <div class="project-data-overview-grid">${overview.map((row) => `<div class="modeling-config-card"><span>${htmlEscape(row.label)}</span><strong>${row.value}</strong></div>`).join("")}</div>
-      ${errors.length ? `<div class="alert warn">${errors.map((item) => `<p>${htmlEscape(item.message || item.code || String(item))}</p>`).join("")}</div>` : ""}
+      ${errors.length ? `<div class="alert warn project-import-errors">${errors.map((item) => `<p><strong>${htmlEscape(item.sheet || "Project")}${item.row ? ` 第 ${htmlEscape(item.row)} 行` : ""}${item.path || item.field_path || item.field ? ` / ${htmlEscape(item.path || item.field_path || item.field)}` : ""}</strong>：${htmlEscape(item.message || item.code || String(item))}${item.reference_value !== undefined && item.reference_value !== "" ? `（引用值：${htmlEscape(String(item.reference_value))}）` : ""}</p>`).join("")}</div>` : ""}
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-project-replacement-confirm ${validation?.ok ? "" : "disabled"}>确认覆盖当前项目</button>
+        <button type="button" class="btn-secondary" data-project-xlsx-create ${validation?.ok ? "" : "disabled"}>导入为新项目</button>
         <button type="button" data-project-replacement-cancel>取消</button>
       </div>
     </div>`;
@@ -4124,14 +4134,72 @@ async function previewProjectReplacement(file) {
   if (!file) return;
   projectDataManagementStatus = `正在校验 ${file.name}`;
   try {
-    const projectJson = JSON.parse(await file.text());
-    const validation = await backendApi.validateProject(projectJson);
-    projectReplacementPreview = { fileName: file.name, projectJson, validation };
+    const isXlsx = file.name.toLowerCase().endsWith(".xlsx");
+    if (isXlsx) {
+      const result = await backendApi.previewProjectXlsx(await fileToBase64(file), file.name);
+      projectReplacementPreview = {
+        fileName: file.name,
+        fileType: "xlsx",
+        projectJson: result.project_json,
+        sheets: result.sheets,
+        validation: { ok: result.ok, errors: result.errors || [] }
+      };
+    } else {
+      const projectJson = JSON.parse(await file.text());
+      const validation = await backendApi.validateProject(projectJson);
+      projectReplacementPreview = { fileName: file.name, fileType: "json", projectJson, validation };
+    }
+    const validation = projectReplacementPreview.validation;
     projectDataManagementStatus = validation.ok ? "项目数据校验通过，请确认覆盖" : "项目数据校验失败，不允许覆盖";
   } catch (err) {
     projectReplacementPreview = { fileName: file.name, error: err?.message || "JSON 文件无法解析" };
     projectDataManagementStatus = "项目数据文件无效";
   }
+}
+
+async function fileToBase64(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function confirmProjectImportAsNew() {
+  if (!projectReplacementPreview?.validation?.ok) return;
+  const source = structuredClone(projectReplacementPreview.projectJson);
+  const sourceId = String(source.project_id || source.projectInfo?.id || "imported-project");
+  const projectId = reserveImportedProjectId(sourceId);
+  source.project_id = projectId;
+  source.project_version = "import-v1";
+  source.projectInfo = { ...(source.projectInfo || {}), id: projectId, isTemplate: false, is_template: false };
+  projectDataManagementStatus = "正在导入新项目";
+  try {
+    await backendApi.createImportedProject(source);
+    projectReplacementPreview = null;
+    pendingProjectDataManagementSuccessStatus = "已导入为新项目";
+    await hydrateProjectCatalogFromBackend({ forceProjectId: projectId });
+    selectedProjectDataProjectId = projectId;
+    await ensureSelectedProjectDataJsonLoaded({ force: true, successStatus: "已导入为新项目" });
+  } catch (err) {
+    projectDataManagementStatus = `导入失败：${formatBackendError(err)}`;
+  } finally {
+    reservedProjectImportIds.delete(projectId);
+  }
+}
+
+function reserveImportedProjectId(sourceId) {
+  const baseId = `${sourceId}-xlsx-${Date.now()}`;
+  const existingIds = projectCatalogBackendIds();
+  let projectId = baseId;
+  let suffix = 2;
+  while (existingIds.has(projectId) || reservedProjectImportIds.has(projectId)) {
+    projectId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+  reservedProjectImportIds.add(projectId);
+  return projectId;
 }
 
 async function confirmProjectReplacement() {

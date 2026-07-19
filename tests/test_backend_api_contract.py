@@ -475,6 +475,35 @@ class BackendApiContractTest(unittest.TestCase):
             self.api.replace_project(project["project_id"], replacement, expected_updated_at=expected, actor_user_id="user-admin")
         self.assertEqual(conflict.exception.code, "project_version_conflict")
 
+    def test_create_imported_project_is_atomic_and_never_overwrites_existing_project(self) -> None:
+        project = small_aircraft_support_project("project-xlsx-create-only")
+        created = self.api.create_imported_project(project, actor_user_id="user-data")
+
+        self.assertEqual(created["status"], "created")
+        self.assertTrue(created["audit_event_id"].startswith("audit-"))
+        stored_before = self.api.get_project(project["project_id"])
+        conflicting = copy.deepcopy(project)
+        conflicting["projectInfo"]["name"] = "must not overwrite"
+        with self.assertRaises(BackendApiError) as conflict:
+            self.api.create_imported_project(conflicting, actor_user_id="user-data")
+
+        self.assertEqual(conflict.exception.code, "project_already_exists")
+        self.assertEqual(self.api.get_project(project["project_id"]), stored_before)
+        audits = self.repository.list_audit_events(resource_id=project["project_id"])
+        self.assertEqual([event["action"] for event in audits], ["project.import_xlsx.create"])
+
+        invalid = small_aircraft_support_project("project-xlsx-invalid-reference")
+        invalid["components"][0]["productId"] = "does-not-exist"
+        with self.assertRaises(BackendApiError) as invalid_error:
+            self.api.create_imported_project(invalid, actor_user_id="user-data")
+        self.assertEqual(invalid_error.exception.code, "invalid_project")
+        self.assertIn(
+            "missing_product_reference",
+            {error.get("code") for error in invalid_error.exception.details["errors"]},
+        )
+        with self.assertRaises(KeyError):
+            self.api.get_project(invalid["project_id"])
+
     def test_arbitrary_period_completion_and_four_downtime_contract(self) -> None:
         daily_success = [{"day": day, "plannedWaves": 1, "successfulWaves": 1} for day in range(1, 15)]
         daily_failure = copy.deepcopy(daily_success[:7])

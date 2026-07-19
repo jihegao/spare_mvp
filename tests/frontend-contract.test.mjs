@@ -608,7 +608,8 @@ test("project data management exposes project list, template controls, and overv
   assert.match(projectDataSource, /data-project-template-management/);
   assert.match(projectDataSource, /data-project-template-action="set"/);
   assert.match(projectDataSource, /data-project-template-action="unset"/);
-  assert.match(projectDataSource, /class="btn-primary project-replacement-file-button">数据管理/);
+  assert.match(projectDataSource, /class="btn-primary project-replacement-file-button">导入项目数据/);
+  assert.match(projectDataSource, /accept="\.json,\.xlsx,/);
   assert.match(stylesSource, /\.project-replacement-file-button\s*\{[\s\S]*border:\s*1px solid var\(--primary\);[\s\S]*border-radius:\s*8px;/);
   assert.match(projectDataSource, /data-project-data-overview/);
   assert.match(projectDataSource, /data-project-data-relationship-map/);

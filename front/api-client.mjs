@@ -93,6 +93,12 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     validateProject(projectJson) {
       return request({ method: "POST", path: "/projects/validate", body: projectJson });
     },
+    previewProjectXlsx(contentBase64, fileName) {
+      return request({ method: "POST", path: "/projects/import-xlsx/preview", body: { content_base64: contentBase64, file_name: fileName } });
+    },
+    createImportedProject(projectJson) {
+      return request({ method: "POST", path: "/projects/import-xlsx/create", body: { project_json: projectJson } });
+    },
     validateModelingImport(importPackage) {
       return request({ method: "POST", path: "/modeling-imports/validate", body: importPackage });
     },
