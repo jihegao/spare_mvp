@@ -588,6 +588,8 @@ class BackendApiContractTest(unittest.TestCase):
                             "duration_minutes": 66,
                             "description": "unavailable_after_failure",
                             "details": {
+                                "failure_mode": "must-not-project",
+                                "failureMode": "must-not-project-alias",
                                 "failureTime": 1435,
                                 "repairCompletedTime": 1505,
                             },
@@ -617,6 +619,9 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(failure["end_time_label"], "DAY_2 01:05")
         self.assertEqual(failure["details"]["failure_time_label"], "DAY_1 23:55")
         self.assertEqual(failure["details"]["repair_completed_time_label"], "DAY_2 01:05")
+        self.assertNotIn("failure_mode", failure["details"])
+        self.assertNotIn("failureMode", failure["details"])
+        self.assertNotIn("must-not-project", str(result))
         self.assertEqual(failure["description"], "飞机J15-101装备发生故障，当前不可用并等待修复")
         self.assertEqual(task_external["task_phase_label"], "不在任务阶段")
         self.assertEqual(task_external["details"]["failure_time_label"], "暂无时间")
@@ -2799,10 +2804,15 @@ class BackendApiContractTest(unittest.TestCase):
                             "time": 42,
                             "event": "spare_shortage",
                             "message": "repair blocked by hydraulic pump shortage",
+                            "details": {"failure_mode": "must-not-project"},
                             "snapshot": {
                                 "aircraft_state": {
                                     "summary": {"available_aircraft": 1, "failed_count": 1, "repairing_count": 1},
-                                    "aircraft": [{"tail_number": "J15-101", "state": "maintenance"}],
+                                    "aircraft": [{
+                                        "tail_number": "J15-101",
+                                        "state": "maintenance",
+                                        "failure_mode": "must-not-project-from-state",
+                                    }],
                                 },
                                 "support_resources": [
                                     {
@@ -2853,6 +2863,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(snapshots[0]["simulation_time"], 42.0)
         self.assertEqual(snapshots[0]["spare_shortages"][0]["spare_type"], "液压泵")
         self.assertEqual(snapshots[0]["job_node"]["job_id"], "repair-J15-101")
+        self.assertNotIn("failure_mode", str(snapshots[0]))
+        self.assertNotIn("must-not-project", str(snapshots[0]))
 
     def test_lite_mesa_mission_reliability_excludes_legacy_metrics_and_missing_period_is_explicit(self) -> None:
         result = _lite_mesa_mission_reliability_result(

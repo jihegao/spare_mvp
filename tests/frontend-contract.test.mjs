@@ -4245,6 +4245,7 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
   assert.match(renderSource, /停机因素类型/);
   assert.match(renderSource, /保障组织节点/);
   assert.match(renderSource, /downtimeDisplayValue\(value\)/);
+  assert.doesNotMatch(downtimeSource, /故障模式|localizeFailureMode/);
   assert.match(styleSource, /\.downtime-factor-option:has\(input:checked\)/);
 });
 

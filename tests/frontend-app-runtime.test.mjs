@@ -2600,7 +2600,14 @@ test("downtime Excel export reuses localized display rows and the current factor
           internal_run_id: "must-not-export",
           debug: "must-not-export"
         },
-        { factor: "failure", tail_number: "J15-102", start_minute: 60, end_minute: 180, duration_hours: 2 }
+        {
+          factor: "failure",
+          tail_number: "J15-102",
+          start_minute: 60,
+          end_minute: 180,
+          duration_hours: 2,
+          details: { component_name: "发动机控制器", failure_mode: "must-not-export" }
+        }
       ]
     }
   });
@@ -2620,7 +2627,7 @@ test("downtime Excel export reuses localized display rows and the current factor
     assert.match(serialized, /DAY_2 01:01/);
     assert.match(serialized, /起飞任务；阶段：飞行前保障/);
     assert.match(serialized, /当前装备所需备件短缺|飞机J15-101所需备件短缺/);
-    assert.doesNotMatch(serialized, /must-not-export|internal_run_id|debug/);
+    assert.doesNotMatch(serialized, /must-not-export|internal_run_id|debug|failure_mode|故障模式/);
   } finally {
     runtime.restore();
   }
@@ -2900,6 +2907,7 @@ test("downtime factor filters keep localized summaries, ranking, and complete ev
     assert.match(initial, /装备发生故障，当前不可用并等待修复/);
     assert.match(initial, /综合检测仪/);
     assert.match(initial, /发动机定寿检查/);
+    assert.doesNotMatch(initial, /故障模式|随机故障/);
     assert.match(initial, /实际完成[\s\S]*暂无时间/);
     assert.doesNotMatch(initial, /液压泵等待到货|发动机控制器故障|检测仪被占用|定寿维修|未配置任务|任务名称未解析/);
 

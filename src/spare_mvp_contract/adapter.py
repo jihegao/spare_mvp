@@ -20,7 +20,10 @@ import re
 from typing import Any
 
 from src.spare_mvp_backend.project_payload import normalize_project_products
-from src.spare_mvp_contract.downtime import normalize_downtime_event_for_analysis
+from src.spare_mvp_contract.downtime import (
+    normalize_downtime_event_for_analysis,
+    sanitize_downtime_user_projection,
+)
 from src.spare_mvp_contract.monte_carlo_moments import (
     build_monte_carlo_metric_moments,
     finite_mean,
@@ -3191,7 +3194,7 @@ class SimulationAdapter:
             "preventive_backlog": sum(1 for item in active_jobs if item.get("kind") == "preventive"),
             "spare_fill_rate": float((event_snapshot.get("metrics") or {}).get("spare_fill_rate", 0) or 0),
         }
-        return {
+        return sanitize_downtime_user_projection({
             "snapshot_id": f"downtime-{run_id or 'run'}-{ordinal:04d}",
             "source": "model_event_log",
             "run_id": run_id,
@@ -3201,7 +3204,7 @@ class SimulationAdapter:
             "simulation_time": float(event.get("time", event_snapshot.get("time", 0)) or 0),
             "event_type": event_type,
             "event_label": event_type,
-            "event": copy.deepcopy(event),
+            "event": sanitize_downtime_user_projection(event),
             "result": self._downtime_snapshot_result(event_type),
             "aircraft_state": aircraft_state,
             "support_resources": support_resources,
@@ -3219,7 +3222,7 @@ class SimulationAdapter:
                 "sample_step": int(float(event.get("time", event_snapshot.get("time", 0)) or 0)),
                 "step": int(float(event.get("time", event_snapshot.get("time", 0)) or 0)),
             },
-        }
+        })
 
     def _downtime_snapshot_events(self, frame: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         events: list[tuple[str, dict[str, Any]]] = []
@@ -3282,7 +3285,7 @@ class SimulationAdapter:
         job = jobs[0] if jobs else {}
         simulation_time = float(frame.get("simulation_time", event.get("time", frame.get("step", 0))) or 0)
         spare_shortages = self._downtime_frame_spare_shortages(frame, event)
-        return {
+        return sanitize_downtime_user_projection({
             "snapshot_id": f"downtime-{run_id or 'run'}-{ordinal:04d}",
             "source": "state_series_frame",
             "run_id": run_id,
@@ -3292,7 +3295,7 @@ class SimulationAdapter:
             "simulation_time": simulation_time,
             "event_type": event_type,
             "event_label": event_type,
-            "event": copy.deepcopy(event),
+            "event": sanitize_downtime_user_projection(event),
             "result": self._downtime_snapshot_result(event_type),
             "aircraft_state": copy.deepcopy(frame.get("aircraft_state") or {}),
             "support_resources": copy.deepcopy(frame.get("resources") or []),
@@ -3316,7 +3319,7 @@ class SimulationAdapter:
                 "sample_step": int(frame.get("sample_step", frame.get("step", 0)) or 0),
                 "step": int(frame.get("step", frame.get("sample_step", 0)) or 0),
             },
-        }
+        })
 
     def _downtime_frame_spare_shortages(self, frame: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:
         details = event.get("details") if isinstance(event.get("details"), dict) else {}

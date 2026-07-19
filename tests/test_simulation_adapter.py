@@ -84,6 +84,40 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(len({event["event_id"] for event in details}), 4)
         self.assertEqual({event["source_event_id"] for event in details}, {"downtime-000001"})
 
+    def test_downtime_projection_removes_fault_mode_from_details_and_snapshots(self) -> None:
+        event = {
+            "event_id": "failure-1",
+            "event_type": "failure",
+            "factor": "failure",
+            "time": 30,
+            "duration_minutes": 15,
+            "failureMode": "must-not-project-alias",
+            "details": {"failure_mode": "must-not-project"},
+            "snapshot": {
+                "aircraft_state": {"failure_mode": "must-not-project-from-state"},
+                "active_jobs": [],
+            },
+        }
+        projection = self.adapter._aircraft_support_v1_analysis_projections(
+            {},
+            "base-artifact",
+            samples=[{
+                "sample_index": 0,
+                "seed": 101,
+                "downtime_events": [event],
+                "events": [event],
+            }],
+            run_id="run-hidden-fault-mode",
+        )["downtime_factors"]
+
+        serialized = json.dumps(projection, ensure_ascii=False)
+        self.assertNotIn("failure_mode", serialized)
+        self.assertNotIn("failureMode", serialized)
+        self.assertNotIn("must-not-project", serialized)
+        self.assertEqual(projection["event_details"][0]["task_phase_label"], "不在任务阶段")
+        self.assertEqual(projection["event_details"][0]["start_time_label"], "暂无时间")
+        self.assertEqual(projection["anomaly_snapshots"][0]["simulation_time"], 30.0)
+
     def test_validate_project_accepts_contract_fixture(self) -> None:
         project = self._load_fixture("aircraft_support_v1_project.json")
 

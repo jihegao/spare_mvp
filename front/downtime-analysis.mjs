@@ -215,7 +215,6 @@ function downtimeFactorSpecificDetails(factor, details) {
   if (factor === "failure") {
     return [
       ["故障部件", details.component_name],
-      ["故障模式", localizeFailureMode(details.failure_mode)],
       ["故障发生", formatDowntimeSimulationTime(details.failure_minute)],
       ["修复完成", formatDowntimeSimulationTime(details.repair_completed_minute)]
     ];
@@ -243,18 +242,6 @@ function downtimeFactorSpecificDetails(factor, details) {
 function formatDurationMinutes(value) {
   const minutes = Number(value);
   return Number.isFinite(minutes) && minutes >= 0 ? `${minutes} 分钟` : "暂无数据";
-}
-
-function localizeFailureMode(value) {
-  const mode = String(value || "").trim();
-  if (!mode) return "未记录故障模式";
-  const mapped = {
-    random_failure: "随机故障",
-    wear_out: "磨损故障",
-    propagated_failure: "传递故障"
-  }[mode.toLowerCase()];
-  if (mapped) return mapped;
-  return /[\u3400-\u9fff]/u.test(mode) ? mode : "其他故障模式";
 }
 
 function localizePreventiveTrigger(value) {
