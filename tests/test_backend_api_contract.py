@@ -528,6 +528,8 @@ class BackendApiContractTest(unittest.TestCase):
             ["波次成功率", "91%"],
             ["整周期任务可靠度", "66.7%"],
             ["任务周期", "14 天"],
+            ["仿真总次数", "3"],
+            ["成功次数", "2"],
         ])
         self.assertEqual(
             [field["key"] for field in reliability["result_fields"]],
@@ -2745,14 +2747,17 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(payload["rows"])
         self.assertEqual(payload["rows"], payload["wave_rows"])
         self.assertEqual(payload["wave_rows"][0]["dayIndex"], 1)
-        self.assertEqual(payload["wave_rows"][0]["sampleCount"], 2)
+        self.assertEqual(payload["wave_rows"][0]["sampleIndex"], 0)
+        self.assertEqual(payload["wave_rows"][0]["sampleLabel"], "样本 1")
         self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
         self.assertNotIn("seed", payload["wave_rows"][0])
         self.assertEqual([field["key"] for field in payload["result_fields"]], [
             "sortie_rate", "wave_success_rate", "period_completion_probability", "period_duration_days"
         ])
         self.assertEqual(payload["metrics"], [
-            [field["label"], field["display_value"]] for field in payload["result_fields"]
+            *[[field["label"], field["display_value"]] for field in payload["result_fields"]],
+            ["仿真总次数", "2"],
+            ["成功次数", "0"],
         ])
         self.assertNotIn("任务剖面可靠性", json.dumps(payload["metrics"], ensure_ascii=False))
         self.assertEqual(payload["visualization_state_series"]["run_id"], payload["run_id"])
@@ -2910,10 +2915,12 @@ class BackendApiContractTest(unittest.TestCase):
             ["波次成功率", "80%"],
             ["整周期任务可靠度", "0%"],
             ["任务周期", "--"],
+            ["仿真总次数", "2"],
+            ["成功次数", "0"],
         ])
         self.assertNotIn("任务失败次数", {label for label, _value in result["metrics"]})
 
-    def test_lite_mesa_mission_reliability_rows_aggregate_by_wave_and_skip_missing_samples(self) -> None:
+    def test_lite_mesa_mission_reliability_rows_preserve_every_sample_wave(self) -> None:
         result = _lite_mesa_mission_reliability_result(
             {"data": {"mission_success_probability": 0.8, "sortie_rate": 0.4}},
             [
@@ -2937,15 +2944,17 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
         self.assertEqual(result["rows"], result["wave_rows"])
-        self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2"])
-        self.assertEqual([row["sampleCount"] for row in result["rows"]], [2, 1])
-        self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 4)
-        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 0.5)
+        self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2", "d1-w1"])
+        self.assertEqual([row["sampleIndex"] for row in result["rows"]], [0, 0, 1])
+        self.assertEqual([row["sampleLabel"] for row in result["rows"]], ["样本 1", "样本 1", "样本 2"])
+        self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 2)
+        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 1)
         self.assertAlmostEqual(result["rows"][0]["plannedWaves"], 1)
-        self.assertAlmostEqual(result["rows"][0]["successfulWaves"], 0.5)
-        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 1 / 2)
-        self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 6 / 8)
+        self.assertAlmostEqual(result["rows"][0]["successfulWaves"], 1)
+        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 1)
+        self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 1)
         self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
+        self.assertEqual(result["rows"][2]["meanMissionSuccessRate"], 0)
         self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
         self.assertNotIn("seed", result["rows"][0])
 

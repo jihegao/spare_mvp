@@ -18329,8 +18329,14 @@ function renderFormalProjectionBody(formalProjection) {
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
     return `
+      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
+        <thead><tr><th>样本</th><th>波次</th><th>成功比例</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.sampleLabel || `样本 ${Number(row.sampleIndex || 0) + 1}`)}</td><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${htmlEscape(formatReliabilityPercent(row.probability))}</td></tr>`).join("") || '<tr><td colspan="3">当前结果没有逐样本波次明细</td></tr>'}</tbody>
+      </table></div>
       ${renderLiteMesaMissionReliabilityWaveChart(rows.map((row) => ({
         sequence: row.sequence,
+        sampleIndex: row.sampleIndex,
+        sampleLabel: row.sampleLabel,
         waveLabel: row.waveLabel || row.timeLabel,
         meanMissionSuccessRate: row.probability
       })))}
@@ -18752,14 +18758,23 @@ function analysisXlsxPayloadForPage(page, result) {
     };
   }
   const fields = result.resultFields || normalizeTaskReliabilityResultFields(result);
+  const rows = result.waveRows || result.rows || [];
   return {
     ...common,
     analysis_type: "mission_reliability",
-    summary: fields.map((field) => [field.label, field.displayValue, field.unit || ""]),
+    summary: [
+      ...fields.map((field) => [field.label, field.displayValue, field.unit || ""]),
+      ["仿真总次数", result.periodTotalSamples, "次"],
+      ["成功次数", result.periodSuccessfulSamples, "次"]
+    ],
     detail_sections: [{
-      title: "任务可靠度结果",
-      columns: fields.map((field) => field.label),
-      rows: [fields.map((field) => field.displayValue)]
+      title: "逐样本逐波次任务可靠度明细",
+      columns: ["样本", "波次", "成功比例"],
+      rows: rows.map((row) => [
+        row.sampleLabel || `样本 ${Number(row.sampleIndex || 0) + 1}`,
+        row.waveLabel || row.waveKey || "-",
+        formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)
+      ])
     }]
   };
 }
@@ -19298,6 +19313,8 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     ? normalizeTaskReliabilityResultFields(payload)
     : [];
   const taskReliabilityValue = (key) => taskReliabilityResultFields.find((field) => field.key === key)?.value ?? null;
+  const periodTotalSamples = optionalAnalysisCount(payload.period_total_samples);
+  const periodSuccessfulSamples = optionalAnalysisCount(payload.successful_samples);
   return {
     status: payload.status === "session_complete" ? "session_complete" : "blocked",
     source: payload.source || "lite_mesa_aircraft_support_v1",
@@ -19306,7 +19323,11 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
     metrics: definition.analysisType === "mission_reliability"
-      ? taskReliabilityMetricPairs(taskReliabilityResultFields)
+      ? [
+          ...taskReliabilityMetricPairs(taskReliabilityResultFields),
+          ["仿真总次数", periodTotalSamples === null ? "不可用" : String(periodTotalSamples)],
+          ["成功次数", periodSuccessfulSamples === null ? "不可用" : String(periodSuccessfulSamples)]
+        ]
       : Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
     resultFields: taskReliabilityResultFields,
     rows,
@@ -19318,13 +19339,19 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     sortieRate: taskReliabilityValue("sortie_rate"),
     waveSuccessRate: taskReliabilityValue("wave_success_rate"),
     periodDurationDays: taskReliabilityValue("period_duration_days"),
-    periodTotalSamples: Number(payload.period_total_samples || payload.sample_count || 0),
-    periodSuccessfulSamples: Number(payload.successful_samples || 0),
-    periodFailedSamples: Number(payload.period_failed_samples || 0),
+    periodTotalSamples,
+    periodSuccessfulSamples,
+    periodFailedSamples: optionalAnalysisCount(payload.period_failed_samples),
     periodCompletionProbability: taskReliabilityValue("period_completion_probability"),
     limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
     message: payload.message || ""
   };
+}
+
+function optionalAnalysisCount(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 0 ? numeric : null;
 }
 
 function renderLiteMesaAnalysisMetricCards(definition, result) {
@@ -19426,11 +19453,10 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     `;
   }
   if (definition.analysisType === "mission_reliability") {
-    const fields = result.resultFields || normalizeTaskReliabilityResultFields(result);
     return `
       <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
-        <thead><tr>${fields.map((field) => `<th>${htmlEscape(field.label)}</th>`).join("")}</tr></thead>
-        <tbody><tr>${fields.map((field) => `<td>${htmlEscape(field.displayValue)}</td>`).join("")}</tr></tbody>
+        <thead><tr><th>样本</th><th>波次</th><th>成功比例</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.sampleLabel || `样本 ${Number(row.sampleIndex || 0) + 1}`)}</td><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${htmlEscape(formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate))}</td></tr>`).join("") || '<tr><td colspan="3">当前会话没有逐样本波次明细</td></tr>'}</tbody>
       </table></div>
       ${renderLiteMesaMissionReliabilityWaveChart(rows)}
     `;
@@ -19576,12 +19602,12 @@ function renderDowntimeFactorSpecificDetails(rows) {
 
 function renderLiteMesaMissionReliabilityWaveChart(rows) {
   if (!rows.length) {
-    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>当前会话未返回按任务波次聚合的成功率。</p></div>`;
+    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>当前会话未返回逐样本波次成功比例。</p></div>`;
   }
   const points = rows.map((row, index) => ({
     x: Number(row.sequence || index + 1),
     y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0),
-    tooltip: `${row.waveLabel || row.waveKey || `波次${row.sequence ?? index + 1}`}：${formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)}`
+    tooltip: `${row.sampleLabel || `样本 ${Number(row.sampleIndex || 0) + 1}`} / ${row.waveLabel || row.waveKey || `波次${row.sequence ?? index + 1}`}：${formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)}`
   }));
   return `
     <div class="analysis-chart-panel">

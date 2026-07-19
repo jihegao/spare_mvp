@@ -3370,31 +3370,7 @@ class SimulationAdapter:
         samples: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         rows = self._aircraft_support_v1_mission_wave_rows(samples)
-        if rows:
-            return rows
-        mission_success = self._clamp01(
-            metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0))
-        )
-        sortie_rate = self._clamp01(metrics.get("sortie_rate", 0))
-        return [
-            {
-                "sequence": 1,
-                "day_index": 1,
-                "wave_index": 1,
-                "wave_key": "d1-w1",
-                "wave_label": "第1天 第1波",
-                "sample_count": len(samples),
-                "planned_sorties": max(1.0, float(metrics.get("planned_sorties", 1) or 1)),
-                "launched_sorties": max(0.0, float(metrics.get("launched_sorties", 0) or 0)),
-                "successful_sorties": max(0.0, float(metrics.get("successful_mission_waves", 0) or 0)),
-                "planned_waves": max(1.0, float(metrics.get("planned_mission_waves", 1) or 1)),
-                "successful_waves": max(0.0, float(metrics.get("successful_mission_waves", 0) or 0)),
-                "mean_mission_success_rate": mission_success,
-                "mission_success_probability": mission_success,
-                "mean_sortie_rate": sortie_rate,
-                "sortie_rate": sortie_rate,
-            }
-        ]
+        return rows
 
     def _aircraft_support_v1_sample_mission_wave_reliability(self, missions: list[Any]) -> list[dict[str, Any]]:
         by_wave: dict[tuple[int, int], dict[str, float]] = {}
@@ -3445,66 +3421,46 @@ class SimulationAdapter:
         return rows
 
     def _aircraft_support_v1_mission_wave_rows(self, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        by_wave: dict[tuple[int, int], dict[str, float]] = {}
-        for sample in samples:
+        rows: list[dict[str, Any]] = []
+        for fallback_sample_index, sample in enumerate(samples):
+            sample_index = self._non_negative_int(sample.get("sample_index"), fallback_sample_index)
             for row in sample.get("mission_wave_reliability") or []:
                 day = max(1, self._positive_int(row.get("day_index", row.get("dayIndex", 1)), 1))
                 wave = max(1, self._positive_int(row.get("wave_index", row.get("waveIndex", 1)), 1))
-                bucket = by_wave.setdefault(
-                    (day, wave),
-                    {
-                        "sample_count": 0.0,
-                        "planned_sorties": 0.0,
-                        "launched_sorties": 0.0,
-                        "successful_sorties": 0.0,
-                        "planned_waves": 0.0,
-                        "successful_waves": 0.0,
-                        "mission_success_rate": 0.0,
-                        "sortie_rate": 0.0,
-                    },
+                planned_sorties = self._float_value(row.get("planned_sorties", row.get("plannedSorties")), 0.0)
+                launched_sorties = self._float_value(row.get("launched_sorties", row.get("launchedSorties")), 0.0)
+                planned_waves = self._float_value(row.get("planned_waves", row.get("plannedWaves")), 0.0)
+                successful_waves = self._float_value(row.get("successful_waves", row.get("successfulWaves")), 0.0)
+                mission_success = self._clamp01(
+                    successful_waves / planned_waves
+                    if planned_waves > 0
+                    else row.get("mission_success_rate", row.get("missionSuccessRate", row.get("mean_mission_success_rate")))
                 )
-                bucket["sample_count"] += 1
-                bucket["planned_sorties"] += self._float_value(row.get("planned_sorties", row.get("plannedSorties")), 0.0)
-                bucket["launched_sorties"] += self._float_value(row.get("launched_sorties", row.get("launchedSorties")), 0.0)
-                bucket["successful_sorties"] += self._float_value(
-                    row.get("successful_sorties", row.get("successfulSorties")),
-                    0.0,
+                sortie_rate = self._clamp01(
+                    launched_sorties / planned_sorties
+                    if planned_sorties > 0
+                    else row.get("sortie_rate", row.get("sortieRate", row.get("mean_sortie_rate")))
                 )
-                bucket["planned_waves"] += self._float_value(row.get("planned_waves", row.get("plannedWaves")), 0.0)
-                bucket["successful_waves"] += self._float_value(row.get("successful_waves", row.get("successfulWaves")), 0.0)
-                bucket["mission_success_rate"] += self._clamp01(
-                    row.get("mission_success_rate", row.get("missionSuccessRate", row.get("mean_mission_success_rate")))
-                )
-                bucket["sortie_rate"] += self._clamp01(row.get("sortie_rate", row.get("sortieRate", row.get("mean_sortie_rate"))))
-        rows = []
-        for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
-            bucket = by_wave[(day, wave)]
-            sample_count = max(1.0, bucket["sample_count"])
-            if bucket["planned_waves"] > 0:
-                mission_success = self._clamp01(bucket["successful_waves"] / bucket["planned_waves"])
-                sortie_rate = self._clamp01(bucket["launched_sorties"] / bucket["planned_sorties"])
-            else:
-                mission_success = self._clamp01(bucket["mission_success_rate"] / sample_count)
-                sortie_rate = self._clamp01(bucket["sortie_rate"] / sample_count)
-            rows.append(
-                {
-                    "sequence": sequence,
+                rows.append({
+                    "sample_index": sample_index,
+                    "sample_label": f"样本 {sample_index + 1}",
                     "day_index": day,
                     "wave_index": wave,
                     "wave_key": self._mission_wave_key(day, wave),
                     "wave_label": self._mission_wave_label(day, wave),
-                    "sample_count": int(bucket["sample_count"]),
-                    "planned_sorties": bucket["planned_sorties"] / sample_count,
-                    "launched_sorties": bucket["launched_sorties"] / sample_count,
-                    "successful_sorties": bucket["successful_sorties"] / sample_count,
-                    "planned_waves": bucket["planned_waves"] / sample_count,
-                    "successful_waves": bucket["successful_waves"] / sample_count,
+                    "planned_sorties": planned_sorties,
+                    "launched_sorties": launched_sorties,
+                    "successful_sorties": self._float_value(row.get("successful_sorties", row.get("successfulSorties")), 0.0),
+                    "planned_waves": planned_waves,
+                    "successful_waves": successful_waves,
                     "mean_mission_success_rate": mission_success,
                     "mission_success_probability": mission_success,
                     "mean_sortie_rate": sortie_rate,
                     "sortie_rate": sortie_rate,
-                }
-            )
+                })
+        rows.sort(key=lambda row: (row["sample_index"], row["day_index"], row["wave_index"]))
+        for sequence, row in enumerate(rows, start=1):
+            row["sequence"] = sequence
         return rows
 
     def _mission_wave_key(self, day: int, wave: int) -> str:

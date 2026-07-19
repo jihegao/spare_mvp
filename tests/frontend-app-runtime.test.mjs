@@ -2590,7 +2590,7 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
   }
 });
 
-test("task reliability Excel export preserves the canonical four result_fields display values", async () => {
+test("task reliability Excel export preserves summary rounding and every sample wave row", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson(),
@@ -2600,6 +2600,13 @@ test("task reliability Excel export preserves the canonical four result_fields d
         { key: "wave_success_rate", label: "波次成功率", value: 0.1225, display_value: "12.2%", unit: "%" },
         { key: "period_completion_probability", label: "整周期任务可靠度", value: 0.667, display_value: "66.7%", unit: "%" },
         { key: "period_duration_days", label: "任务周期", value: 21.25, display_value: "21.25 天", unit: "天" }
+      ],
+      period_total_samples: 2,
+      successful_samples: 1,
+      wave_rows: [
+        { sampleIndex: 0, sampleLabel: "样本 1", waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 1 },
+        { sampleIndex: 0, sampleLabel: "样本 1", waveKey: "d1-w2", waveLabel: "第1天 第2波", meanMissionSuccessRate: 0.5 },
+        { sampleIndex: 1, sampleLabel: "样本 2", waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 0 }
       ]
     },
     analysisXlsxExportDelayMs: 40
@@ -2620,9 +2627,16 @@ test("task reliability Excel export preserves the canonical four result_fields d
       ["出动架次率", "0.502"],
       ["波次成功率", "12.2%"],
       ["整周期任务可靠度", "66.7%"],
-      ["任务周期", "21.25 天"]
+      ["任务周期", "21.25 天"],
+      ["仿真总次数", 2],
+      ["成功次数", 1]
     ]);
-    assert.deepEqual(body.detail_sections[0].rows[0], ["0.502", "12.2%", "66.7%", "21.25 天"]);
+    assert.deepEqual(body.detail_sections[0].columns, ["样本", "波次", "成功比例"]);
+    assert.deepEqual(body.detail_sections[0].rows, [
+      ["样本 1", "第1天 第1波", "100%"],
+      ["样本 1", "第1天 第2波", "50%"],
+      ["样本 2", "第1天 第1波", "0%"]
+    ]);
     assert.equal(runtime.downloads.length, 1);
   } finally {
     runtime.restore();
@@ -2769,7 +2783,7 @@ test("task reliability analysis restores its title and project context", async (
   }
 });
 
-test("task reliability analysis renders the ordered four-field contract and ignores legacy time-window state", async () => {
+test("task reliability analysis renders summary counts and every sample wave detail", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson(),
@@ -2779,6 +2793,13 @@ test("task reliability analysis renders the ordered four-field contract and igno
         { key: "period_completion_probability", value: 0.9225, display_value: "92.3%" },
         { key: "wave_success_rate", value: 0.8, display_value: "80%" },
         { key: "sortie_rate", value: 0.8125, display_value: "0.813" }
+      ],
+      period_total_samples: 2,
+      successful_samples: 1,
+      wave_rows: [
+        { sampleIndex: 0, sampleLabel: "样本 1", waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 1 },
+        { sampleIndex: 0, sampleLabel: "样本 1", waveKey: "d1-w2", waveLabel: "第1天 第2波", meanMissionSuccessRate: 0.5 },
+        { sampleIndex: 1, sampleLabel: "样本 2", waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 0 }
       ]
     }
   });
@@ -2794,17 +2815,43 @@ test("task reliability analysis renders the ordered four-field contract and igno
     assert.equal("maxTimeWindow" in analysisRun.settings, false);
 
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
-    assert.match(detailPanel, /<thead><tr><th>出动架次率<\/th><th>波次成功率<\/th><th>整周期任务可靠度<\/th><th>任务周期<\/th><\/tr><\/thead>/);
-    assert.match(detailPanel, /<tbody><tr><td>0\.812<\/td><td>80%<\/td><td>92\.2%<\/td><td>2\.12 天<\/td><\/tr><\/tbody>/);
+    assert.match(runtime.appNode.innerHTML, /<span>仿真总次数<\/span>\s*<strong>2<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /<span>成功次数<\/span>\s*<strong>1<\/strong>/);
+    assert.match(detailPanel, /<thead><tr><th>样本<\/th><th>波次<\/th><th>成功比例<\/th><\/tr><\/thead>/);
+    assert.match(detailPanel, /样本 1[\s\S]*第1天 第1波[\s\S]*100%[\s\S]*样本 1[\s\S]*第1天 第2波[\s\S]*50%[\s\S]*样本 2[\s\S]*第1天 第1波[\s\S]*0%/);
     assert.match(detailPanel, /波次成功率趋势/);
     assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
     assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);
-    assert.match(detailPanel, /<title>第1天 第1波：75%<\/title>/);
+    assert.match(detailPanel, /<title>样本 1 \/ 第1天 第1波：100%<\/title>/);
     assert.match(runtime.appNode.innerHTML, />1\.0<\/text>/);
     assert.match(runtime.appNode.innerHTML, />0\.5<\/text>/);
     assert.match(runtime.appNode.innerHTML, />0\.0<\/text>/);
-    assert.doesNotMatch(detailPanel, /任务剖面可靠性|仿真实验总次数|整周期任务成功次数|整周期任务失败次数|任务可靠度百分比|样本明细|平均任务成功率/);
+    assert.doesNotMatch(detailPanel, /任务剖面可靠性|整周期任务失败次数|任务可靠度百分比|平均任务成功率/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<span>时间窗口<\/span>|data-lite-mesa-analysis-field="maxTimeWindow"/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("task reliability analysis marks missing counts unavailable and does not invent sample rows", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: {
+      period_total_samples: null,
+      successful_samples: null,
+      wave_rows: [],
+      rows: []
+    }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.match(runtime.appNode.innerHTML, /<span>仿真总次数<\/span>\s*<strong>不可用<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /<span>成功次数<\/span>\s*<strong>不可用<\/strong>/);
+    assert.match(detailPanel, /当前会话没有逐样本波次明细/);
+    assert.doesNotMatch(detailPanel, /样本 1|projection/);
   } finally {
     runtime.restore();
   }

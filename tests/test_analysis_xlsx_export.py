@@ -65,30 +65,43 @@ class AnalysisXlsxExportTest(unittest.TestCase):
                 self.assertEqual(workbook["结果摘要"]["B2"].value, "80%")
                 self.assertEqual(workbook["结果明细"]["A3"].value, "安全结果")
 
-    def test_task_reliability_keeps_canonical_half_even_display_fields_verbatim(self) -> None:
+    def test_task_reliability_keeps_summary_rounding_and_every_sample_wave_row(self) -> None:
         payload = self._payload("mission_reliability")
         payload["summary"] = [
             ["出动架次率", "0.502", ""],
             ["波次成功率", "12.2%", "%"],
             ["整周期任务可靠度", "66.7%", "%"],
             ["任务周期", "21.25 天", "天"],
+            ["仿真总次数", 2, "次"],
+            ["成功次数", 1, "次"],
         ]
         payload["detail_sections"][0] = {
-            "title": "任务可靠度结果",
-            "columns": ["出动架次率", "波次成功率", "整周期任务可靠度", "任务周期"],
-            "rows": [["0.502", "12.2%", "66.7%", "21.25 天"]],
+            "title": "逐样本逐波次任务可靠度明细",
+            "columns": ["样本", "波次", "成功比例"],
+            "rows": [
+                ["样本 1", "第1天 第1波", "100%"],
+                ["样本 1", "第1天 第2波", "50%"],
+                ["样本 2", "第1天 第1波", "0%"],
+            ],
         }
         workbook = load_workbook(
             io.BytesIO(export_analysis_snapshot_xlsx(payload)["body"]),
             data_only=False,
         )
         self.assertEqual(
-            [workbook["结果摘要"].cell(row=index, column=2).value for index in range(2, 6)],
-            ["0.502", "12.2%", "66.7%", "21.25 天"],
+            [workbook["结果摘要"].cell(row=index, column=2).value for index in range(2, 8)],
+            ["0.502", "12.2%", "66.7%", "21.25 天", 2, 1],
         )
         self.assertEqual(
-            [workbook["结果明细"].cell(row=3, column=index).value for index in range(1, 5)],
-            ["0.502", "12.2%", "66.7%", "21.25 天"],
+            [
+                [workbook["结果明细"].cell(row=row, column=column).value for column in range(1, 4)]
+                for row in range(3, 6)
+            ],
+            [
+                ["样本 1", "第1天 第1波", "100%"],
+                ["样本 1", "第1天 第2波", "50%"],
+                ["样本 2", "第1天 第1波", "0%"],
+            ],
         )
 
     def test_all_five_analysis_types_keep_critical_chinese_headers_visible_and_wrapped(self) -> None:

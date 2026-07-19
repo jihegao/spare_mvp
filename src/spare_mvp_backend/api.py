@@ -2229,65 +2229,47 @@ def _sample_mission_wave_reliability(missions: list[Any]) -> list[dict[str, Any]
     return rows
 
 
-def _mean_mission_wave_reliability(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_wave: dict[tuple[int, int], dict[str, float]] = {}
-    for sample in samples:
+def _sample_mission_wave_rows(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for fallback_sample_index, sample in enumerate(samples):
+        sample_index = _metric_int(sample.get("sample_index"), default=fallback_sample_index)
         for row in sample.get("mission_wave_reliability") or []:
             day = max(1, _metric_int(row.get("dayIndex", row.get("day_index")), default=1))
             wave = max(1, _metric_int(row.get("waveIndex", row.get("wave_index")), default=1))
-            bucket = by_wave.setdefault(
-                (day, wave),
-                {
-                    "sampleCount": 0.0,
-                    "plannedSorties": 0.0,
-                    "launchedSorties": 0.0,
-                    "successfulSorties": 0.0,
-                    "plannedWaves": 0.0,
-                    "successfulWaves": 0.0,
-                    "missionSuccessRate": 0.0,
-                    "sortieRate": 0.0,
-                },
+            planned_sorties = _metric_float(row.get("plannedSorties", row.get("planned_sorties")), default=0)
+            launched_sorties = _metric_float(row.get("launchedSorties", row.get("launched_sorties")), default=0)
+            planned_waves = _metric_float(row.get("plannedWaves", row.get("planned_waves")), default=0)
+            successful_waves = _metric_float(row.get("successfulWaves", row.get("successful_waves")), default=0)
+            mission_success = _clamp01(
+                successful_waves / planned_waves
+                if planned_waves > 0
+                else row.get("missionSuccessRate", row.get("mission_success_rate", row.get("mean_mission_success_rate")))
             )
-            bucket["sampleCount"] += 1
-            bucket["plannedSorties"] += _metric_float(row.get("plannedSorties", row.get("planned_sorties")), default=0)
-            bucket["launchedSorties"] += _metric_float(row.get("launchedSorties", row.get("launched_sorties")), default=0)
-            bucket["successfulSorties"] += _metric_float(
-                row.get("successfulSorties", row.get("successful_sorties")),
-                default=0,
+            sortie_rate = _clamp01(
+                launched_sorties / planned_sorties
+                if planned_sorties > 0
+                else row.get("sortieRate", row.get("sortie_rate", row.get("mean_sortie_rate")))
             )
-            bucket["plannedWaves"] += _metric_float(row.get("plannedWaves", row.get("planned_waves")), default=0)
-            bucket["successfulWaves"] += _metric_float(row.get("successfulWaves", row.get("successful_waves")), default=0)
-            bucket["missionSuccessRate"] += _clamp01(
-                row.get("missionSuccessRate", row.get("mean_mission_success_rate"))
-            )
-            bucket["sortieRate"] += _clamp01(row.get("sortieRate", row.get("mean_sortie_rate")))
-    rows = []
-    for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
-        bucket = by_wave[(day, wave)]
-        sample_count = max(1.0, bucket["sampleCount"])
-        if bucket["plannedWaves"] > 0:
-            mission_success = _clamp01(bucket["successfulWaves"] / bucket["plannedWaves"])
-            sortie_rate = _clamp01(bucket["launchedSorties"] / bucket["plannedSorties"])
-        else:
-            mission_success = _clamp01(bucket["missionSuccessRate"] / sample_count)
-            sortie_rate = _clamp01(bucket["sortieRate"] / sample_count)
-        rows.append(
-            {
-                "sequence": sequence,
+            rows.append({
+                "sampleIndex": sample_index,
+                "sampleLabel": f"样本 {sample_index + 1}",
                 "dayIndex": day,
                 "waveIndex": wave,
                 "waveKey": _mission_wave_key(day, wave),
                 "waveLabel": _mission_wave_label(day, wave),
-                "sampleCount": int(bucket["sampleCount"]),
-                "plannedSorties": bucket["plannedSorties"] / sample_count,
-                "launchedSorties": bucket["launchedSorties"] / sample_count,
-                "successfulSorties": bucket["successfulSorties"] / sample_count,
-                "plannedWaves": bucket["plannedWaves"] / sample_count,
-                "successfulWaves": bucket["successfulWaves"] / sample_count,
+                "plannedSorties": planned_sorties,
+                "launchedSorties": launched_sorties,
+                "successfulSorties": _metric_float(row.get("successfulSorties", row.get("successful_sorties")), default=0),
+                "plannedWaves": planned_waves,
+                "successfulWaves": successful_waves,
                 "meanMissionSuccessRate": mission_success,
+                "missionSuccessRate": mission_success,
                 "meanSortieRate": sortie_rate,
-            }
-        )
+                "sortieRate": sortie_rate,
+            })
+    rows.sort(key=lambda row: (row["sampleIndex"], row["dayIndex"], row["waveIndex"]))
+    for sequence, row in enumerate(rows, start=1):
+        row["sequence"] = sequence
     return rows
 
 
@@ -2438,7 +2420,7 @@ def _lite_mesa_mission_reliability_result(
     settings: dict[str, Any],
 ) -> dict[str, Any]:
     data = projection.get("data") if isinstance(projection.get("data"), dict) else {}
-    rows = _mean_mission_wave_reliability(samples)
+    rows = _sample_mission_wave_rows(samples)
     period_summary = period_completion_summary(samples)
     total_samples = period_summary["total_samples"]
     successful_samples = period_summary["successful_samples"]
@@ -2455,7 +2437,11 @@ def _lite_mesa_mission_reliability_result(
     )
     return {
         "experiment_id": "project_baseline_at_current_granularity",
-        "metrics": task_reliability_metrics(result_fields),
+        "metrics": [
+            *task_reliability_metrics(result_fields),
+            ["仿真总次数", str(total_samples)],
+            ["成功次数", str(successful_samples)],
+        ],
         "result_fields": result_fields,
         "rows": rows,
         "wave_rows": rows,
