@@ -3497,12 +3497,12 @@ test("equipment product combobox searches by ID, name, and model with keyboard a
     projectJson: createRuntimeProjectJson({
       equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
       products: [
-        { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU" },
+        { id: "product-engine", name: "发动机产品", model: "ENGINE", kind: "LRU", mtbfHours: 100 },
         { id: "product-radar", name: "雷达产品", model: "RADAR", kind: "LRU" },
         { id: "product-avionics", name: "航电产品", model: "AVIONICS", kind: "SRU" }
       ],
       components: [
-        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1, mtbfHours: 100 },
         { id: "avionics-system", name: "航电系统", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-avionics", productType: "SRU", quantity: 1 }
       ]
     })
@@ -3582,6 +3582,8 @@ test("equipment product combobox searches by ID, name, and model with keyboard a
     ), "shared exact productId selections should save");
     assert.equal(savedProject.products.find((product) => product.id === "product-radar").name, "雷达产品");
     assert.equal(savedProject.products.find((product) => product.id === "product-radar").model, "RADAR");
+    assert.equal(savedProject.products.find((product) => product.id === "product-radar").mtbfHours, undefined);
+    assert.equal(savedProject.components.find((component) => component.id === "engine-system").mtbfHours, undefined);
   } finally {
     runtime.restore();
   }
@@ -3811,6 +3813,62 @@ test("equipment product creation uses a collision-safe ID and rehydrates after P
     );
   } finally {
     rehydratedRuntime.restore();
+  }
+});
+
+test("shared equipment product parameters cancel without persistence and confirm updates every exact reference", async () => {
+  const runtime = await setupRuntimeApp({
+    confirmResponses: [false, true],
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35"], quantity: 2 },
+      products: [
+        { id: "product-engine", name: "共享发动机", mtbfHours: 1200, failureDistribution: { distributionType: "固定值" } },
+        { id: "PRODUCT-ENGINE", name: "大小写不同发动机", mtbfHours: 300, failureDistribution: { distributionType: "固定值" } }
+      ],
+      components: [
+        { id: "j15-engine", name: "J-15发动机", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
+        { id: "j35-engine", name: "J-35发动机", aircraftModel: "J-35", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
+        { id: "case-engine", name: "区分大小写发动机", aircraftModel: "J-35", parentId: "aircraft-root", productId: "PRODUCT-ENGINE", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+  let savedProject;
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.change("[data-path]", {
+      path: "components.0.mtbfHours",
+      sharedProductComponentId: "j15-engine"
+    }, { value: "1500", type: "number" });
+    assert.match(runtime.confirmMessages[0], /J-15-J-15发动机.*J-35-J-35发动机/);
+    assert.match(runtime.confirmMessages[0], /原值为 1200.*1500/);
+
+    await runtime.click("[data-project-draft-save]");
+    const cancelledSave = await waitForProjectSave(runtime, (body) => body.products?.some((product) => product.id === "product-engine"));
+    assert.equal(cancelledSave.products.find((product) => product.id === "product-engine").mtbfHours, 1200);
+    assert.equal(cancelledSave.components.find((component) => component.id === "j15-engine").mtbfHours, 1200);
+
+    await runtime.change("[data-path]", {
+      path: "components.0.mtbfHours",
+      sharedProductComponentId: "j15-engine"
+    }, { value: "1500", type: "number" });
+    await runtime.click("[data-project-draft-save]");
+    savedProject = await waitForProjectSave(runtime, (body) => (
+      body.products?.find((product) => product.id === "product-engine")?.mtbfHours === 1500
+    ));
+    assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").mtbfHours, 300);
+    assert.equal(runtime.confirmMessages.length, 2);
+  } finally {
+    runtime.restore();
+  }
+
+  const rehydrated = await setupRuntimeApp({ projectJson: savedProject });
+  try {
+    await rehydrated.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await rehydrated.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(rehydrated, /data-path="components\.0\.mtbfHours"[^>]*value="1500"/, "canonical product MTBF should rehydrate into the component row");
+  } finally {
+    rehydrated.restore();
   }
 });
 
@@ -6812,6 +6870,7 @@ async function setupRuntimeApp({
   analysisXlsxExportError = "",
   analysisXlsxExportDelayMs = 0,
   projectSaveHandler = null,
+  confirmResponses = [],
   backendProjects = [{
     project_id: "project-runtime",
     experiment_name: "Runtime 项目",
@@ -6825,6 +6884,7 @@ async function setupRuntimeApp({
   const windowListeners = {};
   const requests = [];
   const downloads = [];
+  const confirmMessages = [];
   const objectUrls = new Map();
   const backendProjectCatalog = [...backendProjects];
   const projectPayloads = new Map([
@@ -6877,7 +6937,11 @@ async function setupRuntimeApp({
     addEventListener(type, listener) {
       windowListeners[type] = listener;
     },
-    location: globalThis.location
+    location: globalThis.location,
+    confirm(message) {
+      confirmMessages.push(String(message));
+      return confirmResponses.length ? Boolean(confirmResponses.shift()) : true;
+    }
   };
   globalThis.localStorage = {
     getItem(key) {
@@ -7311,6 +7375,7 @@ async function setupRuntimeApp({
 
   return {
     appNode,
+    confirmMessages,
     downloads,
     requests,
     storage,

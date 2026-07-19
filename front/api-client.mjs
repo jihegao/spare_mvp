@@ -1412,7 +1412,6 @@ function stripComponentNonModelFields(components) {
     delete component.failureModel;
     delete component.failureRate;
     delete component.lifeLimitHours;
-    delete component.mtbfHours;
     delete component.rms;
     delete component.spareType;
     const profile = component.specialRepairProfile;

@@ -116,13 +116,16 @@ import {
   wholeMachineModelsForScenario
 } from "./equipment-tree-model.mjs";
 import {
+  SHARED_PRODUCT_PARAMETER_FIELDS,
+  componentsSharingProduct,
   createProjectProduct,
   ensureProductForComponent,
   findProjectProductConflicts,
   normalizeProjectProducts,
   productDisplayName,
   projectProductById,
-  searchProjectProducts
+  searchProjectProducts,
+  updateSharedProductParameter
 } from "./product-catalog.mjs";
 import {
   equipmentStructureExportCsv,
@@ -2931,6 +2934,10 @@ function bindEvents() {
 
     const input = event.target.closest("[data-path]");
     if (!input) return;
+    if (input.dataset.sharedProductComponentId && updateSharedEquipmentProductParameter(input)) {
+      render();
+      return;
+    }
     setPath(scenario, input.dataset.path, parseInput(input));
     normalizeEquipmentKOutOfNForPath(input.dataset.path);
     updatePreviewResultsThroughApiClient();
@@ -6618,11 +6625,43 @@ function bindEquipmentComponentProduct(componentId, productId) {
   const component = (scenario.components || []).find((item) => String(item.id || "") === String(componentId || ""));
   const product = projectProductById(scenario, productId);
   if (!component || !product) return;
+  for (const field of SHARED_PRODUCT_PARAMETER_FIELDS) delete component[field];
   component.productId = product.id;
+  normalizeProjectProducts(scenario);
   closeEquipmentProductCombobox();
   equipmentImportStatus = `已关联产品：${product.name} / ${product.model || "无型号"} / ${product.id}`;
   markProjectDraftChanged();
   updatePreviewResultsThroughApiClient();
+}
+
+function updateSharedEquipmentProductParameter(input) {
+  const componentId = String(input.dataset.sharedProductComponentId || "");
+  const component = (scenario.components || []).find((item) => String(item.id || "") === componentId);
+  const pathMatch = String(input.dataset.path || "").match(/^components\.\d+\.(.+)$/);
+  if (!component || !pathMatch) return false;
+  normalizeProjectProducts(scenario);
+  const product = projectProductById(scenario, component.productId);
+  if (!product) return false;
+  const parameterPath = pathMatch[1];
+  const oldValue = getPath(product, parameterPath);
+  const newValue = parseInput(input);
+  const relatedComponents = componentsSharingProduct(scenario, product.id);
+  if (relatedComponents.length > 1) {
+    const affected = relatedComponents.map((item) => `${item.aircraftModel || "未指定机型"}-${item.name || item.id || "未命名组件"}`).join("、");
+    const confirmed = window.confirm(
+      `本产品还关联：${affected}。原值为 ${formatSharedProductParameterValue(oldValue)}，现在要求改为 ${formatSharedProductParameterValue(newValue)}，会影响以上机型或组件。确认？`
+    );
+    if (!confirmed) return true;
+  }
+  updateSharedProductParameter(scenario, product.id, parameterPath, newValue);
+  updatePreviewResultsThroughApiClient();
+  markProjectDraftChanged();
+  return true;
+}
+
+function formatSharedProductParameterValue(value) {
+  if (value === undefined || value === null || value === "") return "空值";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 function createAndBindEquipmentProduct(componentId) {
@@ -7214,9 +7253,9 @@ function renderEquipmentSystemTableRow(component, index, selectedState, products
       <td>${equipmentComponentAttributeSelect(index)}</td>
       <td>${equipmentProductCell(component, productsById)}</td>
       <td>${equipmentKOutOfNInput(index)}</td>
-      <td>${equipmentDistributionSelect(`components.${index}.failureDistribution.distributionType`, mtbfDistributionType, "MTBF-分布类型")}</td>
+      <td>${equipmentDistributionSelect(`components.${index}.failureDistribution.distributionType`, mtbfDistributionType, "MTBF-分布类型", component)}</td>
       <td>${renderEquipmentDistributionParameters(index, "mtbf", mtbfDistributionType)}</td>
-      <td>${equipmentDistributionSelect(`components.${index}.repairDistribution.distributionType`, mttrDistributionType, "MTTR-分布类型")}</td>
+      <td>${equipmentDistributionSelect(`components.${index}.repairDistribution.distributionType`, mttrDistributionType, "MTTR-分布类型", component)}</td>
       <td>${renderEquipmentDistributionParameters(index, "mttr", mttrDistributionType)}</td>
     </tr>
   `;
@@ -7382,14 +7421,16 @@ function equipmentKOutOfNInput(selectedIndex) {
   return `<input aria-label="可用数量要求k（n中取k）" title="至少需要 k 个可用，范围 1~n。" placeholder="默认全部" data-equipment-k-out-of-n-index="${selectedIndex}" type="number" min="1" max="${htmlEscape(quantity)}" step="1" value="${htmlEscape(value)}">`;
 }
 
-function equipmentDistributionSelect(path, selectedValue, label) {
-  return equipmentSelect(path, equipmentDistributionOptions(), label, selectedValue);
+function equipmentDistributionSelect(path, selectedValue, label, component) {
+  return equipmentSelect(path, equipmentDistributionOptions(), label, selectedValue, {
+    "data-shared-product-component-id": component?.id || ""
+  });
 }
 
-function equipmentSelect(path, options, label, selectedOverride = undefined) {
+function equipmentSelect(path, options, label, selectedOverride = undefined, attributes = {}) {
   const selectedValue = String(selectedOverride ?? getPath(scenario, path));
   return `
-    <select data-path="${path}" aria-label="${htmlEscape(label)}">
+    <select data-path="${path}" aria-label="${htmlEscape(label)}" ${Object.entries(attributes).map(([key, value]) => `${key}="${htmlEscape(value)}"`).join(" ")}>
       ${options.map((option) => {
         const value = String(option.value);
         return `<option value="${htmlEscape(value)}" ${value === selectedValue ? "selected" : ""}>${htmlEscape(option.label)}</option>`;
@@ -7414,6 +7455,7 @@ function equipmentDistributionType(value, metric = "mtbf") {
 }
 
 function renderEquipmentDistributionParameters(index, metric, distributionType) {
+  const component = scenario.components?.[index];
   const basePath = metric === "mtbf" ? `components.${index}.failureDistribution` : `components.${index}.repairDistribution`;
   const fixedLabel = metric === "mtbf" ? "MTBF" : "MTTR（min）";
   const fixedPath = metric === "mtbf" ? `components.${index}.mtbfHours` : `components.${index}.meanRepairTimeMinutes`;
@@ -7433,7 +7475,7 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     return `
       <div class="equipment-param-fields">
         <label>${fixedLabel}
-          <input data-path="${fixedPath}" type="number" min="0" step="0.1" value="${htmlEscape(getPath(scenario, fixedPath))}" aria-label="${htmlEscape(fixedLabel)}">
+          <input data-path="${fixedPath}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="0" step="0.1" value="${htmlEscape(getPath(scenario, fixedPath))}" aria-label="${htmlEscape(fixedLabel)}">
         </label>
       </div>
     `;
@@ -7442,7 +7484,7 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     <div class="equipment-param-fields">
       ${fields.map((fieldDef) => `
         <label>${fieldDef.label}
-          <input data-path="${basePath}.${fieldDef.key}" type="number" min="0" step="${fieldDef.step}" value="${htmlEscape(getPath(scenario, `${basePath}.${fieldDef.key}`))}" aria-label="${htmlEscape(fieldDef.label)}">
+          <input data-path="${basePath}.${fieldDef.key}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="0" step="${fieldDef.step}" value="${htmlEscape(getPath(scenario, `${basePath}.${fieldDef.key}`))}" aria-label="${htmlEscape(fieldDef.label)}">
         </label>
       `).join("")}
     </div>

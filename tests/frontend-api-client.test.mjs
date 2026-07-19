@@ -927,6 +927,32 @@ test("buildBackendProjectJson strips corrective MTTR fields from support activit
   assert.equal("repairDistribution" in projectJson.supportActivityJobs[0], false);
 });
 
+test("buildBackendProjectJson persists shared reliability parameters on products and keeps component projections compatible", () => {
+  const projectJson = buildBackendProjectJson({
+    schema_version: "project-v0",
+    scenarioId: "shared-product-parameters",
+    products: [{
+      id: "product-shared",
+      name: "共享产品",
+      mtbfHours: 1200,
+      meanRepairTimeMinutes: 90,
+      failureDistribution: { distributionType: "固定值" },
+      repairDistribution: { distributionType: "固定值" }
+    }],
+    components: [
+      { id: "component-a", name: "组件A", productId: "product-shared", quantity: 1 },
+      { id: "component-b", name: "组件B", productId: "product-shared", quantity: 1 }
+    ]
+  });
+
+  assert.equal(projectJson.products[0].mtbfHours, 1200);
+  assert.equal(projectJson.products[0].meanRepairTimeMinutes, 90);
+  assert.equal(projectJson.components[0].mtbfHours, 1200);
+  assert.equal(projectJson.components[0].meanRepairTimeMinutes, 90);
+  assert.deepEqual(projectJson.components[0].failureDistribution, { distributionType: "固定值" });
+  assert.deepEqual(projectJson.components[1].repairDistribution, { distributionType: "固定值" });
+});
+
 test("buildBackendProjectJson strips Monte Carlo config from Project modeling data", () => {
   const scenario = {
     scenarioId: "mc-project-boundary",
