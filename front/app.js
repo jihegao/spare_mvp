@@ -2646,11 +2646,13 @@ function bindEvents() {
 
     const combatUnitFieldSelect = event.target.closest("[data-combat-unit-field]");
     if (combatUnitFieldSelect) {
-      updateCombatUnitMemberField(
+      const updated = updateCombatUnitMemberField(
         Number(combatUnitFieldSelect.dataset.combatUnitIndex),
         combatUnitFieldSelect.dataset.combatUnitField,
-        parseInput(combatUnitFieldSelect)
+        parseInput(combatUnitFieldSelect),
+        combatUnitFieldSelect
       );
+      if (!updated) return;
       markProjectDraftChanged();
       render();
       return;
@@ -3209,11 +3211,13 @@ function bindEvents() {
 
     const combatUnitFieldInput = event.target.closest("[data-combat-unit-field]");
     if (combatUnitFieldInput) {
-      updateCombatUnitMemberField(
+      const updated = updateCombatUnitMemberField(
         Number(combatUnitFieldInput.dataset.combatUnitIndex),
         combatUnitFieldInput.dataset.combatUnitField,
-        parseInput(combatUnitFieldInput)
+        parseInput(combatUnitFieldInput),
+        combatUnitFieldInput
       );
+      if (!updated) return;
       markProjectDraftChanged();
       return;
     }
@@ -5687,7 +5691,7 @@ function renderCombatUnitModeling(page) {
         <table class="combat-unit-table">
           <thead>
             <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th rowspan="2">所属机场</th><th colspan="3" class="combat-unit-prelife-heading">寿命初始状态</th></tr>
-            <tr><th class="combat-unit-prelife-column">日历寿命（天）</th><th class="combat-unit-prelife-column">剩余飞行小时</th><th class="combat-unit-prelife-column">剩余起落次数</th></tr>
+            <tr><th class="combat-unit-prelife-column">已用日历天数</th><th class="combat-unit-prelife-column">累计飞行小时</th><th class="combat-unit-prelife-column">累计起落次数</th></tr>
           </thead>
           <tbody>
             ${members.map((member, index) => `
@@ -5696,9 +5700,9 @@ function renderCombatUnitModeling(page) {
                 <td>${combatUnitMemberInput(index, "aircraftNo", member.aircraftNo)}</td>
                 <td>${combatUnitMemberModelSelect(index, member.model)}</td>
                 <td>${combatUnitMemberInput(index, "airport", combatUnitMemberAirport(member))}</td>
-                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeCalendarDays", combatUnitMemberCalendarTime(member), "number", { min: "0", step: "1" })}</td>
-                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeFlightHours", combatUnitMemberFlightHours(member), "number", { min: "0", step: "1" })}</td>
-                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeTakeoffLandingCount", combatUnitMemberTakeoffLandingCount(member), "number", { min: "0", step: "1" })}</td>
+                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeCalendarDays", combatUnitMemberCalendarTime(member), "number", { min: "0", step: "1", required: "" })}</td>
+                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeFlightHours", combatUnitMemberFlightHours(member), "number", { min: "0", step: "any", required: "" })}</td>
+                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeTakeoffLandingCount", combatUnitMemberTakeoffLandingCount(member), "number", { min: "0", step: "1", required: "" })}</td>
               </tr>
             `).join("") || "<tr><td colspan='7'>暂无飞机</td></tr>"}
           </tbody>
@@ -5738,42 +5742,41 @@ function combatUnitMemberAirport(member) {
 }
 
 function combatUnitMemberCalendarTime(member) {
-  return member.preLifeCalendarDays
-    ?? member.calendarDays
-    ?? member.overhaulCalendarDays
-    ?? member.overhaulDays
-    ?? member.overhaul_days
-    ?? "";
+  return member.preLifeCalendarDays ?? 0;
 }
 
 function combatUnitMemberFlightHours(member) {
-  return member.preLifeFlightHours
-    ?? member.flightHours
-    ?? member.flight_hours
-    ?? member.preLifeRequirementHours
-    ?? scenario.equipment?.preLifeRequirementHours
-    ?? member.remainingLifeHours
-    ?? "";
+  return member.preLifeFlightHours ?? 0;
 }
 
 function combatUnitMemberTakeoffLandingCount(member) {
-  return member.preLifeTakeoffLandingCount
-    ?? member.takeoffLandingCount
-    ?? member.landings
-    ?? member.landingCount
-    ?? 0;
+  return member.preLifeTakeoffLandingCount ?? 0;
 }
 
-function updateCombatUnitMemberField(index, fieldName, value) {
+function updateCombatUnitMemberField(index, fieldName, value, input = null) {
   const member = scenario.combatUnit?.members?.[index];
-  if (!member) return;
-  member[fieldName] = value;
-  if (fieldName === "preLifeFlightHours") {
-    member.preLifeRequirementHours = value;
-  } else if (fieldName === "preLifeTakeoffLandingCount") {
-    member.takeoffLandingCount = value;
+  if (!member) return false;
+  if (["preLifeCalendarDays", "preLifeFlightHours", "preLifeTakeoffLandingCount"].includes(fieldName)) {
+    const rawValue = String(input?.value ?? value ?? "").trim();
+    const numericValue = Number(rawValue);
+    const integerRequired = fieldName !== "preLifeFlightHours";
+    const valid = rawValue !== ""
+      && Number.isFinite(numericValue)
+      && numericValue >= 0
+      && (!integerRequired || Number.isInteger(numericValue));
+    if (!valid) {
+      const message = integerRequired ? "请输入非负整数" : "请输入非负有限数";
+      input?.setCustomValidity?.(message);
+      input?.reportValidity?.();
+      return false;
+    }
+    input?.setCustomValidity?.("");
+    member[fieldName] = numericValue;
+  } else {
+    member[fieldName] = value;
   }
   updatePreviewResultsThroughApiClient();
+  return true;
 }
 
 function addCombatUnitMember() {
@@ -5788,9 +5791,8 @@ function addCombatUnitMember() {
     role: "新增",
     status: "执行",
     preLifeCalendarDays: 0,
-    remainingLifeHours: Number(scenario.equipment?.preLifeRequirementHours || 120),
-    preLifeRequirementHours: Number(scenario.equipment?.preLifeRequirementHours || 120),
-    takeoffLandingCount: 0,
+    preLifeFlightHours: 0,
+    preLifeTakeoffLandingCount: 0,
     airport: ""
   });
   scenario.combatUnit.quantity = members.length;
