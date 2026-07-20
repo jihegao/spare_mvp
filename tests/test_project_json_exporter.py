@@ -717,6 +717,114 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         clean = self._export_with_old_jsonschema(invalid_plan_type)
         self.assertEqual(clean["supportActivities"][0]["planType"], "使用保障方案")
 
+    def test_exporter_materializes_and_round_trips_maintenance_method_defaults(self) -> None:
+        project = self._polluted_project()
+        activity = project["supportActivities"][0]
+        activity.pop("repairType", None)
+        activity.pop("maintenanceMethods", None)
+        activity.pop("replacementRatio", None)
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+        self.assertEqual(clean["supportActivities"][0]["maintenanceMethods"], ["non_replacement"])
+        self.assertEqual(clean["supportActivities"][0]["replacementRatio"], 0)
+        self.assertNotIn("repairType", clean["supportActivities"][0])
+
+        round_tripped = ProjectJsonExporter(target="aircraft_support_v1").export(clean)
+        self.assertEqual(round_tripped["supportActivities"][0]["maintenanceMethods"], ["non_replacement"])
+        self.assertEqual(round_tripped["supportActivities"][0]["replacementRatio"], 0)
+
+    def test_exporter_migrates_only_exact_legacy_maintenance_type(self) -> None:
+        project = self._polluted_project()
+        activity = project["supportActivities"][0]
+        activity.pop("maintenanceMethods", None)
+        activity.pop("replacementRatio", None)
+        activity["repairType"] = "换件维修"
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+        self.assertEqual(clean["supportActivities"][0]["maintenanceMethods"], ["replacement"])
+        self.assertEqual(clean["supportActivities"][0]["replacementRatio"], 1)
+        self.assertNotIn("repairType", clean["supportActivities"][0])
+
+        activity["repairType"] = "未知维修"
+        with self.assertRaisesRegex(ValueError, "unsupported legacy value"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        preventive = self._polluted_project()
+        preventive_activity = preventive["supportActivities"][0]
+        preventive_activity["activityType"] = "预防性维修"
+        preventive_activity["planType"] = "预防性维修方案"
+        preventive_activity.pop("maintenanceMethods", None)
+        preventive_activity.pop("replacementRatio", None)
+        preventive_activity["repairType"] = "换件维修"
+        with self.assertRaisesRegex(ValueError, "only supported for corrective maintenance"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(preventive)
+
+    def test_exporter_rejects_partial_invalid_or_conflicting_maintenance_plan(self) -> None:
+        partial = self._polluted_project()
+        partial["supportActivities"][0]["maintenanceMethods"] = ["non_replacement", "replacement"]
+        partial["supportActivities"][0].pop("replacementRatio", None)
+        with self.assertRaisesRegex(ValueError, "must appear together"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(partial)
+
+        conflicting = self._polluted_project()
+        conflicting["supportActivities"][0].update(
+            {
+                "repairType": "原位维修",
+                "maintenanceMethods": ["replacement"],
+                "replacementRatio": 1,
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "conflicts with canonical"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(conflicting)
+
+        inconsistent = self._polluted_project()
+        inconsistent["supportActivities"][0].update(
+            {"maintenanceMethods": ["replacement"], "replacementRatio": 0.5}
+        )
+        with self.assertRaisesRegex(ValueError, "replacement-only plans require 1"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(inconsistent)
+
+        out_of_bounds = self._polluted_project()
+        out_of_bounds["supportActivities"][0].update(
+            {
+                "maintenanceMethods": ["non_replacement", "replacement"],
+                "replacementRatio": 1.1,
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "between 0 and 1"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(out_of_bounds)
+
+        non_scalar_method = self._polluted_project()
+        non_scalar_method["supportActivities"][0].update(
+            {"maintenanceMethods": [{"unexpected": True}], "replacementRatio": 0}
+        )
+        with self.assertRaisesRegex(ValueError, "canonical maintenance methods"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(non_scalar_method)
+
+        accepted_precision = self._polluted_project()
+        accepted_precision["supportActivities"][0].update(
+            {"maintenanceMethods": ["non_replacement", "replacement"], "replacementRatio": 0.1234}
+        )
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(accepted_precision)
+        self.assertEqual(clean["supportActivities"][0]["replacementRatio"], 0.1234)
+
+        excessive_precision = deepcopy(accepted_precision)
+        excessive_precision["supportActivities"][0]["replacementRatio"] = 0.12345
+        with self.assertRaisesRegex(ValueError, "at most four decimal places"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(excessive_precision)
+
+        non_maintenance = self._polluted_project()
+        non_maintenance["supportActivities"][0].update(
+            {
+                "activityType": "后勤保障",
+                "planType": "后勤保障方案",
+                "maintenanceMethods": ["non_replacement"],
+                "replacementRatio": 0,
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "require a maintenance plan"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(non_maintenance)
+
     def test_aircraft_support_v1_exporter_rejects_invalid_support_activity_references(self) -> None:
         unknown_job = self._polluted_project()
         unknown_job["supportActivities"][0]["jobs"] = []

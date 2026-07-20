@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import hashlib
+import math
 import re
 from copy import deepcopy
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -247,6 +249,8 @@ _SUPPORT_ACTIVITY_FIELDS = {
     "runHourInterval",
     "takeoffLandingInterval",
     "floatRatio",
+    "maintenanceMethods",
+    "replacementRatio",
     "activityCodes",
     "predecessors",
 }
@@ -255,6 +259,12 @@ _SUPPORT_ACTIVITY_PLAN_TYPES = {
     "修复性维修方案",
     "预防性维修方案",
     "后勤保障方案",
+}
+_MAINTENANCE_SUPPORT_ACTIVITY_PLAN_TYPES = {"修复性维修方案", "预防性维修方案"}
+_MAINTENANCE_METHOD_VALUES = ("non_replacement", "replacement")
+_LEGACY_REPAIR_TYPE_MIGRATIONS = {
+    "原位维修": (["non_replacement"], 0.0),
+    "换件维修": (["replacement"], 1.0),
 }
 _SUPPORT_ACTIVITY_MTTR_FIELDS = {
     "maxRepairTimeMinutes",
@@ -1331,6 +1341,14 @@ def _validate_clean_support_activities(activities: Any, target: str) -> None:
             nullable=True,
         )
         _validate_optional_clean_number(activity, "floatRatio", f"supportActivities.{index}.floatRatio", target, nullable=True)
+        if (
+            "maintenanceMethods" in activity or "replacementRatio" in activity
+        ) and activity.get("planType") not in _MAINTENANCE_SUPPORT_ACTIVITY_PLAN_TYPES:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportActivities.{index}: "
+                "maintenance method fields require a corrective or preventive plan"
+            )
+        _validate_support_activity_maintenance_methods(activity, f"supportActivities.{index}", target)
         if "activityCodes" in activity:
             codes = activity["activityCodes"]
             if not isinstance(codes, list) or any(not isinstance(code, str) for code in codes):
@@ -1712,6 +1730,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         _normalize_mission_profile_reference_fields(project)
     _strip_typo_only_support_activity_fields(project)
     _strip_deprecated_support_activity_strategy_fields(project)
+    _normalize_support_activity_maintenance_methods(project)
     _strip_support_activity_rule_ui_fields(project.get("supportActivities"))
     _strip_support_activity_spare_type_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivities"))
@@ -2495,6 +2514,117 @@ def _normalize_support_activity_reference_fields(project: dict[str, Any]) -> Non
         activity["planType"] = _canonical_support_activity_plan_type(activity)
         for field in ("name", "planGroupId", "resourceId", "supportNodeId", "requiredDevices", "requiredPersonnel"):
             activity.pop(field, None)
+
+
+def _normalize_support_activity_maintenance_methods(project: dict[str, Any]) -> list[str]:
+    changes: list[str] = []
+    activities = project.get("supportActivities")
+    if not isinstance(activities, list):
+        return changes
+    for index, activity in enumerate(activities):
+        if not isinstance(activity, dict):
+            continue
+        path = f"supportActivities.{index}"
+        plan_type = _canonical_support_activity_plan_type(activity)
+        has_methods = "maintenanceMethods" in activity
+        has_ratio = "replacementRatio" in activity
+        has_legacy = "repairType" in activity
+        if plan_type not in _MAINTENANCE_SUPPORT_ACTIVITY_PLAN_TYPES:
+            if has_methods or has_ratio or has_legacy:
+                raise ValueError(f"clean Project JSON failed aircraft_support_v1 schema at {path}: maintenance method fields require a maintenance plan")
+            continue
+        if has_methods != has_ratio:
+            raise ValueError(
+                f"clean Project JSON failed aircraft_support_v1 schema at {path}: "
+                "maintenanceMethods and replacementRatio must appear together"
+            )
+        legacy_migration: tuple[list[str], float] | None = None
+        if has_legacy:
+            legacy_value = str(activity.get("repairType") or "").strip()
+            if plan_type != "修复性维修方案":
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at {path}.repairType: "
+                    "legacy repairType migration is only supported for corrective maintenance"
+                )
+            legacy_migration = _LEGACY_REPAIR_TYPE_MIGRATIONS.get(legacy_value)
+            if legacy_migration is None:
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at {path}.repairType: "
+                    f"unsupported legacy value {legacy_value!r}"
+                )
+        if not has_methods:
+            methods, ratio = legacy_migration or (["non_replacement"], 0.0)
+            activity["maintenanceMethods"] = list(methods)
+            activity["replacementRatio"] = ratio
+            source = (
+                f"legacyRepairType:{str(activity.get('repairType') or '').strip()}"
+                if legacy_migration
+                else "historicalDefault"
+            )
+            changes.extend((
+                f"{path}.maintenanceMethods={source}",
+                f"{path}.replacementRatio={source}",
+            ))
+        _validate_support_activity_maintenance_methods(activity, path, "aircraft_support_v1")
+        if legacy_migration is not None:
+            legacy_methods, legacy_ratio = legacy_migration
+            if activity["maintenanceMethods"] != legacy_methods or activity["replacementRatio"] != legacy_ratio:
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at {path}.repairType: "
+                    "legacy value conflicts with canonical maintenance fields"
+                )
+        activity.pop("repairType", None)
+    return changes
+
+
+def normalize_support_activity_maintenance_plans(project: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Return a canonical copy for direct compiler paths plus migration provenance."""
+    normalized = deepcopy(project)
+    return normalized, _normalize_support_activity_maintenance_methods(normalized)
+
+
+def _validate_support_activity_maintenance_methods(activity: dict[str, Any], path: str, target: str) -> None:
+    has_methods = "maintenanceMethods" in activity
+    has_ratio = "replacementRatio" in activity
+    if has_methods != has_ratio:
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at {path}: "
+            "maintenanceMethods and replacementRatio must appear together"
+        )
+    if not has_methods:
+        return
+    methods = activity["maintenanceMethods"]
+    if (
+        not isinstance(methods, list)
+        or not 1 <= len(methods) <= len(_MAINTENANCE_METHOD_VALUES)
+        or any(not isinstance(method, str) or method not in _MAINTENANCE_METHOD_VALUES for method in methods)
+        or len(set(methods)) != len(methods)
+    ):
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at {path}.maintenanceMethods: "
+            "expected one or both canonical maintenance methods without duplicates"
+        )
+    ratio = activity["replacementRatio"]
+    if not isinstance(ratio, (int, float)) or isinstance(ratio, bool) or not math.isfinite(ratio) or not 0 <= ratio <= 1:
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at {path}.replacementRatio: expected a finite number between 0 and 1"
+        )
+    if methods == ["non_replacement"] and ratio != 0:
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at {path}.replacementRatio: non_replacement-only plans require 0"
+        )
+    if methods == ["replacement"] and ratio != 1:
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at {path}.replacementRatio: replacement-only plans require 1"
+        )
+    try:
+        decimal_ratio = Decimal(str(ratio))
+    except (InvalidOperation, ValueError):
+        decimal_ratio = Decimal("NaN")
+    if not decimal_ratio.is_finite() or decimal_ratio != decimal_ratio.quantize(Decimal("0.0001")):
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at {path}.replacementRatio: expected at most four decimal places"
+        )
 
 
 def _canonical_support_activity_plan_type(activity: dict[str, Any]) -> str:

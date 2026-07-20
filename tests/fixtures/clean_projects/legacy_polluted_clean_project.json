@@ -85,6 +85,10 @@
       "id": "corrective",
       "activityType": "corrective",
       "durationHours": 1,
+      "maintenanceMethods": [
+        "non_replacement"
+      ],
+      "replacementRatio": 0.0,
       "activityCodes": [
         "job-1"
       ],

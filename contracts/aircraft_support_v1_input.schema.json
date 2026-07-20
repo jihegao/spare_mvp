@@ -134,7 +134,52 @@
           "items": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["id", "name", "activity_type", "equipment_id", "resource_id", "jobs"]
+            "required": ["id", "name", "activity_type", "equipment_id", "resource_id", "jobs"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "activity_type": { "type": "string", "minLength": 1 },
+              "aircraft_model": { "type": "string" },
+              "equipment_id": { "type": "string" },
+              "resource_id": { "type": "string" },
+              "maintenance_methods": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 2,
+                "uniqueItems": true,
+                "items": { "enum": ["non_replacement", "replacement"] }
+              },
+              "replacement_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "jobs": { "type": "array", "items": { "type": "object" } }
+            },
+            "dependentRequired": {
+              "maintenance_methods": ["replacement_ratio"],
+              "replacement_ratio": ["maintenance_methods"]
+            },
+            "allOf": [
+              {
+                "if": { "required": ["maintenance_methods"] },
+                "then": {
+                  "properties": {
+                    "activity_type": { "enum": ["corrective", "preventive", "修复性维修", "预防性维修"] }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": ["maintenance_methods"],
+                  "properties": { "maintenance_methods": { "const": ["non_replacement"] } }
+                },
+                "then": { "properties": { "replacement_ratio": { "const": 0 } } }
+              },
+              {
+                "if": {
+                  "required": ["maintenance_methods"],
+                  "properties": { "maintenance_methods": { "const": ["replacement"] } }
+                },
+                "then": { "properties": { "replacement_ratio": { "const": 1 } } }
+              }
+            ]
           }
         }
       }

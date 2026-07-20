@@ -81,6 +81,8 @@ test("basic support activity CSV template is BOM-prefixed and mixes row-level ac
 
   assert.equal(csv.startsWith("\uFEFF"), true);
   assert.deepEqual(csv.replace(/^\uFEFF/, "").split("\n")[0].split(","), BASIC_SUPPORT_ACTIVITY_CSV_HEADERS);
+  assert.equal(BASIC_SUPPORT_ACTIVITY_CSV_HEADERS.includes("维修方式"), false);
+  assert.equal(BASIC_SUPPORT_ACTIVITY_CSV_HEADERS.includes("换件比例"), false);
   assert.match(csv, /使用保障活动,BA-101/);
   assert.match(csv, /预防性维修,PM-201/);
   assert.match(csv, /修复性维修,CM-301/);

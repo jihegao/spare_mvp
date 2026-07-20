@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+import hashlib
 import math
 import random
 from typing import Any
@@ -34,8 +35,12 @@ BEHAVIOR_DRIVING_FIELDS = [
     "supportResources[].supportNodeName",
     "transportPolicies[]",
     "supportActivityJobs[]",
+    "supportActivities[].aircraftModel",
+    "supportActivities[].equipmentId",
     "supportActivities[].activityCodes",
     "supportActivities[].predecessors",
+    "supportActivities[].maintenanceMethods",
+    "supportActivities[].replacementRatio",
     "experiment.seed",
     "experiment.samples",
     "ExperimentPlan.config.stopPolicy",
@@ -135,6 +140,13 @@ class JobState:
     started_time: int | None = None
     completed_time: int | None = None
     shortage_reason: str | None = None
+    maintenance_method: str | None = None
+    replacement_ratio: float | None = None
+    maintenance_decision_roll: float | None = None
+    maintenance_rng_stream: str | None = None
+    maintenance_occurrence: int | None = None
+    consumed_spare_task_indexes: set[int] = field(default_factory=set)
+    spare_shortage_signature: tuple[tuple[str, int, int, str], ...] | None = None
 
     @property
     def current_task(self) -> dict[str, Any] | None:
@@ -201,6 +213,7 @@ class AircraftSupportV1Model:
         self.jobs: list[JobState] = []
         self.transport_shipments: list[TransportShipment] = []
         self._job_sequence = 0
+        self._maintenance_occurrence_by_kind = {"repair": 0, "preventive": 0}
         self.completed_sorties = 0
         self.failed_sorties = 0
         self.launched_sorties = 0
@@ -475,7 +488,7 @@ class AircraftSupportV1Model:
             failure_minute = aircraft.component_failure_minutes.get(component_id)
         details: dict[str, Any]
         if factor == "spare_shortage":
-            spare_type, required = self._task_spare_requirement(job, task) if job is not None else (None, 0)
+            spare_type, required = self._shortage_spare_requirement(job, task) if job is not None else (None, 0)
             available = int((node or {}).get("inventory", {}).get(spare_type, 0) or 0) if spare_type else None
             arrivals = [
                 shipment.arrival_minute for shipment in self.transport_shipments
@@ -518,15 +531,17 @@ class AircraftSupportV1Model:
                 "repair_completed_minute": None,
             }
         else:
+            activity = self._activity_by_id(job.activity_id) if job is not None else self._select_activity("preventive", aircraft=aircraft)
             trigger_types = []
-            if self._preventive_interval_days() > 0 and self.minute - aircraft.last_preventive_minute >= self._preventive_interval_days() * 1440:
+            if self._preventive_interval_days(activity) > 0 and self.minute - aircraft.last_preventive_minute >= self._preventive_interval_days(activity) * 1440:
                 trigger_types.append("calendar_time")
-            if self._preventive_interval_hours() > 0 and aircraft.flight_hours >= self._preventive_interval_hours():
+            if self._preventive_interval_hours(activity) > 0 and aircraft.flight_hours >= self._preventive_interval_hours(activity):
                 trigger_types.append("flight_hours")
-            if self._preventive_interval_landings() > 0 and aircraft.landing_count >= self._preventive_interval_landings():
+            if self._preventive_interval_landings(activity) > 0 and aircraft.landing_count >= self._preventive_interval_landings(activity):
                 trigger_types.append("landings")
             details = {
-                "maintenance_type": job.activity_name if job is not None else self.preventive_activity.get("name"),
+                "maintenance_type": job.activity_name if job is not None else activity.get("name"),
+                "maintenance_method": job.maintenance_method if job is not None else None,
                 "trigger_type": ",".join(trigger_types) if trigger_types else None,
                 "trigger_condition": None,
                 "planned_start_minute": start_minute,
@@ -956,6 +971,24 @@ class AircraftSupportV1Model:
         for item in self.inputs.get("support_activities", {}).get("activities", []):
             activity = copy.deepcopy(item)
             activity["jobs"] = self._ordered_activity_jobs(activity.get("jobs") or [])
+            activity["aircraft_model"] = str(activity.get("aircraft_model") or "")
+            activity["equipment_id"] = str(activity.get("equipment_id") or "")
+            if self._activity_kind_matches(activity, "repair") or self._activity_kind_matches(activity, "preventive"):
+                methods = [
+                    str(value)
+                    for value in activity.get("maintenance_methods", [])
+                    if str(value) in {"non_replacement", "replacement"}
+                ] if isinstance(activity.get("maintenance_methods"), list) else []
+                activity["maintenance_methods"] = list(dict.fromkeys(methods)) or ["non_replacement"]
+                if activity["maintenance_methods"] == ["replacement"]:
+                    activity["replacement_ratio"] = 1.0
+                elif "replacement" not in activity["maintenance_methods"]:
+                    activity["replacement_ratio"] = 0.0
+                else:
+                    activity["replacement_ratio"] = min(
+                        1.0,
+                        _non_negative_float(activity.get("replacement_ratio"), 0.0),
+                    )
             activities.append(activity)
         return activities
 
@@ -979,23 +1012,69 @@ class AircraftSupportV1Model:
                 break
         return ordered
 
-    def _select_activity(self, kind: str) -> dict[str, Any]:
-        candidates = []
-        for activity in self.activities:
-            text = f"{activity.get('id', '')} {activity.get('name', '')} {activity.get('activity_type', '')}".lower()
-            if kind == "preflight" and ("preflight" in text or "飞行前" in text or "直接准备" in text):
-                candidates.append(activity)
-            if kind == "repair" and ("repair" in text or "维修" in text or "修复" in text):
-                candidates.append(activity)
-            if kind == "postflight" and ("postflight" in text or "飞行后" in text or "航后" in text):
-                candidates.append(activity)
-            if kind == "preventive" and ("preventive" in text or "预防" in text or "定检" in text):
-                candidates.append(activity)
+    def _activity_kind_matches(self, activity: dict[str, Any], kind: str) -> bool:
+        text = f"{activity.get('id', '')} {activity.get('name', '')} {activity.get('activity_type', '')}".lower()
+        if kind == "preflight":
+            return "preflight" in text or "飞行前" in text or "直接准备" in text
+        if kind == "repair":
+            return "corrective" in text or "repair" in text or "修复性维修" in text or "故障修复" in text
+        if kind == "postflight":
+            return "postflight" in text or "飞行后" in text or "航后" in text
+        if kind == "preventive":
+            return "preventive" in text or "预防" in text or "定检" in text
+        return False
+
+    def _select_activity(
+        self,
+        kind: str,
+        *,
+        aircraft: AircraftState | None = None,
+        component: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        candidates = [activity for activity in self.activities if self._activity_kind_matches(activity, kind)]
+        if kind in {"repair", "preventive"} and candidates:
+            candidates = self._maintenance_activity_candidates(candidates, aircraft=aircraft, component=component)
         if candidates:
             return candidates[0]
-        if kind in {"postflight", "preventive"}:
+        if kind in {"repair", "postflight", "preventive"}:
             return self._default_activity(kind)
         return self.activities[0] if self.activities else self._default_activity(kind)
+
+    def _maintenance_activity_candidates(
+        self,
+        candidates: list[dict[str, Any]],
+        *,
+        aircraft: AircraftState | None,
+        component: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        component_ids = {
+            str((component or {}).get(field) or "").strip().casefold()
+            for field in ("id", "product_id")
+        } - {""}
+        aircraft_models = {
+            str(value or "").strip().casefold()
+            for value in (
+                aircraft.aircraft_type if aircraft is not None else "",
+                aircraft.model if aircraft is not None else "",
+                (component or {}).get("aircraft_model"),
+            )
+        } - {""}
+        ranked: list[tuple[int, int, dict[str, Any]]] = []
+        for index, activity in enumerate(candidates):
+            equipment_id = str(activity.get("equipment_id") or "").strip().casefold()
+            activity_model = str(activity.get("aircraft_model") or "").strip().casefold()
+            if not activity_model and equipment_id:
+                scoped_component = self._component_by_id(equipment_id)
+                activity_model = str((scoped_component or {}).get("aircraft_model") or "").strip().casefold()
+            if component_ids and equipment_id and equipment_id not in component_ids:
+                continue
+            if aircraft_models and activity_model and activity_model not in aircraft_models:
+                continue
+            score = (4 if equipment_id and equipment_id in component_ids else 0) + (
+                2 if activity_model and activity_model in aircraft_models else 0
+            ) + (1 if not equipment_id and not activity_model else 0)
+            ranked.append((-score, index, activity))
+        return [activity for _, _, activity in sorted(ranked, key=lambda item: (item[0], item[1]))]
 
     def _default_activity(self, kind: str) -> dict[str, Any]:
         return {
@@ -1212,6 +1291,12 @@ class AircraftSupportV1Model:
             self._event(
                 "transport_arrived",
                 f"{shipment.quantity} {shipment.spare_type} arrived at {shipment.destination_node_id}",
+                {
+                    "product_id": shipment.spare_type,
+                    "quantity": shipment.quantity,
+                    "source_resource_id": shipment.source_node_id,
+                    "resource_id": shipment.destination_node_id,
+                },
             )
 
     def _process_mission_returns(self) -> None:
@@ -1234,9 +1319,10 @@ class AircraftSupportV1Model:
             aircraft.state = "maintenance"
             self.failed_sorties += 1
             component = self._component_by_id(aircraft.failed_component_id)
+            repair_activity = self._select_activity("repair", aircraft=aircraft, component=component)
             self._create_job(
                 aircraft,
-                self.repair_activity,
+                repair_activity,
                 kind="repair",
                 mission_id=mission.mission_id if mission is not None else aircraft.current_mission_id,
                 component=component,
@@ -1250,9 +1336,10 @@ class AircraftSupportV1Model:
         elif aircraft.component_failure_minutes:
             aircraft.state = "maintenance"
             component = self._component_by_id(self._first_failed_component_id(aircraft))
+            repair_activity = self._select_activity("repair", aircraft=aircraft, component=component)
             self._create_job(
                 aircraft,
-                self.repair_activity,
+                repair_activity,
                 kind="repair",
                 mission_id=mission.mission_id if mission is not None else aircraft.current_mission_id,
                 component=component,
@@ -1361,30 +1448,51 @@ class AircraftSupportV1Model:
                     },
                 )
                 continue
-            spare_type, spare_qty = self._task_spare_requirement(job, task)
-            if spare_type and node["inventory"].get(spare_type, 0) < spare_qty:
-                if not self._has_in_transit_spare(node["id"], spare_type):
+            spare_requirements = self._task_spare_requirements(job, task)
+            for spare_type, spare_qty in spare_requirements:
+                if node["inventory"].get(spare_type, 0) < spare_qty and not self._has_in_transit_spare(node["id"], spare_type):
                     self._try_transport_replenishment(node, spare_type, spare_qty)
-            if spare_type and node["inventory"].get(spare_type, 0) < spare_qty:
-                self.shortage_events += 1
-                reason = "in_transit" if self._has_in_transit_spare(node["id"], spare_type) else f"spare:{spare_type}"
-                job.shortage_reason = reason
-                aircraft = self._aircraft_by_tail(job.tail_number)
-                display_name = self._product_display_name(spare_type)
-                self._event(
-                    "spare_shortage",
-                    f"{job.job_id} blocked by {display_name} shortage at {node['id']}",
-                    {
-                        "job_id": job.job_id,
-                        "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
-                        "resource_id": node["id"],
-                        "product_id": spare_type,
-                        "spare_type": display_name,
-                        "required_quantity": spare_qty,
-                        "available_quantity": int(node["inventory"].get(spare_type, 0) or 0),
-                        "reason": reason,
-                    },
+            shortages = [
+                (
+                    spare_type,
+                    spare_qty,
+                    int(node["inventory"].get(spare_type, 0) or 0),
+                    (
+                        "in_transit"
+                        if self._has_in_transit_spare(node["id"], spare_type)
+                        else f"spare:{spare_type}"
+                    ),
                 )
+                for spare_type, spare_qty in spare_requirements
+                if node["inventory"].get(spare_type, 0) < spare_qty
+            ]
+            if shortages:
+                job.shortage_reason = shortages[0][3]
+                shortage_signature = tuple(shortages)
+                if job.spare_shortage_signature == shortage_signature:
+                    continue
+                job.spare_shortage_signature = shortage_signature
+                aircraft = self._aircraft_by_tail(job.tail_number)
+                for spare_type, spare_qty, available_quantity, reason in shortages:
+                    self.shortage_events += 1
+                    display_name = self._product_display_name(spare_type)
+                    self._event(
+                        "spare_shortage",
+                        f"{job.job_id} blocked by {display_name} shortage at {node['id']}",
+                        {
+                            "job_id": job.job_id,
+                            "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
+                            "resource_id": node["id"],
+                            "product_id": spare_type,
+                            "spare_type": display_name,
+                            "required_quantity": spare_qty,
+                            "available_quantity": available_quantity,
+                            "reason": reason,
+                        },
+                    )
+                continue
+            job.spare_shortage_signature = None
+            if not self._consume_task_spare(job, task):
                 continue
             node["personnel_in_use"] += personnel
             node["equipment_in_use"] += equipment
@@ -1427,15 +1535,16 @@ class AircraftSupportV1Model:
                         break
 
     def _generate_preventive_jobs(self) -> None:
-        interval_days = self._preventive_interval_days()
-        interval_hours = self._preventive_interval_hours()
-        interval_landings = self._preventive_interval_landings()
-        if interval_days <= 0 and interval_hours <= 0 and interval_landings <= 0:
-            return
         for aircraft in self.aircraft:
             if aircraft.state != "available" or aircraft.preventive_due:
                 continue
             if any(job.kind == "preventive" and job.tail_number == aircraft.tail_number and job.state != "completed" for job in self.jobs):
+                continue
+            activity = self._select_activity("preventive", aircraft=aircraft)
+            interval_days = self._preventive_interval_days(activity)
+            interval_hours = self._preventive_interval_hours(activity)
+            interval_landings = self._preventive_interval_landings(activity)
+            if interval_days <= 0 and interval_hours <= 0 and interval_landings <= 0:
                 continue
             due_by_day = interval_days > 0 and self.minute - aircraft.last_preventive_minute >= interval_days * 1440
             due_by_hours = interval_hours > 0 and aircraft.flight_hours >= interval_hours
@@ -1444,23 +1553,26 @@ class AircraftSupportV1Model:
                 aircraft.state = "maintenance"
                 aircraft.preventive_due = True
                 self.preventive_maintenance_events += 1
-                self._create_job(aircraft, self.preventive_activity, kind="preventive")
+                self._create_job(aircraft, activity, kind="preventive")
                 self._event("preventive_created", f"{aircraft.tail_number} preventive maintenance created")
 
-    def _preventive_interval_days(self) -> int:
+    def _preventive_interval_days(self, activity: dict[str, Any] | None = None) -> int:
+        activity = activity if isinstance(activity, dict) else self.preventive_activity
         value = (
-            self.preventive_activity.get("calendarDayInterval")
-            or self.preventive_activity.get("calendar_day_interval")
-            or self.preventive_activity.get("intervalDays")
+            activity.get("calendarDayInterval")
+            or activity.get("calendar_day_interval")
+            or activity.get("intervalDays")
         )
         return _positive_int(value, 0)
 
-    def _preventive_interval_hours(self) -> int:
-        value = self.preventive_activity.get("runHourInterval") or self.preventive_activity.get("run_hour_interval")
+    def _preventive_interval_hours(self, activity: dict[str, Any] | None = None) -> int:
+        activity = activity if isinstance(activity, dict) else self.preventive_activity
+        value = activity.get("runHourInterval") or activity.get("run_hour_interval")
         return _positive_int(value, 0)
 
-    def _preventive_interval_landings(self) -> int:
-        value = self.preventive_activity.get("takeoffLandingInterval") or self.preventive_activity.get("takeoff_landing_interval")
+    def _preventive_interval_landings(self, activity: dict[str, Any] | None = None) -> int:
+        activity = activity if isinstance(activity, dict) else self.preventive_activity
+        value = activity.get("takeoffLandingInterval") or activity.get("takeoff_landing_interval")
         return _positive_int(value, 0)
 
     def _create_due_preflight_jobs(self) -> None:
@@ -1627,32 +1739,102 @@ class AircraftSupportV1Model:
         component: dict[str, Any] | None = None,
     ) -> None:
         self._job_sequence += 1
+        job_id = f"job-{self._job_sequence:04d}"
         tasks = copy.deepcopy(activity.get("jobs") or [{"activityCode": kind, "durationMinutes": 30}])
         for task in tasks:
             task.setdefault("durationMinutes", activity.get("duration_minutes") or 30)
             task.setdefault("requiredPersonnel", activity.get("required_personnel") or 1)
             task.setdefault("requiredDevices", activity.get("required_devices") or 1)
+        maintenance_method = None
+        replacement_ratio = None
+        decision_roll = None
+        rng_stream = None
+        maintenance_occurrence = None
+        if kind in {"repair", "preventive"}:
+            (
+                maintenance_method,
+                replacement_ratio,
+                decision_roll,
+                rng_stream,
+                maintenance_occurrence,
+            ) = self._maintenance_method_for_event(
+                activity=activity,
+                kind=kind,
+            )
         if kind == "repair" and component is not None:
             if component.get("repair_duration_minutes"):
                 tasks[-1]["durationMinutes"] = max(1, int(component["repair_duration_minutes"]))
-            if str(component.get("product_type") or "").strip().upper() == "LRU":
+            has_explicit_spares = any(self._task_has_explicit_spare_requirement(task) for task in tasks)
+            if (
+                maintenance_method == "replacement"
+                and not has_explicit_spares
+                and str(component.get("product_type") or "").strip().upper() == "LRU"
+            ):
                 product_id = str(component.get("product_id") or "").strip()
                 if product_id:
                     tasks[-1]["spare"] = f"{product_id},1"
-        self.jobs.append(
-            JobState(
-                job_id=f"job-{self._job_sequence:04d}",
-                tail_number=aircraft.tail_number,
-                kind=kind,
-                activity_id=str(activity.get("id") or kind),
-                activity_name=str(activity.get("name") or activity.get("activity_name") or kind),
-                tasks=tasks,
-                priority=max(1, int(activity.get("priority") or 1)),
-                resource_node_id=str(activity.get("resource_id") or self._default_resource_node_id(aircraft)),
-                mission_id=mission_id,
-                component_id=str(component.get("id")) if component else None,
-            )
+        job = JobState(
+            job_id=job_id,
+            tail_number=aircraft.tail_number,
+            kind=kind,
+            activity_id=str(activity.get("id") or kind),
+            activity_name=str(activity.get("name") or activity.get("activity_name") or kind),
+            tasks=tasks,
+            priority=max(1, int(activity.get("priority") or 1)),
+            resource_node_id=str(activity.get("resource_id") or self._default_resource_node_id(aircraft)),
+            mission_id=mission_id,
+            component_id=str(component.get("id")) if component else None,
+            maintenance_method=maintenance_method,
+            replacement_ratio=replacement_ratio,
+            maintenance_decision_roll=decision_roll,
+            maintenance_rng_stream=rng_stream,
+            maintenance_occurrence=maintenance_occurrence,
         )
+        self.jobs.append(job)
+        if maintenance_method is not None:
+            self._event(
+                "maintenance_method_selected",
+                f"{job_id} selected {maintenance_method}",
+                {
+                    "job_id": job_id,
+                    "tail_number": aircraft.tail_number,
+                    "aircraft_model": aircraft.model or aircraft.aircraft_type,
+                    "activity_id": job.activity_id,
+                    "component_id": job.component_id,
+                    "maintenance_kind": kind,
+                    "maintenance_method": maintenance_method,
+                    "replacement_ratio": replacement_ratio,
+                    "decision_roll": decision_roll,
+                    "rng_stream": rng_stream,
+                    "maintenance_occurrence": maintenance_occurrence,
+                },
+            )
+
+    def _maintenance_method_for_event(
+        self,
+        *,
+        activity: dict[str, Any],
+        kind: str,
+    ) -> tuple[str, float, float, str, int]:
+        methods = [
+            str(value)
+            for value in activity.get("maintenance_methods", [])
+            if str(value) in {"non_replacement", "replacement"}
+        ] if isinstance(activity.get("maintenance_methods"), list) else []
+        methods = list(dict.fromkeys(methods)) or ["non_replacement"]
+        ratio = min(1.0, _non_negative_float(activity.get("replacement_ratio"), 0.0))
+        if methods == ["replacement"]:
+            ratio = 1.0
+        elif "replacement" not in methods:
+            ratio = 0.0
+        self._maintenance_occurrence_by_kind[kind] = self._maintenance_occurrence_by_kind.get(kind, 0) + 1
+        occurrence = self._maintenance_occurrence_by_kind[kind]
+        stream_key = f"{self.seed}|maintenance-method|{kind}|{occurrence}"
+        digest = hashlib.sha256(stream_key.encode("utf-8")).digest()
+        stream_seed = int.from_bytes(digest[:16], "big")
+        decision_roll = random.Random(stream_seed).random()
+        method = "replacement" if "replacement" in methods and decision_roll < ratio else "non_replacement"
+        return method, ratio, decision_roll, digest.hex()[:16], occurrence
 
     def _default_resource_node_id(self, aircraft: AircraftState) -> str:
         """Choose the aircraft's explicitly associated support node before list-order fallback."""
@@ -1684,8 +1866,9 @@ class AircraftSupportV1Model:
         node["personnel_in_use"] = max(0, node["personnel_in_use"] - personnel)
         node["equipment_in_use"] = max(0, node["equipment_in_use"] - equipment)
 
-    def _task_spare_requirement(self, job: JobState, task: dict[str, Any]) -> tuple[str | None, int]:
+    def _raw_task_spare_requirements(self, task: dict[str, Any]) -> list[tuple[str, int]]:
         spare = task.get("spare")
+        requirements: list[tuple[str, int]] = []
         if isinstance(spare, list):
             for item in spare:
                 if not isinstance(item, dict):
@@ -1693,19 +1876,57 @@ class AircraftSupportV1Model:
                 spare_type = str(item.get("productId") or item.get("product_id") or item.get("name") or item.get("model") or "").strip()
                 if _is_no_spare_value(spare_type):
                     continue
-                quantity = _positive_int(item.get("quantity"), 1)
+                quantity = _non_negative_int(item.get("quantity"), 1)
                 if spare_type and quantity > 0:
-                    return self._product_id_for_label(spare_type), quantity
+                    requirements.append((self._product_id_for_label(spare_type), quantity))
         if isinstance(spare, str) and spare and not _is_no_spare_value(spare):
             parts = [part.strip() for part in spare.split(",") if part.strip()]
             if parts:
                 quantity = 1
                 for part in reversed(parts):
                     if part.isdigit():
-                        quantity = max(1, int(part))
+                        quantity = max(0, int(part))
                         break
-                return self._product_id_for_label(parts[0]), quantity
-        return None, 0
+                if quantity > 0:
+                    requirements.append((self._product_id_for_label(parts[0]), quantity))
+        return requirements
+
+    def _task_has_explicit_spare_requirement(self, task: dict[str, Any]) -> bool:
+        if self._raw_task_spare_requirements(task):
+            return True
+        spare = task.get("spare")
+        if isinstance(spare, list):
+            return any(
+                isinstance(item, dict)
+                and str(item.get("productId") or item.get("product_id") or item.get("name") or item.get("model") or "").strip()
+                and _non_negative_int(item.get("quantity"), 1) == 0
+                for item in spare
+            )
+        if isinstance(spare, str) and spare and not _is_no_spare_value(spare):
+            parts = [part.strip() for part in spare.split(",") if part.strip()]
+            return bool(parts and parts[-1].isdigit() and int(parts[-1]) == 0)
+        return False
+
+    def _task_spare_requirements(self, job: JobState, task: dict[str, Any]) -> list[tuple[str, int]]:
+        if job.kind in {"repair", "preventive"} and job.maintenance_method == "non_replacement":
+            return []
+        quantities: dict[str, int] = {}
+        for spare_type, quantity in self._raw_task_spare_requirements(task):
+            quantities[spare_type] = quantities.get(spare_type, 0) + quantity
+        return list(quantities.items())
+
+    def _task_spare_requirement(self, job: JobState, task: dict[str, Any]) -> tuple[str | None, int]:
+        requirements = self._task_spare_requirements(job, task)
+        return requirements[0] if requirements else (None, 0)
+
+    def _shortage_spare_requirement(self, job: JobState, task: dict[str, Any]) -> tuple[str | None, int]:
+        requirements = self._task_spare_requirements(job, task)
+        shortage_type = str(job.shortage_reason or "").split(":", 1)[1] if ":" in str(job.shortage_reason or "") else ""
+        if shortage_type:
+            for spare_type, quantity in requirements:
+                if spare_type == shortage_type:
+                    return spare_type, quantity
+        return requirements[0] if requirements else (None, 0)
 
     def _product_id_for_label(self, label: str) -> str:
         value = str(label or "").strip()
@@ -1725,13 +1946,18 @@ class AircraftSupportV1Model:
                     return str(product_id)
         return value
 
-    def _consume_task_spare(self, job: JobState, task: dict[str, Any]) -> None:
-        spare_type, spare_quantity = self._task_spare_requirement(job, task)
-        if not spare_type or spare_quantity <= 0:
-            return
+    def _consume_task_spare(self, job: JobState, task: dict[str, Any]) -> bool:
+        if job.task_index in job.consumed_spare_task_indexes:
+            return True
+        requirements = self._task_spare_requirements(job, task)
+        if not requirements:
+            return True
         node = self.nodes.get(job.resource_node_id) or next(iter(self.nodes.values()))
-        current = node["inventory"].get(spare_type, 0)
-        if current >= spare_quantity:
+        if any(node["inventory"].get(spare_type, 0) < spare_quantity for spare_type, spare_quantity in requirements):
+            return False
+        job.consumed_spare_task_indexes.add(job.task_index)
+        for spare_type, spare_quantity in requirements:
+            current = node["inventory"].get(spare_type, 0)
             node["inventory"][spare_type] = current - spare_quantity
             self.spare_consumed_total += spare_quantity
             aircraft = self._aircraft_by_tail(job.tail_number)
@@ -1746,8 +1972,10 @@ class AircraftSupportV1Model:
                     "product_id": spare_type,
                     "spare_type": display_name,
                     "quantity": spare_quantity,
+                    "maintenance_method": job.maintenance_method,
                 },
             )
+        return True
 
     def _try_transport_replenishment(self, node: dict[str, Any], spare_type: str, needed: int) -> None:
         shortage = max(0, needed - int(node["inventory"].get(spare_type, 0)))
@@ -1783,10 +2011,26 @@ class AircraftSupportV1Model:
                 self._event(
                     "transport_dispatched",
                     f"{moved} {spare_type} dispatched from {source['id']} to {node['id']}",
+                    {
+                        "product_id": spare_type,
+                        "quantity": moved,
+                        "source_resource_id": source["id"],
+                        "resource_id": node["id"],
+                        "arrival_minute": self.minute + transport_minutes,
+                    },
                 )
                 return
             node["inventory"][spare_type] = int(node["inventory"].get(spare_type, 0)) + moved
-            self._event("transport_replenished", f"{moved} {spare_type} moved from {source['id']} to {node['id']}")
+            self._event(
+                "transport_replenished",
+                f"{moved} {spare_type} moved from {source['id']} to {node['id']}",
+                {
+                    "product_id": spare_type,
+                    "quantity": moved,
+                    "source_resource_id": source["id"],
+                    "resource_id": node["id"],
+                },
+            )
             return
 
     def _product_display_name(self, product_id: str) -> str:
@@ -1843,7 +2087,20 @@ class AircraftSupportV1Model:
     def _component_by_id(self, component_id: str | None) -> dict[str, Any] | None:
         if component_id is None:
             return None
-        return next((item for item in self.components if str(item.get("id")) == str(component_id)), None)
+        component = next(
+            (item for item in self.components if str(item.get("id")) == str(component_id)),
+            None,
+        )
+        if component is not None:
+            return component
+        return next(
+            (
+                item
+                for item in self.equipment_tree_components
+                if str(item.get("id")) == str(component_id)
+            ),
+            None,
+        )
 
     def _mean_recovery_time(self) -> float:
         completed = [
@@ -2118,6 +2375,11 @@ class AircraftSupportV1Model:
             "task": task.get("workName") or task.get("activityCode") or job.activity_name,
             "remaining": job.remaining,
             "shortage_reason": job.shortage_reason,
+            "maintenance_method": job.maintenance_method,
+            "replacement_ratio": job.replacement_ratio,
+            "maintenance_decision_roll": job.maintenance_decision_roll,
+            "maintenance_rng_stream": job.maintenance_rng_stream,
+            "maintenance_occurrence": job.maintenance_occurrence,
         }
 
     def _events_for_frame(self) -> list[dict[str, Any]]:
@@ -2362,6 +2624,13 @@ def _resource_quantity(text: Any, explicit: Any, *, default: int) -> int:
 def _non_negative_float(value: Any, fallback: float) -> float:
     try:
         return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _non_negative_int(value: Any, fallback: int) -> int:
+    try:
+        return max(0, int(float(value)))
     except (TypeError, ValueError):
         return fallback
 

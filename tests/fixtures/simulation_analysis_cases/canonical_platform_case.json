@@ -2103,6 +2103,9 @@
         "durationHours": 3,
         "equipmentId": "j15-avionics",
         "id": "corrective",
+        "maintenanceMethods": [
+          "non_replacement"
+        ],
         "planType": "修复性维修方案",
         "predecessors": {
           "REP-001": [],
@@ -2111,6 +2114,7 @@
           ]
         },
         "priority": 1,
+        "replacementRatio": 0.0,
         "spareQuantity": 1
       },
       {
@@ -2124,6 +2128,9 @@
         "durationHours": 2,
         "equipmentId": "j35-hydraulic",
         "id": "preventive",
+        "maintenanceMethods": [
+          "non_replacement"
+        ],
         "planType": "预防性维修方案",
         "plannedDowntimeHours": 2,
         "predecessors": {
@@ -2133,6 +2140,7 @@
           ]
         },
         "priority": 2,
+        "replacementRatio": 0.0,
         "runHourInterval": 8,
         "spareQuantity": 1,
         "takeoffLandingInterval": 6

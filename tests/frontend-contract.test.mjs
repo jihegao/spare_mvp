@@ -1209,7 +1209,7 @@ test("support activity pages align to page suggestion activity fields", async ()
     /\u542f\u52a8\u65e5\u5386\u65f6\u95f4/,
     /\u88c5\u5907\u6784\u578b\u6811/,
     /MTTR/,
-    /\u7ef4\u4fee\u7c7b\u578b/,
+    /\u7ef4\u4fee\u65b9\u5f0f/,
     /\u539f\u4f4d\u7ef4\u4fee/,
     /\u6362\u4ef6\u7ef4\u4fee/,
     /\\u540e\\u52e4\\u4fdd\\u969c\\u8fd0\\u8f93\\u7b56\\u7565\\u914d\\u7f6e/,
@@ -2472,7 +2472,7 @@ test("support activity controls are wired through local draft fields", async () 
     "方案名称应渲染在使用保障活动编辑标题上方"
   );
   assert.doesNotMatch(operationsSource, /maxWorkTimeRefMinutes/);
-  assert.doesNotMatch(operationsSource, /<input(?![^>]*(data-path|readonly|disabled))/);
+  assert.doesNotMatch(operationsSource, /<input(?![^>]*(data-path|data-maintenance|readonly|disabled))/);
 
   const preventiveSource = appSource.slice(
     appSource.indexOf("function renderPreventiveMaintenanceActivity"),
@@ -2484,7 +2484,7 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(appSource, /data-select-preventive-activity-plan/);
   assert.match(appSource, /data-preventive-activity-plan-add/);
   assert.match(appSource, /data-preventive-activity-plan-delete/);
-  assert.doesNotMatch(preventiveSource, /<input(?![^>]*(data-path|readonly|disabled))/);
+  assert.doesNotMatch(preventiveSource, /<input(?![^>]*(data-path|data-maintenance|readonly|disabled))/);
 
   const correctiveSource = appSource.slice(
     appSource.indexOf("function renderCorrectiveMaintenanceActivity"),
@@ -2494,7 +2494,7 @@ test("support activity controls are wired through local draft fields", async () 
     appSource.indexOf("function buildReadonlyEquipmentConfigComponentTreeNodes"),
     appSource.indexOf("function correctiveReferenceComponent")
   );
-  assert.doesNotMatch(correctiveSource, /<input(?![^>]*(data-path|readonly|disabled))/);
+  assert.doesNotMatch(correctiveSource, /<input(?![^>]*(data-path|data-maintenance|readonly|disabled))/);
   assert.doesNotMatch(correctiveSource, /scenario\.components\[0\]/);
   assert.doesNotMatch(correctiveSource, /renderSupportActivityJobTable\(activity, "corr_repair"\)/);
   assert.match(appSource, /function correctiveMaintenanceActivityForComponent/);
@@ -2509,7 +2509,16 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(correctiveSource, /distribution\.min/);
   assert.match(correctiveSource, /distribution\.max/);
   assert.match(correctiveSource, /distribution\.variance/);
-  assert.match(correctiveSource, /data-path="supportActivities\.\$\{activityIndex\}\.repairType"/);
+  assert.match(appSource, /function renderMaintenanceMethodControls/);
+  assert.match(appSource, /preventive \? "检查\/保养" : "原位维修"/);
+  assert.match(appSource, /methodOption\("replacement", "换件维修"\)/);
+  assert.match(appSource, /data-maintenance-replacement-ratio="\$\{activityIndex\}"/);
+  assert.match(appSource, /<span>维修比例<\/span>/);
+  assert.match(appSource, /const ratioInputs = bothSelected/);
+  assert.match(appSource, /min="0" max="100" step="0\.01" required/);
+  assert.match(preventiveSource, /renderMaintenanceMethodControls\(activity, activityIndex\)/);
+  assert.match(correctiveSource, /renderMaintenanceMethodControls\(componentActivity, activityIndex\)/);
+  assert.doesNotMatch(correctiveSource, /\.repairType/);
   assert.match(readonlyEquipmentConfigSource, /const visitedIds = new Set\(visited\)/);
   assert.match(readonlyEquipmentConfigSource, /componentId !== String\(parentId\)/);
   assert.match(readonlyEquipmentConfigSource, /!visitedIds\.has\(componentId\)/);

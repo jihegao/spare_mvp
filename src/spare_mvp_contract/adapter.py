@@ -19,7 +19,10 @@ from pathlib import Path
 import re
 from typing import Any
 
-from src.spare_mvp_backend.project_payload import normalize_project_products
+from src.spare_mvp_backend.project_payload import (
+    normalize_project_products,
+    normalize_support_activity_maintenance_plans,
+)
 from src.spare_mvp_contract.downtime import (
     normalize_downtime_event_for_analysis,
     sanitize_downtime_user_projection,
@@ -380,8 +383,30 @@ class SimulationAdapter:
     ) -> dict[str, Any]:
         if model_family in RETIRED_ADAPTER_MODEL_FAMILIES:
             return self._retired_model_family_gate(model_family)
+        maintenance_plan_changes: list[str] = []
         if model_family == "aircraft_support_v1":
             project = normalize_project_products(project)
+            try:
+                project, maintenance_plan_changes = normalize_support_activity_maintenance_plans(project)
+            except ValueError as error:
+                message = str(error)
+                path_match = re.search(r" schema at ([^:]+):", message)
+                field_path = path_match.group(1) if path_match else "supportActivities"
+                provenance = self._aircraft_support_v1_mapping_provenance(self._project_id(project), project, runtime_config)
+                return {
+                    "status": "blocked",
+                    "scenario": None,
+                    "provenance": provenance,
+                    "issues": [{
+                        "code": "invalid_maintenance_plan",
+                        "message": message,
+                        "field_path": field_path,
+                        "page": "Project JSON",
+                        "severity": "error",
+                        "suggestion": "Use the canonical maintenanceMethods/replacementRatio pair on corrective or preventive plans.",
+                    }],
+                    "errors": [{"code": "invalid_maintenance_plan", "path": field_path, "message": message}],
+                }
         validation = self.validate_project(project)
         if not validation["ok"]:
             issues = [
@@ -410,6 +435,7 @@ class SimulationAdapter:
                 self._aircraft_support_v1_mapping_provenance(self._project_id(project), project, runtime_config),
                 project,
             )
+            provenance["defaults_applied"] = list(provenance.get("defaults_applied") or []) + maintenance_plan_changes
             issues = self._aircraft_support_v1_compile_issues(project)
             if issues:
                 return {
@@ -1158,10 +1184,17 @@ class SimulationAdapter:
         resource_id = str(activity.get("resourceId") or "")
         if support_node_aliases:
             resource_id = support_node_aliases.get(resource_id, resource_id)
-        return {
+        maintenance_kind = self._support_activity_maintenance_kind(activity)
+        raw_activity_type = str(activity.get("activityType") or activity.get("planType") or "support activity")
+        activity_type = {
+            "repair": "corrective",
+            "preventive": "preventive",
+        }.get(maintenance_kind, raw_activity_type)
+        compiled = {
             "id": str(activity.get("id") or "support-activity"),
             "name": str(activity.get("name") or activity.get("activityName") or activity.get("id") or "support activity"),
-            "activity_type": str(activity.get("activityType") or activity.get("planType") or "support activity"),
+            "activity_type": activity_type,
+            "aircraft_model": str(activity.get("aircraftModel") or ""),
             "equipment_id": str(activity.get("equipmentId") or ""),
             "resource_id": resource_id,
             "priority": self._positive_int(activity.get("priority"), 1),
@@ -1178,6 +1211,27 @@ class SimulationAdapter:
             "floatRatio": activity.get("floatRatio"),
             "jobs": self._support_activity_jobs_for_activity(activity, job_definitions or {}),
         }
+        if maintenance_kind:
+            methods, replacement_ratio = self._support_activity_maintenance_policy(activity)
+            compiled["maintenance_methods"] = methods
+            compiled["replacement_ratio"] = replacement_ratio
+        return compiled
+
+    def _support_activity_maintenance_kind(self, activity: dict[str, Any]) -> str:
+        plan_type = str(activity.get("planType") or "").strip()
+        activity_type = str(activity.get("activityType") or "").strip().lower()
+        if plan_type == "修复性维修方案":
+            return "repair"
+        if plan_type == "预防性维修方案":
+            return "preventive"
+        if "preventive" in activity_type or "预防性维修" in activity_type:
+            return "preventive"
+        if "corrective" in activity_type or "修复性维修" in activity_type:
+            return "repair"
+        return ""
+
+    def _support_activity_maintenance_policy(self, activity: dict[str, Any]) -> tuple[list[str], float]:
+        return list(activity["maintenanceMethods"]), float(activity["replacementRatio"])
 
     def _support_activity_job_definitions(self, project: dict[str, Any]) -> dict[str, dict[str, Any]]:
         definitions: dict[str, dict[str, Any]] = {}
@@ -1285,8 +1339,12 @@ class SimulationAdapter:
                 "supportResources[].supportNodeName",
                 "transportPolicies[]",
                 "supportActivityJobs[]",
+                "supportActivities[].aircraftModel",
+                "supportActivities[].equipmentId",
                 "supportActivities[].activityCodes",
                 "supportActivities[].predecessors",
+                "supportActivities[].maintenanceMethods",
+                "supportActivities[].replacementRatio",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
@@ -1298,6 +1356,10 @@ class SimulationAdapter:
             "derived_fields": [
                 "simulation_inputs.project_identity",
                 "simulation_inputs.aircraft.initial_ready",
+                "simulation_inputs.support_activities.activities[].aircraft_model",
+                "simulation_inputs.support_activities.activities[].equipment_id",
+                "simulation_inputs.support_activities.activities[].maintenance_methods",
+                "simulation_inputs.support_activities.activities[].replacement_ratio",
                 "simulation_inputs.time.duration_minutes",
                 "simulation_inputs.time.requested_steps",
                 "ExperimentPlan.config.steps",

@@ -182,6 +182,111 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         self.assertEqual(compiled_activity["jobs"][0]["activityCode"], "job-1")
         self.assertEqual(compiled_activity["jobs"][0]["workName"], "Inspect pump")
 
+    def test_compiles_canonical_maintenance_plan_scope_and_historical_default(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        activity = project["supportActivities"][0]
+        activity.update({"aircraftModel": "J-20", "equipmentId": "component-engine"})
+
+        historical = skill.compile_project_json_to_aircraft_support_inputs(project)
+        compiled = historical["support_activities"]["activities"][0]
+        self.assertEqual(compiled["maintenance_methods"], ["non_replacement"])
+        self.assertEqual(compiled["replacement_ratio"], 0.0)
+        self.assertEqual(compiled["aircraft_model"], "J-20")
+        self.assertEqual(compiled["equipment_id"], "component-engine")
+        self.assertEqual(
+            compiled["maintenance_plan_source"],
+            {
+                "activity_id": "corrective",
+                "aircraft_model": "J-20",
+                "equipment_id": "component-engine",
+            },
+        )
+        self.assertEqual(compiled["jobs"][0]["predecessors"], [])
+
+        project["supportActivities"].append(
+            {
+                "id": "preflight",
+                "activityType": "飞行前保障",
+                "planType": "使用保障方案",
+                "activityCodes": [],
+                "predecessors": {},
+            }
+        )
+        with_operations = skill.compile_project_json_to_aircraft_support_inputs(project)
+        compiled_operations = with_operations["support_activities"]["activities"][1]
+        self.assertNotIn("maintenance_methods", compiled_operations)
+        self.assertNotIn("replacement_ratio", compiled_operations)
+
+        activity.update(
+            {
+                "maintenanceMethods": ["non_replacement", "replacement"],
+                "replacementRatio": 0.35,
+            }
+        )
+        canonical = skill.compile_project_json_to_aircraft_support_inputs(project)
+        self.assertEqual(
+            canonical["support_activities"]["activities"][0]["maintenance_methods"],
+            ["non_replacement", "replacement"],
+        )
+        self.assertEqual(canonical["support_activities"]["activities"][0]["replacement_ratio"], 0.35)
+
+    def test_migrates_only_exact_legacy_maintenance_type_and_rejects_conflicts(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        activity = project["supportActivities"][0]
+        activity["repairType"] = "换件维修"
+
+        migrated = skill.compile_project_json_to_aircraft_support_inputs(project)
+        self.assertEqual(
+            migrated["support_activities"]["activities"][0]["maintenance_methods"],
+            ["replacement"],
+        )
+        self.assertEqual(migrated["support_activities"]["activities"][0]["replacement_ratio"], 1.0)
+
+        activity["repairType"] = "未知维修"
+        with self.assertRaisesRegex(ValueError, "unsupported legacy repairType"):
+            skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        activity.update(
+            {
+                "repairType": "原位维修",
+                "maintenanceMethods": ["replacement"],
+                "replacementRatio": 1,
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "conflicts with canonical"):
+            skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        preventive = self._project()
+        preventive_activity = preventive["supportActivities"][0]
+        preventive_activity.update({
+            "activityType": "预防性维修",
+            "planType": "预防性维修方案",
+            "repairType": "换件维修",
+        })
+        with self.assertRaisesRegex(ValueError, "only supported for corrective maintenance"):
+            skill.compile_project_json_to_aircraft_support_inputs(preventive)
+
+    def test_maintenance_plan_precision_and_type_scope_fail_closed(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        activity = project["supportActivities"][0]
+        activity.update({
+            "maintenanceMethods": ["non_replacement", "replacement"],
+            "replacementRatio": 0.1234,
+        })
+        compiled = skill.compile_project_json_to_aircraft_support_inputs(project)
+        self.assertEqual(compiled["support_activities"]["activities"][0]["replacement_ratio"], 0.1234)
+
+        activity["replacementRatio"] = 0.12345
+        with self.assertRaisesRegex(ValueError, "at most four decimal places"):
+            skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        activity.update({"activityType": "使用保障", "planType": "使用保障方案", "name": "repair-looking-name"})
+        with self.assertRaisesRegex(ValueError, "only valid on corrective or preventive activities"):
+            skill.compile_project_json_to_aircraft_support_inputs(project)
+
     def test_compiles_missing_or_zero_spare_quantity_as_zero(self) -> None:
         skill = _load_skill_module()
         project = self._project()

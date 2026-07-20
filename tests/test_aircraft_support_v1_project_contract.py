@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 import unittest
@@ -294,6 +295,29 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                 project = self._clean_project()
                 project["components"][0]["specialRepairProfile"] = {"repairTimeMinutes": 30, field: 0.5}
                 self.assertTrue(self._schema_errors(project))
+
+    def test_schema_scopes_maintenance_fields_without_float_multiple_of_precision(self) -> None:
+        project = self._clean_project()
+        activity = project["supportActivities"][0]
+        activity.update({
+            "activityType": "修复性维修",
+            "planType": "修复性维修方案",
+            "maintenanceMethods": ["non_replacement", "replacement"],
+            "replacementRatio": 0.3,
+        })
+        self.assertEqual(self._schema_errors(project), [])
+
+        for ratio in (0.3, 0.7, 0.12345):
+            with self.subTest(ratio=ratio):
+                float_safe = copy.deepcopy(project)
+                float_safe["supportActivities"][0]["replacementRatio"] = ratio
+                self.assertEqual(self._schema_errors(float_safe), [])
+
+        for plan_type in ("使用保障方案", "后勤保障方案"):
+            with self.subTest(plan_type=plan_type):
+                invalid_scope = copy.deepcopy(project)
+                invalid_scope["supportActivities"][0]["planType"] = plan_type
+                self.assertTrue(self._schema_errors(invalid_scope))
 
         project = self._clean_project()
         project["supportActivities"][0]["requireDevices"] = 1
