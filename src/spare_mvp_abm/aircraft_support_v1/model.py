@@ -42,6 +42,7 @@ BEHAVIOR_DRIVING_FIELDS = [
     "transportPolicies[]",
     "support_network.nodes[].organization_node_id",
     "support_network.organization_graph.nodes[]",
+    "support_network.organization_graph.runtime_mode",
     "support_network.organization_graph.parent_edges[]",
     "support_network.organization_graph.transport_policies[]",
     "supportActivityJobs[]",
@@ -73,6 +74,7 @@ FAIL_CLOSED_FIELDS: list[str] = [
     "supportActivities[].takeoffLandingInterval",
     "support_network.nodes[].organization_node_id",
     "support_network.organization_graph.nodes[]",
+    "support_network.organization_graph.runtime_mode",
     "support_network.organization_graph.parent_edges[]",
     "support_network.organization_graph.transport_policies[]",
 ]
@@ -183,6 +185,7 @@ class JobState:
     due_dimensions: list[str] = field(default_factory=list)
     resource_reservations: dict[str, tuple[str, int]] = field(default_factory=dict)
     remote_resources_pending: set[str] = field(default_factory=set)
+    spare_reservations: dict[tuple[int, str], int] = field(default_factory=dict)
 
     @property
     def current_task(self) -> dict[str, Any] | None:
@@ -218,6 +221,7 @@ class ResourceTransit:
     arrival_minute: int
     path_organization_node_ids: tuple[str, ...]
     transport_policy_ids: tuple[str, ...]
+    batch_sequence: int = 1
 
 
 class AircraftSupportV1Model:
@@ -271,6 +275,7 @@ class AircraftSupportV1Model:
         self.resource_transits: list[ResourceTransit] = []
         self._transport_shipment_keys: set[tuple[str, int, str, tuple[str, ...], int]] = set()
         self._transport_batch_counts: dict[tuple[str, int, str], int] = {}
+        self._organization_fact_keys: set[tuple[Any, ...]] = set()
         self._job_sequence = 0
         self._maintenance_occurrence_by_kind = {"repair": 0, "preventive": 0}
         self.completed_sorties = 0
@@ -988,8 +993,12 @@ class AircraftSupportV1Model:
     def _build_support_nodes(self) -> dict[str, dict[str, Any]]:
         nodes: dict[str, dict[str, Any]] = {}
         raw_graph = self.inputs.get("support_network", {}).get("organization_graph")
-        canonical_requested = bool(
-            isinstance(raw_graph, dict)
+        configured_mode = str(
+            (raw_graph or {}).get("runtime_mode") or (raw_graph or {}).get("runtimeMode") or ""
+        ).strip().casefold() if isinstance(raw_graph, dict) else ""
+        canonical_requested = configured_mode == "vertical" or bool(
+            configured_mode not in {"legacy", "vertical"}
+            and isinstance(raw_graph, dict)
             and isinstance(raw_graph.get("nodes"), list)
             and raw_graph["nodes"]
         )
@@ -1041,7 +1050,14 @@ class AircraftSupportV1Model:
     def _initialize_organization_graph(self) -> None:
         raw_graph = self.inputs.get("support_network", {}).get("organization_graph")
         graph_nodes = raw_graph.get("nodes") if isinstance(raw_graph, dict) else None
-        self.canonical_organization_enabled = bool(isinstance(graph_nodes, list) and graph_nodes)
+        configured_mode = str(
+            (raw_graph or {}).get("runtime_mode") or (raw_graph or {}).get("runtimeMode") or ""
+        ).strip().casefold() if isinstance(raw_graph, dict) else ""
+        self.canonical_organization_enabled = configured_mode == "vertical" or bool(
+            configured_mode not in {"legacy", "vertical"}
+            and isinstance(graph_nodes, list)
+            and graph_nodes
+        )
         self.organization_nodes: dict[str, dict[str, Any]] = {}
         self.organization_parent_by_id: dict[str, str | None] = {}
         self.runtime_node_by_organization_id: dict[str, str] = {}
@@ -1466,6 +1482,7 @@ class AircraftSupportV1Model:
         self._process_job_progress_and_completions()
 
     def _process_transport_arrivals(self) -> None:
+        self._return_cancelled_spare_reservations()
         arrived = [shipment for shipment in self.transport_shipments if shipment.arrival_minute <= self.minute]
         self.transport_shipments = [
             shipment for shipment in self.transport_shipments if shipment.arrival_minute > self.minute
@@ -1474,7 +1491,25 @@ class AircraftSupportV1Model:
             node = self.nodes.get(shipment.destination_node_id)
             if node is None:
                 continue
-            node["inventory"][shipment.spare_type] = int(node["inventory"].get(shipment.spare_type, 0)) + shipment.quantity
+            requesting_job = next(
+                (job for job in self.jobs if job.job_id == shipment.job_id),
+                None,
+            )
+            reserve_for_job = bool(
+                self.canonical_organization_enabled
+                and requesting_job is not None
+                and requesting_job.task_index == shipment.task_index
+                and requesting_job.state == "waiting"
+            )
+            if reserve_for_job:
+                reservation_key = (shipment.task_index, shipment.spare_type)
+                requesting_job.spare_reservations[reservation_key] = (
+                    int(requesting_job.spare_reservations.get(reservation_key, 0)) + shipment.quantity
+                )
+            else:
+                node["inventory"][shipment.spare_type] = (
+                    int(node["inventory"].get(shipment.spare_type, 0)) + shipment.quantity
+                )
             self.total_transport_delay += max(0, shipment.arrival_minute - shipment.requested_minute)
             self._event(
                 "transport_arrived",
@@ -1499,6 +1534,7 @@ class AircraftSupportV1Model:
                         "resource_id": shipment.destination_node_id,
                         "organization_path": list(shipment.path_organization_node_ids),
                         "transport_policy_ids": list(shipment.transport_policy_ids),
+                        "reserved_for_job": reserve_for_job,
                     },
                 )
 
@@ -1508,11 +1544,12 @@ class AircraftSupportV1Model:
         self.resource_transits = [
             transit for transit in self.resource_transits if transit.arrival_minute > self.minute
         ]
+        arrived_resource_keys: set[tuple[str, int, str]] = set()
         for transit in arrived_resources:
             job = next((item for item in self.jobs if item.job_id == transit.job_id), None)
             if job is None or job.task_index != transit.task_index:
                 continue
-            job.remote_resources_pending.discard(transit.resource_kind)
+            arrived_resource_keys.add((job.job_id, job.task_index, transit.resource_kind))
             self._event(
                 "organization_resource_arrived",
                 f"{transit.resource_kind} arrived for {transit.job_id}",
@@ -1525,7 +1562,41 @@ class AircraftSupportV1Model:
                     "resource_id": transit.destination_node_id,
                     "organization_path": list(transit.path_organization_node_ids),
                     "transport_policy_ids": list(transit.transport_policy_ids),
+                    "batch_sequence": transit.batch_sequence,
                 },
+            )
+        for job_id, task_index, resource_kind in arrived_resource_keys:
+            if any(
+                transit.job_id == job_id
+                and transit.task_index == task_index
+                and transit.resource_kind == resource_kind
+                for transit in self.resource_transits
+            ):
+                continue
+            job = next((item for item in self.jobs if item.job_id == job_id), None)
+            if job is not None and job.task_index == task_index:
+                job.remote_resources_pending.discard(resource_kind)
+
+    def _return_cancelled_spare_reservations(self) -> None:
+        for job in self.jobs:
+            if job.state not in {"cancelled", "canceled"} or not job.spare_reservations:
+                continue
+            destination = self.nodes.get(job.resource_node_id)
+            if destination is None:
+                continue
+            returned: list[dict[str, Any]] = []
+            for (task_index, spare_type), quantity in list(job.spare_reservations.items()):
+                destination["inventory"][spare_type] = (
+                    int(destination["inventory"].get(spare_type, 0)) + quantity
+                )
+                returned.append(
+                    {"task_index": task_index, "product_id": spare_type, "quantity": quantity}
+                )
+            job.spare_reservations.clear()
+            self._event(
+                "organization_spare_reservation_returned",
+                f"returned cancelled spare reservations for {job.job_id}",
+                {"job_id": job.job_id, "resource_id": destination["id"], "products": returned},
             )
 
     def _process_mission_returns(self) -> None:
@@ -1689,29 +1760,31 @@ class AircraftSupportV1Model:
                 continue
             spare_requirements = self._task_spare_requirements(job, task)
             canonical_failure_reasons: dict[str, str] = {}
-            for spare_type, spare_qty in spare_requirements:
-                if node["inventory"].get(spare_type, 0) < spare_qty and not self._has_in_transit_spare(node["id"], spare_type):
-                    if self.canonical_organization_enabled:
-                        failure_reason = self._try_canonical_transport_replenishment(
-                            job, node, spare_type, spare_qty
-                        )
-                        if failure_reason:
-                            canonical_failure_reasons[spare_type] = failure_reason
-                    else:
+            if self.canonical_organization_enabled:
+                canonical_failure_reasons = self._ensure_canonical_spare_dispatches(
+                    job, node, spare_requirements
+                )
+            else:
+                for spare_type, spare_qty in spare_requirements:
+                    if node["inventory"].get(spare_type, 0) < spare_qty and not self._has_in_transit_spare(node["id"], spare_type):
                         self._try_transport_replenishment(node, spare_type, spare_qty)
             shortages = [
                 (
                     spare_type,
                     spare_qty,
-                    int(node["inventory"].get(spare_type, 0) or 0),
+                    self._available_spare_for_job(job, node, spare_type),
                     (
                         "in_transit"
-                        if self._has_in_transit_spare(node["id"], spare_type)
+                        if (
+                            self._has_in_transit_spare_for_job(job, spare_type)
+                            if self.canonical_organization_enabled
+                            else self._has_in_transit_spare(node["id"], spare_type)
+                        )
                         else canonical_failure_reasons.get(spare_type, f"spare:{spare_type}")
                     ),
                 )
                 for spare_type, spare_qty in spare_requirements
-                if node["inventory"].get(spare_type, 0) < spare_qty
+                if self._available_spare_for_job(job, node, spare_type) < spare_qty
             ]
             if shortages:
                 job.shortage_reason = shortages[0][3]
@@ -2253,6 +2326,7 @@ class AircraftSupportV1Model:
                     "source_node_id": destination_node["id"],
                     "path": (destination_node["organization_node_id"],),
                     "policies": (),
+                    "batches": (),
                 },
                 "",
             )
@@ -2270,11 +2344,20 @@ class AircraftSupportV1Model:
             if policies is None:
                 supplier_with_missing_path = True
                 continue
-            if min(policy["capacity"] for policy in policies) < quantity:
-                supplier_with_missing_path = True
-                continue
+            batch_capacity = min(policy["capacity"] for policy in policies)
+            remaining = quantity
+            batches: list[int] = []
+            while remaining > 0:
+                batch = min(remaining, batch_capacity)
+                batches.append(batch)
+                remaining -= batch
             return (
-                {"source_node_id": source_node_id, "path": path, "policies": policies},
+                {
+                    "source_node_id": source_node_id,
+                    "path": path,
+                    "policies": policies,
+                    "batches": tuple(batches),
+                },
                 "",
             )
         return None, "no_vertical_resource_path" if supplier_with_missing_path else "no_available_resource_ancestor"
@@ -2300,7 +2383,8 @@ class AircraftSupportV1Model:
                     self.resource_delay_events += 1
                     self.equipment_shortage_events += 1
                 job.shortage_reason = f"organization_{reason}:{resource_kind}"
-                self._event(
+                self._organization_event_once(
+                    ("resource-blocked", job.job_id, job.task_index, resource_kind, reason),
                     "organization_resource_blocked",
                     f"{job.job_id} blocked by {resource_kind}",
                     {
@@ -2347,25 +2431,32 @@ class AircraftSupportV1Model:
             transport_minutes = sum(policy["transport_minutes"] for policy in policies)
             arrival_minute = self.minute + max(self.tick_minutes, transport_minutes)
             job.remote_resources_pending.add(resource_kind)
-            self.resource_transits.append(
-                ResourceTransit(
-                    job_id=job.job_id,
-                    task_index=job.task_index,
-                    resource_kind=resource_kind,
-                    quantity=quantity,
-                    source_node_id=plan["source_node_id"],
-                    destination_node_id=destination_node["id"],
-                    requested_minute=self.minute,
-                    arrival_minute=arrival_minute,
-                    path_organization_node_ids=plan["path"],
-                    transport_policy_ids=policy_ids,
+            for batch_sequence, batch_quantity in enumerate(plan["batches"], start=1):
+                self.resource_transits.append(
+                    ResourceTransit(
+                        job_id=job.job_id,
+                        task_index=job.task_index,
+                        resource_kind=resource_kind,
+                        quantity=batch_quantity,
+                        source_node_id=plan["source_node_id"],
+                        destination_node_id=destination_node["id"],
+                        requested_minute=self.minute,
+                        arrival_minute=arrival_minute,
+                        path_organization_node_ids=plan["path"],
+                        transport_policy_ids=policy_ids,
+                        batch_sequence=batch_sequence,
+                    )
                 )
-            )
-            self._event(
-                "organization_resource_dispatched",
-                f"dispatched {resource_kind} for {job.job_id}",
-                {**details, "arrival_minute": arrival_minute},
-            )
+                self._event(
+                    "organization_resource_dispatched",
+                    f"dispatched {resource_kind} batch {batch_sequence} for {job.job_id}",
+                    {
+                        **details,
+                        "quantity": batch_quantity,
+                        "batch_sequence": batch_sequence,
+                        "arrival_minute": arrival_minute,
+                    },
+                )
         job.shortage_reason = "organization_resources_in_transit" if job.remote_resources_pending else None
         return True
 
@@ -2460,12 +2551,26 @@ class AircraftSupportV1Model:
             if self.canonical_organization_enabled:
                 return False
             node = next(iter(self.nodes.values()))
-        if any(node["inventory"].get(spare_type, 0) < spare_quantity for spare_type, spare_quantity in requirements):
+        if any(
+            self._available_spare_for_job(job, node, spare_type) < spare_quantity
+            for spare_type, spare_quantity in requirements
+        ):
             return False
         job.consumed_spare_task_indexes.add(job.task_index)
         for spare_type, spare_quantity in requirements:
-            current = node["inventory"].get(spare_type, 0)
-            node["inventory"][spare_type] = current - spare_quantity
+            reservation_key = (job.task_index, spare_type)
+            reserved = int(job.spare_reservations.get(reservation_key, 0))
+            consumed_reserved = min(reserved, spare_quantity)
+            if consumed_reserved:
+                remaining_reserved = reserved - consumed_reserved
+                if remaining_reserved:
+                    job.spare_reservations[reservation_key] = remaining_reserved
+                else:
+                    job.spare_reservations.pop(reservation_key, None)
+            shared_quantity = spare_quantity - consumed_reserved
+            if shared_quantity:
+                current = int(node["inventory"].get(spare_type, 0))
+                node["inventory"][spare_type] = current - shared_quantity
             self.spare_consumed_total += spare_quantity
             aircraft = self._aircraft_by_tail(job.tail_number)
             display_name = self._product_display_name(spare_type)
@@ -2483,6 +2588,25 @@ class AircraftSupportV1Model:
                 },
             )
         return True
+
+    def _available_spare_for_job(
+        self,
+        job: JobState,
+        node: dict[str, Any],
+        spare_type: str,
+    ) -> int:
+        shared = int(node["inventory"].get(spare_type, 0) or 0)
+        if not self.canonical_organization_enabled:
+            return shared
+        return shared + int(job.spare_reservations.get((job.task_index, spare_type), 0))
+
+    def _has_in_transit_spare_for_job(self, job: JobState, spare_type: str) -> bool:
+        return any(
+            shipment.job_id == job.job_id
+            and shipment.task_index == job.task_index
+            and shipment.spare_type == spare_type
+            for shipment in self.transport_shipments
+        )
 
     def _organization_ancestor_paths(self, destination_organization_id: str) -> list[tuple[str, ...]]:
         """Return nearest-first vertical paths from each ancestor down to the destination."""
@@ -2535,16 +2659,16 @@ class AircraftSupportV1Model:
             policies.append(policy)
         return tuple(policies)
 
-    def _try_canonical_transport_replenishment(
+    def _canonical_spare_dispatch_plan(
         self,
         job: JobState,
         destination_node: dict[str, Any],
         spare_type: str,
         needed: int,
-    ) -> str | None:
-        shortage = max(0, needed - int(destination_node["inventory"].get(spare_type, 0)))
-        if shortage <= 0:
-            return None
+    ) -> tuple[dict[str, Any] | None, str]:
+        shortage = max(0, needed - self._available_spare_for_job(job, destination_node, spare_type))
+        if shortage <= 0 or self._has_in_transit_spare_for_job(job, spare_type):
+            return None, ""
         destination_organization_id = destination_node["organization_node_id"]
         supplier_with_missing_path = False
         for path in self._organization_ancestor_paths(destination_organization_id):
@@ -2568,65 +2692,100 @@ class AircraftSupportV1Model:
             batch_sequence = self._transport_batch_counts.get(batch_counter_key, 0) + 1
             shipment_key = (job.job_id, job.task_index, spare_type, policy_ids, batch_sequence)
             if shipment_key in self._transport_shipment_keys:
-                return None
-            source_node["inventory"][spare_type] = available - moved
+                return None, ""
             transport_minutes = sum(policy["transport_minutes"] for policy in policies)
             arrival_minute = self.minute + max(self.tick_minutes, transport_minutes)
-            shipment = TransportShipment(
-                source_node_id=source_node_id,
-                destination_node_id=destination_node["id"],
-                spare_type=spare_type,
-                quantity=moved,
-                requested_minute=self.minute,
-                arrival_minute=arrival_minute,
-                job_id=job.job_id,
-                task_index=job.task_index,
-                path_organization_node_ids=path,
-                transport_policy_ids=policy_ids,
-                batch_sequence=batch_sequence,
+            return {
+                "source_node": source_node,
+                "available": available,
+                "batch_counter_key": batch_counter_key,
+                "shipment_key": shipment_key,
+                "shipment": TransportShipment(
+                    source_node_id=source_node_id,
+                    destination_node_id=destination_node["id"],
+                    spare_type=spare_type,
+                    quantity=moved,
+                    requested_minute=self.minute,
+                    arrival_minute=arrival_minute,
+                    job_id=job.job_id,
+                    task_index=job.task_index,
+                    path_organization_node_ids=path,
+                    transport_policy_ids=policy_ids,
+                    batch_sequence=batch_sequence,
+                ),
+                "details": {
+                    "job_id": job.job_id,
+                    "task_index": job.task_index,
+                    "product_id": spare_type,
+                    "quantity": moved,
+                    "source_resource_id": source_node_id,
+                    "resource_id": destination_node["id"],
+                    "organization_path": list(path),
+                    "transport_policy_ids": list(policy_ids),
+                    "batch_sequence": batch_sequence,
+                    "arrival_minute": arrival_minute,
+                },
+            }, ""
+
+        reason = "no_vertical_path" if supplier_with_missing_path else "no_available_ancestor"
+        return None, reason
+
+    def _ensure_canonical_spare_dispatches(
+        self,
+        job: JobState,
+        destination_node: dict[str, Any],
+        requirements: list[tuple[str, int]],
+    ) -> dict[str, str]:
+        plans: list[dict[str, Any]] = []
+        failures: dict[str, str] = {}
+        for spare_type, needed in requirements:
+            plan, reason = self._canonical_spare_dispatch_plan(
+                job, destination_node, spare_type, needed
             )
+            if reason:
+                failures[spare_type] = f"organization_{reason}:{spare_type}"
+            elif plan is not None:
+                plans.append(plan)
+        if failures:
+            for spare_type, failure_reason in failures.items():
+                reason = failure_reason.split(":", 1)[0].removeprefix("organization_")
+                details = {
+                    "job_id": job.job_id,
+                    "task_index": job.task_index,
+                    "product_id": spare_type,
+                    "resource_id": destination_node["id"],
+                    "organization_node_id": destination_node["organization_node_id"],
+                    "reason": reason,
+                }
+                self._organization_event_once(
+                    ("spare-blocked", job.job_id, job.task_index, spare_type, reason),
+                    "organization_dispatch_failed",
+                    f"unable to dispatch {spare_type} for {job.job_id}",
+                    details,
+                )
+            return failures
+
+        # Planning is side-effect free. Only a fully feasible task-level plan is
+        # committed, preventing plural-spare partial inventory reservations.
+        for plan in plans:
+            shipment = plan["shipment"]
+            source_node = plan["source_node"]
+            source_node["inventory"][shipment.spare_type] = plan["available"] - shipment.quantity
             self.transport_shipments.append(shipment)
-            self._transport_shipment_keys.add(shipment_key)
-            self._transport_batch_counts[batch_counter_key] = batch_sequence
+            self._transport_shipment_keys.add(plan["shipment_key"])
+            self._transport_batch_counts[plan["batch_counter_key"]] = shipment.batch_sequence
             self.transport_replenishment_events += 1
-            details = {
-                "job_id": job.job_id,
-                "task_index": job.task_index,
-                "product_id": spare_type,
-                "quantity": moved,
-                "source_resource_id": source_node_id,
-                "resource_id": destination_node["id"],
-                "organization_path": list(path),
-                "transport_policy_ids": list(policy_ids),
-                "batch_sequence": batch_sequence,
-                "arrival_minute": arrival_minute,
-            }
             self._event(
                 "organization_supply_selected",
-                f"selected {source_node_id} for {job.job_id}",
-                details,
+                f"selected {shipment.source_node_id} for {job.job_id}",
+                plan["details"],
             )
             self._event(
                 "organization_transport_dispatched",
-                f"dispatched {moved} {spare_type} from {source_node_id}",
-                details,
+                f"dispatched {shipment.quantity} {shipment.spare_type} from {shipment.source_node_id}",
+                plan["details"],
             )
-            return None
-
-        reason = "no_vertical_path" if supplier_with_missing_path else "no_available_ancestor"
-        self._event(
-            "organization_dispatch_failed",
-            f"unable to dispatch {spare_type} for {job.job_id}",
-            {
-                "job_id": job.job_id,
-                "task_index": job.task_index,
-                "product_id": spare_type,
-                "resource_id": destination_node["id"],
-                "organization_node_id": destination_organization_id,
-                "reason": reason,
-            },
-        )
-        return f"organization_{reason}:{spare_type}"
+        return {}
 
     def _try_transport_replenishment(self, node: dict[str, Any], spare_type: str, needed: int) -> None:
         shortage = max(0, needed - int(node["inventory"].get(spare_type, 0)))
@@ -3089,6 +3248,18 @@ class AircraftSupportV1Model:
             item["snapshot"] = self._event_snapshot(event, details or {})
             self._event_snapshot_count += 1
         self.event_log.append(item)
+
+    def _organization_event_once(
+        self,
+        fact_key: tuple[Any, ...],
+        event: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        if fact_key in self._organization_fact_keys:
+            return
+        self._organization_fact_keys.add(fact_key)
+        self._event(event, message, details)
 
     def _should_write_event_snapshot(self, event: str) -> bool:
         normalized = event.lower()
