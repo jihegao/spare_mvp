@@ -32,6 +32,7 @@
 12. 阶段 6P 仿真分析验收数据包保留在 `tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`，用于验证平台标准建模导入案例可以通过 validation 并编译为 `aircraft_support_v1` Scenario；不再要求 6P canonical 生成正式分析产物。
 13. 任务字段按单一归属保存：`basicMissions[].minRequiredSorties` 是最小装备数量唯一来源，复合任务项只读继承；`compositeTasks[].priority` 是任务优先级唯一来源。基本任务与复合任务项中的旧 `priority`、以及 task item 的旧 `minRequiredSystems` 都只在迁移时读取后删除。修改该边界时必须同步更新 contract、后台 Project 迁移、canonical/M9.6/clean Project 导出 JSON，并运行两条 fixture drift check；已发布 import 和历史 run/snapshot 不得原地覆盖，应发布新版本后创建新 Project。
 14. 周期性任务的月、年剖面组合保存在 `missionProfile.periodicProfileLists`。月剖面的 4 个固定周坑位和可选第 5 周、年剖面的 12 个月均允许以空字符串表示“未配置”，新建时默认全空；保存、重新打开、删除被引用剖面和汇总时不得静默回退为首个周/月剖面。编译按“有年用年、有月用月、否则用周”选择最高已配置来源，更高层全空不阻断有效周/月任务；页面显示当前来源。非空悬空引用和零有效实例仍失败关闭。
+15. 基本保障活动基础库只保留一个真实本地 CSV 文件入口，活动类型由行内字段决定，同批可混合使用保障、预防性维修和修复性维修。表头、必填字段、分布参数、整机引用、全局活动编号和紧前作业 DAG 在 detached staging 中一次校验；错误按行和字段聚合且整批不落地，成功后刷新列表、反馈数量并沿既有 Project draft 边界保存。模板列、别名和兼容策略见 [`basic-support-activity-csv-import-design.md`](basic-support-activity-csv-import-design.md)。
 
 ## 文档地图
 
@@ -40,6 +41,7 @@
 | [`../README.md`](../README.md) | 仓库概览、运行方式、能力范围和边界。 |
 | [`product-roadmap.md`](product-roadmap.md) | 总路线图：产品里程碑、阶段依赖、主干运行路径和验收口径。 |
 | [`spare_mvp_rms_allocation_design.md`](spare_mvp_rms_allocation_design.md) | 当前 RMS 指标分配工作台的实现说明、算法口径、UI 边界和非目标。 |
+| [`basic-support-activity-csv-import-design.md`](basic-support-activity-csv-import-design.md) | 基本保障活动统一 CSV 模板、引用校验、原子落地和兼容策略。 |
 | [`reliability-block-diagram-contract.md`](reliability-block-diagram-contract.md) | 当前可靠性框图绘图契约。 |
 | [`lite-mesa-formal-runtime.md`](lite-mesa-formal-runtime.md) | lite Mesa 作为当前用户可见运行路径的边界说明。 |
 | [`archive/deprecated/README.md`](archive/deprecated/README.md) | 过期文档归档入口，包含历史计划、阶段规格、原始概要设计和运行边界审计。 |

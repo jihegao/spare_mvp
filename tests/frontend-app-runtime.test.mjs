@@ -9,6 +9,10 @@ import {
   createRmsAllocationProjectForScenario
 } from "../front/rms-allocation-engine.mjs";
 import { defaultScenario } from "../front/sim-engine.mjs";
+import {
+  BASIC_SUPPORT_ACTIVITY_CSV_HEADERS,
+  MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES
+} from "../front/support-activity-jobs.mjs";
 
 test("frontend app module initializes without Monte Carlo TDZ errors", async () => {
   const appNode = {
@@ -4715,6 +4719,171 @@ test("basic support activity library filters rows by selected activity type", as
     assert.match(runtime.appNode.innerHTML, /定检基本保障活动/);
     assert.doesNotMatch(runtime.appNode.innerHTML, operationsWorkNamePattern);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity unified CSV import mixes activity types and persists through Project draft", async () => {
+  const projectId = "basic-activity-csv-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivityJobs.push({
+    activityCode: "ORPHAN-KEEP",
+    workName: "未被宿主引用但必须保留",
+    durationMinutes: 12
+  });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "基本保障活动 CSV 导入")]
+  });
+  const csvFile = {
+    name: "mixed-basic-activities.csv",
+    async text() {
+      return `\uFEFF${BASIC_SUPPORT_ACTIVITY_CSV_HEADERS.join(",")}\r\n`
+        + "使用保障,BA-002,通电检查,J-15,固定值,15,,,,,BA-001\r\n"
+        + "预防性维修,PM-101,定检准备,J-15,正态分布,,45,5,,,\r\n"
+        + "修复性维修,CM-101,故障隔离,J-15,均匀分布,,,,20,40,\r\n";
+    }
+  };
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-import-file/g) || []).length, 1);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /按活动类型导入/);
+    await runtime.change("[data-basic-activity-import-file]", {}, { files: [csvFile], value: csvFile.name });
+
+    assert.match(runtime.appNode.innerHTML, /已导入 mixed-basic-activities\.csv：3 条基本保障活动/);
+    assert.match(runtime.appNode.innerHTML, /通电检查/);
+    assert.match(runtime.appNode.innerHTML, /定检准备/);
+    assert.match(runtime.appNode.innerHTML, /故障隔离/);
+    assert.match(runtime.appNode.innerHTML, /<option value="" selected>全部类型<\/option>/);
+
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => (
+      body.project_id === projectId
+      && ["BA-002", "PM-101", "CM-101"].every((code) => body.supportActivityJobs?.some((job) => job.activityCode === code))
+    ), "expected mixed basic support activity CSV rows to save in the top-level job table");
+    const jobsByCode = new Map(saved.supportActivityJobs.map((job) => [job.activityCode, job]));
+    assert.equal(jobsByCode.get("PM-101").durationProfile.distributionType, "正态分布");
+    assert.equal(jobsByCode.get("CM-101").durationProfile.distributionType, "均匀分布");
+    const operations = saved.supportActivities.find((activity) => activity.activityCodes?.includes("BA-002"));
+    assert.deepEqual(operations.predecessors["BA-002"], ["BA-001"]);
+    assert.ok(saved.supportActivities.some((activity) => activity.activityCodes?.includes("PM-101")));
+    assert.ok(saved.supportActivities.some((activity) => activity.activityCodes?.includes("CM-101")));
+    assert.deepEqual(
+      saved.supportActivityJobs.find((job) => job.activityCode === "ORPHAN-KEEP"),
+      { activityCode: "ORPHAN-KEEP", workName: "未被宿主引用但必须保留", durationMinutes: 12 }
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity CSV validation reports row and field and keeps the whole batch out of the draft", async () => {
+  const projectId = "basic-activity-csv-atomic-runtime";
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({ project_id: projectId }),
+    backendProjects: [runtimeBackendProjectEntry(projectId, "基本保障活动 CSV 原子校验")]
+  });
+  const invalidFile = {
+    name: "invalid-basic-activities.csv",
+    async text() {
+      return [
+        "活动类型,基本保障活动编号,基本保障活动名称,适用飞机,作业时长分布,固定工期(min)",
+        "使用保障活动,BA-099,本应整批回滚,J-15,固定值,30",
+        "预防性维修,PM-099,,J-15,固定值,20"
+      ].join("\n");
+    }
+  };
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.change("[data-basic-activity-import-file]", {}, { files: [invalidFile], value: invalidFile.name });
+
+    assert.match(runtime.appNode.innerHTML, /基本保障活动导入失败/);
+    assert.match(runtime.appNode.innerHTML, /第3行 \[基本保障活动名称\] 必填/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /本应整批回滚/);
+
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    await runtime.flush();
+    assert.equal(projectSaveBodies(runtime).length, 0, "failed import must not schedule Project autosave");
+
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => body.project_id === projectId, "expected unchanged Project draft save");
+    assert.equal(saved.supportActivityJobs.some((job) => ["BA-099", "PM-099"].includes(job.activityCode)), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity CSV rejects an unreferenced top-level duplicate atomically without silent renaming", async () => {
+  const projectId = "basic-activity-csv-orphan-duplicate";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  const orphan = { activityCode: "ORPHAN-001", workName: "孤立但有效的顶层定义", durationMinutes: 18 };
+  projectJson.supportActivityJobs.push(orphan);
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "基本保障活动 CSV 顶层重复校验")]
+  });
+  const duplicateFile = {
+    name: "duplicate-orphan.csv",
+    size: 256,
+    async text() {
+      return [
+        "活动类型,基本保障活动编号,基本保障活动名称,适用飞机,作业时长分布,固定工期(min)",
+        "使用保障活动,ORPHAN-001,不得静默改号,J-15,固定值,30"
+      ].join("\n");
+    }
+  };
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.change("[data-basic-activity-import-file]", {}, { files: [duplicateFile], value: duplicateFile.name });
+
+    assert.match(runtime.appNode.innerHTML, /“ORPHAN-001”已存在于当前 Project/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /不得静默改号|ORPHAN-002/);
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    await runtime.flush();
+    assert.equal(projectSaveBodies(runtime).length, 0, "duplicate import must not schedule Project autosave");
+
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => body.project_id === projectId, "expected unchanged Project draft save");
+    assert.deepEqual(saved.supportActivityJobs.filter((job) => job.activityCode.startsWith("ORPHAN")), [orphan]);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity CSV rejects an oversized File before reading its text", async () => {
+  const projectId = "basic-activity-csv-file-size";
+  let textRead = false;
+  const oversizedFile = {
+    name: "oversized.csv",
+    size: MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES + 1,
+    async text() {
+      textRead = true;
+      throw new Error("oversized file text must not be read");
+    }
+  };
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({ project_id: projectId }),
+    backendProjects: [runtimeBackendProjectEntry(projectId, "基本保障活动 CSV 文件大小校验")]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.change("[data-basic-activity-import-file]", {}, { files: [oversizedFile], value: oversizedFile.name });
+
+    assert.equal(textRead, false);
+    assert.match(runtime.appNode.innerHTML, /文件大小不能超过 1 MiB/);
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    await runtime.flush();
+    assert.equal(projectSaveBodies(runtime).length, 0);
   } finally {
     runtime.restore();
   }

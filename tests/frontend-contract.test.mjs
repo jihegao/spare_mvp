@@ -67,6 +67,19 @@ test("active docs record lite Mesa analysis metric formulas", async () => {
   assert.doesNotMatch(docs, /四个结果分析页通过 current result 面板和正式 projection payload 解锁结果/);
 });
 
+test("basic support activity CSV computes preview before committing the staged Scenario", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const importSource = appSource.slice(
+    appSource.indexOf("async function importBasicSupportActivityCsvFile"),
+    appSource.indexOf("function stageBasicSupportActivityImport")
+  );
+
+  const previewIndex = importSource.indexOf("updatePreviewResultsThroughApiClient(staged.scenario)");
+  const commitIndex = importSource.indexOf("scenario = staged.scenario");
+  assert.ok(previewIndex >= 0, "staged preview validation is missing");
+  assert.ok(commitIndex > previewIndex, "Scenario must not be replaced before staged preview validation succeeds");
+});
+
 test("feature grouping preserves three-level navigation and internal fourth-level entries", () => {
   const grouped = groupFeaturePages(FEATURE_PAGES);
   assert.deepEqual(Object.keys(grouped), ["系统运行支持模块", "备件规划评估模块", "任务可靠度评估模块"]);
@@ -2230,7 +2243,12 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(basicActivitySource, /data-basic-activity-add/);
   assert.match(basicActivitySource, /data-basic-activity-batch-delete/);
   assert.match(basicActivitySource, /data-basic-activity-query/);
-  assert.match(basicActivitySource, /data-basic-activity-import-type/);
+  assert.match(basicActivitySource, /data-basic-activity-download-template/);
+  assert.match(basicActivitySource, /data-basic-activity-import-file/);
+  assert.match(basicActivitySource, /accept="\.csv,text\/csv"/);
+  assert.match(basicActivitySource, /data-basic-activity-import-status/);
+  assert.doesNotMatch(basicActivitySource, /data-basic-activity-import-type=/);
+  assert.doesNotMatch(basicActivitySource, /按活动类型导入/);
   assert.match(basicActivitySource, /durationProfile/);
   assert.match(basicActivitySource, /作业时长分布/);
   assert.match(basicActivitySource, /data-basic-activity-edit="\$\{htmlEscape\(row\.key\)\}"/);
@@ -2347,6 +2365,8 @@ test("support activity controls are wired through local draft fields", async () 
   assert.doesNotMatch(basicActivitySource, /<button type="button" disabled>导入<\/button>/);
   assert.match(basicActivitySource, /data-basic-activity-add/);
   assert.match(basicActivitySource, /data-basic-activity-batch-delete/);
+  assert.match(basicActivitySource, /data-basic-activity-import-file/);
+  assert.match(basicActivitySource, /data-basic-activity-download-template/);
   assert.match(basicActivitySource, /data-basic-activity-field/);
   assert.match(basicActivitySource, /data-basic-activity-resource-dialog-open/);
   assert.match(basicActivitySource, /data-basic-activity-resource-dialog-field/);
