@@ -295,6 +295,12 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
         self.assertTrue(self._schema_errors(project))
 
         project = self._clean_project()
+        project["transportPolicies"] = [{
+            "id": "schema-policy",
+            "fromOrganizationNodeId": "node-a",
+            "toOrganizationNodeId": "node-a",
+            "productId": "product-whole-aircraft",
+        }]
         project["transportPolicies"][0].pop("productId")
         self.assertEqual(self._schema_errors(project), [])
 
