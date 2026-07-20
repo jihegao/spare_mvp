@@ -166,6 +166,29 @@ def _vertical_organization_inputs(*, local_quantity: int = 0, parent_quantity: i
     return inputs
 
 
+def _lateral_organization_inputs(*, local_quantity: int = 0, parent_quantity: int = 3) -> dict:
+    inputs = _vertical_organization_inputs(
+        local_quantity=local_quantity,
+        parent_quantity=parent_quantity,
+    )
+    graph = inputs["support_network"]["organization_graph"]
+    graph["runtime_mode"] = "vertical_lateral"
+    graph["nodes"][-1]["parent_id"] = "org-parent"
+    graph["parent_edges"][-1] = {
+        "from_node_id": "org-parent",
+        "to_node_id": "org-lateral",
+    }
+    graph["lateral_edges"][0]["enabled"] = True
+    for node in graph["nodes"]:
+        node["service_scope"] = {
+            "airport_ids": [],
+            "aircraft_models": [],
+            "product_ids": [],
+            "resource_types": [],
+        }
+    return inputs
+
+
 def _preflight_timing_inputs() -> dict:
     inputs = _minimal_inputs()
     inputs["time"]["duration_minutes"] = 8 * 60
@@ -2064,6 +2087,363 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.nodes["stock"]["personnel_in_use"], 0)
         self.assertEqual(model.nodes["stock"]["equipment_in_use"], 0)
 
+    def test_lateral_mode_uses_direct_incoming_relation_before_vertical_parent(self) -> None:
+        # Arrange.
+        inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=3)
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        # Act.
+        model._start_waiting_jobs()
+
+        # Assert.
+        self.assertEqual(model.nodes["lateral-stock"]["inventory"]["shared-spare"], 8)
+        self.assertEqual(model.nodes["stock"]["inventory"]["shared-spare"], 3)
+        shipment = model.transport_shipments[0]
+        self.assertEqual(shipment.path_organization_node_ids, ("org-lateral", "org-leaf"))
+        self.assertEqual(shipment.transport_policy_ids, ("lateral-policy",))
+        self.assertEqual(shipment.supply_mode, "lateral")
+        self.assertEqual(shipment.relation_id, "lateral-to-leaf")
+        dispatched = [
+            event for event in model.event_log
+            if event["event"] == "organization_transport_dispatched"
+        ][-1]
+        self.assertEqual(dispatched["details"]["supply_mode"], "lateral")
+        self.assertEqual(dispatched["details"]["relation_id"], "lateral-to-leaf")
+
+        model.minute = 1
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        self.assertEqual(model.jobs[-1].state, "running")
+        self.assertFalse(any(
+            event["event"] == "organization_local_fulfilled" for event in model.event_log
+        ))
+
+    def test_vertical_mode_and_disabled_lateral_relation_do_not_use_lateral_supply(self) -> None:
+        for mode, enabled in (("vertical", True), ("vertical_lateral", False)):
+            with self.subTest(mode=mode, enabled=enabled):
+                inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=1)
+                graph = inputs["support_network"]["organization_graph"]
+                graph["runtime_mode"] = mode
+                graph["lateral_edges"][0]["enabled"] = enabled
+                model = AircraftSupportV1Model(inputs)
+                model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+                model._start_waiting_jobs()
+
+                shipment = model.transport_shipments[0]
+                self.assertEqual(shipment.source_node_id, "stock")
+                self.assertEqual(shipment.supply_mode, "vertical")
+                self.assertEqual(shipment.relation_id, "")
+                self.assertEqual(model.nodes["lateral-stock"]["inventory"]["shared-spare"], 9)
+
+    def test_lateral_candidates_are_stable_by_priority_then_id_and_input_order(self) -> None:
+        def configured_inputs(*, reverse: bool) -> dict:
+            inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=0)
+            graph = inputs["support_network"]["organization_graph"]
+            graph["nodes"].append({
+                "id": "org-lateral-b",
+                "name": "Lateral B",
+                "parent_id": "org-parent",
+                "service_scope": {
+                    "airport_ids": [], "aircraft_models": [],
+                    "product_ids": [], "resource_types": [],
+                },
+            })
+            graph["parent_edges"].append({
+                "from_node_id": "org-parent", "to_node_id": "org-lateral-b",
+            })
+            inputs["support_network"]["nodes"].append({
+                "id": "lateral-stock-b", "name": "Lateral B",
+                "organization_node_id": "org-lateral-b",
+                "personnel_capacity": 1, "equipment_capacity": 1,
+                "inventory": {"shared-spare": 4}, "transport_policies": [],
+            })
+            graph["lateral_edges"].extend([
+                {
+                    "id": "z-relation", "from_node_id": "org-lateral-b",
+                    "to_node_id": "org-leaf", "priority": 1, "enabled": True,
+                },
+                {
+                    "id": "a-relation", "from_node_id": "org-lateral",
+                    "to_node_id": "org-leaf", "priority": 1, "enabled": True,
+                },
+            ])
+            # Remove the helper relation so equal-priority ID ordering decides.
+            graph["lateral_edges"] = [
+                edge for edge in graph["lateral_edges"] if edge["id"] != "lateral-to-leaf"
+            ]
+            graph["transport_policies"].append({
+                "id": "lateral-b-policy",
+                "from_organization_node_id": "org-lateral-b",
+                "to_organization_node_id": "org-leaf",
+                "product_id": "shared-spare", "capacity": 2,
+                "priority": 1, "transport_time_hours": 0,
+            })
+            if reverse:
+                graph["nodes"].reverse()
+                graph["parent_edges"].reverse()
+                graph["lateral_edges"].reverse()
+                graph["transport_policies"].reverse()
+                inputs["support_network"]["nodes"].reverse()
+            return inputs
+
+        selected = []
+        for reverse in (False, True):
+            model = AircraftSupportV1Model(configured_inputs(reverse=reverse))
+            model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+            model._start_waiting_jobs()
+            selected.append((
+                model.transport_shipments[0].source_node_id,
+                model.transport_shipments[0].relation_id,
+            ))
+
+        self.assertEqual(selected, [("lateral-stock", "a-relation")] * 2)
+
+    def test_lateral_candidate_without_stock_or_policy_falls_back_to_vertical_parent(self) -> None:
+        for mutation in ("no-stock", "no-policy"):
+            with self.subTest(mutation=mutation):
+                inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=1)
+                graph = inputs["support_network"]["organization_graph"]
+                if mutation == "no-stock":
+                    inputs["support_network"]["nodes"][2]["inventory"]["shared-spare"] = 0
+                else:
+                    graph["transport_policies"] = [
+                        policy for policy in graph["transport_policies"]
+                        if policy["id"] != "lateral-policy"
+                    ]
+                model = AircraftSupportV1Model(inputs)
+                model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+                model._start_waiting_jobs()
+
+                self.assertEqual(model.transport_shipments[0].source_node_id, "stock")
+                self.assertEqual(model.transport_shipments[0].supply_mode, "vertical")
+
+    def test_lateral_mode_does_not_borrow_from_unrelated_sibling_without_relation(self) -> None:
+        inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=0)
+        graph = inputs["support_network"]["organization_graph"]
+        graph["lateral_edges"] = []
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        model._start_waiting_jobs()
+
+        self.assertEqual(model.transport_shipments, [])
+        self.assertEqual(model.nodes["lateral-stock"]["inventory"]["shared-spare"], 9)
+        self.assertEqual(model.jobs[-1].shortage_reason, "organization_no_available_supplier:shared-spare")
+
+    def test_lateral_scope_mismatch_skips_relation_and_uses_vertical_parent(self) -> None:
+        mismatches = {
+            "resource_types": ["personnel"],
+            "product_ids": ["other-spare"],
+            "aircraft_models": ["J-20"],
+            "airport_ids": ["airport-b"],
+        }
+        for field, value in mismatches.items():
+            with self.subTest(field=field):
+                inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=1)
+                inputs["support_network"]["nodes"][0]["airport_id"] = "airport-a"
+                lateral_node = inputs["support_network"]["organization_graph"]["nodes"][-1]
+                lateral_node["service_scope"][field] = value
+                model = AircraftSupportV1Model(inputs)
+                model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+                model._start_waiting_jobs()
+
+                self.assertEqual(model.transport_shipments[0].source_node_id, "stock")
+                self.assertEqual(model.transport_shipments[0].supply_mode, "vertical")
+
+    def test_lateral_mode_checks_local_scope_before_using_local_inventory(self) -> None:
+        inputs = _lateral_organization_inputs(local_quantity=1, parent_quantity=0)
+        leaf_node = inputs["support_network"]["organization_graph"]["nodes"][2]
+        leaf_node["service_scope"]["product_ids"] = ["other-spare"]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        model._start_waiting_jobs()
+
+        self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], 1)
+        self.assertEqual(model.transport_shipments[0].source_node_id, "lateral-stock")
+        self.assertEqual(model.transport_shipments[0].supply_mode, "lateral")
+
+    def test_lateral_plural_spare_plan_is_atomic_when_one_product_has_no_supplier(self) -> None:
+        inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=0)
+        deck, parent, lateral = inputs["support_network"]["nodes"]
+        deck["inventory"] = {"product-a": 0, "product-b": 0}
+        parent["inventory"] = {"product-a": 0, "product-b": 0}
+        lateral["inventory"] = {"product-a": 1, "product-b": 0}
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"] = [{
+            "id": "lateral-product-a",
+            "from_organization_node_id": "org-lateral",
+            "to_organization_node_id": "org-leaf",
+            "product_id": "product-a", "capacity": 1,
+            "priority": 1, "transport_time_hours": 0,
+        }]
+        inputs["support_activities"]["activities"][1]["jobs"][0]["spare"] = [
+            {"product_id": "product-a", "quantity": 1},
+            {"product_id": "product-b", "quantity": 1},
+        ]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        model._start_waiting_jobs()
+
+        self.assertEqual(model.nodes["lateral-stock"]["inventory"], {"product-a": 1, "product-b": 0})
+        self.assertEqual(model.transport_shipments, [])
+        self.assertEqual(model.transport_replenishment_events, 0)
+
+    def test_lateral_personnel_and_equipment_use_existing_atomic_batches_and_release(self) -> None:
+        inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=0)
+        deck, parent, lateral = inputs["support_network"]["nodes"]
+        deck.update({"personnel_capacity": 0, "equipment_capacity": 0})
+        parent.update({"personnel_capacity": 0, "equipment_capacity": 0})
+        lateral.update({"personnel_capacity": 5, "equipment_capacity": 5})
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"] = [{
+            "id": "lateral-wildcard",
+            "from_organization_node_id": "org-lateral",
+            "to_organization_node_id": "org-leaf",
+            "product_id": "*", "capacity": 2,
+            "priority": 1, "transport_time_hours": 0,
+        }]
+        repair = inputs["support_activities"]["activities"][1]
+        repair["maintenance_methods"] = ["non_replacement"]
+        repair["jobs"] = [{
+            "activityCode": "repair", "durationMinutes": 1,
+            "requiredPersonnel": 5, "requiredDevices": 5,
+        }]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+
+        model._start_waiting_jobs()
+
+        self.assertEqual(job.resource_reservations, {
+            "personnel": ("lateral-stock", 5),
+            "equipment": ("lateral-stock", 5),
+        })
+        for resource_kind in ("personnel", "equipment"):
+            transits = [
+                transit for transit in model.resource_transits
+                if transit.resource_kind == resource_kind
+            ]
+            self.assertEqual(sorted(transit.quantity for transit in transits), [1, 2, 2])
+            self.assertEqual({transit.supply_mode for transit in transits}, {"lateral"})
+            self.assertEqual({transit.relation_id for transit in transits}, {"lateral-to-leaf"})
+        dispatched = [
+            event for event in model.event_log
+            if event["event"] == "organization_resource_dispatched"
+        ]
+        self.assertEqual({event["details"]["supply_mode"] for event in dispatched}, {"lateral"})
+        self.assertEqual({event["details"]["relation_id"] for event in dispatched}, {"lateral-to-leaf"})
+
+        model.minute = 1
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "running")
+        model._process_job_progress_and_completions()
+        self.assertEqual(job.state, "completed")
+        self.assertEqual(model.nodes["lateral-stock"]["personnel_in_use"], 0)
+        self.assertEqual(model.nodes["lateral-stock"]["equipment_in_use"], 0)
+
+    def test_lateral_concurrent_resource_jobs_cannot_double_reserve_supplier_capacity(self) -> None:
+        inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=0)
+        inputs["aircraft"].update({"fleet_count": 2, "initial_ready": 2})
+        deck, parent, lateral = inputs["support_network"]["nodes"]
+        deck.update({"personnel_capacity": 0, "equipment_capacity": 0})
+        parent.update({"personnel_capacity": 0, "equipment_capacity": 0})
+        lateral.update({"personnel_capacity": 5, "equipment_capacity": 5})
+        inputs["support_network"]["organization_graph"]["transport_policies"] = [{
+            "id": "lateral-wildcard",
+            "from_organization_node_id": "org-lateral",
+            "to_organization_node_id": "org-leaf",
+            "product_id": "*", "capacity": 2,
+            "priority": 1, "transport_time_hours": 0,
+        }]
+        repair = inputs["support_activities"]["activities"][1]
+        repair["maintenance_methods"] = ["non_replacement"]
+        repair["jobs"] = [{
+            "activityCode": "repair", "durationMinutes": 1,
+            "requiredPersonnel": 3, "requiredDevices": 3,
+        }]
+        model = AircraftSupportV1Model(inputs)
+        for aircraft in model.aircraft:
+            model._create_job(aircraft, model.activities[1], kind="repair")
+
+        model._start_waiting_jobs()
+
+        self.assertEqual(model.nodes["lateral-stock"]["personnel_in_use"], 3)
+        self.assertEqual(model.nodes["lateral-stock"]["equipment_in_use"], 3)
+        self.assertEqual(len([job for job in model.jobs if job.resource_reservations]), 1)
+        self.assertEqual(len(model.resource_transits), 4)
+
+    def test_lateral_runtime_rejects_cycles_unknown_unreachable_and_invalid_scope(self) -> None:
+        cases: list[tuple[str, dict, str]] = []
+
+        cyclic = _lateral_organization_inputs()
+        cyclic["support_network"]["organization_graph"]["lateral_edges"].append({
+            "id": "leaf-to-lateral", "from_node_id": "org-leaf",
+            "to_node_id": "org-lateral", "priority": 1, "enabled": True,
+        })
+        cases.append(("cycle", cyclic, "acyclic"))
+
+        unknown = _lateral_organization_inputs()
+        unknown["support_network"]["organization_graph"]["lateral_edges"][0]["from_node_id"] = "unknown"
+        cases.append(("unknown", unknown, "unknown endpoint"))
+
+        unreachable = _lateral_organization_inputs()
+        graph = unreachable["support_network"]["organization_graph"]
+        graph["nodes"].append({
+            "id": "org-unreachable", "name": "Unreachable", "parent_id": "org-parent",
+            "service_scope": {
+                "airport_ids": [], "aircraft_models": [],
+                "product_ids": [], "resource_types": [],
+            },
+        })
+        graph["parent_edges"].append({
+            "from_node_id": "org-parent", "to_node_id": "org-unreachable",
+        })
+        graph["lateral_edges"][0]["from_node_id"] = "org-unreachable"
+        cases.append(("unreachable", unreachable, "not runtime reachable"))
+
+        invalid_scope = _lateral_organization_inputs()
+        invalid_scope["support_network"]["organization_graph"]["nodes"][-1]["service_scope"]["product_ids"] = "shared-spare"
+        cases.append(("scope", invalid_scope, "must be an array"))
+
+        invalid_scope_value = _lateral_organization_inputs()
+        invalid_scope_value["support_network"]["organization_graph"]["nodes"][-1]["service_scope"]["resource_types"] = ["fuel"]
+        cases.append(("scope-value", invalid_scope_value, "invalid values"))
+
+        for name, inputs, message in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, message):
+                    AircraftSupportV1Model(inputs)
+
+    def test_vertical_lateral_with_no_relations_is_equivalent_to_vertical_mode(self) -> None:
+        vertical_inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=1)
+        vertical_inputs["support_network"]["organization_graph"].update({
+            "runtime_mode": "vertical", "lateral_edges": [],
+        })
+        lateral_inputs = json.loads(json.dumps(vertical_inputs))
+        lateral_inputs["support_network"]["organization_graph"]["runtime_mode"] = "vertical_lateral"
+
+        results = []
+        for inputs in (vertical_inputs, lateral_inputs):
+            model = AircraftSupportV1Model(inputs)
+            model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+            model._start_waiting_jobs()
+            results.append((
+                model.transport_shipments[0].source_node_id,
+                model.transport_shipments[0].quantity,
+                model.transport_shipments[0].arrival_minute,
+                model.transport_shipments[0].transport_policy_ids,
+                model.nodes["stock"]["inventory"]["shared-spare"],
+            ))
+
+        self.assertEqual(results[0], results[1])
+
     def test_canonical_runtime_nodes_require_unique_explicit_organization_mapping(self) -> None:
         # Arrange.
         missing = _vertical_organization_inputs()
@@ -2310,6 +2690,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertIn("supportActivities[].predecessors", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].maintenanceMethods", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].replacementRatio", scope["behavior_driving_fields"])
+        self.assertIn("support_network.organization_graph.lateral_edges[]", scope["behavior_driving_fields"])
         self.assertIn("combatUnit.members[].preLifeCalendarDays", scope["behavior_driving_fields"])
         self.assertIn("combatUnit.members[].preLifeFlightHours", scope["behavior_driving_fields"])
         self.assertIn("combatUnit.members[].preLifeTakeoffLandingCount", scope["behavior_driving_fields"])
@@ -2318,6 +2699,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertIn("combatUnit.members[].preLifeFlightHours", scope["fail_closed_fields"])
         self.assertIn("combatUnit.members[].preLifeTakeoffLandingCount", scope["fail_closed_fields"])
         self.assertIn("supportActivities[].runHourInterval", scope["fail_closed_fields"])
+        self.assertIn("support_network.organization_graph.lateral_edges[]", scope["fail_closed_fields"])
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
 
     def test_failure_distribution_types_drive_effective_rates(self) -> None:
