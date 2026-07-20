@@ -92,6 +92,7 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             ],
             "transportPolicies": [],
             "supportOrganization": {
+                "runtimeMode": "vertical",
                 "tree": {
                     "id": "node-a",
                     "name": "node A",

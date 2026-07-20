@@ -1449,7 +1449,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("analysisRequests", stored["missionProfile"])
         self.assertNotIn("requireDevices", stored["supportActivities"][0])
         self.assertNotIn("name", stored["supportActivities"][0])
-        self.assertNotIn("resourceId", stored["supportActivities"][0])
+        self.assertEqual(stored["supportActivities"][0]["resourceId"], "legacy-node")
         self.assertNotIn("requiredDevices", stored["supportActivities"][0])
         self.assertNotIn("requiredPersonnel", stored["supportActivities"][0])
         self.assertEqual(stored["supportActivities"][0]["activityName"], "Legacy display name")
