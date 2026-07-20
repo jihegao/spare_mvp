@@ -64,6 +64,7 @@ import {
 } from "./sim-engine.mjs";
 import {
   allowedSupportActivityDurationDistributions,
+  assertBasicSupportActivityCsvFileSize,
   basicSupportActivityCsvTemplate,
   normalizeSupportActivityDurationProfile,
   parseBasicSupportActivityCsv,
@@ -7111,7 +7112,7 @@ function createOperationsSupportActivityForAircraftModel(aircraftModel, config =
     maxWorkTimeRefMinutes: config.maxWorkTimeRefMinutes ?? 30
   };
   return setSupportActivityJobs(activity, [{
-      activityCode: "BA-001",
+      activityCode: nextSupportActivityJobCode("ops_preflight", []),
       workName: `${config.label || "新增"}基本保障活动1`,
       predecessors: [],
       durationMinutes: config.maxWorkTimeRefMinutes ?? 30,
@@ -7258,7 +7259,7 @@ function createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, sequ
     takeoffLandingFloatRatio: 0.1
   };
   return setSupportActivityJobs(activity, [{
-      activityCode: "PM-001",
+      activityCode: nextSupportActivityJobCode("prev_repair", []),
       workName: "新增预防性维修工作项目1",
       predecessors: [],
       durationMinutes: 30,
@@ -8627,7 +8628,7 @@ function createDefaultCorrectiveMaintenanceActivity() {
     repairType: "原位维修"
   };
   return setSupportActivityJobs(activity, [{
-      activityCode: "CM-001",
+      activityCode: nextSupportActivityJobCode("corr_repair", []),
       workName: "新增修复性维修工作项目1",
       predecessors: [],
       durationMinutes: 60,
@@ -8920,6 +8921,8 @@ function supportActivityJobDefinitionsEqual(left, right) {
   return stableSupportActivityJobStringify(left) === stableSupportActivityJobStringify(right);
 }
 
+let preserveSupportActivityJobDefinitionsDuringStaging = false;
+
 function stableSupportActivityJobStringify(value) {
   if (Array.isArray(value)) return `[${value.map((item) => stableSupportActivityJobStringify(item)).join(",")}]`;
   if (!value || typeof value !== "object") return JSON.stringify(value);
@@ -8932,20 +8935,7 @@ function supportActivityJobCodeForDefinition(requestedCode, definition, tableByC
   if (!nextActivityCodes.includes(requestedCode) && (currentActivityCodes.has(requestedCode) || supportActivityJobDefinitionsEqual(existing, definition))) {
     return requestedCode;
   }
-  return uniqueSupportActivityJobCode(requestedCode, new Set([...tableByCode.keys(), ...nextActivityCodes]));
-}
-
-function uniqueSupportActivityJobCode(requestedCode, usedCodes) {
-  if (!usedCodes.has(requestedCode)) return requestedCode;
-  const match = requestedCode.match(/^(.*?)(?:-(\d+))?$/);
-  const prefix = (match?.[1] || requestedCode || "BA").replace(/-$/, "");
-  let index = Number(match?.[2] || 2);
-  let code = `${prefix}-${String(index).padStart(3, "0")}`;
-  while (usedCodes.has(code)) {
-    index += 1;
-    code = `${prefix}-${String(index).padStart(3, "0")}`;
-  }
-  return code;
+  throw new Error(`基本保障活动编号“${requestedCode}”已存在，不能静默改号`);
 }
 
 function supportActivityJobs(activity) {
@@ -9001,7 +8991,7 @@ function setSupportActivityJobs(activity, jobs) {
   activity.activityCodes = activityCodes;
   activity.predecessors = predecessors;
   delete activity.jobs;
-  pruneUnreferencedSupportActivityJobs(activity);
+  if (!preserveSupportActivityJobDefinitionsDuringStaging) pruneUnreferencedSupportActivityJobs(activity);
   return activity;
 }
 
@@ -9106,7 +9096,7 @@ function addSupportActivityJob(tabKey) {
   const jobs = supportActivityJobs(activity).slice();
   const nextIndex = jobs.length;
   jobs.push({
-    activityCode: `${supportActivityJobCodePrefix(tabKey)}-${String(nextIndex + 1).padStart(3, "0")}`,
+    activityCode: nextSupportActivityJobCode(tabKey, jobs),
     workName: supportActivityJobDefaultName(tabKey, nextIndex),
     predecessors: [],
     durationMinutes: 30,
@@ -10760,14 +10750,18 @@ async function importBasicSupportActivityCsvFile(file) {
     return false;
   }
   try {
+    assertBasicSupportActivityCsvFileSize(file);
     const existingRows = basicActivityLibraryRows();
     const rows = parseBasicSupportActivityCsv(await file.text(), {
       filename: file.name,
       aircraftModels: wholeMachineModels(),
-      existingActivityCodes: existingRows.map((row) => row.activityCode),
+      existingActivityCodes: (Array.isArray(scenario.supportActivityJobs) ? scenario.supportActivityJobs : [])
+        .map((row) => supportActivityJobCode(row?.activityCode))
+        .filter(Boolean),
       existingActivities: basicActivityImportExistingReferences()
     });
     const staged = stageBasicSupportActivityImport(rows);
+    updatePreviewResultsThroughApiClient(staged.scenario);
     scenario = staged.scenario;
     selectedOperationsSupportActivityKey = staged.selectedOperationsSupportActivityKey;
     selectedOperationsSupportAircraftModel = staged.selectedOperationsSupportAircraftModel;
@@ -10777,7 +10771,6 @@ async function importBasicSupportActivityCsvFile(file) {
     selectedBasicActivityImportType = "";
     basicActivityQuery = "";
     basicActivityImportStatus = `已导入 ${file.name}：${rows.length} 条基本保障活动，列表已刷新并等待 Project draft 保存。`;
-    updatePreviewResultsThroughApiClient();
     return true;
   } catch (err) {
     basicActivityImportStatus = `基本保障活动导入失败：${err?.message || "CSV 文件无法解析"}`;
@@ -10798,6 +10791,8 @@ function stageBasicSupportActivityImport(rows) {
   for (const row of rows) groups.set(row.type, [...(groups.get(row.type) || []), row]);
   const selectedKeys = [];
   scenario = stagedScenario;
+  const previousPreserveDefinitions = preserveSupportActivityJobDefinitionsDuringStaging;
+  preserveSupportActivityJobDefinitionsDuringStaging = true;
   try {
     for (const [type, importedRows] of groups.entries()) {
       const activity = ensureBasicActivityDraftHostActivity(type);
@@ -10828,6 +10823,7 @@ function stageBasicSupportActivityImport(rows) {
       selectedPreventiveMaintenanceAircraftModel
     };
   } finally {
+    preserveSupportActivityJobDefinitionsDuringStaging = previousPreserveDefinitions;
     scenario = original.scenario;
     selectedOperationsSupportActivityKey = original.selectedOperationsSupportActivityKey;
     selectedOperationsSupportAircraftModel = original.selectedOperationsSupportAircraftModel;
@@ -10837,7 +10833,11 @@ function stageBasicSupportActivityImport(rows) {
 }
 
 function nextBasicActivityCode(prefix) {
-  const used = new Set(basicActivityLibraryRows().map((row) => String(row.activityCode || "").trim()).filter(Boolean));
+  const used = new Set([
+    ...basicActivityLibraryRows().map((row) => String(row.activityCode || "").trim()),
+    ...(Array.isArray(scenario.supportActivityJobs) ? scenario.supportActivityJobs : [])
+      .map((row) => supportActivityJobCode(row?.activityCode))
+  ].filter(Boolean));
   let index = used.size + 1;
   let code = `${prefix}-${String(index).padStart(3, "0")}`;
   while (used.has(code)) {
@@ -10850,12 +10850,17 @@ function nextBasicActivityCode(prefix) {
 function uniqueBasicActivityCode(value, currentKey = "") {
   const requested = String(value || "").trim();
   if (!requested) return requested;
-  const used = new Set(
-    basicActivityLibraryRows()
-      .filter((row) => row.key !== currentKey)
-      .map((row) => String(row.activityCode || "").trim())
-      .filter(Boolean)
+  const currentCode = supportActivityJobCode(
+    basicActivityLibraryRows().find((row) => row.key === currentKey)?.activityCode
   );
+  const used = new Set([
+    ...basicActivityLibraryRows()
+      .filter((row) => row.key !== currentKey)
+      .map((row) => String(row.activityCode || "").trim()),
+    ...(Array.isArray(scenario.supportActivityJobs) ? scenario.supportActivityJobs : [])
+      .map((row) => supportActivityJobCode(row?.activityCode))
+  ].filter(Boolean));
+  if (currentCode) used.delete(currentCode);
   if (!used.has(requested)) return requested;
   const match = requested.match(/^(.*?)(?:-(\d+))?$/);
   const prefix = (match?.[1] || requested || "BA").replace(/-$/, "");
@@ -10936,8 +10941,12 @@ function addBasicActivityAsSupportActivityPredecessor(tabKey, basicActivityKey, 
 
 function nextSupportActivityJobCode(tabKey, jobs) {
   const prefix = supportActivityJobCodePrefix(tabKey);
-  const used = new Set(jobs.map((job) => String(job.activityCode || "").trim()).filter(Boolean));
-  let index = jobs.length + 1;
+  const used = new Set([
+    ...(Array.isArray(jobs) ? jobs : []).map((job) => supportActivityJobCode(job?.activityCode)),
+    ...(Array.isArray(scenario.supportActivityJobs) ? scenario.supportActivityJobs : [])
+      .map((job) => supportActivityJobCode(job?.activityCode))
+  ].filter(Boolean));
+  let index = (Array.isArray(jobs) ? jobs.length : 0) + 1;
   let code = `${prefix}-${String(index).padStart(3, "0")}`;
   while (used.has(code)) {
     index += 1;
@@ -10952,7 +10961,7 @@ function selectedSupportActivityJobIndexForTab(tabKey, jobs) {
   if (Number.isInteger(selectedIndex) && selectedIndex >= 0 && selectedIndex < jobs.length) return selectedIndex;
   if (jobs.length) return 0;
   jobs.push({
-    activityCode: `${supportActivityJobCodePrefix(tabKey)}-001`,
+    activityCode: nextSupportActivityJobCode(tabKey, jobs),
     workName: supportActivityJobDefaultName(tabKey, 0),
     predecessors: [],
     durationProfile: { distributionType: "固定值", value: 30 },

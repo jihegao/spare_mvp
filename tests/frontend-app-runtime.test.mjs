@@ -9,7 +9,10 @@ import {
   createRmsAllocationProjectForScenario
 } from "../front/rms-allocation-engine.mjs";
 import { defaultScenario } from "../front/sim-engine.mjs";
-import { BASIC_SUPPORT_ACTIVITY_CSV_HEADERS } from "../front/support-activity-jobs.mjs";
+import {
+  BASIC_SUPPORT_ACTIVITY_CSV_HEADERS,
+  MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES
+} from "../front/support-activity-jobs.mjs";
 
 test("frontend app module initializes without Monte Carlo TDZ errors", async () => {
   const appNode = {
@@ -4673,8 +4676,14 @@ test("basic support activity library filters rows by selected activity type", as
 
 test("basic support activity unified CSV import mixes activity types and persists through Project draft", async () => {
   const projectId = "basic-activity-csv-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivityJobs.push({
+    activityCode: "ORPHAN-KEEP",
+    workName: "未被宿主引用但必须保留",
+    durationMinutes: 12
+  });
   const runtime = await setupRuntimeApp({
-    projectJson: createRuntimeProjectJson({ project_id: projectId }),
+    projectJson,
     backendProjects: [runtimeBackendProjectEntry(projectId, "基本保障活动 CSV 导入")]
   });
   const csvFile = {
@@ -4713,6 +4722,10 @@ test("basic support activity unified CSV import mixes activity types and persist
     assert.deepEqual(operations.predecessors["BA-002"], ["BA-001"]);
     assert.ok(saved.supportActivities.some((activity) => activity.activityCodes?.includes("PM-101")));
     assert.ok(saved.supportActivities.some((activity) => activity.activityCodes?.includes("CM-101")));
+    assert.deepEqual(
+      saved.supportActivityJobs.find((job) => job.activityCode === "ORPHAN-KEEP"),
+      { activityCode: "ORPHAN-KEEP", workName: "未被宿主引用但必须保留", durationMinutes: 12 }
+    );
   } finally {
     runtime.restore();
   }
@@ -4751,6 +4764,76 @@ test("basic support activity CSV validation reports row and field and keeps the 
     await runtime.click("[data-project-draft-save]");
     const saved = await waitForProjectSave(runtime, (body) => body.project_id === projectId, "expected unchanged Project draft save");
     assert.equal(saved.supportActivityJobs.some((job) => ["BA-099", "PM-099"].includes(job.activityCode)), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity CSV rejects an unreferenced top-level duplicate atomically without silent renaming", async () => {
+  const projectId = "basic-activity-csv-orphan-duplicate";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  const orphan = { activityCode: "ORPHAN-001", workName: "孤立但有效的顶层定义", durationMinutes: 18 };
+  projectJson.supportActivityJobs.push(orphan);
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "基本保障活动 CSV 顶层重复校验")]
+  });
+  const duplicateFile = {
+    name: "duplicate-orphan.csv",
+    size: 256,
+    async text() {
+      return [
+        "活动类型,基本保障活动编号,基本保障活动名称,适用飞机,作业时长分布,固定工期(min)",
+        "使用保障活动,ORPHAN-001,不得静默改号,J-15,固定值,30"
+      ].join("\n");
+    }
+  };
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.change("[data-basic-activity-import-file]", {}, { files: [duplicateFile], value: duplicateFile.name });
+
+    assert.match(runtime.appNode.innerHTML, /“ORPHAN-001”已存在于当前 Project/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /不得静默改号|ORPHAN-002/);
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    await runtime.flush();
+    assert.equal(projectSaveBodies(runtime).length, 0, "duplicate import must not schedule Project autosave");
+
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => body.project_id === projectId, "expected unchanged Project draft save");
+    assert.deepEqual(saved.supportActivityJobs.filter((job) => job.activityCode.startsWith("ORPHAN")), [orphan]);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity CSV rejects an oversized File before reading its text", async () => {
+  const projectId = "basic-activity-csv-file-size";
+  let textRead = false;
+  const oversizedFile = {
+    name: "oversized.csv",
+    size: MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES + 1,
+    async text() {
+      textRead = true;
+      throw new Error("oversized file text must not be read");
+    }
+  };
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({ project_id: projectId }),
+    backendProjects: [runtimeBackendProjectEntry(projectId, "基本保障活动 CSV 文件大小校验")]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.change("[data-basic-activity-import-file]", {}, { files: [oversizedFile], value: oversizedFile.name });
+
+    assert.equal(textRead, false);
+    assert.match(runtime.appNode.innerHTML, /文件大小不能超过 1 MiB/);
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    await runtime.flush();
+    assert.equal(projectSaveBodies(runtime).length, 0);
   } finally {
     runtime.restore();
   }

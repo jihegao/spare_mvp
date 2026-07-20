@@ -67,6 +67,19 @@ test("active docs record lite Mesa analysis metric formulas", async () => {
   assert.doesNotMatch(docs, /四个结果分析页通过 current result 面板和正式 projection payload 解锁结果/);
 });
 
+test("basic support activity CSV computes preview before committing the staged Scenario", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const importSource = appSource.slice(
+    appSource.indexOf("async function importBasicSupportActivityCsvFile"),
+    appSource.indexOf("function stageBasicSupportActivityImport")
+  );
+
+  const previewIndex = importSource.indexOf("updatePreviewResultsThroughApiClient(staged.scenario)");
+  const commitIndex = importSource.indexOf("scenario = staged.scenario");
+  assert.ok(previewIndex >= 0, "staged preview validation is missing");
+  assert.ok(commitIndex > previewIndex, "Scenario must not be replaced before staged preview validation succeeds");
+});
+
 test("feature grouping preserves three-level navigation and internal fourth-level entries", () => {
   const grouped = groupFeaturePages(FEATURE_PAGES);
   assert.deepEqual(Object.keys(grouped), ["系统运行支持模块", "备件规划评估模块", "任务可靠度评估模块"]);

@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   allowedSupportActivityDurationDistributions,
+  assertBasicSupportActivityCsvFileSize,
   BASIC_SUPPORT_ACTIVITY_CSV_HEADERS,
   BasicSupportActivityCsvError,
   basicSupportActivityCsvTemplate,
+  MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES,
   parseBasicSupportActivityCsv,
   supportActivityJobFromBasicActivity,
 } from "../front/support-activity-jobs.mjs";
@@ -213,6 +215,69 @@ test("basic support activity CSV rejects spreadsheet formula prefixes as plain i
     (error) => (
       error instanceof BasicSupportActivityCsvError
       && /第2行 \[基本保障活动名称\] 不允许以 =、\+、- 或 @ 开头/.test(error.message)
+    )
+  );
+});
+
+test("basic support activity CSV enforces the 1 MiB limit as UTF-8 bytes", () => {
+  assert.doesNotThrow(() => assertBasicSupportActivityCsvFileSize({ size: MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES }));
+  assert.throws(
+    () => assertBasicSupportActivityCsvFileSize({ size: MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES + 1 }),
+    (error) => error instanceof BasicSupportActivityCsvError && /文件大小不能超过 1 MiB/.test(error.message)
+  );
+
+  const validPrefix = [
+    "活动类型,基本保障活动编号,基本保障活动名称,作业时长分布,固定工期(min)",
+    "使用保障活动,BA-001,检查,固定值,30"
+  ].join("\n");
+  const multibyteOversize = `${validPrefix}\n${"中".repeat(Math.ceil(MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES / 3))}`;
+  assert.ok(multibyteOversize.length < MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES);
+  assert.ok(new TextEncoder().encode(multibyteOversize).byteLength > MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES);
+  assert.throws(
+    () => parseBasicSupportActivityCsv(multibyteOversize, { filename: "multibyte.csv" }),
+    (error) => error instanceof BasicSupportActivityCsvError && /文件大小不能超过 1 MiB/.test(error.message)
+  );
+});
+
+test("basic support activity CSV rejects bare quotes and malformed predecessor codes", () => {
+  assert.throws(
+    () => parseBasicSupportActivityCsv([
+      "活动类型,基本保障活动编号,基本保障活动名称,作业时长分布,固定工期(min)",
+      '使用保障活动,BA-001,飞行前"检查,固定值,30'
+    ].join("\n"), { filename: "bare-quote.csv" }),
+    (error) => error instanceof BasicSupportActivityCsvError && /未加引号字段中存在裸双引号/.test(error.message)
+  );
+
+  const tooLong = "P".repeat(300);
+  assert.throws(
+    () => parseBasicSupportActivityCsv([
+      "活动类型,基本保障活动编号,基本保障活动名称,作业时长分布,固定工期(min),紧前作业",
+      `使用保障活动,BA-002,通电检查,固定值,15,bad code；${tooLong}`
+    ].join("\n"), { filename: "bad-predecessors.csv" }),
+    (error) => (
+      error instanceof BasicSupportActivityCsvError
+      && /“bad code”只能使用 1-64 位/.test(error.message)
+      && error.message.includes(tooLong.slice(0, 80))
+      && !error.message.includes(tooLong)
+      && error.message.includes("…")
+    )
+  );
+});
+
+test("basic support activity CSV truncates aggregated display errors without dropping issue details", () => {
+  const csv = [
+    "活动类型,基本保障活动编号,基本保障活动名称,作业时长分布,固定工期(min)",
+    ...Array.from({ length: 25 }, (_, index) => `使用保障活动,BA-${String(index + 1).padStart(3, "0")},,固定值,30`)
+  ].join("\n");
+
+  assert.throws(
+    () => parseBasicSupportActivityCsv(csv, { filename: "many-errors.csv" }),
+    (error) => (
+      error instanceof BasicSupportActivityCsvError
+      && error.issues.length === 25
+      && /第21行 \[基本保障活动名称\] 必填/.test(error.message)
+      && !/第22行 \[基本保障活动名称\] 必填/.test(error.message)
+      && /另有 5 项错误未显示/.test(error.message)
     )
   );
 });

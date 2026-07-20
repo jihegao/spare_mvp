@@ -5,6 +5,10 @@ const ALLOWED_DURATION_DISTRIBUTIONS = Object.freeze([
   "均匀分布"
 ]);
 
+export const MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES = 1024 * 1024;
+const MAX_BASIC_SUPPORT_ACTIVITY_CSV_ERROR_DETAILS = 20;
+const MAX_BASIC_SUPPORT_ACTIVITY_CSV_ERROR_DETAIL_CHARS = 240;
+
 export const BASIC_SUPPORT_ACTIVITY_CSV_HEADERS = Object.freeze([
   "活动类型",
   "基本保障活动编号",
@@ -58,9 +62,18 @@ const BASIC_ACTIVITY_HEADER_LOOKUP = new Map(
 export class BasicSupportActivityCsvError extends Error {
   constructor(issues) {
     const normalizedIssues = Array.isArray(issues) ? issues : [];
-    super(`CSV 导入校验失败：${normalizedIssues.map(formatBasicSupportActivityCsvIssue).join("；")}`);
+    const displayedIssues = normalizedIssues.slice(0, MAX_BASIC_SUPPORT_ACTIVITY_CSV_ERROR_DETAILS);
+    const omittedCount = normalizedIssues.length - displayedIssues.length;
+    super(`CSV 导入校验失败：${displayedIssues.map(formatBasicSupportActivityCsvIssue).join("；")}${omittedCount > 0 ? `；另有 ${omittedCount} 项错误未显示` : ""}`);
     this.name = "BasicSupportActivityCsvError";
     this.issues = normalizedIssues;
+  }
+}
+
+export function assertBasicSupportActivityCsvFileSize(file) {
+  const size = file?.size;
+  if (typeof size === "number" && Number.isFinite(size) && size > MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES) {
+    throw new BasicSupportActivityCsvError([issue(1, "文件", "文件大小不能超过 1 MiB")]);
   }
 }
 
@@ -86,11 +99,12 @@ export function parseBasicSupportActivityCsv(text, options = {}) {
   if (filename && !filename.toLowerCase().endsWith(".csv")) {
     throw new BasicSupportActivityCsvError([issue(1, "文件", "仅支持 .csv 文件")]);
   }
-  const source = String(text ?? "").replace(/^\uFEFF/, "");
-  if (!source.trim()) throw new BasicSupportActivityCsvError([issue(1, "文件", "文件为空")]);
-  if (source.length > 1024 * 1024) {
+  const rawSource = String(text ?? "");
+  if (new TextEncoder().encode(rawSource).byteLength > MAX_BASIC_SUPPORT_ACTIVITY_CSV_BYTES) {
     throw new BasicSupportActivityCsvError([issue(1, "文件", "文件大小不能超过 1 MiB")]);
   }
+  const source = rawSource.replace(/^\uFEFF/, "");
+  if (!source.trim()) throw new BasicSupportActivityCsvError([issue(1, "文件", "文件为空")]);
 
   let records;
   try {
@@ -211,6 +225,11 @@ function normalizeBasicActivityCsvRow(values, line, aircraftModels, issues) {
     .split(/[;；、|]/)
     .map((value) => value.trim())
     .filter(Boolean);
+  for (const predecessor of predecessors) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(predecessor)) {
+      issues.push(issue(line, "紧前作业", `“${predecessor}”只能使用 1-64 位字母、数字、点、下划线或连字符`));
+    }
+  }
   if (new Set(predecessors).size !== predecessors.length) {
     issues.push(issue(line, "紧前作业", "存在重复编号"));
   }
@@ -348,6 +367,8 @@ function parseCsvRecords(text) {
       }
     } else if (char === '"' && !current) {
       quoted = true;
+    } else if (char === '"') {
+      throw new BasicSupportActivityCsvError([issue(recordStartLine, "文件", "未加引号字段中存在裸双引号")]);
     } else if (char === ",") {
       values.push(current);
       current = "";
@@ -372,7 +393,10 @@ function issue(line, field, reason) {
 }
 
 function formatBasicSupportActivityCsvIssue(value) {
-  return `第${value.line}行 [${value.field}] ${value.reason}`;
+  const detail = `第${value.line}行 [${value.field}] ${value.reason}`;
+  return detail.length > MAX_BASIC_SUPPORT_ACTIVITY_CSV_ERROR_DETAIL_CHARS
+    ? `${detail.slice(0, MAX_BASIC_SUPPORT_ACTIVITY_CSV_ERROR_DETAIL_CHARS - 1)}…`
+    : detail;
 }
 
 function normalizeHeaderName(value) {
