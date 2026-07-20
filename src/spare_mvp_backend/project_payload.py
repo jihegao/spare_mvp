@@ -327,7 +327,14 @@ class ProjectJsonExporter:
         project, _organization_changes = normalize_support_organization_contract(project)
         _strip_pollution_keys(project)
         _prune_clean_project(project)
+        preserve_empty_organization_tree = (
+            isinstance(project.get("supportOrganization"), dict)
+            and "tree" in project["supportOrganization"]
+            and project["supportOrganization"]["tree"] is None
+        )
         _drop_none_values(project)
+        if preserve_empty_organization_tree:
+            project["supportOrganization"]["tree"] = None
         self._validate(project)
         return project
 
@@ -2816,7 +2823,7 @@ def _materialize_legacy_support_tables(project: dict[str, Any]) -> None:
     if not isinstance(project.get("supportResources"), list) or not project["supportResources"]:
         resources: list[dict[str, Any]] = []
         for node_index, node in enumerate(support_nodes):
-            if not isinstance(node, dict):
+            if not isinstance(node, dict) or _is_legacy_support_resource_row(node):
                 continue
             node_name = str(node.get("name") or node.get("id") or "保障节点")
             personnel = _non_negative_int(node.get("personnelCapacity", node.get("capacity", 0)))
@@ -2859,7 +2866,7 @@ def _materialize_legacy_support_tables(project: dict[str, Any]) -> None:
         }
         policies: list[dict[str, Any]] = []
         for node_index, node in enumerate(support_nodes):
-            if not isinstance(node, dict):
+            if not isinstance(node, dict) or _is_legacy_support_resource_row(node):
                 continue
             for policy_index, policy in enumerate(node.get("transportPolicies") if isinstance(node.get("transportPolicies"), list) else []):
                 if not isinstance(policy, dict):
@@ -2953,12 +2960,9 @@ def _support_node_scope_by_ref(support_nodes: Any) -> dict[str, dict[str, Any]]:
         if not isinstance(node, dict):
             continue
         scope = {
-            field: deepcopy(node[field])
-            for field in (
-                "airport", "airportId", "baseAirportId", "capacity",
-                "personnelCapacity", "equipmentCapacity", "inventory",
-            )
-            if node.get(field) not in (None, "", {})
+            field: value
+            for field in ("airport", "airportId", "baseAirportId")
+            if (value := _clean_text(node.get(field)))
         }
         if not scope:
             continue
@@ -3173,9 +3177,13 @@ def _strip_legacy_support_node_resource_fields(project: dict[str, Any]) -> None:
     if not isinstance(support_nodes, list):
         return
     legacy_fields = {
+        "capacity",
+        "equipmentCapacity",
+        "inventory",
         "lateralSupportNodes",
         "nodeType",
         "organizationStrategy",
+        "personnelCapacity",
         "policy",
         "supportLevel",
         "transportPolicies",

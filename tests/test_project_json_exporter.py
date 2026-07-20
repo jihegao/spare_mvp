@@ -115,9 +115,6 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "id": "support-node-1",
             "name": "基层",
             "airport": "Airport A",
-            "personnelCapacity": 1,
-            "equipmentCapacity": 1,
-            "inventory": {"aircraft_support_v1_spares": 2},
             "organizationNodeId": "org-line",
         }])
 
@@ -432,7 +429,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
         ):
             self.assertNotIn(field, periodic_task)
 
-        self.assertEqual(clean["supportNodes"][0]["inventory"], {"aircraft_support_v1_spares": 2})
+        self.assertNotIn("inventory", clean["supportNodes"][0])
         self.assertNotIn("transportPolicies", clean["supportNodes"][0])
         self.assertGreaterEqual(len(clean["supportResources"]), 3)
         for resource in clean["supportResources"]:

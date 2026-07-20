@@ -463,6 +463,7 @@ class SupportOrganizationContractTest(unittest.TestCase):
         )
         project.pop("supportOrganization", None)
         project["transportPolicies"] = []
+        project["supportResources"] = []
         for node in project["supportNodes"]:
             node.pop("organizationNodeId", None)
         for resource in project["supportResources"]:
@@ -475,6 +476,37 @@ class SupportOrganizationContractTest(unittest.TestCase):
 
         self.assertEqual(after_reload, direct)
         self.assertTrue(after_reload)
+
+    def test_no_support_data_exports_and_compiles_as_explicit_empty_graph(self) -> None:
+        project = json.loads(
+            (REPO_ROOT / "tests" / "fixtures" / "aircraft_support_v1_project.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        project["supportNodes"] = []
+        project["supportResources"] = []
+        project["transportPolicies"] = []
+        project.pop("supportOrganization", None)
+        project["modelingImportValidation"] = {
+            "usedTables": {"supportResources": False},
+            "disabledDomains": ["supportResources"],
+            "warnings": [],
+        }
+
+        saved = ProjectJsonExporter(repo_root=REPO_ROOT).export(project)
+        graph = self.adapter.compile_scenario(saved)["simulation_inputs"]["support_network"]["organization_graph"]
+
+        self.assertEqual(saved["supportOrganization"], {"tree": None, "relations": []})
+        self.assertEqual(
+            graph,
+            {
+                "nodes": [],
+                "parent_edges": [],
+                "lateral_edges": [],
+                "resource_ownership": [],
+                "transport_policies": [],
+            },
+        )
 
     def test_node_scoped_legacy_policy_uses_host_owner_and_preserves_runtime_projection(self) -> None:
         canonical = self._project()
