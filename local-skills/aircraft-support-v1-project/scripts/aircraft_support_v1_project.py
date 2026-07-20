@@ -224,12 +224,28 @@ def compile_project_json_to_aircraft_support_inputs(
     aircraft_summary = _aircraft_summary(project)
     _validate_aircraft_pre_life_thresholds(project, aircraft_summary)
     products_by_id = _products_by_id(project)
-    support_nodes = _support_nodes(project, products_by_id)
+    organization_graph = _organization_graph(project)
+    canonical_organization = organization_graph["runtime_mode"] == "vertical"
+    support_nodes = _support_nodes(
+        project,
+        products_by_id,
+        canonical_organization=canonical_organization,
+    )
+    default_activity_resource_id = _canonical_root_runtime_resource_id(
+        organization_graph,
+        support_nodes,
+    )
     support_aliases = _support_node_aliases(project)
     job_definitions = _support_activity_job_definitions(project)
     basic_missions = _list(project.get("basicMissions"))
     activities = [
-        _support_activity(activity, support_aliases, job_definitions)
+        _support_activity(
+            activity,
+            support_aliases,
+            job_definitions,
+            default_resource_id=default_activity_resource_id,
+            canonical_organization=canonical_organization,
+        )
         for activity in _list(project.get("supportActivities"))
     ]
     inputs = {
@@ -260,7 +276,10 @@ def compile_project_json_to_aircraft_support_inputs(
             "root_component_id": _root_component_id(project.get("components")),
             "components": [_component(component, products_by_id) for component in _list(project.get("components"))],
         },
-        "support_network": {"nodes": support_nodes},
+        "support_network": {
+            "nodes": support_nodes,
+            "organization_graph": organization_graph,
+        },
         "support_activities": {"activities": activities},
         "time": {
             "duration_minutes": duration_minutes,
@@ -650,6 +669,8 @@ def _validate_aircraft_pre_life_thresholds(project: dict[str, Any], summary: dic
 def _support_nodes(
     project: dict[str, Any],
     products_by_id: dict[str, dict[str, Any]],
+    *,
+    canonical_organization: bool = False,
 ) -> list[dict[str, Any]]:
     aliases = _support_node_aliases(project)
     product_names = {
@@ -665,11 +686,22 @@ def _support_nodes(
     nodes_by_name: dict[str, dict[str, Any]] = {}
     for raw in _list(project.get("supportNodes")):
         name = _support_node_name(raw)
+        has_aggregated_resources = bool(_list(project.get("supportResources"))) and not any(
+            field in raw for field in ("capacity", "personnelCapacity", "equipmentCapacity", "inventory")
+        )
+        default_capacity = 0 if canonical_organization or has_aggregated_resources else 1
         nodes_by_name[name] = {
             "id": name,
             "name": name,
-            "personnel_capacity": _positive_int(raw.get("personnelCapacity"), _positive_int(raw.get("capacity"), 1)),
-            "equipment_capacity": _positive_int(raw.get("equipmentCapacity"), _positive_int(raw.get("capacity"), 1)),
+            "organization_node_id": str(raw.get("organizationNodeId") or ""),
+            "personnel_capacity": _non_negative_int(
+                raw.get("personnelCapacity"),
+                _non_negative_int(raw.get("capacity"), default_capacity),
+            ),
+            "equipment_capacity": _non_negative_int(
+                raw.get("equipmentCapacity"),
+                _non_negative_int(raw.get("capacity"), default_capacity),
+            ),
             "inventory": {
                 product_ids_by_label.get(str(key).strip(), str(key)): copy.deepcopy(quantity)
                 for key, quantity in _dict(raw.get("inventory")).items()
@@ -689,7 +721,9 @@ def _support_nodes(
         )
         if not node_name:
             continue
-        node = nodes_by_name.setdefault(node_name, {"id": node_name, "name": node_name, "personnel_capacity": 0, "equipment_capacity": 0, "inventory": {}, "product_names": copy.deepcopy(product_names), "transport_policies": []})
+        node = nodes_by_name.setdefault(node_name, {"id": node_name, "name": node_name, "organization_node_id": "", "personnel_capacity": 0, "equipment_capacity": 0, "inventory": {}, "product_names": copy.deepcopy(product_names), "transport_policies": []})
+        if resource.get("organizationNodeId") not in (None, ""):
+            node["organization_node_id"] = str(resource["organizationNodeId"])
         quantity = _non_negative_int(resource.get("quantity"), 0)
         resource_type = str(resource.get("type") or "").lower()
         if resource_type == "personnel":
@@ -712,7 +746,108 @@ def _support_nodes(
             normalized = _transport_policy(policy, aliases, default_node=node_name)
             if node_name in nodes_by_name:
                 nodes_by_name[node_name]["transport_policies"].append(normalized)
-    return list(nodes_by_name.values()) or [{"id": "support-node", "name": "support node", "personnel_capacity": 1, "equipment_capacity": 1, "inventory": {}, "product_names": copy.deepcopy(product_names), "transport_policies": []}]
+    if not canonical_organization:
+        for node in nodes_by_name.values():
+            node["personnel_capacity"] = max(1, int(node.get("personnel_capacity", 0) or 0))
+            node["equipment_capacity"] = max(1, int(node.get("equipment_capacity", 0) or 0))
+    return list(nodes_by_name.values()) or [{"id": "support-node", "name": "support node", "organization_node_id": "", "personnel_capacity": 1, "equipment_capacity": 1, "inventory": {}, "product_names": copy.deepcopy(product_names), "transport_policies": []}]
+
+
+def _canonical_root_runtime_resource_id(
+    organization_graph: dict[str, Any],
+    support_nodes: list[dict[str, Any]],
+) -> str | None:
+    if organization_graph.get("runtime_mode") != "vertical":
+        return None
+    root_ids = [
+        str(node.get("id") or "")
+        for node in _list(organization_graph.get("nodes"))
+        if node.get("parent_id") in (None, "") and node.get("id") not in (None, "")
+    ]
+    if len(root_ids) != 1:
+        return None
+    matches = [
+        str(node.get("id") or "")
+        for node in support_nodes
+        if str(node.get("organization_node_id") or "") == root_ids[0] and node.get("id") not in (None, "")
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _organization_graph(project: dict[str, Any]) -> dict[str, Any]:
+    organization = _dict(project.get("supportOrganization"))
+    root = organization.get("tree")
+    nodes: list[dict[str, Any]] = []
+    parent_edges: list[dict[str, str]] = []
+
+    def visit(node: Any, parent_id: str | None = None) -> None:
+        if not isinstance(node, dict):
+            return
+        node_id = str(node.get("id") or "")
+        scope = _dict(node.get("serviceScope"))
+        nodes.append({
+            "id": node_id,
+            "name": str(node.get("name") or node_id),
+            "parent_id": parent_id,
+            "service_scope": {
+                "airport_ids": sorted(_unique(_list(scope.get("airportIds")))),
+                "aircraft_models": sorted(_unique(_list(scope.get("aircraftModels")))),
+                "product_ids": sorted(_unique(_list(scope.get("productIds")))),
+                "resource_types": sorted(_unique(_list(scope.get("resourceTypes")))),
+            },
+        })
+        if parent_id is not None:
+            parent_edges.append({"from_node_id": parent_id, "to_node_id": node_id})
+        for child in _list(node.get("children")):
+            visit(child, node_id)
+
+    visit(root)
+    lateral_edges = [
+        {
+            "id": str(relation.get("id") or ""),
+            "from_node_id": str(relation.get("fromOrganizationNodeId") or ""),
+            "to_node_id": str(relation.get("toOrganizationNodeId") or ""),
+            "priority": _positive_int(relation.get("priority"), 1),
+        }
+        for relation in _list(organization.get("relations"))
+        if isinstance(relation, dict)
+    ]
+    resource_ownership = [
+        {
+            "resource_id": str(resource.get("id") or ""),
+            "resource_type": str(resource.get("type") or ""),
+            "organization_node_id": str(resource.get("organizationNodeId") or ""),
+        }
+        for resource in _list(project.get("supportResources"))
+        if isinstance(resource, dict)
+    ]
+    transport_policies = [
+        {
+            "id": str(policy.get("id") or ""),
+            "from_organization_node_id": str(policy.get("fromOrganizationNodeId") or ""),
+            "to_organization_node_id": str(policy.get("toOrganizationNodeId") or ""),
+            "capacity": _positive_int(policy.get("capacity"), 1),
+            "priority": _positive_int(policy.get("priority"), 1),
+            "transport_time_hours": _non_negative_float(
+                policy.get("transportTimeHours"),
+                _non_negative_float(policy.get("transport_time_hours"), 0.0),
+            ),
+            **({"product_id": str(policy["productId"])} if policy.get("productId") not in (None, "") else {}),
+        }
+        for policy in _list(project.get("transportPolicies"))
+        if isinstance(policy, dict)
+    ]
+    return {
+        "runtime_mode": str(
+            organization.get("runtimeMode")
+            or ("vertical" if nodes else "legacy")
+        ),
+        "nodes": sorted(nodes, key=lambda item: item["id"]),
+        "parent_edges": sorted(parent_edges, key=lambda item: (item["from_node_id"], item["to_node_id"])),
+        "lateral_edges": sorted(lateral_edges, key=lambda item: item["id"]),
+        "resource_ownership": sorted(resource_ownership, key=lambda item: item["resource_id"]),
+        "transport_policies": sorted(transport_policies, key=lambda item: item["id"]),
+    }
 
 
 def _support_node_aliases(project: dict[str, Any]) -> dict[str, str]:
@@ -781,14 +916,27 @@ def _support_activity(
     activity: dict[str, Any],
     aliases: dict[str, str],
     job_definitions: dict[str, dict[str, Any]],
+    *,
+    default_resource_id: str | None = None,
+    canonical_organization: bool = False,
 ) -> dict[str, Any]:
     resource_id = str(activity.get("resourceId") or activity.get("supportNodeId") or "")
+    if not resource_id and default_resource_id:
+        resource_id = default_resource_id
+    if not resource_id and canonical_organization:
+        raise ValueError(
+            "supportActivities[].resourceId is required unless the organization root uniquely maps one runtime node"
+        )
     maintenance_plan = _maintenance_method_plan(activity)
     compiled = {
         "id": str(activity.get("id") or "support-activity"),
         "name": str(activity.get("name") or activity.get("activityName") or activity.get("id") or "support activity"),
         "activity_type": str(activity.get("activityType") or activity.get("planType") or "support activity"),
-        "resource_id": aliases.get(resource_id, resource_id) or next(iter(aliases.values()), "support-node"),
+        "resource_id": (
+            aliases.get(resource_id, resource_id)
+            if resource_id
+            else next(iter(aliases.values()), "support-node")
+        ),
         "priority": _positive_int(activity.get("priority"), 1),
         "duration_minutes": _positive_int(activity.get("durationMinutes"), _positive_int(activity.get("durationHours"), 1) * 60),
         "required_personnel": _positive_int(activity.get("requiredPersonnel"), 1),

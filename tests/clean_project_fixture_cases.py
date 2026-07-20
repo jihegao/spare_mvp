@@ -85,6 +85,7 @@ def minimal_clean_project() -> dict[str, Any]:
             }
         ],
         "supportOrganization": {
+            "runtimeMode": "vertical",
             "tree": {
                 "id": "node-a",
                 "name": "node A",

@@ -182,6 +182,17 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         self.assertEqual(compiled_activity["jobs"][0]["activityCode"], "job-1")
         self.assertEqual(compiled_activity["jobs"][0]["workName"], "Inspect pump")
 
+    def test_compiles_canonical_organization_for_vertical_runtime_dispatch(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+
+        inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        graph = inputs["support_network"]["organization_graph"]
+        self.assertEqual(graph["nodes"][0]["id"], "node-a")
+        self.assertEqual(inputs["support_network"]["nodes"][0]["organization_node_id"], "node-a")
+        self.assertEqual(graph["lateral_edges"], [])
+
     def test_compiles_canonical_pre_life_and_blocks_missing_threshold_without_legacy_hour_fallback(self) -> None:
         skill = _load_skill_module()
         project = self._project()
@@ -399,6 +410,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         project["supportNodes"][0]["organizationNodeId"] = "org-a"
         project["supportResources"][0].pop("supportNodeName", None)
         project["supportResources"][0]["organizationNodeId"] = "org-a"
+        project["supportActivities"][0]["resourceId"] = "node A"
         project["transportPolicies"] = [
             {
                 "id": "tp-canonical",

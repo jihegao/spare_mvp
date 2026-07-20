@@ -2733,6 +2733,11 @@ class BackendApiContractTest(unittest.TestCase):
                 "supportActivities[].calendarDayInterval",
                 "supportActivities[].runHourInterval",
                 "supportActivities[].takeoffLandingInterval",
+                "support_network.nodes[].organization_node_id",
+                "support_network.organization_graph.nodes[]",
+                "support_network.organization_graph.runtime_mode",
+                "support_network.organization_graph.parent_edges[]",
+                "support_network.organization_graph.transport_policies[]",
             },
         )
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])

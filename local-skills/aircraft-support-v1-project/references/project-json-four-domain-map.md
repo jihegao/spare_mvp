@@ -57,7 +57,7 @@ Interpretation:
 - Support resources add personnel, equipment, and spares to nodes; spare rows reference catalog entries with `productId`.
 - `supportOrganization.tree` is one canonical root. Parent edges derive from `children[]`; `relations[]` contains only lateral DAG edges. Each node has a complete `serviceScope`, where an empty dimension means unrestricted.
 - Support nodes and all resources declare `organizationNodeId`; top-level transport policies use organization-node endpoints. An optional `productId` limits a policy to one product; omission means the policy can carry any product.
-- Organization fields should be explained as a validated allocation graph whose runtime behavior remains deferred in #314. Node-scoped policies and name aliases are migration-only.
+- Organization fields form a validated allocation graph. `supportOrganization.runtimeMode` persists as `legacy` or `vertical` and compiles to `organization_graph.runtime_mode`; only vertical mode uses each runtime node's exact `organization_node_id`, satisfies locally first, then walks only the parent chain. Every vertical hop requires a matching product-specific or wildcard transport policy; capacity is the per-batch bound and hop times accumulate. Personnel/equipment requests reserve atomically, may split into path-capacity batches, and return to suppliers after work. A task's complete multi-product spare plan commits atomically, and arrivals remain job/task/product-specific until start. Lateral edges remain deferred to #316; node-scoped policies and name aliases are migration-only.
 
 ## 保障活动
 

@@ -28,9 +28,9 @@
           "constructor_param": "equipment_tree"
         },
         "support_network": {
-          "source": "project.supportNodes[] for the unchanged runtime support-point projection; canonical project.supportOrganization, supportNodes[].organizationNodeId, supportResources[].organizationNodeId, and project.transportPolicies[] organization endpoints compile to support_network.organization_graph",
+          "source": "project.supportNodes[] plus canonical project.supportOrganization, supportNodes[].organizationNodeId, supportResources[].organizationNodeId, and project.transportPolicies[] organization endpoints",
           "constructor_param": "support_network",
-          "runtime_deferred": "support_network.organization_graph is validated and preserved for later behavior activation; it does not change current resource selection or metrics"
+          "behavior": "organization_graph.runtime_mode is persisted from project.supportOrganization.runtimeMode. vertical uses exact organization_node_id mapping for local-first and parent-chain supply; legacy preserves support-node behavior even when a migration-derived tree is present. Missing runtime_mode falls back to vertical for a non-empty graph and legacy for an empty graph; lateral_edges remain deferred."
         },
         "support_activities": {
           "source": "project.supportActivityJobs[] definitions plus project.supportActivities[] activityCodes/predecessors DAG",

@@ -667,7 +667,17 @@ class SimulationAdapter:
         fleet_count = aircraft_summary["fleet_count"]
         initial_ready = aircraft_summary["initial_ready"]
         products_by_id = self._aircraft_support_v1_products_by_id(project)
-        support_network_nodes = self._aircraft_support_v1_support_nodes(project, products_by_id)
+        organization_graph = self._aircraft_support_v1_organization_graph(project)
+        canonical_organization = organization_graph["runtime_mode"] == "vertical"
+        support_network_nodes = self._aircraft_support_v1_support_nodes(
+            project,
+            products_by_id,
+            canonical_organization=canonical_organization,
+        )
+        default_activity_resource_id = self._canonical_root_runtime_resource_id(
+            organization_graph,
+            support_network_nodes,
+        )
         support_node_aliases = self._support_node_reference_aliases(project)
         basic_missions = copy.deepcopy(self._basic_missions(project))
         composite_tasks = copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks")))
@@ -717,7 +727,7 @@ class SimulationAdapter:
             },
             "support_network": {
                 "nodes": support_network_nodes,
-                "organization_graph": self._aircraft_support_v1_organization_graph(project),
+                "organization_graph": organization_graph,
             },
             "support_activities": {
                 "activities": [
@@ -725,6 +735,9 @@ class SimulationAdapter:
                         activity,
                         support_node_aliases,
                         self._support_activity_job_definitions(project),
+                        default_resource_id=(
+                            default_activity_resource_id if canonical_organization else None
+                        ),
                     )
                     for activity in self._dict_list(project.get("supportActivities"))
                 ],
@@ -1178,6 +1191,8 @@ class SimulationAdapter:
         self,
         project: dict[str, Any],
         products_by_id: dict[str, dict[str, Any]],
+        *,
+        canonical_organization: bool = False,
     ) -> list[dict[str, Any]]:
         raw_nodes = self._dict_list(project.get("supportNodes"))
         resources = self._dict_list(project.get("supportResources"))
@@ -1185,10 +1200,15 @@ class SimulationAdapter:
         nodes_by_name: dict[str, dict[str, Any]] = {}
 
         for raw_node in raw_nodes:
-            node = self._aircraft_support_v1_support_node(raw_node, products_by_id)
+            node = self._aircraft_support_v1_support_node(
+                raw_node,
+                products_by_id,
+                canonical_organization=canonical_organization,
+            )
             node_name = self._support_node_runtime_name(raw_node)
             node["id"] = node_name
             node["name"] = node_name
+            node["organization_node_id"] = str(raw_node.get("organizationNodeId") or "")
             if resources and not any(field in raw_node for field in ("capacity", "personnelCapacity", "equipmentCapacity", "inventory")):
                 node["personnel_capacity"] = 0
                 node["equipment_capacity"] = 0
@@ -1201,6 +1221,9 @@ class SimulationAdapter:
             if not node_name:
                 continue
             node = nodes_by_name.setdefault(node_name, self._empty_aircraft_support_v1_support_node(node_name))
+            resource_organization_node_id = str(resource.get("organizationNodeId") or "")
+            if resource_organization_node_id:
+                node["organization_node_id"] = resource_organization_node_id
             quantity = self._non_negative_int(resource.get("quantity"), self._non_negative_int(resource.get("capacity"), 0))
             resource_type = str(resource.get("type") or "").strip().lower()
             if resource_type == "personnel":
@@ -1214,9 +1237,10 @@ class SimulationAdapter:
                     product = products_by_id.get(product_id, {})
                     node["product_names"][product_id] = str(product.get("name") or resource.get("name") or product_id)
 
-        for node in nodes_by_name.values():
-            node["personnel_capacity"] = max(1, int(node.get("personnel_capacity", 0) or 0))
-            node["equipment_capacity"] = max(1, int(node.get("equipment_capacity", 0) or 0))
+        if not canonical_organization:
+            for node in nodes_by_name.values():
+                node["personnel_capacity"] = max(1, int(node.get("personnel_capacity", 0) or 0))
+                node["equipment_capacity"] = max(1, int(node.get("equipment_capacity", 0) or 0))
 
         for policy in self._project_transport_policies(project):
             normalized = self._aircraft_support_v1_transport_policy(policy, aliases, products_by_id)
@@ -1227,15 +1251,43 @@ class SimulationAdapter:
 
         return list(nodes_by_name.values())
 
+    def _canonical_root_runtime_resource_id(
+        self,
+        organization_graph: dict[str, Any],
+        support_network_nodes: list[dict[str, Any]],
+    ) -> str | None:
+        graph_nodes = self._dict_list(organization_graph.get("nodes"))
+        if not graph_nodes:
+            return None
+        root_ids = [
+            str(node.get("id") or "")
+            for node in graph_nodes
+            if node.get("parent_id") in (None, "") and str(node.get("id") or "")
+        ]
+        if len(root_ids) != 1:
+            return None
+        matches = [
+            str(node.get("id") or "")
+            for node in support_network_nodes
+            if str(node.get("organization_node_id") or "") == root_ids[0]
+            and str(node.get("id") or "")
+        ]
+        return matches[0] if len(matches) == 1 else None
+
     def _aircraft_support_v1_organization_graph(self, project: dict[str, Any]) -> dict[str, Any]:
         organization = project.get("supportOrganization") if isinstance(project.get("supportOrganization"), dict) else {}
         root = organization.get("tree")
         nodes: list[dict[str, Any]] = []
         parent_edges: list[dict[str, str]] = []
+        visited_objects: set[int] = set()
 
         def visit(node: Any, parent_id: str | None = None) -> None:
             if not isinstance(node, dict):
                 return
+            object_id = id(node)
+            if object_id in visited_objects:
+                return
+            visited_objects.add(object_id)
             node_id = str(node.get("id") or "")
             raw_scope = node.get("serviceScope") if isinstance(node.get("serviceScope"), dict) else {}
             nodes.append({
@@ -1290,6 +1342,10 @@ class SimulationAdapter:
                 item["product_id"] = product_id
             transport_policies.append(item)
         return {
+            "runtime_mode": str(
+                organization.get("runtimeMode")
+                or ("vertical" if nodes else "legacy")
+            ),
             "nodes": sorted(nodes, key=lambda item: item["id"]),
             "parent_edges": sorted(parent_edges, key=lambda item: (item["from_node_id"], item["to_node_id"])),
             "lateral_edges": sorted(lateral_edges, key=lambda item: item["id"]),
@@ -1301,6 +1357,8 @@ class SimulationAdapter:
         self,
         node: dict[str, Any],
         products_by_id: dict[str, dict[str, Any]],
+        *,
+        canonical_organization: bool = False,
     ) -> dict[str, Any]:
         product_names = {
             product_id: str(product.get("name") or product_id)
@@ -1324,14 +1382,21 @@ class SimulationAdapter:
             "airport_id": self._optional_string(node.get("airportId") or node.get("baseAirportId")) or "",
             "node_type": self._optional_string(node.get("nodeType")),
             "support_level": self._optional_string(node.get("supportLevel")),
-            "personnel_capacity": self._positive_int(node.get("personnelCapacity"), self._positive_int(node.get("capacity"), 1)),
-            "equipment_capacity": self._positive_int(node.get("equipmentCapacity"), self._positive_int(node.get("capacity"), 1)),
+            "personnel_capacity": self._positive_int(
+                node.get("personnelCapacity"),
+                self._positive_int(node.get("capacity"), 0 if canonical_organization else 1),
+            ),
+            "equipment_capacity": self._positive_int(
+                node.get("equipmentCapacity"),
+                self._positive_int(node.get("capacity"), 0 if canonical_organization else 1),
+            ),
             "inventory": inventory,
             "product_names": product_names,
             "lateral_support_nodes": self._string_list(node.get("lateralSupportNodes")),
             "transport_policies": copy.deepcopy(self._dict_list(node.get("transportPolicies"))),
             "policy": self._optional_string(node.get("policy")),
             "organization_strategy": self._optional_string(node.get("organizationStrategy")),
+            "organization_node_id": str(node.get("organizationNodeId") or ""),
         }
 
     def _empty_aircraft_support_v1_support_node(self, node_name: str) -> dict[str, Any]:
@@ -1350,6 +1415,7 @@ class SimulationAdapter:
             "transport_policies": [],
             "policy": None,
             "organization_strategy": None,
+            "organization_node_id": "",
         }
 
     def _support_node_runtime_name(self, node: dict[str, Any]) -> str:
@@ -1406,8 +1472,11 @@ class SimulationAdapter:
         activity: dict[str, Any],
         support_node_aliases: dict[str, str] | None = None,
         job_definitions: dict[str, dict[str, Any]] | None = None,
+        default_resource_id: str | None = None,
     ) -> dict[str, Any]:
         resource_id = str(activity.get("resourceId") or "")
+        if not resource_id and default_resource_id:
+            resource_id = default_resource_id
         if support_node_aliases:
             resource_id = support_node_aliases.get(resource_id, resource_id)
         maintenance_kind = self._support_activity_maintenance_kind(activity)
@@ -1608,6 +1677,7 @@ class SimulationAdapter:
                 "simulation_inputs.support_network.organization_graph.lateral_edges",
                 "simulation_inputs.support_network.organization_graph.resource_ownership",
                 "simulation_inputs.support_network.organization_graph.transport_policies",
+                "simulation_inputs.support_network.nodes[].organization_node_id",
                 "simulation_inputs.time.duration_minutes",
                 "simulation_inputs.time.requested_steps",
                 "ExperimentPlan.config.steps",
@@ -1630,7 +1700,7 @@ class SimulationAdapter:
                 "project_version",
             ],
             "runtime_deferred_fields": [
-                "simulation_inputs.support_network.organization_graph",
+                "simulation_inputs.support_network.organization_graph.lateral_edges",
             ],
             "unsupported_fields": self._aircraft_support_v1_unsupported_fields(project),
         }
@@ -1670,6 +1740,24 @@ class SimulationAdapter:
             defaults.append("ExperimentPlan.config.seed=0")
         if not self._runtime_stop_policy_sources(project, runtime_config):
             defaults.append("ExperimentPlan.config.stopPolicy=duration")
+        organization_graph = self._aircraft_support_v1_organization_graph(project)
+        if organization_graph["runtime_mode"] == "vertical":
+            support_nodes = self._aircraft_support_v1_support_nodes(
+                project,
+                self._aircraft_support_v1_products_by_id(project),
+                canonical_organization=True,
+            )
+            root_resource_id = self._canonical_root_runtime_resource_id(
+                organization_graph,
+                support_nodes,
+            )
+            if root_resource_id:
+                for index, activity in enumerate(self._dict_list(project.get("supportActivities"))):
+                    if activity.get("resourceId") in (None, ""):
+                        defaults.append(
+                            f"supportActivities[{index}].resourceId={root_resource_id}"
+                            " (unique organization root mapping)"
+                        )
         return defaults
 
     def _aircraft_support_v1_unsupported_fields(self, project: dict[str, Any]) -> list[str]:
@@ -1785,6 +1873,28 @@ class SimulationAdapter:
 
         issues.extend(self._periodic_profile_compile_issues(project))
         issues.extend(self._aircraft_pre_life_compile_issues(project))
+
+        organization_graph = self._aircraft_support_v1_organization_graph(project)
+        if organization_graph["runtime_mode"] == "vertical":
+            runtime_nodes = self._aircraft_support_v1_support_nodes(
+                project,
+                self._aircraft_support_v1_products_by_id(project),
+                canonical_organization=True,
+            )
+            default_resource_id = self._canonical_root_runtime_resource_id(
+                organization_graph,
+                runtime_nodes,
+            )
+            for activity_index, activity in enumerate(support_activities):
+                if activity.get("resourceId") in (None, "") and default_resource_id is None:
+                    issues.append(
+                        self._compile_issue(
+                            "missing_canonical_activity_resource_reference",
+                            f"supportActivities[{activity_index}].resourceId",
+                            "组织图启用时，保障活动必须显式引用保障资源；仅当组织树根节点唯一映射一个运行时保障节点时才允许确定性默认。",
+                            "保障活动建模",
+                        )
+                    )
 
         if not components:
             issues.append(
@@ -2302,6 +2412,11 @@ class SimulationAdapter:
                         "at": now,
                         "time": event.get("time"),
                         "message": event.get("message", ""),
+                        **(
+                            {"details": copy.deepcopy(event["details"])}
+                            if isinstance(event.get("details"), dict)
+                            else {}
+                        ),
                     }
                     for event in execution["events"][-40:]
                 ],

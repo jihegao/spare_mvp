@@ -121,6 +121,7 @@
   ],
   "supportOrganization": {
     "relations": [],
+    "runtimeMode": "vertical",
     "tree": {
       "children": [
         {

@@ -265,6 +265,7 @@ _SUPPORT_ACTIVITY_FIELDS = {
     "planType",
     "aircraftModel",
     "equipmentId",
+    "resourceId",
     "priority",
     "durationMinutes",
     "durationHours",
@@ -408,6 +409,13 @@ def normalize_support_organization_contract(
         raise OrganizationContractError(
             "invalid_organization_contract", "supportOrganization", "expected object; supportOrganization must be an object"
         )
+    runtime_mode = organization.get("runtimeMode")
+    if runtime_mode not in (None, "legacy", "vertical"):
+        raise OrganizationContractError(
+            "invalid_organization_runtime_mode",
+            "supportOrganization.runtimeMode",
+            "runtimeMode must be either legacy or vertical",
+        )
 
     raw_tree = organization.get("tree")
     if isinstance(raw_tree, list):
@@ -423,6 +431,7 @@ def normalize_support_organization_contract(
         raw_tree = _organization_tree_from_support_nodes(project.get("supportNodes"))
         if raw_tree:
             changes.append("supportOrganization.tree=derivedSupportNodes")
+            runtime_mode = "legacy"
     if raw_tree is None:
         if project.get("supportResources") or project.get("transportPolicies"):
             raise OrganizationContractError(
@@ -430,7 +439,11 @@ def normalize_support_organization_contract(
                 "supportOrganization.tree",
                 "organization-scoped resources or policies require one organization root",
             )
-        project["supportOrganization"] = {"tree": None, "relations": []}
+        project["supportOrganization"] = {
+            "runtimeMode": "legacy",
+            "tree": None,
+            "relations": [],
+        }
         project["transportPolicies"] = []
         changes.append("supportOrganization=emptyGraph")
         return project, changes
@@ -470,9 +483,12 @@ def normalize_support_organization_contract(
 
     _strip_organization_internal_paths(canonical_tree)
     organization = {
+        "runtimeMode": str(runtime_mode or "vertical"),
         "tree": canonical_tree,
         "relations": sorted(relations, key=lambda item: item["id"]),
     }
+    if runtime_mode is None:
+        changes.append("supportOrganization.runtimeMode=vertical")
     project["supportOrganization"] = organization
     project["transportPolicies"] = sorted(policies, key=lambda item: item["id"])
     return project, changes
@@ -2135,11 +2151,17 @@ def _validate_clean_support_activity_jobs(jobs: Any, target: str) -> None:
 def _validate_clean_support_organization(value: Any, target: str) -> None:
     if not isinstance(value, dict):
         raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization: expected object")
-    extra = sorted(field for field in value if field not in {"tree", "relations"})
+    extra = sorted(field for field in value if field not in {"runtimeMode", "tree", "relations"})
     if extra:
         raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization: unexpected field {extra[0]}")
-    if "tree" not in value or "relations" not in value:
-        raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization: tree and relations are required")
+    if "runtimeMode" not in value or "tree" not in value or "relations" not in value:
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at supportOrganization: runtimeMode, tree and relations are required"
+        )
+    if value["runtimeMode"] not in {"legacy", "vertical"}:
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at supportOrganization.runtimeMode: expected legacy or vertical"
+        )
     tree = value["tree"]
     if tree is not None:
         _validate_clean_support_organization_node(tree, "supportOrganization.tree", target)
@@ -3273,7 +3295,7 @@ def _normalize_support_activity_reference_fields(project: dict[str, Any]) -> Non
         if activity.get("activityName") in (None, ""):
             activity["activityName"] = str(activity.get("name") or activity.get("id") or "保障活动")
         activity["planType"] = _canonical_support_activity_plan_type(activity)
-        for field in ("name", "planGroupId", "resourceId", "supportNodeId", "requiredDevices", "requiredPersonnel"):
+        for field in ("name", "planGroupId", "supportNodeId", "requiredDevices", "requiredPersonnel"):
             activity.pop(field, None)
 
 
@@ -3744,7 +3766,7 @@ def _prune_support_activity_jobs(value: Any) -> None:
 
 
 def _prune_support_organization(value: dict[str, Any]) -> None:
-    _keep_fields(value, {"tree", "relations"})
+    _keep_fields(value, {"runtimeMode", "tree", "relations"})
     tree = value.get("tree")
     if isinstance(tree, dict):
         _prune_support_organization_node(tree)
