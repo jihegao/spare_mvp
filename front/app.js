@@ -305,6 +305,8 @@ const LOCKED_MODELING_CLICK_SELECTORS = [
 const LOCKED_MODELING_CHANGE_SELECTORS = [
   "[data-support-resource-import-file]",
   "[data-basic-activity-import-file]",
+  "[data-maintenance-method]",
+  "[data-maintenance-replacement-ratio]",
   "[data-basic-activity-select-all]",
   "[data-basic-activity-select]",
   "[data-basic-activity-resource-field]",
@@ -2368,6 +2370,33 @@ function bindEvents() {
     }
     if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CHANGE_SELECTORS)) {
       event.preventDefault?.();
+      return;
+    }
+
+    const maintenanceMethodInput = event.target.closest("[data-maintenance-method]");
+    if (maintenanceMethodInput) {
+      updateMaintenanceMethodSelection(
+        Number(maintenanceMethodInput.dataset.maintenanceActivityIndex),
+        maintenanceMethodInput.dataset.maintenanceMethod,
+        maintenanceMethodInput.checked
+      );
+      updatePreviewResultsThroughApiClient();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const maintenanceRatioInput = event.target.closest("[data-maintenance-replacement-ratio]");
+    if (maintenanceRatioInput) {
+      const ratio = Number(maintenanceRatioInput.value);
+      if (!Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
+        maintenanceRatioInput.setCustomValidity?.("换件比例必须在 0 到 1 之间");
+        return;
+      }
+      updateMaintenanceReplacementRatio(Number(maintenanceRatioInput.dataset.maintenanceReplacementRatio), ratio);
+      updatePreviewResultsThroughApiClient();
+      markProjectDraftChanged();
+      render();
       return;
     }
 
@@ -7246,6 +7275,8 @@ function createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, sequ
     planType: "预防性维修方案",
     activityName: `${model}新增预防性维修活动${sequence}`,
     aircraftModel: model,
+    maintenanceMethods: ["non_replacement"],
+    replacementRatio: 0,
     durationHours: 2,
     plannedDowntimeHours: 2,
     useCalendarRule: true,
@@ -8625,7 +8656,8 @@ function createDefaultCorrectiveMaintenanceActivity() {
     activityName: "默认修复性维修方案",
     equipmentId: "",
     maxRepairTimeMinutes: 60,
-    repairType: "原位维修"
+    maintenanceMethods: ["non_replacement"],
+    replacementRatio: 0
   };
   return setSupportActivityJobs(activity, [{
       activityCode: nextSupportActivityJobCode("corr_repair", []),
@@ -10995,6 +11027,76 @@ function renderOperationsSupportActivity(activePlan, activity) {
   `;
 }
 
+const MAINTENANCE_METHOD_ORDER = Object.freeze(["non_replacement", "replacement"]);
+
+function normalizedMaintenanceMethodState(activity) {
+  const methods = MAINTENANCE_METHOD_ORDER.filter((method) => (
+    Array.isArray(activity?.maintenanceMethods) && activity.maintenanceMethods.includes(method)
+  ));
+  const normalizedMethods = methods.length ? methods : ["non_replacement"];
+  const rawRatio = Number(activity?.replacementRatio);
+  const replacementRatio = normalizedMethods.length === 1
+    ? (normalizedMethods[0] === "replacement" ? 1 : 0)
+    : Number.isFinite(rawRatio) && rawRatio >= 0 && rawRatio <= 1 ? rawRatio : 0.5;
+  return { methods: normalizedMethods, replacementRatio };
+}
+
+function updateMaintenanceMethodSelection(activityIndex, method, checked) {
+  const activity = (scenario.supportActivities || [])[activityIndex];
+  if (!activity || !MAINTENANCE_METHOD_ORDER.includes(method)) return;
+  const previous = normalizedMaintenanceMethodState(activity);
+  const next = new Set(previous.methods);
+  if (checked) next.add(method);
+  else if (next.size > 1) next.delete(method);
+  const methods = MAINTENANCE_METHOD_ORDER.filter((value) => next.has(value));
+  activity.maintenanceMethods = methods;
+  if (methods.length === 1) {
+    activity.replacementRatio = methods[0] === "replacement" ? 1 : 0;
+  } else if (previous.methods.length === 1) {
+    activity.replacementRatio = 0.5;
+  } else {
+    activity.replacementRatio = previous.replacementRatio;
+  }
+  delete activity.repairType;
+}
+
+function updateMaintenanceReplacementRatio(activityIndex, value) {
+  const activity = (scenario.supportActivities || [])[activityIndex];
+  if (!activity) return;
+  const state = normalizedMaintenanceMethodState(activity);
+  if (state.methods.length !== 2) return;
+  activity.maintenanceMethods = [...state.methods];
+  activity.replacementRatio = value;
+  delete activity.repairType;
+}
+
+function renderMaintenanceMethodControls(activity, activityIndex) {
+  const { methods, replacementRatio } = normalizedMaintenanceMethodState(activity);
+  const bothSelected = methods.length === 2;
+  const lockedAttr = modelingLockDisabledAttr();
+  const methodOption = (method, label) => {
+    const checked = methods.includes(method);
+    const lastSelectedAttr = checked && methods.length === 1 ? " disabled" : lockedAttr;
+    return `<label><input type="checkbox" data-maintenance-activity-index="${activityIndex}" data-maintenance-method="${method}" ${checked ? "checked" : ""}${lastSelectedAttr}>${label}</label>`;
+  };
+  const nonReplacementRatio = Math.max(0, 1 - replacementRatio);
+  const endpointWarning = bothSelected && (replacementRatio === 0 || replacementRatio === 1)
+    ? `<div class="form-note warning" role="status">已同时选择两种维修方式，但换件比例为 ${replacementRatio === 0 ? "0%" : "100%"}；当前运行将不会抽中${replacementRatio === 0 ? "换件维修" : "原位维修"}。</div>`
+    : "";
+  return `
+    <div class="maintenance-method-editor">
+      <span>维修方式</span>
+      <span class="inline-radio-group">
+        ${methodOption("non_replacement", "原位维修")}
+        ${methodOption("replacement", "换件维修")}
+      </span>
+    </div>
+    <label>换件比例（0-1）<input type="number" min="0" max="1" step="0.01" value="${replacementRatio}" data-maintenance-replacement-ratio="${activityIndex}" ${bothSelected ? "" : "readonly"}${lockedAttr}></label>
+    <label>原位比例（自动补足）<input type="number" value="${Number(nonReplacementRatio.toFixed(6))}" readonly></label>
+    ${endpointWarning}
+  `;
+}
+
 function renderPreventiveMaintenanceActivity(activePlan, activity) {
   const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
   const ruleNumberAttrs = (enabled, attrs) => (enabled ? attrs : { ...attrs, disabled: "disabled" });
@@ -11016,6 +11118,7 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
       <div class="form-table-grid">
         ${field("方案名称", `supportActivities.${activityIndex}.activityName`)}
         ${field("计划停机小时", `supportActivities.${activityIndex}.plannedDowntimeHours`, "number", { min: "0", step: "0.1" })}
+        ${renderMaintenanceMethodControls(activity, activityIndex)}
         ${renderRuleRow({
           toggleLabel: "启动日历时间",
           togglePath: `supportActivities.${activityIndex}.useCalendarRule`,
@@ -11181,7 +11284,6 @@ function renderCorrectiveMaintenanceActivity(activity) {
   `;
   }
   const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(componentActivity));
-  const repairType = componentActivity.repairType || "原位维修";
   const mttrText = correctiveComponentMttrText(component);
   return `
     <div class="organization-layout">
@@ -11195,12 +11297,7 @@ function renderCorrectiveMaintenanceActivity(activity) {
           </div>
           <div class="form-table-grid">
             <label>MTTR<input readonly value="${htmlEscape(mttrText)}"></label>
-            <label>维修类型
-              <span class="inline-radio-group">
-                <label><input data-path="supportActivities.${activityIndex}.repairType" type="radio" name="corrective-repair-type" value="原位维修" ${repairType === "原位维修" ? "checked" : ""}${lockedAttr}>原位维修</label>
-                <label><input data-path="supportActivities.${activityIndex}.repairType" type="radio" name="corrective-repair-type" value="换件维修" ${repairType === "换件维修" ? "checked" : ""}${lockedAttr}>换件维修</label>
-              </span>
-            </label>
+            ${renderMaintenanceMethodControls(componentActivity, activityIndex)}
           </div>
           ${renderSupportActivityJobTable(componentActivity, "corr_repair")}
             </div>

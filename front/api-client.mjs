@@ -348,6 +348,7 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   delete normalized.supportResourceOverrides;
   materializeLegacySupportTables(normalized);
   normalizeSupportModelTables(normalized);
+  normalizeSupportActivityMaintenanceMethods(normalized);
   materializeSupportActivityJobApplicability(normalized);
   stripLegacySupportNodeResourceFields(normalized);
   stripSupportActivityTypoFields(normalized);
@@ -1478,6 +1479,87 @@ function normalizeSupportActivityReferenceFields(projectJson) {
     delete activity.supportNodeId;
     delete activity.requiredDevices;
     delete activity.requiredPersonnel;
+  }
+}
+
+const MAINTENANCE_METHOD_VALUES = Object.freeze(["non_replacement", "replacement"]);
+const LEGACY_REPAIR_TYPE_MIGRATIONS = Object.freeze(new Map([
+  ["原位维修", { maintenanceMethods: ["non_replacement"], replacementRatio: 0 }],
+  ["换件维修", { maintenanceMethods: ["replacement"], replacementRatio: 1 }]
+]));
+
+function isMaintenanceSupportActivity(activity) {
+  const planType = canonicalSupportActivityPlanType(activity);
+  return planType === "修复性维修方案" || planType === "预防性维修方案";
+}
+
+function normalizeSupportActivityMaintenanceMethods(projectJson) {
+  const activities = Array.isArray(projectJson?.supportActivities) ? projectJson.supportActivities : [];
+  for (const [index, activity] of activities.entries()) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    const path = `supportActivities.${index}`;
+    const hasMethods = Object.hasOwn(activity, "maintenanceMethods");
+    const hasRatio = Object.hasOwn(activity, "replacementRatio");
+    const hasLegacyRepairType = Object.hasOwn(activity, "repairType");
+    if (!isMaintenanceSupportActivity(activity)) {
+      if (hasMethods || hasRatio || hasLegacyRepairType) {
+        throw new Error(`${path}: maintenance method fields are only valid on corrective or preventive maintenance plans`);
+      }
+      continue;
+    }
+    if (hasMethods !== hasRatio) {
+      throw new Error(`${path}: maintenanceMethods and replacementRatio must appear together`);
+    }
+    let legacyMigration = null;
+    if (hasLegacyRepairType) {
+      const legacyValue = String(activity.repairType ?? "").trim();
+      legacyMigration = LEGACY_REPAIR_TYPE_MIGRATIONS.get(legacyValue) || null;
+      if (!legacyMigration) throw new Error(`${path}.repairType: unsupported legacy value “${legacyValue}”`);
+    }
+    if (!hasMethods) {
+      if (legacyMigration) {
+        activity.maintenanceMethods = [...legacyMigration.maintenanceMethods];
+        activity.replacementRatio = legacyMigration.replacementRatio;
+      } else {
+        activity.maintenanceMethods = ["non_replacement"];
+        activity.replacementRatio = 0;
+      }
+    }
+    validateSupportActivityMaintenanceMethods(activity, path);
+    if (
+      legacyMigration
+      && (
+        activity.replacementRatio !== legacyMigration.replacementRatio
+        || activity.maintenanceMethods.length !== legacyMigration.maintenanceMethods.length
+        || activity.maintenanceMethods.some((value, methodIndex) => value !== legacyMigration.maintenanceMethods[methodIndex])
+      )
+    ) {
+      throw new Error(`${path}.repairType: legacy value conflicts with canonical maintenance fields`);
+    }
+    delete activity.repairType;
+  }
+}
+
+function validateSupportActivityMaintenanceMethods(activity, path) {
+  const methods = activity.maintenanceMethods;
+  if (
+    !Array.isArray(methods)
+    || methods.length < 1
+    || methods.length > MAINTENANCE_METHOD_VALUES.length
+    || new Set(methods).size !== methods.length
+    || methods.some((method) => !MAINTENANCE_METHOD_VALUES.includes(method))
+  ) {
+    throw new Error(`${path}.maintenanceMethods: expected one or both canonical maintenance methods without duplicates`);
+  }
+  const ratio = activity.replacementRatio;
+  if (typeof ratio !== "number" || !Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
+    throw new Error(`${path}.replacementRatio: expected a finite number between 0 and 1`);
+  }
+  if (methods.length === 1 && methods[0] === "non_replacement" && ratio !== 0) {
+    throw new Error(`${path}.replacementRatio: non_replacement-only plans require 0`);
+  }
+  if (methods.length === 1 && methods[0] === "replacement" && ratio !== 1) {
+    throw new Error(`${path}.replacementRatio: replacement-only plans require 1`);
   }
 }
 

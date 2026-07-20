@@ -1002,6 +1002,83 @@ test("buildBackendProjectJson strips corrective MTTR fields from support activit
   assert.equal("repairDistribution" in projectJson.supportActivityJobs[0], false);
 });
 
+test("maintenance method fields default and round-trip only on corrective and preventive plans", () => {
+  const scenario = {
+    scenarioId: "maintenance-method-defaults",
+    supportActivities: [
+      { id: "ops", activityType: "使用保障", activityName: "使用保障" },
+      { id: "corrective", activityType: "修复性维修", activityName: "修复" },
+      { id: "preventive", activityType: "预防性维修", activityName: "预防" }
+    ]
+  };
+
+  const saved = buildBackendProjectJson(scenario, { id: scenario.scenarioId });
+  assert.equal(Object.hasOwn(saved.supportActivities[0], "maintenanceMethods"), false);
+  assert.equal(Object.hasOwn(saved.supportActivities[0], "replacementRatio"), false);
+  assert.deepEqual(saved.supportActivities[1].maintenanceMethods, ["non_replacement"]);
+  assert.equal(saved.supportActivities[1].replacementRatio, 0);
+  assert.deepEqual(saved.supportActivities[2].maintenanceMethods, ["non_replacement"]);
+  assert.equal(saved.supportActivities[2].replacementRatio, 0);
+
+  const savedAgain = buildBackendProjectJson(normalizeProjectJsonForClientDraft(saved), { id: scenario.scenarioId });
+  assert.deepEqual(savedAgain.supportActivities, saved.supportActivities);
+});
+
+test("legacy scalar repairType migrates exactly and unknown values fail closed", () => {
+  const migrated = normalizeProjectJsonForClientDraft({
+    scenarioId: "legacy-maintenance-methods",
+    supportActivities: [
+      { id: "corrective", activityType: "修复性维修", repairType: "原位维修" },
+      { id: "preventive", activityType: "预防性维修", repairType: "换件维修" }
+    ]
+  });
+
+  assert.deepEqual(migrated.supportActivities[0].maintenanceMethods, ["non_replacement"]);
+  assert.equal(migrated.supportActivities[0].replacementRatio, 0);
+  assert.deepEqual(migrated.supportActivities[1].maintenanceMethods, ["replacement"]);
+  assert.equal(migrated.supportActivities[1].replacementRatio, 1);
+  assert.equal(Object.hasOwn(migrated.supportActivities[0], "repairType"), false);
+  assert.equal(Object.hasOwn(migrated.supportActivities[1], "repairType"), false);
+
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft({
+      scenarioId: "unknown-legacy-maintenance-method",
+      supportActivities: [{ id: "corrective", activityType: "修复性维修", repairType: "返厂维修" }]
+    }),
+    /repairType: unsupported legacy value/
+  );
+});
+
+test("maintenance method canonical fields reject partial, invalid, and inconsistent values", () => {
+  const normalizeActivity = (activity) => normalizeProjectJsonForClientDraft({
+    scenarioId: "invalid-maintenance-methods",
+    supportActivities: [{ id: "corrective", activityType: "修复性维修", ...activity }]
+  });
+
+  assert.throws(() => normalizeActivity({ maintenanceMethods: ["replacement"] }), /must appear together/);
+  assert.throws(() => normalizeActivity({ replacementRatio: 0.5 }), /must appear together/);
+  assert.throws(
+    () => normalizeActivity({ maintenanceMethods: ["repair"], replacementRatio: 0.5 }),
+    /canonical maintenance methods/
+  );
+  assert.throws(
+    () => normalizeActivity({ maintenanceMethods: ["replacement", "replacement"], replacementRatio: 1 }),
+    /canonical maintenance methods/
+  );
+  assert.throws(
+    () => normalizeActivity({ maintenanceMethods: ["non_replacement"], replacementRatio: 0.5 }),
+    /non_replacement-only plans require 0/
+  );
+  assert.throws(
+    () => normalizeActivity({ maintenanceMethods: ["replacement"], replacementRatio: 0 }),
+    /replacement-only plans require 1/
+  );
+  assert.throws(
+    () => normalizeActivity({ maintenanceMethods: ["non_replacement", "replacement"], replacementRatio: 1.1 }),
+    /finite number between 0 and 1/
+  );
+});
+
 test("buildBackendProjectJson persists shared reliability parameters on products and keeps component projections compatible", () => {
   const projectJson = buildBackendProjectJson({
     schema_version: "project-v0",

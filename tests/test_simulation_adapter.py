@@ -705,6 +705,43 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual([job["activityCode"] for job in compiled_jobs], activity["activityCodes"])
         self.assertEqual(compiled_jobs[1]["predecessors"], activity["predecessors"][compiled_jobs[1]["activityCode"]])
 
+    def test_aircraft_support_v1_compiles_maintenance_policy_scope_and_provenance(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        activity = project["supportActivities"][0]
+        activity["aircraftModel"] = "J-15"
+        activity["maintenanceMethods"] = ["non_replacement", "replacement"]
+        activity["replacementRatio"] = 0.37
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        compiled = scenario["simulation_inputs"]["support_activities"]["activities"][0]
+        self.assertEqual(compiled["aircraft_model"], "J-15")
+        self.assertEqual(compiled["equipment_id"], "")
+        self.assertEqual(compiled["maintenance_methods"], ["non_replacement", "replacement"])
+        self.assertEqual(compiled["replacement_ratio"], 0.37)
+        self.assertNotIn("maintenanceMethods", compiled)
+        self.assertNotIn("replacementRatio", compiled)
+        consumed = scenario["compiled_from"]["mapping_provenance"]["consumed_fields"]
+        self.assertIn("supportActivities[].aircraftModel", consumed)
+        self.assertIn("supportActivities[].equipmentId", consumed)
+        self.assertIn("supportActivities[].maintenanceMethods", consumed)
+        self.assertIn("supportActivities[].replacementRatio", consumed)
+        derived = scenario["compiled_from"]["mapping_provenance"]["derived_fields"]
+        self.assertIn("simulation_inputs.support_activities.activities[].aircraft_model", derived)
+        self.assertIn("simulation_inputs.support_activities.activities[].equipment_id", derived)
+        self.assertIn("simulation_inputs.support_activities.activities[].maintenance_methods", derived)
+        self.assertIn("simulation_inputs.support_activities.activities[].replacement_ratio", derived)
+        input_schema = json.loads(
+            (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
+        )
+        jsonschema.validate(instance=scenario["simulation_inputs"], schema=input_schema)
+
+        invalid_inputs = copy.deepcopy(scenario["simulation_inputs"])
+        invalid_inputs["support_activities"]["activities"][0]["maintenance_methods"] = ["replacement"]
+        invalid_inputs["support_activities"]["activities"][0]["replacement_ratio"] = 0.37
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(instance=invalid_inputs, schema=input_schema)
+
     def test_aircraft_support_v1_compile_gate_blocks_missing_support_activity_job_reference(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         activity = project["supportActivities"][0]
@@ -1034,8 +1071,12 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("transportPolicies[]", scope["behavior_driving_fields"])
         self.assertIn("supportResources[].quantity", scope["behavior_driving_fields"])
         self.assertIn("supportActivityJobs[]", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].aircraftModel", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].equipmentId", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].activityCodes", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].predecessors", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].maintenanceMethods", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].replacementRatio", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
         self.assertEqual(scope["fail_closed_fields"], [])
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
@@ -1568,6 +1609,11 @@ class SimulationAdapterTest(unittest.TestCase):
             activity.pop("takeoffLandingInterval", None)
             activity["requiredPersonnel"] = 1
             activity["requiredDevices"] = 1
+            activity_type = f"{activity.get('activityType', '')} {activity.get('planType', '')}"
+            if "修复" in activity_type:
+                activity["equipmentId"] = target_lru["id"]
+                activity["maintenanceMethods"] = ["replacement"]
+                activity["replacementRatio"] = 1
         for job in project["supportActivityJobs"]:
             job["durationMinutes"] = 1
             job["requiredPersonnel"] = 1

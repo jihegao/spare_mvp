@@ -646,6 +646,7 @@ def _support_activity(
     job_definitions: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     resource_id = str(activity.get("resourceId") or activity.get("supportNodeId") or "")
+    maintenance_plan = _maintenance_method_plan(activity)
     compiled = {
         "id": str(activity.get("id") or "support-activity"),
         "name": str(activity.get("name") or activity.get("activityName") or activity.get("id") or "support activity"),
@@ -660,9 +661,73 @@ def _support_activity(
         "runHourInterval": activity.get("runHourInterval"),
         "takeoffLandingInterval": activity.get("takeoffLandingInterval"),
         "floatRatio": activity.get("floatRatio"),
+        "aircraft_model": str(activity.get("aircraftModel") or ""),
+        "equipment_id": str(activity.get("equipmentId") or ""),
         "jobs": [_support_job(job, activity) for job in _activity_jobs(activity, job_definitions)],
     }
+    if maintenance_plan is not None:
+        maintenance_methods, replacement_ratio = maintenance_plan
+        compiled.update(
+            {
+                "maintenance_methods": maintenance_methods,
+                "replacement_ratio": replacement_ratio,
+                "maintenance_plan_source": {
+                    "activity_id": str(activity.get("id") or "support-activity"),
+                    "aircraft_model": str(activity.get("aircraftModel") or ""),
+                    "equipment_id": str(activity.get("equipmentId") or ""),
+                },
+            }
+        )
     return compiled
+
+
+def _maintenance_method_plan(activity: dict[str, Any]) -> tuple[list[str], float] | None:
+    text = f"{activity.get('id', '')} {activity.get('name', '')} {activity.get('activityType', '')} {activity.get('planType', '')}".lower()
+    is_maintenance = any(token in text for token in ("corrective", "preventive", "repair", "维修", "修复", "预防", "定检"))
+    has_methods = "maintenanceMethods" in activity
+    has_ratio = "replacementRatio" in activity
+    has_legacy = "repairType" in activity
+    if not is_maintenance:
+        if has_methods or has_ratio or has_legacy:
+            raise ValueError("maintenance method fields are only valid on corrective or preventive activities")
+        return None
+    if has_methods != has_ratio:
+        raise ValueError("maintenanceMethods and replacementRatio must appear together")
+    legacy = {
+        "原位维修": (["non_replacement"], 0.0),
+        "换件维修": (["replacement"], 1.0),
+    }
+    if has_legacy:
+        legacy_value = str(activity.get("repairType") or "").strip()
+        if legacy_value not in legacy:
+            raise ValueError(f"unsupported legacy repairType: {legacy_value}")
+        legacy_methods, legacy_ratio = legacy[legacy_value]
+        if not has_methods:
+            methods, ratio = legacy_methods, legacy_ratio
+        else:
+            methods, ratio = activity.get("maintenanceMethods"), activity.get("replacementRatio")
+            if methods != legacy_methods or ratio != legacy_ratio:
+                raise ValueError("legacy repairType conflicts with canonical maintenance fields")
+    elif not has_methods:
+        methods, ratio = ["non_replacement"], 0.0
+    else:
+        methods, ratio = activity.get("maintenanceMethods"), activity.get("replacementRatio")
+    allowed = {"non_replacement", "replacement"}
+    if (
+        not isinstance(methods, list)
+        or not 1 <= len(methods) <= 2
+        or any(not isinstance(method, str) or method not in allowed for method in methods)
+        or len(set(methods)) != len(methods)
+    ):
+        raise ValueError("maintenanceMethods must contain one or both canonical values without duplicates")
+    if isinstance(ratio, bool) or not isinstance(ratio, (int, float)) or not math.isfinite(float(ratio)) or not 0 <= float(ratio) <= 1:
+        raise ValueError("replacementRatio must be a finite number between 0 and 1")
+    normalized_ratio = float(ratio)
+    if methods == ["non_replacement"] and normalized_ratio != 0:
+        raise ValueError("non_replacement-only activities require replacementRatio 0")
+    if methods == ["replacement"] and normalized_ratio != 1:
+        raise ValueError("replacement-only activities require replacementRatio 1")
+    return list(methods), normalized_ratio
 
 
 def _support_activity_job_definitions(project: dict[str, Any]) -> dict[str, dict[str, Any]]:

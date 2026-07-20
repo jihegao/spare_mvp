@@ -428,12 +428,44 @@
         "runHourInterval": { "type": ["number", "null"], "minimum": 0 },
         "takeoffLandingInterval": { "type": ["integer", "null"], "minimum": 0 },
         "floatRatio": { "type": ["number", "null"] },
+        "maintenanceMethods": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["non_replacement", "replacement"] }
+        },
+        "replacementRatio": { "type": "number", "minimum": 0, "maximum": 1 },
         "activityCodes": { "type": "array", "items": { "type": "string" } },
         "predecessors": {
           "type": "object",
           "additionalProperties": { "type": "array", "items": { "type": "string" } }
         }
-      }
+      },
+      "dependentRequired": {
+        "maintenanceMethods": ["replacementRatio"],
+        "replacementRatio": ["maintenanceMethods"]
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["maintenanceMethods"],
+            "properties": {
+              "maintenanceMethods": { "const": ["non_replacement"] }
+            }
+          },
+          "then": { "properties": { "replacementRatio": { "const": 0 } } }
+        },
+        {
+          "if": {
+            "required": ["maintenanceMethods"],
+            "properties": {
+              "maintenanceMethods": { "const": ["replacement"] }
+            }
+          },
+          "then": { "properties": { "replacementRatio": { "const": 1 } } }
+        }
+      ]
     },
     "supportActivityJob": {
       "type": "object",

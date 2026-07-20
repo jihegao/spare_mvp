@@ -25,8 +25,12 @@
           "supportResources[].supportNodeName",
           "transportPolicies[]",
           "supportActivityJobs[]",
+          "supportActivities[].aircraftModel",
+          "supportActivities[].equipmentId",
           "supportActivities[].activityCodes",
           "supportActivities[].predecessors",
+          "supportActivities[].maintenanceMethods",
+          "supportActivities[].replacementRatio",
           "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
           "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
           "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
@@ -43,6 +47,10 @@
         "derived_fields": [
           "simulation_inputs.project_identity",
           "simulation_inputs.aircraft.initial_ready",
+          "simulation_inputs.support_activities.activities[].aircraft_model",
+          "simulation_inputs.support_activities.activities[].equipment_id",
+          "simulation_inputs.support_activities.activities[].maintenance_methods",
+          "simulation_inputs.support_activities.activities[].replacement_ratio",
           "simulation_inputs.time.duration_minutes",
           "simulation_inputs.time.requested_steps",
           "ExperimentPlan.config.steps"
@@ -657,6 +665,7 @@
         "activities": [
           {
             "activity_type": "飞行前保障",
+            "aircraft_model": "",
             "calendarDayInterval": null,
             "duration_minutes": 60,
             "equipment_id": "j15-avionics",
@@ -736,6 +745,7 @@
           },
           {
             "activity_type": "修复性维修",
+            "aircraft_model": "",
             "calendarDayInterval": null,
             "duration_minutes": 180,
             "equipment_id": "j15-avionics",
@@ -815,8 +825,12 @@
                 "workName": "换件维修"
               }
             ],
+            "maintenance_methods": [
+              "non_replacement"
+            ],
             "name": "航电模块故障修复方案",
             "priority": 1,
+            "replacement_ratio": 0.0,
             "required_devices": 1,
             "required_personnel": 1,
             "resource_id": "",
@@ -826,6 +840,7 @@
           },
           {
             "activity_type": "预防性维修",
+            "aircraft_model": "",
             "calendarDayInterval": 1,
             "duration_minutes": 120,
             "equipment_id": "j35-hydraulic",
@@ -900,8 +915,12 @@
                 "workName": "液压系统检查"
               }
             ],
+            "maintenance_methods": [
+              "non_replacement"
+            ],
             "name": "8小时舰载机定检",
             "priority": 2,
+            "replacement_ratio": 0.0,
             "required_devices": 1,
             "required_personnel": 1,
             "resource_id": "",
@@ -911,6 +930,7 @@
           },
           {
             "activity_type": "后勤保障",
+            "aircraft_model": "",
             "calendarDayInterval": null,
             "duration_minutes": 120,
             "equipment_id": "j15-engine",
@@ -928,6 +948,7 @@
           },
           {
             "activity_type": "使用保障",
+            "aircraft_model": "J-15",
             "calendarDayInterval": null,
             "duration_minutes": 60,
             "equipment_id": "j15-engine",
@@ -967,6 +988,7 @@
           },
           {
             "activity_type": "使用保障",
+            "aircraft_model": "J-15",
             "calendarDayInterval": null,
             "duration_minutes": 60,
             "equipment_id": "j15-engine",
@@ -1836,6 +1858,9 @@
             "durationHours": 3,
             "equipmentId": "j15-avionics",
             "id": "corrective",
+            "maintenanceMethods": [
+              "non_replacement"
+            ],
             "planType": "修复性维修方案",
             "predecessors": {
               "REP-001": [],
@@ -1844,6 +1869,7 @@
               ]
             },
             "priority": 1,
+            "replacementRatio": 0.0,
             "spareQuantity": 1
           },
           {
@@ -1857,6 +1883,9 @@
             "durationHours": 2,
             "equipmentId": "j35-hydraulic",
             "id": "preventive",
+            "maintenanceMethods": [
+              "non_replacement"
+            ],
             "planType": "预防性维修方案",
             "plannedDowntimeHours": 2,
             "predecessors": {
@@ -1866,6 +1895,7 @@
               ]
             },
             "priority": 2,
+            "replacementRatio": 0.0,
             "runHourInterval": 8,
             "spareQuantity": 1,
             "takeoffLandingInterval": 6
@@ -3036,6 +3066,9 @@
           "durationHours": 3,
           "equipmentId": "j15-avionics",
           "id": "corrective",
+          "maintenanceMethods": [
+            "non_replacement"
+          ],
           "planType": "修复性维修方案",
           "predecessors": {
             "REP-001": [],
@@ -3044,6 +3077,7 @@
             ]
           },
           "priority": 1,
+          "replacementRatio": 0.0,
           "spareQuantity": 1
         },
         {
@@ -3057,6 +3091,9 @@
           "durationHours": 2,
           "equipmentId": "j35-hydraulic",
           "id": "preventive",
+          "maintenanceMethods": [
+            "non_replacement"
+          ],
           "planType": "预防性维修方案",
           "plannedDowntimeHours": 2,
           "predecessors": {
@@ -3066,6 +3103,7 @@
             ]
           },
           "priority": 2,
+          "replacementRatio": 0.0,
           "runHourInterval": 8,
           "spareQuantity": 1,
           "takeoffLandingInterval": 6
@@ -4250,6 +4288,9 @@
         "durationHours": 3,
         "equipmentId": "j15-avionics",
         "id": "corrective",
+        "maintenanceMethods": [
+          "non_replacement"
+        ],
         "planType": "修复性维修方案",
         "predecessors": {
           "REP-001": [],
@@ -4258,6 +4299,7 @@
           ]
         },
         "priority": 1,
+        "replacementRatio": 0.0,
         "spareQuantity": 1
       },
       {
@@ -4271,6 +4313,9 @@
         "durationHours": 2,
         "equipmentId": "j35-hydraulic",
         "id": "preventive",
+        "maintenanceMethods": [
+          "non_replacement"
+        ],
         "planType": "预防性维修方案",
         "plannedDowntimeHours": 2,
         "predecessors": {
@@ -4280,6 +4325,7 @@
           ]
         },
         "priority": 2,
+        "replacementRatio": 0.0,
         "runHourInterval": 8,
         "spareQuantity": 1,
         "takeoffLandingInterval": 6

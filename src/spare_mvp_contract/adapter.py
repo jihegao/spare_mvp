@@ -1158,10 +1158,11 @@ class SimulationAdapter:
         resource_id = str(activity.get("resourceId") or "")
         if support_node_aliases:
             resource_id = support_node_aliases.get(resource_id, resource_id)
-        return {
+        compiled = {
             "id": str(activity.get("id") or "support-activity"),
             "name": str(activity.get("name") or activity.get("activityName") or activity.get("id") or "support activity"),
             "activity_type": str(activity.get("activityType") or activity.get("planType") or "support activity"),
+            "aircraft_model": str(activity.get("aircraftModel") or ""),
             "equipment_id": str(activity.get("equipmentId") or ""),
             "resource_id": resource_id,
             "priority": self._positive_int(activity.get("priority"), 1),
@@ -1178,6 +1179,44 @@ class SimulationAdapter:
             "floatRatio": activity.get("floatRatio"),
             "jobs": self._support_activity_jobs_for_activity(activity, job_definitions or {}),
         }
+        if self._support_activity_maintenance_kind(activity):
+            methods, replacement_ratio = self._support_activity_maintenance_policy(activity)
+            compiled["maintenance_methods"] = methods
+            compiled["replacement_ratio"] = replacement_ratio
+        return compiled
+
+    def _support_activity_maintenance_kind(self, activity: dict[str, Any]) -> str:
+        text = " ".join(
+            str(activity.get(field) or "")
+            for field in ("id", "name", "activityName", "activityType", "planType")
+        ).lower()
+        if "preventive" in text or "预防" in text or "定检" in text:
+            return "preventive"
+        if "corrective" in text or "repair" in text or "维修" in text or "修复" in text:
+            return "repair"
+        return ""
+
+    def _support_activity_maintenance_policy(self, activity: dict[str, Any]) -> tuple[list[str], float]:
+        allowed = {"non_replacement", "replacement"}
+        methods = [
+            str(value)
+            for value in activity.get("maintenanceMethods", [])
+            if str(value) in allowed
+        ] if isinstance(activity.get("maintenanceMethods"), list) else []
+        methods = list(dict.fromkeys(methods))
+
+        # Legacy payload migration is owned by the clean Project exporter.  The
+        # runtime adapter only consumes canonical values; a missing policy keeps
+        # the contract default for both corrective and preventive maintenance.
+        if not methods:
+            methods = ["non_replacement"]
+
+        if methods == ["replacement"]:
+            return methods, 1.0
+        if "replacement" not in methods:
+            return methods, 0.0
+        ratio = self._non_negative_float(activity.get("replacementRatio"), 0.0)
+        return methods, min(1.0, ratio)
 
     def _support_activity_job_definitions(self, project: dict[str, Any]) -> dict[str, dict[str, Any]]:
         definitions: dict[str, dict[str, Any]] = {}
@@ -1285,8 +1324,12 @@ class SimulationAdapter:
                 "supportResources[].supportNodeName",
                 "transportPolicies[]",
                 "supportActivityJobs[]",
+                "supportActivities[].aircraftModel",
+                "supportActivities[].equipmentId",
                 "supportActivities[].activityCodes",
                 "supportActivities[].predecessors",
+                "supportActivities[].maintenanceMethods",
+                "supportActivities[].replacementRatio",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
@@ -1298,6 +1341,10 @@ class SimulationAdapter:
             "derived_fields": [
                 "simulation_inputs.project_identity",
                 "simulation_inputs.aircraft.initial_ready",
+                "simulation_inputs.support_activities.activities[].aircraft_model",
+                "simulation_inputs.support_activities.activities[].equipment_id",
+                "simulation_inputs.support_activities.activities[].maintenance_methods",
+                "simulation_inputs.support_activities.activities[].replacement_ratio",
                 "simulation_inputs.time.duration_minutes",
                 "simulation_inputs.time.requested_steps",
                 "ExperimentPlan.config.steps",

@@ -4930,6 +4930,8 @@ test("corrective maintenance view uses selected component activities and MTTR", 
       planType: "修复性维修方案",
       activityName: "部件A修复性维修方案",
       equipmentId: "component-a",
+      maintenanceMethods: ["non_replacement"],
+      replacementRatio: 0,
       activityCodes: ["CM-A"],
       predecessors: { "CM-A": [] }
     },
@@ -4939,6 +4941,8 @@ test("corrective maintenance view uses selected component activities and MTTR", 
       planType: "修复性维修方案",
       activityName: "部件B修复性维修方案",
       equipmentId: "component-b",
+      maintenanceMethods: ["non_replacement"],
+      replacementRatio: 0,
       activityCodes: ["CM-B"],
       predecessors: { "CM-B": [] }
     }
@@ -4977,12 +4981,96 @@ test("corrective maintenance view uses selected component activities and MTTR", 
     assert.match(runtime.appNode.innerHTML, /部件A既有修复作业/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件B既有修复作业/);
     assert.match(runtime.appNode.innerHTML, /固定值 42 min/);
+    assert.match(runtime.appNode.innerHTML, /data-maintenance-method="non_replacement" checked disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-maintenance-method="replacement"/);
+    assert.match(runtime.appNode.innerHTML, /data-maintenance-replacement-ratio="1" readonly/);
+
+    await runtime.change(
+      "[data-maintenance-method]",
+      { maintenanceActivityIndex: "1", maintenanceMethod: "replacement" },
+      { checked: true, type: "checkbox" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-maintenance-replacement-ratio="1"[^>]*value="0.5"|value="0.5"[^>]*data-maintenance-replacement-ratio="1"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-maintenance-replacement-ratio="1"[^>]*readonly/);
+
+    await runtime.change(
+      "[data-maintenance-replacement-ratio]",
+      { maintenanceReplacementRatio: "1" },
+      { value: "0", type: "number" }
+    );
+    assert.match(runtime.appNode.innerHTML, /换件比例为 0%/);
+    await runtime.change(
+      "[data-maintenance-replacement-ratio]",
+      { maintenanceReplacementRatio: "1" },
+      { value: "1", type: "number" }
+    );
+    assert.match(runtime.appNode.innerHTML, /换件比例为 100%/);
+
+    await runtime.change(
+      "[data-maintenance-method]",
+      { maintenanceActivityIndex: "1", maintenanceMethod: "non_replacement" },
+      { checked: false, type: "checkbox" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-maintenance-method="replacement" checked disabled/);
+    await runtime.change(
+      "[data-maintenance-method]",
+      { maintenanceActivityIndex: "1", maintenanceMethod: "replacement" },
+      { checked: false, type: "checkbox" }
+    );
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => (
+      body.supportActivities?.[1]?.maintenanceMethods?.join(",") === "replacement"
+      && body.supportActivities?.[1]?.replacementRatio === 1
+    ), "expected canonical maintenance method fields to persist");
+    assert.equal(saved.supportActivities[1].repairType, undefined);
 
     await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-b" });
     assert.match(runtime.appNode.innerHTML, /部件B既有修复作业/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件A既有修复作业/);
     assert.match(runtime.appNode.innerHTML, /固定值 66 min/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /999/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("preventive maintenance view edits the same canonical maintenance method pair", async () => {
+  const projectId = "project-preventive-method-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivities.push({
+    id: "preventive-j15",
+    activityType: "预防性维修",
+    planType: "预防性维修方案",
+    activityName: "J-15定检方案",
+    aircraftModel: "J-15",
+    maintenanceMethods: ["non_replacement", "replacement"],
+    replacementRatio: 0.25,
+    activityCodes: [],
+    predecessors: {}
+  });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "预防性维修方式运行时项目")]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-preventive-maintenance-activity");
+    await runtime.click("[data-select-preventive-activity-plan]", { selectPreventiveActivityPlan: "supportActivity:1" });
+    assert.match(runtime.appNode.innerHTML, /J-15定检方案/);
+    assert.match(runtime.appNode.innerHTML, /value="0.25"[^>]*data-maintenance-replacement-ratio="1"/);
+    assert.match(runtime.appNode.innerHTML, /原位比例（自动补足）<input type="number" value="0.75" readonly>/);
+
+    await runtime.change(
+      "[data-maintenance-replacement-ratio]",
+      { maintenanceReplacementRatio: "1" },
+      { value: "0.4", type: "number" }
+    );
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => (
+      body.supportActivities?.[1]?.replacementRatio === 0.4
+    ), "expected preventive maintenance ratio to persist");
+    assert.deepEqual(saved.supportActivities[1].maintenanceMethods, ["non_replacement", "replacement"]);
   } finally {
     runtime.restore();
   }

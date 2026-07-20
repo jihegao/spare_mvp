@@ -1060,6 +1060,10 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
     def test_lru_repair_uses_product_id_and_preserves_product_display_name(self) -> None:
         inputs = _minimal_inputs()
+        inputs["support_activities"]["activities"][1].update({
+            "maintenance_methods": ["replacement"],
+            "replacement_ratio": 1.0,
+        })
         inputs["aircraft"]["fleet_count"] = 1
         inputs["aircraft"]["initial_ready"] = 1
         inputs["equipment_tree"]["components"] = [
@@ -1092,6 +1096,10 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
     def test_non_lru_repair_does_not_auto_create_spare_requirement(self) -> None:
         inputs = _minimal_inputs()
+        inputs["support_activities"]["activities"][1].update({
+            "maintenance_methods": ["replacement"],
+            "replacement_ratio": 1.0,
+        })
         inputs["aircraft"]["fleet_count"] = 1
         inputs["aircraft"]["initial_ready"] = 1
         inputs["equipment_tree"]["components"] = [
@@ -1113,6 +1121,219 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         repair_job = next(job for job in model.jobs if job.kind == "repair")
         self.assertNotIn("spare", repair_job.tasks[-1])
+
+    def test_maintenance_activity_selection_uses_exact_component_and_aircraft_scope(self) -> None:
+        scoped_activities = [
+            {
+                "id": "repair-j35-radar", "name": "repair", "activity_type": "corrective",
+                "aircraft_model": "J-35", "equipment_id": "radar", "resource_id": "deck", "jobs": [],
+            },
+            {
+                "id": "repair-j15-engine", "name": "repair", "activity_type": "corrective",
+                "aircraft_model": "J-15", "equipment_id": "engine", "resource_id": "deck", "jobs": [],
+            },
+            {
+                "id": "repair-j15-radar", "name": "repair", "activity_type": "corrective",
+                "aircraft_model": "J-15", "equipment_id": "radar", "resource_id": "deck", "jobs": [],
+            },
+        ]
+        for activities in (scoped_activities, list(reversed(scoped_activities))):
+            with self.subTest(order=[activity["id"] for activity in activities]):
+                inputs = _minimal_inputs()
+                inputs["equipment_tree"]["components"] = [
+                    _runtime_component("radar", "aircraft", "Radar", 0.1, aircraft_model="J-15"),
+                    _runtime_component("engine", "aircraft", "Engine", 0.1, aircraft_model="J-15"),
+                ]
+                inputs["support_activities"]["activities"] = activities
+                model = AircraftSupportV1Model(inputs)
+
+                selected = model._select_activity(
+                    "repair",
+                    aircraft=model.aircraft[0],
+                    component=model._component_by_id("radar"),
+                )
+
+                self.assertEqual(selected["id"], "repair-j15-radar")
+
+    def test_preventive_activity_selection_uses_exact_aircraft_scope_independent_of_order(self) -> None:
+        scoped_activities = [
+            {
+                "id": "preventive-j35", "name": "preventive", "activity_type": "preventive",
+                "aircraft_model": "J-35", "resource_id": "deck", "calendarDayInterval": 1, "jobs": [],
+            },
+            {
+                "id": "preventive-j15", "name": "preventive", "activity_type": "preventive",
+                "aircraft_model": "J-15", "resource_id": "deck", "calendarDayInterval": 1, "jobs": [],
+            },
+        ]
+        for activities in (scoped_activities, list(reversed(scoped_activities))):
+            with self.subTest(order=[activity["id"] for activity in activities]):
+                inputs = _minimal_inputs()
+                inputs["support_activities"]["activities"] = activities
+                model = AircraftSupportV1Model(inputs)
+
+                selected = model._select_activity("preventive", aircraft=model.aircraft[0])
+
+                self.assertEqual(selected["id"], "preventive-j15")
+
+    def test_replacement_consumes_all_explicit_spares_without_lru_overwrite(self) -> None:
+        for kind, activity_index in (("repair", 1), ("preventive", 3)):
+            with self.subTest(kind=kind):
+                inputs = _minimal_inputs()
+                activity = inputs["support_activities"]["activities"][activity_index]
+                activity["maintenance_methods"] = ["replacement"]
+                activity["replacement_ratio"] = 1.0
+                explicit_spares = [
+                    {"product_id": "product-a", "quantity": 2},
+                    {"product_id": "product-b", "quantity": 3},
+                ]
+                activity["jobs"] = [{"activityCode": "replace", "durationMinutes": 1, "spare": explicit_spares}]
+                inputs["support_network"]["nodes"][0]["inventory"] = {"product-a": 5, "product-b": 7, "failed-lru": 9}
+                model = AircraftSupportV1Model(inputs)
+                component = _runtime_component("failed", "aircraft", "Failed LRU", 0.1, product_id="failed-lru")
+
+                model._create_job(
+                    model.aircraft[0],
+                    model.activities[activity_index],
+                    kind=kind,
+                    component=component if kind == "repair" else None,
+                )
+                job = model.jobs[-1]
+                model._consume_task_spare(job, job.tasks[0])
+
+                self.assertEqual(job.maintenance_method, "replacement")
+                self.assertEqual(job.tasks[0]["spare"], explicit_spares)
+                self.assertEqual(model.nodes["deck"]["inventory"]["product-a"], 3)
+                self.assertEqual(model.nodes["deck"]["inventory"]["product-b"], 4)
+                self.assertEqual(model.nodes["deck"]["inventory"]["failed-lru"], 9)
+                self.assertEqual(model.spare_consumed_total, 5)
+
+    def test_non_replacement_does_not_gate_or_consume_explicit_spares(self) -> None:
+        inputs = _minimal_inputs()
+        activity = inputs["support_activities"]["activities"][1]
+        activity["maintenance_methods"] = ["non_replacement"]
+        activity["replacement_ratio"] = 0.0
+        activity["jobs"] = [{
+            "activityCode": "repair", "durationMinutes": 1,
+            "spare": [{"product_id": "missing-spare", "quantity": 4}],
+        }]
+        model = AircraftSupportV1Model(inputs)
+
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+        model._start_waiting_jobs()
+        model._consume_task_spare(job, job.tasks[0])
+
+        self.assertEqual(job.maintenance_method, "non_replacement")
+        self.assertEqual(job.state, "running")
+        self.assertEqual(model.spare_consumed_total, 0)
+        self.assertFalse(any(event["event"] == "spare_shortage" for event in model.event_log))
+
+    def test_replacement_plural_spares_flow_through_shortage_transport_and_consumption(self) -> None:
+        inputs = _minimal_inputs()
+        activity = inputs["support_activities"]["activities"][1]
+        activity["maintenance_methods"] = ["replacement"]
+        activity["replacement_ratio"] = 1.0
+        activity["jobs"] = [{
+            "activityCode": "replace", "durationMinutes": 1,
+            "spare": [
+                {"product_id": "product-a", "quantity": 2},
+                {"product_id": "product-b", "quantity": 3},
+            ],
+        }]
+        deck = inputs["support_network"]["nodes"][0]
+        deck["inventory"] = {"product-a": 0, "product-b": 0}
+        deck["transport_policies"] = [
+            {"from": "stock", "to": "deck", "spare_type": "product-a", "capacity": 2, "transport_minutes": 1},
+            {"from": "stock", "to": "deck", "spare_type": "product-b", "capacity": 3, "transport_minutes": 1},
+        ]
+        inputs["support_network"]["nodes"].append({
+            "id": "stock", "name": "Stock", "personnel_capacity": 1, "equipment_capacity": 1,
+            "inventory": {"product-a": 2, "product-b": 3}, "transport_policies": [],
+        })
+        model = AircraftSupportV1Model(inputs)
+        failed_lru = _runtime_component("failed", "aircraft", "Failed LRU", 0.1, product_id="failed-lru")
+
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair", component=failed_lru)
+        job = model.jobs[-1]
+        model._start_waiting_jobs()
+
+        self.assertEqual(job.state, "waiting")
+        self.assertEqual(len(model.transport_shipments), 2)
+        self.assertEqual({shipment.spare_type for shipment in model.transport_shipments}, {"product-a", "product-b"})
+        shortages = [event for event in model.event_log if event["event"] == "spare_shortage"]
+        dispatched = [event for event in model.event_log if event["event"] == "transport_dispatched"]
+        self.assertEqual({event["details"]["product_id"] for event in shortages}, {"product-a", "product-b"})
+        self.assertEqual({event["details"]["product_id"] for event in dispatched}, {"product-a", "product-b"})
+
+        model.minute = 1
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        model._process_job_progress_and_completions()
+
+        self.assertEqual(job.state, "completed")
+        self.assertEqual(model.nodes["deck"]["inventory"], {"product-a": 0, "product-b": 0})
+        self.assertEqual(model.spare_consumed_total, 5)
+        arrived = [event for event in model.event_log if event["event"] == "transport_arrived"]
+        consumed = [event for event in model.event_log if event["event"] == "spare_consumed"]
+        self.assertEqual({event["details"]["product_id"] for event in arrived}, {"product-a", "product-b"})
+        self.assertEqual({event["details"]["product_id"] for event in consumed}, {"product-a", "product-b"})
+
+    def test_maintenance_ratio_boundaries_and_midpoint_use_one_deterministic_roll(self) -> None:
+        for ratio in (0.0, 0.5, 1.0):
+            with self.subTest(ratio=ratio):
+                inputs = _minimal_inputs()
+                activity = inputs["support_activities"]["activities"][1]
+                activity["maintenance_methods"] = ["non_replacement", "replacement"]
+                activity["replacement_ratio"] = ratio
+                model = AircraftSupportV1Model(inputs)
+
+                model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+                job = model.jobs[-1]
+                expected = "replacement" if job.maintenance_decision_roll < ratio else "non_replacement"
+                self.assertEqual(job.maintenance_method, expected)
+                self.assertEqual(job.replacement_ratio, ratio)
+                decisions = [event for event in model.event_log if event["event"] == "maintenance_method_selected"]
+                self.assertEqual(len(decisions), 1)
+
+    def test_maintenance_rng_substreams_are_deterministic_and_do_not_advance_failure_rng(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["seed"] = 314159
+        component = _runtime_component("radar", "aircraft", "Radar", 0.2)
+        inputs["equipment_tree"]["components"] = [component]
+        activity = inputs["support_activities"]["activities"][1]
+        activity["maintenance_methods"] = ["non_replacement", "replacement"]
+        activity["replacement_ratio"] = 0.5
+        first = AircraftSupportV1Model(inputs)
+        second = AircraftSupportV1Model(inputs)
+        first_failure_rng_state = first.rng.getstate()
+        second_failure_rng_state = second.rng.getstate()
+
+        first._create_job(first.aircraft[0], first.activities[1], kind="repair")
+        second._create_job(second.aircraft[0], second.activities[1], kind="repair")
+
+        first_job = first.jobs[-1]
+        second_job = second.jobs[-1]
+        self.assertEqual(first_job.maintenance_method, second_job.maintenance_method)
+        self.assertEqual(first_job.maintenance_decision_roll, second_job.maintenance_decision_roll)
+        self.assertEqual(first_job.maintenance_rng_stream, second_job.maintenance_rng_stream)
+        self.assertEqual(first.rng.getstate(), first_failure_rng_state)
+        self.assertEqual(second.rng.getstate(), second_failure_rng_state)
+        first_next_failure = first._sample_lru_failure_minutes(first.components[0])
+        second_next_failure = second._sample_lru_failure_minutes(second.components[0])
+        self.assertEqual(first_next_failure, second_next_failure)
+        self.assertEqual(first.rng.getstate(), second.rng.getstate())
+        failure_rng_state_after_sample = first.rng.getstate()
+        decision = next(event for event in first.event_log if event["event"] == "maintenance_method_selected")
+        self.assertEqual(decision["details"]["job_id"], first_job.job_id)
+        self.assertEqual(decision["details"]["maintenance_method"], first_job.maintenance_method)
+        self.assertEqual(decision["details"]["rng_stream"], first_job.maintenance_rng_stream)
+
+        first._create_job(first.aircraft[0], first.activities[1], kind="repair")
+
+        self.assertNotEqual(first.jobs[-1].maintenance_rng_stream, first_job.maintenance_rng_stream)
+        self.assertEqual(first.rng.getstate(), failure_rng_state_after_sample)
 
     def test_dispatch_requires_every_aircraft_to_complete_preflight(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())
@@ -1156,8 +1377,12 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
         self.assertNotIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
         self.assertIn("supportActivityJobs[]", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].aircraftModel", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].equipmentId", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].activityCodes", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].predecessors", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].maintenanceMethods", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].replacementRatio", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
         self.assertEqual(scope["fail_closed_fields"], [])
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
