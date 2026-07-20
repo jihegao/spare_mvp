@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.spare_mvp_backend.api import (
     BackendApi,
     BackendApiError,
+    _lite_mesa_carry_list_result,
     _lite_mesa_downtime_event_snapshots,
     _lite_mesa_downtime_factors_result,
     _lite_mesa_mission_reliability_result,
@@ -3092,6 +3093,75 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("前出备件", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
         self.assertNotIn("仓库备件", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
 
+    def test_lite_mesa_carry_list_uses_ratio_of_totals_and_handles_zero_carried_total(self) -> None:
+        settings = {"missionConfidenceTarget": 0.9}
+        result = _lite_mesa_carry_list_result(
+            {
+                "data": [
+                    {"product_id": "spare-a", "recommended_quantity": 1, "used_quantity": 1, "carried_quantity": 1},
+                    {"product_id": "spare-b", "recommended_quantity": 9, "used_quantity": 1, "carried_quantity": 9},
+                ]
+            },
+            {"shortage_events": 0},
+            [{}],
+            settings,
+        )
+
+        self.assertEqual(result["spare_used_total"], 2)
+        self.assertEqual(result["spare_carried_total"], 10)
+        self.assertAlmostEqual(result["overall_spare_utilization"], 0.2)
+        self.assertIn(["总体备件利用率", "20.00%"], result["metrics"])
+        self.assertAlmostEqual(result["rows"][1]["utilization"], 1 / 9)
+
+        zero_total = _lite_mesa_carry_list_result(
+            {"data": [{"product_id": "spare-zero", "recommended_quantity": 0, "used_quantity": 0, "carried_quantity": 0}]},
+            {"shortage_events": 0},
+            [{}],
+            settings,
+        )
+        self.assertIsNone(zero_total["overall_spare_utilization"])
+        self.assertEqual(zero_total["overall_spare_utilization_status"], "zero_carried")
+        self.assertIsNone(zero_total["rows"][0]["utilization"])
+        self.assertIn(["总体备件利用率", "--"], zero_total["metrics"])
+
+        zero_used = _lite_mesa_carry_list_result(
+            {"data": [{"product_id": "spare-idle", "recommended_quantity": 4, "used_quantity": 0, "carried_quantity": 4}]},
+            {"shortage_events": 0},
+            [{}],
+            settings,
+        )
+        self.assertIn(["总体备件利用率", "0.00%"], zero_used["metrics"])
+
+        over_capacity = _lite_mesa_carry_list_result(
+            {"data": [{"product_id": "spare-hot", "recommended_quantity": 1, "used_quantity": 3, "carried_quantity": 1}]},
+            {"shortage_events": 0},
+            [{}],
+            settings,
+        )
+        self.assertIn(["总体备件利用率", "300.00%"], over_capacity["metrics"])
+
+        missing_raw = _lite_mesa_carry_list_result(
+            {"data": [{"product_id": "legacy", "recommended_quantity": 1, "utilization": 0.5}]},
+            {"shortage_events": 0},
+            [{}],
+            settings,
+        )
+        self.assertIsNone(missing_raw["overall_spare_utilization"])
+        self.assertEqual(missing_raw["overall_spare_utilization_status"], "data_unavailable")
+        self.assertIn(["总体备件利用率", "数据不可用"], missing_raw["metrics"])
+
+        empty_projection = _lite_mesa_carry_list_result(
+            {"data": []},
+            {"spare_consumed_total": 5, "shortage_events": 2},
+            [{}],
+            settings,
+        )
+        self.assertEqual(empty_projection["rows"], [])
+        self.assertIsNone(empty_projection["spare_used_total"])
+        self.assertIsNone(empty_projection["spare_carried_total"])
+        self.assertEqual(empty_projection["overall_spare_utilization_status"], "data_unavailable")
+        self.assertIn(["总体备件利用率", "数据不可用"], empty_projection["metrics"])
+
     def test_aircraft_support_spare_projection_deduplicates_minute_shortage_events(self) -> None:
         projections = self.adapter._aircraft_support_v1_analysis_projections(
             {"planned_sorties": 4, "spare_fill_rate": 1.0, "spare_utilization": 0.0},
@@ -3156,7 +3226,31 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(shortfall_row["filled_count"], 1)
         self.assertEqual(shortfall_row["shortage_count"], 1)
         self.assertEqual(carry_row["shortage_count"], 1)
+        self.assertEqual(carry_row["used_quantity"], 1)
+        self.assertEqual(carry_row["carried_quantity"], 7)
         self.assertAlmostEqual(carry_row["utilization"], 1 / 7)
+
+    def test_aircraft_support_carry_capacity_uses_only_successful_samples_after_partial_failure(self) -> None:
+        projections = self.adapter._aircraft_support_v1_analysis_projections(
+            {"planned_sorties": 3, "requested_sample_count": 3, "failed_sample_count": 1},
+            "base-artifact",
+            samples=[{"sample_index": 0, "events": []}, {"sample_index": 1, "events": []}],
+            simulation_inputs={
+                "aircraft": {"assets": [{"tail_number": "J15-001", "model": "J-15"}]},
+                "equipment_tree": {
+                    "components": [
+                        {"aircraft_model": "J-15", "product_id": "spare-a", "product_type": "LRU"}
+                    ]
+                },
+                "support_network": {"nodes": [{"id": "base", "inventory": {"spare-a": 4}}]},
+                "product_catalog": {"products": [{"id": "spare-a", "name": "备件 A"}]},
+            },
+        )
+
+        carry_row = projections["carry_list"]["data"][0]
+        self.assertEqual(carry_row["recommended_quantity"], 4)
+        self.assertEqual(carry_row["carried_quantity"], 8)
+        self.assertNotEqual(carry_row["carried_quantity"], 12)
 
     def test_aircraft_support_spare_projection_keeps_the_aircraft_model_for_each_spare(self) -> None:
         projections = self.adapter._aircraft_support_v1_analysis_projections(
