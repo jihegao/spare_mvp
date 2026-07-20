@@ -85,6 +85,7 @@
           "simulation_inputs.support_network.organization_graph.lateral_edges",
           "simulation_inputs.support_network.organization_graph.resource_ownership",
           "simulation_inputs.support_network.organization_graph.transport_policies",
+          "simulation_inputs.support_network.nodes[].organization_node_id",
           "simulation_inputs.time.duration_minutes",
           "simulation_inputs.time.requested_steps",
           "ExperimentPlan.config.steps"
@@ -113,7 +114,7 @@
         "modeling_snapshot_id": "snapshot-m9-6-platform-case",
         "project_id": "project-carrier-day-night",
         "runtime_deferred_fields": [
-          "simulation_inputs.support_network.organization_graph"
+          "simulation_inputs.support_network.organization_graph.lateral_edges"
         ],
         "unsupported_fields": [],
         "used_tables": {
@@ -936,7 +937,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "",
+            "resource_id": "基地",
             "runHourInterval": null,
             "spare_quantity": 0,
             "takeoffLandingInterval": null
@@ -1031,7 +1032,7 @@
             "replacement_ratio": 0.0,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "",
+            "resource_id": "基地",
             "runHourInterval": null,
             "spare_quantity": 1,
             "takeoffLandingInterval": null
@@ -1121,7 +1122,7 @@
             "replacement_ratio": 0.0,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "",
+            "resource_id": "基地",
             "runHourInterval": 8,
             "spare_quantity": 1,
             "takeoffLandingInterval": 6
@@ -1139,7 +1140,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "",
+            "resource_id": "基层1",
             "runHourInterval": null,
             "spare_quantity": 1,
             "takeoffLandingInterval": null
@@ -1179,7 +1180,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "",
+            "resource_id": "基地",
             "runHourInterval": null,
             "spare_quantity": 0,
             "takeoffLandingInterval": null
@@ -1219,7 +1220,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "",
+            "resource_id": "基地",
             "runHourInterval": null,
             "spare_quantity": 0,
             "takeoffLandingInterval": null
@@ -1241,6 +1242,7 @@
             "lateral_support_nodes": [],
             "name": "基地",
             "node_type": null,
+            "organization_node_id": "carrier-deck",
             "organization_strategy": null,
             "personnel_capacity": 5,
             "policy": null,
@@ -1292,6 +1294,7 @@
             "lateral_support_nodes": [],
             "name": "中继",
             "node_type": null,
+            "organization_node_id": "forward-sea-base",
             "organization_strategy": null,
             "personnel_capacity": 4,
             "policy": null,
@@ -1343,6 +1346,7 @@
             "lateral_support_nodes": [],
             "name": "基层1",
             "node_type": null,
+            "organization_node_id": "carrier-stock",
             "organization_strategy": null,
             "personnel_capacity": 3,
             "policy": null,
@@ -1513,6 +1517,7 @@
               "resource_type": "spare"
             }
           ],
+          "runtime_mode": "vertical",
           "transport_policies": [
             {
               "capacity": 1,
@@ -2226,6 +2231,7 @@
               ]
             },
             "priority": 1,
+            "resourceId": "基地",
             "spareQuantity": 0
           },
           {
@@ -2250,6 +2256,7 @@
             },
             "priority": 1,
             "replacementRatio": 0.0,
+            "resourceId": "基地",
             "spareQuantity": 1
           },
           {
@@ -2276,6 +2283,7 @@
             },
             "priority": 2,
             "replacementRatio": 0.0,
+            "resourceId": "基地",
             "runHourInterval": 8,
             "spareQuantity": 1,
             "takeoffLandingInterval": 6
@@ -2290,6 +2298,7 @@
             "planType": "后勤保障方案",
             "predecessors": {},
             "priority": 1,
+            "resourceId": "基层1",
             "spareQuantity": 1
           },
           {
@@ -2307,7 +2316,8 @@
             "predecessors": {
               "BA-001": []
             },
-            "priority": 1
+            "priority": 1,
+            "resourceId": "基地"
           },
           {
             "activityCodes": [
@@ -2324,7 +2334,8 @@
             "predecessors": {
               "BA-002": []
             },
-            "priority": 1
+            "priority": 1,
+            "resourceId": "基地"
           }
         ],
         "supportActivityJobs": [
@@ -2576,6 +2587,7 @@
         ],
         "supportOrganization": {
           "relations": [],
+          "runtimeMode": "vertical",
           "tree": {
             "children": [
               {
@@ -3472,6 +3484,7 @@
             ]
           },
           "priority": 1,
+          "resourceId": "基地",
           "spareQuantity": 0
         },
         {
@@ -3496,6 +3509,7 @@
           },
           "priority": 1,
           "replacementRatio": 0.0,
+          "resourceId": "基地",
           "spareQuantity": 1
         },
         {
@@ -3522,6 +3536,7 @@
           },
           "priority": 2,
           "replacementRatio": 0.0,
+          "resourceId": "基地",
           "runHourInterval": 8,
           "spareQuantity": 1,
           "takeoffLandingInterval": 6
@@ -3536,6 +3551,7 @@
           "planType": "后勤保障方案",
           "predecessors": {},
           "priority": 1,
+          "resourceId": "基层1",
           "spareQuantity": 1
         },
         {
@@ -3553,7 +3569,8 @@
           "predecessors": {
             "BA-001": []
           },
-          "priority": 1
+          "priority": 1,
+          "resourceId": "基地"
         },
         {
           "activityCodes": [
@@ -3570,7 +3587,8 @@
           "predecessors": {
             "BA-002": []
           },
-          "priority": 1
+          "priority": 1,
+          "resourceId": "基地"
         }
       ],
       "supportActivityJobs": [
@@ -3822,6 +3840,7 @@
       ],
       "supportOrganization": {
         "relations": [],
+        "runtimeMode": "vertical",
         "tree": {
           "children": [
             {
@@ -4732,6 +4751,7 @@
           ]
         },
         "priority": 1,
+        "resourceId": "基地",
         "spareQuantity": 0
       },
       {
@@ -4756,6 +4776,7 @@
         },
         "priority": 1,
         "replacementRatio": 0.0,
+        "resourceId": "基地",
         "spareQuantity": 1
       },
       {
@@ -4782,6 +4803,7 @@
         },
         "priority": 2,
         "replacementRatio": 0.0,
+        "resourceId": "基地",
         "runHourInterval": 8,
         "spareQuantity": 1,
         "takeoffLandingInterval": 6
@@ -4796,6 +4818,7 @@
         "planType": "后勤保障方案",
         "predecessors": {},
         "priority": 1,
+        "resourceId": "基层1",
         "spareQuantity": 1
       },
       {
@@ -4813,7 +4836,8 @@
         "predecessors": {
           "BA-001": []
         },
-        "priority": 1
+        "priority": 1,
+        "resourceId": "基地"
       },
       {
         "activityCodes": [
@@ -4830,7 +4854,8 @@
         "predecessors": {
           "BA-002": []
         },
-        "priority": 1
+        "priority": 1,
+        "resourceId": "基地"
       }
     ],
     "supportActivityJobs": [
@@ -5082,6 +5107,7 @@
     ],
     "supportOrganization": {
       "relations": [],
+      "runtimeMode": "vertical",
       "tree": {
         "children": [
           {

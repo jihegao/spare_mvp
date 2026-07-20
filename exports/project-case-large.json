@@ -11637,6 +11637,7 @@
       "equipmentId": "j16-part-0029",
       "equipmentModel": "J16",
       "id": "j16-service-0103",
+      "resourceId": "中继",
       "maxWorkTimeRefMinutes": 148,
       "planType": "使用保障方案",
       "predecessors": {
@@ -11716,6 +11717,7 @@
       "equipmentId": "j16d-part-2602030200000800",
       "equipmentModel": "J16D",
       "id": "j16-service-0104",
+      "resourceId": "中继",
       "maxWorkTimeRefMinutes": 148,
       "planType": "使用保障方案",
       "predecessors": {
@@ -11794,6 +11796,7 @@
       "durationHours": 2.5,
       "equipmentId": "j16-part-0029",
       "id": "ops-support-j16---3",
+      "resourceId": "中继",
       "maxWorkTimeRefMinutes": 150,
       "planType": "使用保障方案",
       "predecessors": {
@@ -11858,6 +11861,7 @@
       "durationHours": 0.75,
       "equipmentId": "j16-part-0029",
       "id": "ops-support-j16---4",
+      "resourceId": "中继",
       "maxWorkTimeRefMinutes": 45,
       "planType": "使用保障方案",
       "predecessors": {
@@ -11874,6 +11878,7 @@
       "durationHours": 1,
       "equipmentId": "j16-part-0029",
       "id": "ops-support-j16---5",
+      "resourceId": "中继",
       "maxWorkTimeRefMinutes": 60,
       "planType": "使用保障方案",
       "predecessors": {
@@ -11891,6 +11896,7 @@
       "durationHours": 2,
       "equipmentId": "j16-part-0029",
       "id": "preventive-j16-6",
+      "resourceId": "中继",
       "planType": "预防性维修方案",
       "plannedDowntimeHours": 2,
       "predecessors": {
@@ -13163,6 +13169,7 @@
     }
   ],
   "supportOrganization": {
+    "runtimeMode": "vertical",
     "tree": {
       "children": [
         {

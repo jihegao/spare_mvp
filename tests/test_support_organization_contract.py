@@ -119,6 +119,8 @@ class SupportOrganizationContractTest(unittest.TestCase):
                 "transportTimeHours": 1.5,
             }
         ]
+        for activity in project["supportActivities"]:
+            activity["resourceId"] = "node A"
         return project
 
     def _organization_graph(self, project: dict) -> dict:
@@ -431,7 +433,7 @@ class SupportOrganizationContractTest(unittest.TestCase):
         # Assert.
         self.assertEqual(reversed_graph, forward_graph)
 
-    def test_organization_graph_changes_do_not_change_phase_a_runtime_network_or_metrics(self) -> None:
+    def test_organization_governance_labels_do_not_change_vertical_runtime_network_or_metrics(self) -> None:
         # Arrange.
         baseline = self._project()
         changed_organization = copy.deepcopy(baseline)
@@ -504,10 +506,14 @@ class SupportOrganizationContractTest(unittest.TestCase):
         saved = ProjectJsonExporter(repo_root=REPO_ROOT).export(project)
         graph = self.adapter.compile_scenario(saved)["simulation_inputs"]["support_network"]["organization_graph"]
 
-        self.assertEqual(saved["supportOrganization"], {"tree": None, "relations": []})
+        self.assertEqual(
+            saved["supportOrganization"],
+            {"runtimeMode": "legacy", "tree": None, "relations": []},
+        )
         self.assertEqual(
             graph,
             {
+                "runtime_mode": "legacy",
                 "nodes": [],
                 "parent_edges": [],
                 "lateral_edges": [],

@@ -36,6 +36,12 @@
     "transportPolicies": { "type": "array", "items": { "type": "object" } },
     "supportActivityJobs": { "type": "array", "items": { "type": "object" } },
     "supportActivities": { "type": "array", "items": { "type": "object" } },
+    "supportOrganization": {
+      "type": "object",
+      "properties": {
+        "runtimeMode": { "enum": ["legacy", "vertical"] }
+      }
+    },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" }
   }

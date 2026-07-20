@@ -13,6 +13,7 @@ import jsonschema
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 from src.spare_mvp_backend.m9_6_case_package import build_m9_6_platform_case_export
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
+from tests.test_aircraft_support_v1_model import _vertical_organization_inputs
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -618,6 +619,10 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertNotIn("components[].spareType", provenance["consumed_fields"])
         self.assertIn("supportOrganization.tree[].id", provenance["consumed_fields"])
         self.assertIn(
+            "simulation_inputs.support_network.organization_graph.lateral_edges",
+            provenance["runtime_deferred_fields"],
+        )
+        self.assertNotIn(
             "simulation_inputs.support_network.organization_graph",
             provenance["runtime_deferred_fields"],
         )
@@ -651,6 +656,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 "id": "corrective-mttr-source",
                 "activityType": "修复性维修",
                 "equipmentId": component_id,
+                "resourceId": "基地",
                 "activityCodes": ["CM-MTTR"],
                 "predecessors": {"CM-MTTR": []},
             }
@@ -1282,6 +1288,18 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
         self.assertIn("transportPolicies[]", scope["behavior_driving_fields"])
         self.assertIn("supportResources[].quantity", scope["behavior_driving_fields"])
+        self.assertIn(
+            "support_network.nodes[].organization_node_id",
+            scope["behavior_driving_fields"],
+        )
+        self.assertIn(
+            "support_network.organization_graph.parent_edges[]",
+            scope["behavior_driving_fields"],
+        )
+        self.assertIn(
+            "support_network.organization_graph.transport_policies[]",
+            scope["behavior_driving_fields"],
+        )
         self.assertIn("supportActivityJobs[]", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].aircraftModel", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].equipmentId", scope["behavior_driving_fields"])
@@ -1301,6 +1319,11 @@ class SimulationAdapterTest(unittest.TestCase):
                 "supportActivities[].calendarDayInterval",
                 "supportActivities[].runHourInterval",
                 "supportActivities[].takeoffLandingInterval",
+                "support_network.nodes[].organization_node_id",
+                "support_network.organization_graph.nodes[]",
+                "support_network.organization_graph.runtime_mode",
+                "support_network.organization_graph.parent_edges[]",
+                "support_network.organization_graph.transport_policies[]",
             },
         )
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
@@ -1404,8 +1427,8 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(nodes["基地"]["transport_policies"][0]["to"], "基地")
         self.assertEqual(nodes["基地"]["transport_policies"][0]["product_id"], avionics_product_id)
 
-    def test_aircraft_support_v1_compiles_organization_graph_as_runtime_deferred(self) -> None:
-        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+    def test_aircraft_support_v1_compiles_vertical_organization_runtime_and_defers_only_lateral_edges(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
         provenance = scenario["compiled_from"]["mapping_provenance"]
 
@@ -1418,11 +1441,152 @@ class SimulationAdapterTest(unittest.TestCase):
 
         self.assertEqual(provenance["unsupported_fields"], [])
         self.assertIn("supportOrganization.tree[].id", provenance["consumed_fields"])
+        runtime_nodes = scenario["simulation_inputs"]["support_network"]["nodes"]
+        self.assertTrue(runtime_nodes)
+        self.assertTrue(all(node["organization_node_id"] for node in runtime_nodes))
         self.assertIn(
+            "simulation_inputs.support_network.organization_graph.lateral_edges",
+            provenance["runtime_deferred_fields"],
+        )
+        self.assertNotIn(
             "simulation_inputs.support_network.organization_graph",
             provenance["runtime_deferred_fields"],
         )
         self.assertEqual(bundle["run"]["status"], "succeeded")
+
+    def test_canonical_blank_activity_resource_defaults_only_to_unique_mapped_root(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        self.assertNotIn("resourceId", project["supportActivities"][0])
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "compiled")
+        self.assertEqual(
+            result["scenario"]["simulation_inputs"]["support_activities"]["activities"][0]["resource_id"],
+            "node A",
+        )
+        self.assertIn(
+            "supportActivities[0].resourceId=node A (unique organization root mapping)",
+            result["provenance"]["defaults_applied"],
+        )
+
+    def test_canonical_blank_activity_resource_blocks_when_root_has_no_runtime_mapping(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        project["supportOrganization"]["tree"] = {
+            "id": "organization-root",
+            "name": "Organization Root",
+            "children": [copy.deepcopy(project["supportOrganization"]["tree"])],
+        }
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(
+            [issue["code"] for issue in result["issues"]],
+            ["missing_canonical_activity_resource_reference"],
+        )
+        self.assertNotIn("support-node", json.dumps(result["provenance"]["defaults_applied"]))
+
+    def test_canonical_missing_capacities_compile_to_zero_but_legacy_retains_one(self) -> None:
+        canonical = self._load_fixture("aircraft_support_v1_project.json")
+        canonical["supportNodes"][0].pop("personnelCapacity")
+        canonical["supportNodes"][0].pop("equipmentCapacity")
+        canonical["supportResources"] = []
+        canonical_scenario = self.adapter.compile_scenario(
+            canonical,
+            model_family="aircraft_support_v1",
+        )
+
+        legacy = copy.deepcopy(canonical)
+        legacy["supportOrganization"] = {}
+        legacy["supportNodes"][0].pop("organizationNodeId")
+        legacy_scenario = self.adapter.compile_scenario(
+            legacy,
+            model_family="aircraft_support_v1",
+        )
+
+        canonical_node = canonical_scenario["simulation_inputs"]["support_network"]["nodes"][0]
+        legacy_node = legacy_scenario["simulation_inputs"]["support_network"]["nodes"][0]
+        self.assertEqual((canonical_node["personnel_capacity"], canonical_node["equipment_capacity"]), (0, 0))
+        self.assertEqual((legacy_node["personnel_capacity"], legacy_node["equipment_capacity"]), (1, 1))
+
+    def test_vertical_dispatch_events_and_metrics_are_equivalent_for_single_and_monte_carlo_sample(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=1)
+        inputs["schema_version"] = "aircraft-support-v1-input-v0"
+        for node in inputs["support_network"]["nodes"]:
+            node["personnel_capacity"] = 2
+            node["equipment_capacity"] = 2
+        inputs["support_network"]["organization_graph"]["transport_policies"][0]["capacity"] = 1
+        inputs["support_network"]["organization_graph"]["transport_policies"][0]["transport_time_hours"] = 0
+        preflight = inputs["support_activities"]["activities"][0]
+        preflight["resource_id"] = "deck"
+        preflight["jobs"] = [{
+            "activityCode": "prepare",
+            "durationMinutes": 1,
+            "spare": [{"product_id": "shared-spare", "quantity": 1}],
+        }]
+        inputs["mission_profile"]["basic_missions"][0]["equipmentQuantity"] = 1
+        scenario["simulation_inputs"] = inputs
+        monte_carlo_config = {
+            "sample_count": 1,
+            "parallel_cores": 1,
+            "sweep": {
+                "failureRates": [1.0],
+                "spareMultipliers": [1.0],
+                "supportCapacities": [2],
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as single_tmp, tempfile.TemporaryDirectory() as mc_tmp:
+            single = self.adapter.run_scenario(
+                copy.deepcopy(scenario),
+                output_dir=Path(single_tmp),
+                run_id="run-vertical-single",
+            )
+            monte_carlo = self.adapter.run_monte_carlo_scenario(
+                copy.deepcopy(scenario),
+                output_dir=Path(mc_tmp),
+                run_id="run-vertical-mc",
+                monte_carlo_config=monte_carlo_config,
+            )
+            single_log_artifact = next(
+                artifact for artifact in single["artifact_manifest"]["artifacts"] if artifact["kind"] == "log"
+            )
+            single_log = json.loads(
+                (Path(single_tmp) / single_log_artifact["path"]).read_text(encoding="utf-8")
+            )
+            mc_base_artifact = next(
+                artifact
+                for artifact in monte_carlo["artifact_manifest"]["artifacts"]
+                if artifact["kind"] == "monte_carlo_base"
+            )
+            mc_base = json.loads((Path(mc_tmp) / mc_base_artifact["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(single["result"]["metrics"], mc_base["samples"][0]["metrics"])
+        single_dispatch = next(
+            event for event in single_log["events"] if event["event"] == "organization_transport_dispatched"
+        )
+        mc_dispatch = next(
+            event
+            for event in mc_base["samples"][0]["events"]
+            if event["event"] == "organization_transport_dispatched"
+        )
+        required_detail_fields = {
+            "job_id",
+            "task_index",
+            "product_id",
+            "quantity",
+            "source_resource_id",
+            "resource_id",
+            "organization_path",
+            "transport_policy_ids",
+            "batch_sequence",
+            "arrival_minute",
+        }
+        self.assertEqual(set(single_dispatch["details"]), required_detail_fields)
+        self.assertEqual(single_dispatch["details"], mc_dispatch["details"])
 
     def test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]

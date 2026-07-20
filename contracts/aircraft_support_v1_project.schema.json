@@ -429,6 +429,7 @@
         },
         "aircraftModel": { "type": "string" },
         "equipmentId": { "type": "string" },
+        "resourceId": { "type": "string", "minLength": 1 },
         "priority": { "type": "integer", "minimum": 0 },
         "durationMinutes": { "type": "integer", "minimum": 1 },
         "durationHours": { "type": "number", "minimum": 0 },
@@ -531,8 +532,9 @@
     "supportOrganization": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tree", "relations"],
+      "required": ["runtimeMode", "tree", "relations"],
       "properties": {
+        "runtimeMode": { "enum": ["legacy", "vertical"] },
         "tree": {
           "oneOf": [
             { "$ref": "#/$defs/supportOrganizationNode" },

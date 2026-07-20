@@ -2091,6 +2091,7 @@
           ]
         },
         "priority": 1,
+        "resourceId": "基地",
         "spareQuantity": 0
       },
       {
@@ -2115,6 +2116,7 @@
         },
         "priority": 1,
         "replacementRatio": 0.0,
+        "resourceId": "基地",
         "spareQuantity": 1
       },
       {
@@ -2141,6 +2143,7 @@
         },
         "priority": 2,
         "replacementRatio": 0.0,
+        "resourceId": "基地",
         "runHourInterval": 8,
         "spareQuantity": 1,
         "takeoffLandingInterval": 6
@@ -2155,6 +2158,7 @@
         "planType": "后勤保障方案",
         "predecessors": {},
         "priority": 1,
+        "resourceId": "基层1",
         "spareQuantity": 1
       },
       {
@@ -2172,7 +2176,8 @@
         "predecessors": {
           "BA-001": []
         },
-        "priority": 1
+        "priority": 1,
+        "resourceId": "基地"
       },
       {
         "activityCodes": [
@@ -2189,7 +2194,8 @@
         "predecessors": {
           "BA-002": []
         },
-        "priority": 1
+        "priority": 1,
+        "resourceId": "基地"
       }
     ],
     "supportActivityJobs": [
@@ -2441,6 +2447,7 @@
     ],
     "supportOrganization": {
       "relations": [],
+      "runtimeMode": "vertical",
       "tree": {
         "children": [
           {

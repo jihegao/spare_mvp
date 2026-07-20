@@ -863,7 +863,7 @@ def _support_activity_to_project(row: dict[str, Any], resource_name_by_id: dict[
     resource_id = activity.get("resourceId")
     if resource_name_by_id and resource_id not in (None, ""):
         activity["resourceId"] = resource_name_by_id.get(str(resource_id), str(resource_id))
-    for field in ("name", "planGroupId", "resourceId", "supportNodeId", "requiredPersonnel", "requiredDevices"):
+    for field in ("name", "planGroupId", "supportNodeId", "requiredPersonnel", "requiredDevices"):
         activity.pop(field, None)
     return activity
 

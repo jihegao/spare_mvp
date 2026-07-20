@@ -63,11 +63,13 @@
         "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities=[1]",
         "ExperimentPlan.config.seed=0",
         "ExperimentPlan.config.stopPolicy=duration",
+        "supportActivities[0].resourceId=node A (unique organization root mapping)",
         "combatUnit.members[0].preLifeCalendarDays=historicalDefault:0",
         "combatUnit.members[0].preLifeFlightHours=historicalDefault:0",
         "combatUnit.members[0].preLifeTakeoffLandingCount=historicalDefault:0",
         "supportActivities.0.maintenanceMethods=historicalDefault",
-        "supportActivities.0.replacementRatio=historicalDefault"
+        "supportActivities.0.replacementRatio=historicalDefault",
+        "supportOrganization.runtimeMode=vertical"
       ],
       "derived_fields": [
         "simulation_inputs.project_identity",
@@ -82,6 +84,7 @@
         "simulation_inputs.support_network.organization_graph.lateral_edges",
         "simulation_inputs.support_network.organization_graph.resource_ownership",
         "simulation_inputs.support_network.organization_graph.transport_policies",
+        "simulation_inputs.support_network.nodes[].organization_node_id",
         "simulation_inputs.time.duration_minutes",
         "simulation_inputs.time.requested_steps",
         "ExperimentPlan.config.steps"
@@ -109,7 +112,7 @@
       "modeling_snapshot_id": null,
       "project_id": "project-aircraft-support-contract-001",
       "runtime_deferred_fields": [
-        "simulation_inputs.support_network.organization_graph"
+        "simulation_inputs.support_network.organization_graph.lateral_edges"
       ],
       "unsupported_fields": []
     },
@@ -287,7 +290,7 @@
           "replacement_ratio": 0.0,
           "required_devices": 1,
           "required_personnel": 1,
-          "resource_id": "",
+          "resource_id": "node A",
           "runHourInterval": null,
           "spare_quantity": 0,
           "takeoffLandingInterval": null
@@ -307,6 +310,7 @@
           "lateral_support_nodes": [],
           "name": "node A",
           "node_type": null,
+          "organization_node_id": "node-a",
           "organization_strategy": null,
           "personnel_capacity": 2,
           "policy": null,
@@ -340,6 +344,7 @@
             "resource_type": "personnel"
           }
         ],
+        "runtime_mode": "vertical",
         "transport_policies": []
       }
     },

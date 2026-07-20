@@ -77,6 +77,95 @@ def _minimal_inputs() -> dict:
     }
 
 
+def _vertical_organization_inputs(*, local_quantity: int = 0, parent_quantity: int = 3) -> dict:
+    inputs = _minimal_inputs()
+    inputs["aircraft"]["fleet_count"] = 1
+    inputs["aircraft"]["initial_ready"] = 1
+    inputs["support_network"] = {
+        "nodes": [
+            {
+                "id": "deck",
+                "name": "Deck",
+                "organization_node_id": "org-leaf",
+                "personnel_capacity": 2,
+                "equipment_capacity": 2,
+                "inventory": {"shared-spare": local_quantity},
+                "transport_policies": [],
+            },
+            {
+                "id": "stock",
+                "name": "Stock",
+                "organization_node_id": "org-parent",
+                "personnel_capacity": 1,
+                "equipment_capacity": 1,
+                "inventory": {"shared-spare": parent_quantity},
+                "transport_policies": [],
+            },
+            {
+                "id": "lateral-stock",
+                "name": "Lateral Stock",
+                "organization_node_id": "org-lateral",
+                "personnel_capacity": 1,
+                "equipment_capacity": 1,
+                "inventory": {"shared-spare": 9},
+                "transport_policies": [],
+            },
+        ],
+        "organization_graph": {
+            "nodes": [
+                {"id": "org-root", "name": "Root", "parent_id": None, "service_scope": {}},
+                {"id": "org-parent", "name": "Parent", "parent_id": "org-root", "service_scope": {}},
+                {"id": "org-leaf", "name": "Leaf", "parent_id": "org-parent", "service_scope": {}},
+                {"id": "org-lateral", "name": "Lateral", "parent_id": "org-root", "service_scope": {}},
+            ],
+            "parent_edges": [
+                {"from_node_id": "org-root", "to_node_id": "org-parent"},
+                {"from_node_id": "org-parent", "to_node_id": "org-leaf"},
+                {"from_node_id": "org-root", "to_node_id": "org-lateral"},
+            ],
+            "lateral_edges": [
+                {
+                    "id": "lateral-to-leaf",
+                    "from_node_id": "org-lateral",
+                    "to_node_id": "org-leaf",
+                    "priority": 1,
+                }
+            ],
+            "resource_ownership": [],
+            "transport_policies": [
+                {
+                    "id": "parent-to-leaf",
+                    "from_organization_node_id": "org-parent",
+                    "to_organization_node_id": "org-leaf",
+                    "product_id": "shared-spare",
+                    "capacity": 2,
+                    "priority": 1,
+                    "transport_time_hours": 1 / 6,
+                },
+                {
+                    "id": "lateral-policy",
+                    "from_organization_node_id": "org-lateral",
+                    "to_organization_node_id": "org-leaf",
+                    "product_id": "shared-spare",
+                    "capacity": 9,
+                    "priority": 1,
+                    "transport_time_hours": 0,
+                },
+            ],
+        },
+    }
+    repair = inputs["support_activities"]["activities"][1]
+    repair["maintenance_methods"] = ["replacement"]
+    repair["replacement_ratio"] = 1.0
+    repair["resource_id"] = "deck"
+    repair["jobs"] = [{
+        "activityCode": "replace",
+        "durationMinutes": 1,
+        "spare": [{"product_id": "shared-spare", "quantity": 1}],
+    }]
+    return inputs
+
+
 def _preflight_timing_inputs() -> dict:
     inputs = _minimal_inputs()
     inputs["time"]["duration_minutes"] = 8 * 60
@@ -173,7 +262,15 @@ def _canonical_import_inputs() -> dict:
     import_package = json.loads(fixture_path.read_text(encoding="utf-8"))
     validation = validate_modeling_import_package(import_package)
     project = modeling_import_to_project(import_package, validation=validation)
-    return SimulationAdapter().compile_scenario(project, model_family="aircraft_support_v1")["simulation_inputs"]
+    project.setdefault("supportOrganization", {})["runtimeMode"] = "vertical"
+    for activity in project["supportActivities"]:
+        activity["resourceId"] = "基地"
+    inputs = SimulationAdapter().compile_scenario(project, model_family="aircraft_support_v1")["simulation_inputs"]
+    # Direct model tests must provide an explicit runtime node under a non-empty
+    # canonical organization graph; production compilation owns this binding.
+    for activity in inputs["support_activities"]["activities"]:
+        activity["resource_id"] = "基地"
+    return inputs
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
@@ -1484,6 +1581,501 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(len([job for job in model.jobs if job.state == "waiting"]), 1)
         consumed = [event for event in model.event_log if event["event"] == "spare_consumed"]
         self.assertEqual(len(consumed), 1)
+
+    def test_canonical_organization_uses_local_inventory_before_parent_or_lateral_supply(self) -> None:
+        # Arrange.
+        inputs = _vertical_organization_inputs(local_quantity=1, parent_quantity=3)
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        # Act.
+        model._start_waiting_jobs()
+
+        # Assert.
+        self.assertEqual(model.jobs[-1].state, "running")
+        self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], 0)
+        self.assertEqual(model.nodes["stock"]["inventory"]["shared-spare"], 3)
+        self.assertEqual(model.nodes["lateral-stock"]["inventory"]["shared-spare"], 9)
+        self.assertEqual(model.transport_shipments, [])
+        local_events = [event for event in model.event_log if event["event"] == "organization_local_fulfilled"]
+        self.assertEqual(local_events[-1]["details"]["organization_node_id"], "org-leaf")
+
+    def test_canonical_parent_supply_uses_policy_batch_capacity_time_and_atomic_reservation(self) -> None:
+        # Arrange.
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=3)
+        inputs["support_activities"]["activities"][1]["jobs"][0]["spare"][0]["quantity"] = 3
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+
+        # Act / Assert: first policy-limited batch is reserved at dispatch.
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "waiting")
+        self.assertEqual(model.nodes["stock"]["inventory"]["shared-spare"], 1)
+        self.assertEqual(len(model.transport_shipments), 1)
+        first = model.transport_shipments[0]
+        self.assertEqual(first.quantity, 2)
+        self.assertEqual(first.arrival_minute, 10)
+        self.assertEqual(first.path_organization_node_ids, ("org-parent", "org-leaf"))
+        self.assertEqual(first.transport_policy_ids, ("parent-to-leaf",))
+
+        # Act / Assert: arrival enables the next deterministic batch, not over-capacity movement.
+        model.minute = 10
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        self.assertEqual(model.nodes["stock"]["inventory"]["shared-spare"], 0)
+        self.assertEqual(len(model.transport_shipments), 1)
+        self.assertEqual(model.transport_shipments[0].quantity, 1)
+        self.assertEqual(model.transport_shipments[0].arrival_minute, 20)
+
+        model.minute = 20
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "running")
+        self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], 0)
+
+    def test_canonical_two_hop_parent_chain_accumulates_time_and_ignores_lateral_edge(self) -> None:
+        # Arrange.
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=0)
+        inputs["support_network"]["nodes"].append({
+            "id": "root-stock",
+            "name": "Root Stock",
+            "organization_node_id": "org-root",
+            "personnel_capacity": 1,
+            "equipment_capacity": 1,
+            "inventory": {"shared-spare": 1},
+            "transport_policies": [],
+        })
+        inputs["support_network"]["organization_graph"]["transport_policies"].append({
+            "id": "root-to-parent",
+            "from_organization_node_id": "org-root",
+            "to_organization_node_id": "org-parent",
+            "product_id": "shared-spare",
+            "capacity": 1,
+            "priority": 2,
+            "transport_time_hours": 5 / 60,
+        })
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        # Act.
+        model._start_waiting_jobs()
+
+        # Assert.
+        self.assertEqual(len(model.transport_shipments), 1)
+        shipment = model.transport_shipments[0]
+        self.assertEqual(shipment.source_node_id, "root-stock")
+        self.assertEqual(shipment.arrival_minute, 15)
+        self.assertEqual(shipment.path_organization_node_ids, ("org-root", "org-parent", "org-leaf"))
+        self.assertEqual(shipment.transport_policy_ids, ("root-to-parent", "parent-to-leaf"))
+        self.assertEqual(model.nodes["lateral-stock"]["inventory"]["shared-spare"], 9)
+
+    def test_canonical_missing_vertical_policy_fails_closed_without_global_or_lateral_fallback(self) -> None:
+        # Arrange.
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=1)
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"] = [
+            policy for policy in graph["transport_policies"] if policy["id"] == "lateral-policy"
+        ]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        # Act.
+        model._start_waiting_jobs()
+
+        # Assert.
+        self.assertEqual(model.jobs[-1].state, "waiting")
+        self.assertEqual(model.jobs[-1].shortage_reason, "organization_no_vertical_path:shared-spare")
+        self.assertEqual(model.transport_shipments, [])
+        self.assertEqual(model.nodes["stock"]["inventory"]["shared-spare"], 1)
+        self.assertEqual(model.nodes["lateral-stock"]["inventory"]["shared-spare"], 9)
+        failures = [event for event in model.event_log if event["event"] == "organization_dispatch_failed"]
+        self.assertEqual(failures[-1]["details"]["reason"], "no_vertical_path")
+
+    def test_canonical_concurrent_jobs_cannot_reserve_one_parent_unit_twice(self) -> None:
+        # Arrange.
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=1)
+        inputs["aircraft"]["fleet_count"] = 2
+        inputs["aircraft"]["initial_ready"] = 2
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"][0]["capacity"] = 1
+        graph["transport_policies"][0]["transport_time_hours"] = 1 / 60
+        model = AircraftSupportV1Model(inputs)
+        for aircraft in model.aircraft:
+            model._create_job(aircraft, model.activities[1], kind="repair")
+
+        # Act.
+        model._start_waiting_jobs()
+
+        # Assert.
+        self.assertEqual(model.nodes["stock"]["inventory"]["shared-spare"], 0)
+        self.assertEqual(len(model.transport_shipments), 1)
+        self.assertEqual(model.transport_shipments[0].quantity, 1)
+        self.assertEqual([job.state for job in model.jobs], ["waiting", "waiting"])
+
+    def test_canonical_plural_spare_dispatch_has_zero_side_effect_when_any_product_has_no_plan(self) -> None:
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=0)
+        deck, parent = inputs["support_network"]["nodes"][:2]
+        deck["inventory"] = {"product-a": 0, "product-b": 0}
+        parent["inventory"] = {"product-a": 1, "product-b": 0}
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"] = [
+            {
+                "id": f"parent-to-leaf-{product_id}",
+                "from_organization_node_id": "org-parent",
+                "to_organization_node_id": "org-leaf",
+                "product_id": product_id,
+                "capacity": 1,
+                "priority": 1,
+                "transport_time_hours": 1 / 60,
+            }
+            for product_id in ("product-a", "product-b")
+        ]
+        repair = inputs["support_activities"]["activities"][1]
+        repair["jobs"][0]["spare"] = [
+            {"product_id": "product-a", "quantity": 1},
+            {"product_id": "product-b", "quantity": 1},
+        ]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        model._start_waiting_jobs()
+
+        self.assertEqual(model.nodes["stock"]["inventory"], {"product-a": 1, "product-b": 0})
+        self.assertEqual(model.transport_shipments, [])
+        self.assertEqual(model.transport_replenishment_events, 0)
+
+    def test_canonical_arrival_is_reserved_for_requesting_job_and_cancellation_returns_stock(self) -> None:
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=1)
+        inputs["aircraft"].update({"fleet_count": 2, "initial_ready": 2})
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"][0].update({"capacity": 1, "transport_time_hours": 1 / 60})
+        model = AircraftSupportV1Model(inputs)
+        for aircraft in model.aircraft:
+            model._create_job(aircraft, model.activities[1], kind="repair")
+        requesting_job, competing_job = model.jobs
+
+        model._start_waiting_jobs()
+        model.minute = 1
+        model._process_transport_arrivals()
+        competing_job.priority = 1
+        requesting_job.priority = 2
+        model._start_waiting_jobs()
+
+        self.assertEqual(requesting_job.state, "running")
+        self.assertEqual(competing_job.state, "waiting")
+        self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], 0)
+
+        # A later shipment for a cancelled task is recoverable destination stock.
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=1)
+        inputs["support_network"]["organization_graph"]["transport_policies"][0].update(
+            {"capacity": 1, "transport_time_hours": 1 / 60}
+        )
+        cancelled_model = AircraftSupportV1Model(inputs)
+        cancelled_model._create_job(
+            cancelled_model.aircraft[0], cancelled_model.activities[1], kind="repair"
+        )
+        cancelled_job = cancelled_model.jobs[-1]
+        cancelled_model._start_waiting_jobs()
+        cancelled_job.state = "cancelled"
+        cancelled_model.minute = 1
+        cancelled_model._process_transport_arrivals()
+        self.assertEqual(cancelled_job.spare_reservations, {})
+        self.assertEqual(cancelled_model.nodes["deck"]["inventory"]["shared-spare"], 1)
+
+    def test_canonical_local_and_parent_stock_are_one_job_reservation_before_arrival(self) -> None:
+        # Arrange: job 1 needs the leaf unit plus one parent unit; job 2 only needs
+        # one unit and becomes higher priority after job 1's atomic plan commits.
+        inputs = _vertical_organization_inputs(local_quantity=1, parent_quantity=1)
+        inputs["aircraft"].update({"fleet_count": 2, "initial_ready": 2})
+        inputs["support_network"]["organization_graph"]["transport_policies"][0].update(
+            {"capacity": 1, "transport_time_hours": 1 / 60}
+        )
+        repair = inputs["support_activities"]["activities"][1]
+        repair["jobs"][0]["spare"][0]["quantity"] = 2
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        repair_activity = model.activities[1]
+        repair_activity["jobs"][0]["spare"][0]["quantity"] = 1
+        model._create_job(model.aircraft[1], repair_activity, kind="repair")
+        requesting_job, competing_job = model.jobs
+
+        # Act / Assert: local and parent contributions commit atomically for job 1.
+        model._start_waiting_jobs()
+        self.assertEqual(requesting_job.spare_reservations, {(0, "shared-spare"): 1})
+        self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], 0)
+        self.assertEqual(model.nodes["stock"]["inventory"]["shared-spare"], 0)
+        self.assertEqual(len(model.transport_shipments), 1)
+
+        competing_job.priority = 1
+        requesting_job.priority = 2
+        model._start_waiting_jobs()
+        self.assertEqual(competing_job.state, "waiting")
+
+        model.minute = 1
+        model._process_transport_arrivals()
+        self.assertEqual(requesting_job.spare_reservations, {(0, "shared-spare"): 2})
+        model._start_waiting_jobs()
+        self.assertEqual(requesting_job.state, "running")
+        self.assertEqual(competing_job.state, "waiting")
+
+        # The same local + inbound reservation is fully recoverable on cancel.
+        cancelled_inputs = _vertical_organization_inputs(local_quantity=1, parent_quantity=1)
+        cancelled_inputs["support_network"]["organization_graph"]["transport_policies"][0].update(
+            {"capacity": 1, "transport_time_hours": 1 / 60}
+        )
+        cancelled_inputs["support_activities"]["activities"][1]["jobs"][0]["spare"][0]["quantity"] = 2
+        cancelled_model = AircraftSupportV1Model(cancelled_inputs)
+        cancelled_model._create_job(
+            cancelled_model.aircraft[0], cancelled_model.activities[1], kind="repair"
+        )
+        cancelled_job = cancelled_model.jobs[-1]
+        cancelled_model._start_waiting_jobs()
+        cancelled_job.state = "cancelled"
+        cancelled_model.minute = 1
+        cancelled_model._process_transport_arrivals()
+        self.assertEqual(cancelled_job.spare_reservations, {})
+        self.assertEqual(cancelled_model.nodes["deck"]["inventory"]["shared-spare"], 2)
+
+    def test_canonical_personnel_and_equipment_can_arrive_from_different_nearest_ancestors(self) -> None:
+        # Arrange: the parent can supply personnel while only the root can supply equipment.
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=0)
+        deck, parent = inputs["support_network"]["nodes"][:2]
+        deck.update({"personnel_capacity": 1, "equipment_capacity": 1})
+        parent.update({"personnel_capacity": 3, "equipment_capacity": 1})
+        inputs["support_network"]["nodes"].append({
+            "id": "root-stock",
+            "name": "Root Stock",
+            "organization_node_id": "org-root",
+            "personnel_capacity": 1,
+            "equipment_capacity": 3,
+            "inventory": {},
+            "transport_policies": [],
+        })
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"] = [
+            {
+                "id": "parent-to-leaf-wildcard",
+                "from_organization_node_id": "org-parent",
+                "to_organization_node_id": "org-leaf",
+                "product_id": "*",
+                "capacity": 3,
+                "priority": 1,
+                "transport_time_hours": 1 / 6,
+            },
+            {
+                "id": "root-to-parent-wildcard",
+                "from_organization_node_id": "org-root",
+                "to_organization_node_id": "org-parent",
+                "product_id": "*",
+                "capacity": 3,
+                "priority": 1,
+                "transport_time_hours": 5 / 60,
+            },
+        ]
+        repair = inputs["support_activities"]["activities"][1]
+        repair["maintenance_methods"] = ["non_replacement"]
+        repair["jobs"] = [{
+            "activityCode": "repair",
+            "durationMinutes": 1,
+            "requiredPersonnel": 2,
+            "requiredDevices": 2,
+        }]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+
+        # Act / Assert: both capacities are atomically reserved at their suppliers.
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "waiting")
+        self.assertEqual(job.resource_reservations, {
+            "personnel": ("stock", 2),
+            "equipment": ("root-stock", 2),
+        })
+        self.assertEqual(model.nodes["stock"]["personnel_in_use"], 2)
+        self.assertEqual(model.nodes["root-stock"]["equipment_in_use"], 2)
+        self.assertEqual(model.nodes["deck"]["personnel_in_use"], 0)
+        self.assertEqual(model.nodes["deck"]["equipment_in_use"], 0)
+
+        model.minute = 10
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "waiting")
+        self.assertEqual(job.remote_resources_pending, {"equipment"})
+
+        model.minute = 15
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "running")
+
+        model._process_job_progress_and_completions()
+        self.assertEqual(job.state, "completed")
+        self.assertEqual(model.nodes["stock"]["personnel_in_use"], 0)
+        self.assertEqual(model.nodes["root-stock"]["equipment_in_use"], 0)
+        self.assertEqual(model.nodes["deck"]["personnel_capacity"], 1)
+        self.assertEqual(model.nodes["deck"]["equipment_capacity"], 1)
+
+    def test_canonical_resource_reservation_is_atomic_when_equipment_path_is_missing(self) -> None:
+        # Arrange: personnel has a usable parent path, while equipment only exists
+        # at root and the root-to-parent hop has no policy.
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=0)
+        deck, parent = inputs["support_network"]["nodes"][:2]
+        deck.update({"personnel_capacity": 1, "equipment_capacity": 1})
+        parent.update({"personnel_capacity": 3, "equipment_capacity": 1})
+        inputs["support_network"]["nodes"].append({
+            "id": "root-stock",
+            "name": "Root Stock",
+            "organization_node_id": "org-root",
+            "personnel_capacity": 1,
+            "equipment_capacity": 3,
+            "inventory": {},
+            "transport_policies": [],
+        })
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"] = [
+            {
+                "id": "parent-to-leaf-wildcard",
+                "from_organization_node_id": "org-parent",
+                "to_organization_node_id": "org-leaf",
+                "product_id": "*",
+                "capacity": 3,
+                "priority": 1,
+                "transport_time_hours": 0,
+            },
+        ]
+        repair = inputs["support_activities"]["activities"][1]
+        repair["maintenance_methods"] = ["non_replacement"]
+        repair["jobs"] = [{
+            "activityCode": "repair",
+            "durationMinutes": 1,
+            "requiredPersonnel": 2,
+            "requiredDevices": 2,
+        }]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+
+        # Act.
+        model._start_waiting_jobs()
+
+        # Assert: the valid personnel plan was not partially reserved.
+        self.assertEqual(job.state, "waiting")
+        self.assertEqual(job.shortage_reason, "organization_no_vertical_resource_path:equipment")
+        self.assertEqual(job.resource_reservations, {})
+        self.assertEqual(model.resource_transits, [])
+        self.assertEqual(model.nodes["stock"]["personnel_in_use"], 0)
+        self.assertEqual(model.nodes["root-stock"]["equipment_in_use"], 0)
+        blocked = [event for event in model.event_log if event["event"] == "organization_resource_blocked"]
+        self.assertEqual(blocked[-1]["details"]["resource_kind"], "equipment")
+
+    def test_canonical_zero_minute_resource_transport_arrives_on_next_tick(self) -> None:
+        # Arrange.
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=0)
+        deck, parent = inputs["support_network"]["nodes"][:2]
+        deck.update({"personnel_capacity": 1, "equipment_capacity": 1})
+        parent.update({"personnel_capacity": 3, "equipment_capacity": 3})
+        inputs["support_network"]["organization_graph"]["transport_policies"] = [{
+            "id": "instant-parent-to-leaf",
+            "from_organization_node_id": "org-parent",
+            "to_organization_node_id": "org-leaf",
+            "product_id": "*",
+            "capacity": 3,
+            "priority": 1,
+            "transport_time_hours": 0,
+        }]
+        repair = inputs["support_activities"]["activities"][1]
+        repair["maintenance_methods"] = ["non_replacement"]
+        repair["jobs"] = [{
+            "activityCode": "repair",
+            "durationMinutes": 1,
+            "requiredPersonnel": 2,
+            "requiredDevices": 2,
+        }]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+
+        # Act / Assert: zero policy time still cannot arrive in the dispatch tick.
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "waiting")
+        self.assertEqual({transit.arrival_minute for transit in model.resource_transits}, {1})
+        model._process_transport_arrivals()
+        self.assertEqual(job.remote_resources_pending, {"personnel", "equipment"})
+
+        model.minute = 1
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "running")
+
+    def test_canonical_resources_are_atomically_reserved_and_dispatched_in_policy_batches(self) -> None:
+        inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=0)
+        deck, parent = inputs["support_network"]["nodes"][:2]
+        deck.update({"personnel_capacity": 0, "equipment_capacity": 0})
+        parent.update({"personnel_capacity": 5, "equipment_capacity": 5})
+        inputs["support_network"]["organization_graph"]["transport_policies"] = [{
+            "id": "parent-to-leaf-wildcard",
+            "from_organization_node_id": "org-parent",
+            "to_organization_node_id": "org-leaf",
+            "product_id": "*",
+            "capacity": 2,
+            "priority": 1,
+            "transport_time_hours": 0,
+        }]
+        repair = inputs["support_activities"]["activities"][1]
+        repair["maintenance_methods"] = ["non_replacement"]
+        repair["jobs"] = [{
+            "activityCode": "repair",
+            "durationMinutes": 1,
+            "requiredPersonnel": 5,
+            "requiredDevices": 5,
+        }]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+
+        model._start_waiting_jobs()
+        model._start_waiting_jobs()
+
+        self.assertEqual(job.resource_reservations, {
+            "personnel": ("stock", 5),
+            "equipment": ("stock", 5),
+        })
+        self.assertEqual(model.nodes["stock"]["personnel_in_use"], 5)
+        self.assertEqual(model.nodes["stock"]["equipment_in_use"], 5)
+        self.assertEqual(
+            sorted(transit.quantity for transit in model.resource_transits if transit.resource_kind == "personnel"),
+            [1, 2, 2],
+        )
+        self.assertEqual(
+            sorted(transit.quantity for transit in model.resource_transits if transit.resource_kind == "equipment"),
+            [1, 2, 2],
+        )
+        selected = [event for event in model.event_log if event["event"] == "organization_resource_selected"]
+        dispatched = [event for event in model.event_log if event["event"] == "organization_resource_dispatched"]
+        self.assertEqual(len(selected), 2)
+        self.assertEqual(len(dispatched), 6)
+
+        model.minute = 1
+        model._process_transport_arrivals()
+        model._start_waiting_jobs()
+        self.assertEqual(job.state, "running")
+        model._process_job_progress_and_completions()
+        self.assertEqual(job.state, "completed")
+        self.assertEqual(model.nodes["stock"]["personnel_in_use"], 0)
+        self.assertEqual(model.nodes["stock"]["equipment_in_use"], 0)
+
+    def test_canonical_runtime_nodes_require_unique_explicit_organization_mapping(self) -> None:
+        # Arrange.
+        missing = _vertical_organization_inputs()
+        missing["support_network"]["nodes"][0].pop("organization_node_id")
+        duplicate = _vertical_organization_inputs()
+        duplicate["support_network"]["nodes"][1]["organization_node_id"] = "org-leaf"
+
+        # Act / Assert.
+        with self.assertRaisesRegex(ValueError, "requires organization_node_id"):
+            AircraftSupportV1Model(missing)
+        with self.assertRaisesRegex(ValueError, "maps to multiple runtime nodes"):
+            AircraftSupportV1Model(duplicate)
 
     def test_replacement_reservation_is_atomic_across_plural_spares(self) -> None:
         inputs = _minimal_inputs()

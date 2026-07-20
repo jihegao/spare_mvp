@@ -99,6 +99,7 @@
   ],
   "supportOrganization": {
     "relations": [],
+    "runtimeMode": "vertical",
     "tree": {
       "children": [],
       "id": "node-a",
