@@ -14,6 +14,7 @@ export function renderRmsAllocationWorkbench({
   selectedEquipmentNodeId = project.rootId,
   validationMessage = "",
   calculationStatus = "",
+  saveStatus = "",
   htmlEscape,
   fixed,
   pct
@@ -21,6 +22,8 @@ export function renderRmsAllocationWorkbench({
   const equipmentRoots = project.equipmentNodes.filter((node) => !node.parentId);
   const hasAircraftModels = aircraftModels.length > 0;
   const hasSelectedAircraft = aircraftModels.includes(selectedAircraftModel);
+  const basicMissions = rmsBasicMissions(project, selectedAircraftModel);
+  const selectedBasicMission = basicMissions.find((mission) => mission.id === plan.inputs?.basicMissionId);
   const selectedRoot = equipmentRoots.find((node) => node.id === project.rootId);
   const hasEquipmentTree = Boolean(selectedRoot && project.equipmentNodes.some((node) => node.parentId === selectedRoot.id));
   const hasCompletedResult = result?.status === "calculated" && result.nodeResults?.length > 0;
@@ -30,11 +33,11 @@ export function renderRmsAllocationWorkbench({
   const isCalculating = normalizedCalculationStatus === "calculating";
   const visibleResult = normalizedCalculationStatus === "completed" ? result : null;
   const canExport = Boolean(hasSelectedAircraft && normalizedCalculationStatus === "completed" && hasCompletedResult);
-  const calculateDisabled = isCalculating || !hasSelectedAircraft;
+  const calculateDisabled = isCalculating || !hasSelectedAircraft || !selectedBasicMission;
   return `
     <div class="rms-allocation-workbench" aria-busy="${isCalculating ? "true" : "false"}">
       <div class="section-head section-context">
-        <span>装备 RMS 指标分配 / 导入安装数</span>
+        <span>装备 RMS 指标分配 / 基本任务</span>
         <span>${htmlEscape(project.name)}${result?.algorithmVersion ? ` / ${htmlEscape(result.algorithmVersion)}` : ""}</span>
       </div>
 
@@ -48,7 +51,7 @@ export function renderRmsAllocationWorkbench({
             </select>
           </label>
           <div class="rms-data-preparation-actions" role="group" aria-label="RMS 安装数数据操作">
-            <span class="rms-data-action-label">安装数数据</span>
+            <span class="rms-data-action-label">装备组成/安装数</span>
             <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
             <label class="rms-file-button rms-import-button${hasSelectedAircraft ? "" : " disabled"}" ${hasSelectedAircraft ? "" : 'aria-disabled="true"'}>上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv" ${hasSelectedAircraft ? "" : "disabled"}></label>
           </div>
@@ -80,10 +83,19 @@ export function renderRmsAllocationWorkbench({
             <div class="rms-calculation-step rms-input-step" role="group" aria-labelledby="rms-input-step-title">
               <h4 id="rms-input-step-title"><span aria-hidden="true">1</span>RMS 输入参数</h4>
               <div class="rms-calculation-input-grid">
-                ${input("任务时长", "inputs.missionHours", plan.inputs?.missionHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
-                ${input("MTBF", "inputs.mtbfHours", plan.inputs?.mtbfHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
+                <label>基本任务
+                  <select data-rms-basic-mission ${hasSelectedAircraft ? "" : "disabled"}>
+                    <option value="">请选择基本任务</option>
+                    ${basicMissions.map((mission) => `<option value="${htmlEscape(mission.id)}" ${mission.id === plan.inputs?.basicMissionId ? "selected" : ""}>${htmlEscape(mission.name)}（${htmlEscape(mission.id)}）</option>`).join("")}
+                  </select>
+                </label>
+                ${input("任务时长", "basicMission.missionHours", selectedBasicMission?.missionHours ?? "", "number", "0.01", htmlEscape, "0", "", "h", true)}
+                ${input("整机任务可靠度 R(T)", "inputs.missionReliability", plan.inputs?.missionReliability ?? "", "number", "0.0001", htmlEscape, "0", "1", "", !hasSelectedAircraft)}
                 ${input("MTTR", "inputs.mttrHours", plan.inputs?.mttrHours ?? "", "number", "0.1", htmlEscape, "0", "", "h", !hasSelectedAircraft)}
               </div>
+              <div class="rms-input-message" role="status">${selectedBasicMission
+                ? `任务编号：${htmlEscape(selectedBasicMission.id)}；适用装备：${htmlEscape(selectedBasicMission.equipmentType || "通用")}；任务时长由基本任务只读取得。`
+                : (hasSelectedAircraft ? "请选择适用于当前机型的基本任务。" : "")}</div>
               ${validationMessage ? `<div class="rms-input-message" role="alert">${htmlEscape(validationMessage)}</div>` : ""}
             </div>
             <div class="rms-calculation-step rms-method-step" role="group" aria-labelledby="rms-method-step-title">
@@ -114,26 +126,49 @@ export function renderRmsAllocationWorkbench({
       </section>
 
       <section class="analysis-chart-panel rms-result-panel">
-        <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel"${canExport ? "" : " disabled"}>导出 Excel</button></div>
+        <div class="section-head"><h3>节点分配结果</h3><div class="rms-method-actions">
+          <label class="rms-file-button${hasSelectedAircraft && selectedBasicMission ? "" : " disabled"}" ${hasSelectedAircraft && selectedBasicMission ? "" : 'aria-disabled="true"'}>导入分解结果<input data-rms-result-import-file type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ${hasSelectedAircraft && selectedBasicMission ? "" : "disabled"}></label>
+          <button type="button" data-rms-action="save-result"${canExport ? "" : " disabled"}>保存分解结果</button>
+          <button type="button" data-rms-action="export-excel"${canExport ? "" : " disabled"}>导出 Excel</button>
+        </div></div>
+        ${saveStatus ? `<p class="rms-import-status" role="status" aria-live="polite">${htmlEscape(saveStatus)}</p>` : ""}
         <div class="table-wrap">
           <table>
-            <thead><tr><th>层级</th><th>节点</th><th>运行比</th><th>失效率</th><th>MTBF(h)</th><th>MTTR(h)</th></tr></thead>
+            <thead><tr><th>层级</th><th>节点</th><th>运行比</th><th>本层份额</th><th>失效率</th><th>MTBF(h)</th><th>MTTR(h)</th><th>校核</th></tr></thead>
             <tbody>${visibleResult?.nodeResults?.length ? visibleResult.nodeResults.map((row) => `
               <tr>
                 <td>${htmlEscape(row.level)}</td>
                 <td>${htmlEscape(row.nodeName)}</td>
                 <td>${compactNumber(row.runningRatio)}</td>
+                <td>${compactNumber(row.localAllocationShare ?? row.allocationShare, 6)}</td>
                 <td>${compactNumber(row.failureRate, 8)}</td>
-                <td>${compactNumber(row.mtbfHours)}</td>
-                <td>${compactNumber(row.mttrHours)}</td>
+                <td>${row.mtbfHours == null ? "-" : `<input aria-label="${htmlEscape(row.nodeName)} MTBF" data-rms-result-field="mtbfHours" data-rms-result-node-id="${htmlEscape(row.nodeId)}" type="number" min="0" step="0.01" value="${htmlEscape(compactNumber(row.mtbfHours, 6))}">`}</td>
+                <td>${row.mttrHours == null ? "-" : `<input aria-label="${htmlEscape(row.nodeName)} MTTR" data-rms-result-field="mttrHours" data-rms-result-node-id="${htmlEscape(row.nodeId)}" type="number" min="0" step="0.01" value="${htmlEscape(compactNumber(row.mttrHours, 6))}">`}</td>
+                <td>${htmlEscape(row.verificationStatus || row.status || "-")}</td>
               </tr>
-            `).join("") : '<tr><td colspan="6">当前飞机型号暂无计算结果。</td></tr>'}</tbody>
+            `).join("") : '<tr><td colspan="8">当前飞机型号暂无计算结果。</td></tr>'}</tbody>
           </table>
         </div>
       </section>
       ${isCalculating ? '<div class="rms-calculation-overlay" role="status" aria-live="assertive"><span>计算进行中</span></div>' : ""}
     </div>
   `;
+}
+
+function rmsBasicMissions(project, aircraftModel) {
+  return (Array.isArray(project?.basicMissions) ? project.basicMissions : [])
+    .map((mission, index) => {
+      const id = String(mission?.id || mission?.missionId || "").trim();
+      const equipmentType = String(mission?.aircraftModel || mission?.equipmentType || "").trim();
+      const minutes = Number(mission?.taskDurationMinutes);
+      return {
+        id,
+        name: String(mission?.name || mission?.missionName || id || `基本任务${index + 1}`).trim(),
+        equipmentType,
+        missionHours: Number.isFinite(minutes) && minutes > 0 ? minutes / 60 : null
+      };
+    })
+    .filter((mission) => mission.id && mission.missionHours && (!mission.equipmentType || mission.equipmentType === aircraftModel));
 }
 
 function renderInstallationTable(project, selectedNodeId, htmlEscape) {

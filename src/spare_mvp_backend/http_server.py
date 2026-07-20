@@ -167,6 +167,9 @@ def create_backend_server(
                 if route == "/projects/import-xlsx/preview":
                     return api.preview_project_xlsx(body)
                 return api.create_imported_project(body.get("project_json", body), actor_user_id=actor["user_id"])
+            if self.command == "POST" and route == "/rms-allocation/import-xlsx/preview":
+                self._require_user()
+                return api.preview_rms_allocation_xlsx(self._read_json())
             body = self._read_json()
 
             if self.command == "POST" and route == "/auth/login":
@@ -378,6 +381,7 @@ def create_backend_server(
             limit = MAX_PROJECT_XLSX_JSON_BODY_BYTES if route in {
                 "/api/projects/import-xlsx/preview",
                 "/api/projects/import-xlsx/create",
+                "/api/rms-allocation/import-xlsx/preview",
             } else MAX_JSON_BODY_BYTES
             if length > limit:
                 raise BackendApiError(

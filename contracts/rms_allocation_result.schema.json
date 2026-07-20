@@ -11,15 +11,21 @@
     "planVersion": { "type": "integer", "minimum": 1 },
     "planStatus": { "type": "string" },
     "status": { "type": "string" },
+    "source": { "enum": ["calculated", "xlsx-import", "edited"] },
+    "savedAt": { "type": "string" },
+    "importedAt": { "type": "string" },
+    "editedAt": { "type": "string" },
     "algorithmVersion": { "type": "string", "minLength": 1 },
     "aircraftModel": { "type": "string" },
     "inputSnapshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["missionHours", "mtbfHours", "mttrHours"],
+      "required": ["basicMissionId", "basicMissionName", "missionHours", "missionReliability", "mttrHours"],
       "properties": {
+        "basicMissionId": { "type": "string" },
+        "basicMissionName": { "type": "string" },
         "missionHours": { "type": "number", "minimum": 0 },
-        "mtbfHours": { "type": "number", "minimum": 0 },
+        "missionReliability": { "type": "number", "minimum": 0, "maximum": 1 },
         "mttrHours": { "type": "number", "minimum": 0 }
       }
     },
@@ -30,18 +36,23 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "failureRate", "mtbfHours", "mttrHours", "allocationShare", "status"],
+        "required": ["nodeId", "nodeName", "parentNodeId", "level", "model", "installationCount", "cumulativeInstallationCount", "runningRatio", "failureRate", "mtbfHours", "mttrHours", "localAllocationShare", "cumulativeAllocationShare", "riskBudget", "verificationStatus", "status"],
         "properties": {
           "nodeId": { "type": "string", "minLength": 1 },
           "nodeName": { "type": "string", "minLength": 1 },
+          "parentNodeId": { "type": "string", "minLength": 1 },
           "level": { "type": "string" },
           "model": { "type": "string" },
           "installationCount": { "type": "integer", "minimum": 1 },
+          "cumulativeInstallationCount": { "type": "integer", "minimum": 1 },
           "runningRatio": { "type": "number", "minimum": 0, "maximum": 1 },
           "failureRate": { "type": "number", "minimum": 0 },
           "mtbfHours": { "type": ["number", "null"], "exclusiveMinimum": 0 },
           "mttrHours": { "type": ["number", "null"], "minimum": 0 },
-          "allocationShare": { "type": "number", "minimum": 0, "maximum": 1 },
+          "localAllocationShare": { "type": "number", "minimum": 0, "maximum": 1 },
+          "cumulativeAllocationShare": { "type": "number", "minimum": 0, "maximum": 1 },
+          "riskBudget": { "type": "number", "minimum": 0 },
+          "verificationStatus": { "type": "string" },
           "status": { "type": "string" }
         }
       }
@@ -49,10 +60,12 @@
     "totals": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["installationCount", "allocationShare"],
+      "required": ["installationCount", "allocationShare", "riskBudget", "missionReliability"],
       "properties": {
         "installationCount": { "type": "integer", "minimum": 0 },
-        "allocationShare": { "type": "number", "minimum": 0, "maximum": 1.000000000001 }
+        "allocationShare": { "type": "number", "minimum": 0, "maximum": 1.000000000001 },
+        "riskBudget": { "type": "number", "minimum": 0 },
+        "missionReliability": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "warnings": { "type": "array" },

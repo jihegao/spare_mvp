@@ -34,7 +34,7 @@ class ProjectXlsxError(ValueError):
 def parse_project_xlsx(content: bytes) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[dict[str, Any]]]:
     if len(content) > MAX_XLSX_BYTES:
         raise ProjectXlsxError(f"XLSX 文件超过 {MAX_XLSX_BYTES} bytes")
-    _validate_xlsx_archive(content)
+    validate_xlsx_archive(content)
     try:
         workbook = load_workbook(BytesIO(content), read_only=True, data_only=False)
     except Exception as exc:
@@ -64,7 +64,7 @@ def parse_project_xlsx(content: bytes) -> tuple[dict[str, Any], dict[str, dict[s
     return project, locations, issues
 
 
-def _validate_xlsx_archive(content: bytes) -> None:
+def validate_xlsx_archive(content: bytes) -> None:
     try:
         with ZipFile(BytesIO(content)) as archive:
             entries = archive.infolist()

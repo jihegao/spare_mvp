@@ -6,7 +6,7 @@
   "required": ["schemaVersion", "planId", "planVersion", "name", "status", "projectId", "inputs", "methods", "algorithmVersion", "assumptions"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": "rms-allocation-plan-v5" },
+    "schemaVersion": { "const": "rms-allocation-plan-v6" },
     "planId": { "type": "string", "minLength": 1 },
     "planVersion": { "type": "integer", "minimum": 1 },
     "name": { "type": "string", "minLength": 1 },
@@ -15,10 +15,10 @@
     "inputs": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["missionHours", "mtbfHours", "mttrHours"],
+      "required": ["basicMissionId", "missionReliability", "mttrHours"],
       "properties": {
-        "missionHours": { "type": "number", "exclusiveMinimum": 0 },
-        "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
+        "basicMissionId": { "type": "string", "minLength": 1 },
+        "missionReliability": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
         "mttrHours": { "type": "number", "minimum": 0 }
       }
     },

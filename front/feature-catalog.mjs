@@ -219,7 +219,7 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("周期性任务")) return ["missionProfile", "basicMissions.missionPhases"];
   if (name.includes("装备系统")) return ["equipment", "components", "failureModel"];
   if (name.includes("可靠性框图")) return ["reliabilityBlockDiagram", "components"];
-  if (name.includes("RMS分配") || name.includes("RMS指标分配")) return ["rmsAllocationPlan", "equipmentNodes", "missionExposure", "allocationResults"];
+  if (name.includes("RMS分配") || name.includes("RMS指标分配")) return ["rmsAllocationPlan", "basicMissions", "equipmentNodes", "allocationResults"];
   if (name.includes("项目数据管理")) return ["projectList", "templateManagement", "dataOverview"];
   if (name.includes("建模颗粒度")) return ["modelingModules", "sheets", "fieldSelections"];
   if (name.includes("用户管理")) return ["users", "roles", "organizations"];
