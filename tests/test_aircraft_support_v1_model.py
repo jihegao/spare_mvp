@@ -722,6 +722,181 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.snapshot()["preventive_backlog"], 2)
         self.assertEqual(len([job for job in model.jobs if job.kind == "preventive"]), 2)
 
+    def test_initial_life_state_creates_one_minute_zero_job_with_all_due_dimensions(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"] = {
+            "fleet_count": 1,
+            "initial_ready": 1,
+            "models": ["J-15"],
+            "assets": [
+                {
+                    "tail_number": "J15-101",
+                    "aircraft_type": "J-15",
+                    "model": "J-15",
+                    "initial_state": "available",
+                    "initial_preventive_due": True,
+                    "initial_life_state": {
+                        "calendar_days": 10,
+                        "flight_hours": 100.5,
+                        "takeoff_landing_cycles": 20,
+                    },
+                }
+            ],
+        }
+        preventive = inputs["support_activities"]["activities"][3]
+        preventive.update(
+            {
+                "calendarDayInterval": 10,
+                "runHourInterval": 100.5,
+                "takeoffLandingInterval": 20,
+            }
+        )
+
+        model = AircraftSupportV1Model(inputs)
+
+        preventive_jobs = [job for job in model.jobs if job.kind == "preventive"]
+        self.assertEqual(len(preventive_jobs), 1)
+        self.assertEqual(
+            preventive_jobs[0].due_dimensions,
+            ["calendar_days", "flight_hours", "takeoff_landing_cycles"],
+        )
+        self.assertEqual(model.minute, 0)
+        self.assertEqual(model.snapshot()["available_aircraft"], 0)
+        self.assertEqual(model.snapshot()["preventive_maintenance_events"], 1)
+        self.assertEqual(model.aircraft[0].flight_hours, 100.5)
+        self.assertEqual(model.aircraft[0].takeoff_count, 20)
+        self.assertEqual(model.aircraft[0].landing_count, 20)
+        created = next(event for event in model.event_log if event["event"] == "preventive_created")
+        self.assertEqual(created["time"], 0)
+        self.assertEqual(created["details"]["due_dimensions"], preventive_jobs[0].due_dimensions)
+
+    def test_initial_life_state_below_every_threshold_keeps_aircraft_available(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"] = {
+            "fleet_count": 1,
+            "initial_ready": 1,
+            "models": ["J-15"],
+            "assets": [
+                {
+                    "tail_number": "J15-101",
+                    "aircraft_type": "J-15",
+                    "model": "J-15",
+                    "initial_state": "available",
+                    "initial_preventive_due": False,
+                    "initial_life_state": {
+                        "calendar_days": 9,
+                        "flight_hours": 100.25,
+                        "takeoff_landing_cycles": 19,
+                    },
+                }
+            ],
+        }
+        inputs["support_activities"]["activities"][3].update(
+            {
+                "calendarDayInterval": 10,
+                "runHourInterval": 100.5,
+                "takeoffLandingInterval": 20,
+            }
+        )
+
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertEqual([job for job in model.jobs if job.kind == "preventive"], [])
+        self.assertEqual(model.aircraft[0].state, "available")
+        self.assertEqual(model.aircraft[0].initial_due_dimensions, [])
+        self.assertEqual(model.snapshot()["preventive_maintenance_events"], 0)
+
+    def test_zero_and_null_preventive_thresholds_disable_pre_life_dimensions(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"] = {
+            "fleet_count": 1,
+            "initial_ready": 1,
+            "models": ["J-15"],
+            "assets": [
+                {
+                    "tail_number": "J15-101",
+                    "aircraft_type": "J-15",
+                    "model": "J-15",
+                    "initial_state": "available",
+                    "initial_preventive_due": True,
+                    "initial_life_state": {
+                        "calendar_days": 500,
+                        "flight_hours": 500.0,
+                        "takeoff_landing_cycles": 500,
+                    },
+                }
+            ],
+        }
+        inputs["support_activities"]["activities"][3].update(
+            {
+                "calendarDayInterval": 0,
+                "runHourInterval": None,
+                "takeoffLandingInterval": 0,
+            }
+        )
+
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertEqual(model.aircraft[0].preventive_thresholds, {
+            "calendar_days": 0,
+            "flight_hours": 0.0,
+            "takeoff_landing_cycles": 0,
+        })
+        self.assertEqual([job for job in model.jobs if job.kind == "preventive"], [])
+
+    def test_initial_life_trace_survives_completion_in_run_and_visualization_results(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"] = {"duration_minutes": 8, "tick_minutes": 1, "sample_every_minutes": 1}
+        inputs["aircraft"] = {
+            "fleet_count": 1,
+            "initial_ready": 1,
+            "models": ["J-15"],
+            "assets": [
+                {
+                    "tail_number": "J15-101",
+                    "aircraft_type": "J-15",
+                    "model": "J-15",
+                    "initial_state": "available",
+                    "initial_life_state": {
+                        "calendar_days": 1,
+                        "flight_hours": 8,
+                        "takeoff_landing_cycles": 6,
+                    },
+                }
+            ],
+        }
+        preventive = inputs["support_activities"]["activities"][3]
+        preventive.update(
+            {
+                "calendarDayInterval": 1,
+                "runHourInterval": 8,
+                "takeoffLandingInterval": 6,
+            }
+        )
+        preventive["jobs"][0]["durationMinutes"] = 1
+
+        model = AircraftSupportV1Model(inputs)
+        initial_frame = model.visualization_frame(run_id="trace", step=0)
+        execution = model.run()
+
+        expected_initial = {
+            "calendar_days": 1,
+            "flight_hours": 8.0,
+            "takeoff_landing_cycles": 6,
+        }
+        expected_dimensions = ["calendar_days", "flight_hours", "takeoff_landing_cycles"]
+        self.assertEqual(initial_frame["aircraft"][0]["initial_life_state"], expected_initial)
+        self.assertEqual(initial_frame["aircraft"][0]["due_dimensions"], expected_dimensions)
+        self.assertEqual(initial_frame["jobs"][0]["due_dimensions"], expected_dimensions)
+        trace = execution["lifecycle_trace"][0]
+        self.assertEqual(trace["initial_life_state"], expected_initial)
+        self.assertEqual(trace["initial_due_dimensions"], expected_dimensions)
+        self.assertFalse(trace["preventive_due"])
+        self.assertEqual(trace["current_life_state"]["flight_hours"], 0.0)
+        self.assertEqual(trace["current_life_state"]["takeoff_landing_cycles"], 0)
+        self.assertLess(trace["current_life_state"]["calendar_days"], 1)
+        self.assertTrue(any(event["event"] == "preventive_completed" for event in execution["events"]))
+
     def test_canonical_preventive_jobs_can_complete_after_day_two(self) -> None:
         model = AircraftSupportV1Model(_canonical_import_inputs())
         execution = model.run()
@@ -1543,8 +1718,14 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertIn("supportActivities[].predecessors", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].maintenanceMethods", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].replacementRatio", scope["behavior_driving_fields"])
+        self.assertIn("combatUnit.members[].preLifeCalendarDays", scope["behavior_driving_fields"])
+        self.assertIn("combatUnit.members[].preLifeFlightHours", scope["behavior_driving_fields"])
+        self.assertIn("combatUnit.members[].preLifeTakeoffLandingCount", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
-        self.assertEqual(scope["fail_closed_fields"], [])
+        self.assertIn("combatUnit.members[].preLifeCalendarDays", scope["fail_closed_fields"])
+        self.assertIn("combatUnit.members[].preLifeFlightHours", scope["fail_closed_fields"])
+        self.assertIn("combatUnit.members[].preLifeTakeoffLandingCount", scope["fail_closed_fields"])
+        self.assertIn("supportActivities[].runHourInterval", scope["fail_closed_fields"])
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
 
     def test_failure_distribution_types_drive_effective_rates(self) -> None:

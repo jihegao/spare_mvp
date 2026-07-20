@@ -182,6 +182,54 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         self.assertEqual(compiled_activity["jobs"][0]["activityCode"], "job-1")
         self.assertEqual(compiled_activity["jobs"][0]["workName"], "Inspect pump")
 
+    def test_compiles_canonical_pre_life_and_blocks_missing_threshold_without_legacy_hour_fallback(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        member = project["combatUnit"]["members"][0]
+        member.update({
+            "preLifeCalendarDays": 1,
+            "preLifeFlightHours": 2.5,
+            "preLifeTakeoffLandingCount": 3,
+            "preLifeRequirementHours": 999,
+            "remainingLifeHours": 888,
+        })
+        project["supportActivities"].append({
+            "id": "preventive",
+            "activityType": "preventive",
+            "planType": "预防性维修方案",
+            "aircraftModel": "J-15",
+            "equipmentId": "whole-aircraft",
+            "calendarDayInterval": 2,
+            "runHourInterval": 4.5,
+            "takeoffLandingInterval": 6,
+            "activityCodes": ["job-1"],
+            "predecessors": {"job-1": []},
+        })
+
+        inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        self.assertEqual(inputs["aircraft"]["assets"][0]["initial_life_state"], {
+            "calendar_days": 1,
+            "flight_hours": 2.5,
+            "takeoff_landing_cycles": 3,
+        })
+        project["supportActivities"][-1]["runHourInterval"] = 0
+        with self.assertRaisesRegex(ValueError, r"combatUnit\.members\[0\]\.preLifeFlightHours"):
+            skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        member.update({
+            "preLifeCalendarDays": 0,
+            "preLifeFlightHours": 0,
+            "preLifeTakeoffLandingCount": 0,
+        })
+        project["supportActivities"][-1]["runHourInterval"] = 4.5
+        conflict = json.loads(json.dumps(project["supportActivities"][-1]))
+        conflict["id"] = "preventive-conflict"
+        conflict["runHourInterval"] = 5
+        project["supportActivities"].append(conflict)
+        with self.assertRaisesRegex(ValueError, r"supportActivities\[2\]\.runHourInterval"):
+            skill.compile_project_json_to_aircraft_support_inputs(project)
+
     def test_compiles_canonical_maintenance_plan_scope_and_historical_default(self) -> None:
         skill = _load_skill_module()
         project = self._project()

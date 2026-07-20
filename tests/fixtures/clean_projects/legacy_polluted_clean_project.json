@@ -36,10 +36,13 @@
   "combatUnit": {
     "members": [
       {
-        "aircraftNo": "J15-001",
-        "model": "J-15",
-        "status": "ready",
-        "airport": "Airport A"
+      "aircraftNo": "J15-001",
+      "model": "J-15",
+      "status": "ready",
+      "airport": "Airport A",
+      "preLifeCalendarDays": 0,
+      "preLifeFlightHours": 0,
+      "preLifeTakeoffLandingCount": 0
       }
     ]
   },

@@ -49,6 +49,36 @@ class ProjectJsonExporterTest(unittest.TestCase):
         with mock.patch("builtins.__import__", side_effect=guarded_import):
             return ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
+    def test_export_materializes_canonical_aircraft_pre_life_without_legacy_alias_conversion(self) -> None:
+        project = self._polluted_project()
+        member = project["combatUnit"]["members"][0]
+        member.update({"preLifeRequirementHours": 120, "remainingLifeHours": 80, "takeoffLandingCount": 7})
+
+        exported = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        exported_member = exported["combatUnit"]["members"][0]
+        self.assertEqual(exported_member["preLifeCalendarDays"], 0)
+        self.assertEqual(exported_member["preLifeFlightHours"], 0)
+        self.assertEqual(exported_member["preLifeTakeoffLandingCount"], 0)
+        self.assertNotIn("preLifeRequirementHours", exported_member)
+        self.assertNotIn("remainingLifeHours", exported_member)
+        self.assertNotIn("takeoffLandingCount", exported_member)
+
+    def test_export_rejects_invalid_canonical_pre_life_and_ignores_legacy_cycle_semantics(self) -> None:
+        project = self._polluted_project()
+        member = project["combatUnit"]["members"][0]
+        member["preLifeCalendarDays"] = -1
+        with self.assertRaisesRegex(ValueError, r"combatUnit\.members\[0\]\.preLifeCalendarDays"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        project = self._polluted_project()
+        member = project["combatUnit"]["members"][0]
+        member["preLifeTakeoffLandingCount"] = 3
+        member["takeoffLandingCount"] = 4
+        exported = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+        self.assertEqual(exported["combatUnit"]["members"][0]["preLifeTakeoffLandingCount"], 3)
+        self.assertNotIn("takeoffLandingCount", exported["combatUnit"]["members"][0])
+
     def test_export_migrates_legacy_task_item_ownership(self) -> None:
         project = self._polluted_project()
         project["basicMissions"][0]["priority"] = 9

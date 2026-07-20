@@ -1080,6 +1080,7 @@ class BackendApi:
             "successful_samples": page_result.get("successful_samples"),
             "valid_samples": page_result.get("valid_samples"),
             "visualization_state_series": visualization_state_series,
+            "lifecycle_trace": copy.deepcopy(samples[0].get("lifecycle_trace") or []),
             "limitations": _lite_mesa_analysis_limitations(),
             "failed_samples": failed_samples,
             "compile_provenance": compile_result.get("provenance", {}),
@@ -2089,6 +2090,7 @@ def _run_aircraft_support_v1_analysis_sample(
         "frames": frames,
         "events": copy.deepcopy(execution.get("events") or []),
         "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
+        "lifecycle_trace": copy.deepcopy(execution.get("lifecycle_trace") or []),
     }
 
 

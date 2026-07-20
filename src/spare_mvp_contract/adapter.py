@@ -20,6 +20,7 @@ import re
 from typing import Any
 
 from src.spare_mvp_backend.project_payload import (
+    normalize_aircraft_pre_life,
     normalize_project_products,
     normalize_support_activity_maintenance_plans,
 )
@@ -383,11 +384,34 @@ class SimulationAdapter:
     ) -> dict[str, Any]:
         if model_family in RETIRED_ADAPTER_MODEL_FAMILIES:
             return self._retired_model_family_gate(model_family)
-        maintenance_plan_changes: list[str] = []
+        normalization_changes: list[str] = []
         if model_family == "aircraft_support_v1":
             project = normalize_project_products(project)
             try:
+                project, pre_life_changes = normalize_aircraft_pre_life(project)
+                normalization_changes.extend(pre_life_changes)
+            except ValueError as error:
+                message = str(error)
+                path_match = re.search(r" schema at ([^:]+):", message)
+                field_path = path_match.group(1) if path_match else "combatUnit.members"
+                provenance = self._aircraft_support_v1_mapping_provenance(self._project_id(project), project, runtime_config)
+                return {
+                    "status": "blocked",
+                    "scenario": None,
+                    "provenance": provenance,
+                    "issues": [{
+                        "code": "invalid_aircraft_pre_life",
+                        "message": message,
+                        "field_path": field_path,
+                        "page": "Project JSON",
+                        "severity": "error",
+                        "suggestion": "Use non-negative canonical aircraft pre-life consumption values.",
+                    }],
+                    "errors": [{"code": "invalid_aircraft_pre_life", "path": field_path, "message": message}],
+                }
+            try:
                 project, maintenance_plan_changes = normalize_support_activity_maintenance_plans(project)
+                normalization_changes.extend(maintenance_plan_changes)
             except ValueError as error:
                 message = str(error)
                 path_match = re.search(r" schema at ([^:]+):", message)
@@ -435,7 +459,7 @@ class SimulationAdapter:
                 self._aircraft_support_v1_mapping_provenance(self._project_id(project), project, runtime_config),
                 project,
             )
-            provenance["defaults_applied"] = list(provenance.get("defaults_applied") or []) + maintenance_plan_changes
+            provenance["defaults_applied"] = list(provenance.get("defaults_applied") or []) + normalization_changes
             issues = self._aircraft_support_v1_compile_issues(project)
             if issues:
                 return {
@@ -668,8 +692,80 @@ class SimulationAdapter:
             "seed": self._positive_int(experiment.get("seed"), 0),
             "stop_policy": stop_policy,
         }
+        self._apply_aircraft_pre_life_initial_state(inputs)
         self._strip_removed_mission_area_fields(inputs)
         return inputs
+
+    def _apply_aircraft_pre_life_initial_state(self, inputs: dict[str, Any]) -> None:
+        components = {
+            str(component.get("id") or ""): component
+            for component in inputs.get("equipment_tree", {}).get("components", [])
+            if isinstance(component, dict)
+        }
+        preventive = [
+            activity
+            for activity in inputs.get("support_activities", {}).get("activities", [])
+            if isinstance(activity, dict) and self._support_activity_maintenance_kind(activity) == "preventive"
+        ]
+        assets = inputs.get("aircraft", {}).get("assets", [])
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            model = str(asset.get("model") or asset.get("aircraft_type") or "")
+            applicable = []
+            for activity in preventive:
+                equipment_id = str(activity.get("equipment_id") or "")
+                scoped_model = str(
+                    activity.get("aircraft_model")
+                    or components.get(equipment_id, {}).get("aircraft_model")
+                    or ""
+                )
+                if not scoped_model or scoped_model == model:
+                    applicable.append(activity)
+            dimension_fields = {
+                "calendar_days": "calendarDayInterval",
+                "flight_hours": "runHourInterval",
+                "takeoff_landing_cycles": "takeoffLandingInterval",
+            }
+            thresholds: dict[str, int | float] = {}
+            threshold_sources: dict[str, list[dict[str, str]]] = {}
+            for dimension, interval_field in dimension_fields.items():
+                contributors = [
+                    activity
+                    for activity in applicable
+                    if isinstance(activity.get(interval_field), (int, float))
+                    and not isinstance(activity.get(interval_field), bool)
+                    and float(activity[interval_field]) > 0
+                ]
+                values = {float(activity[interval_field]) for activity in contributors}
+                value = next(iter(values), 0.0)
+                thresholds[dimension] = (
+                    float(value) if dimension == "flight_hours" else int(value)
+                )
+                threshold_sources[dimension] = [
+                    {
+                        "activity_id": str(activity.get("id") or ""),
+                        "equipment_id": str(activity.get("equipment_id") or ""),
+                    }
+                    for activity in contributors
+                ]
+            life = asset.get("initial_life_state") if isinstance(asset.get("initial_life_state"), dict) else {}
+            due_dimensions = [
+                dimension
+                for dimension in ("calendar_days", "flight_hours", "takeoff_landing_cycles")
+                if thresholds[dimension] > 0 and float(life.get(dimension, 0) or 0) >= float(thresholds[dimension])
+            ]
+            asset["source_initial_state"] = str(asset.get("source_initial_state") or asset.get("initial_state") or "available")
+            asset["preventive_thresholds"] = thresholds
+            asset["preventive_threshold_sources"] = threshold_sources
+            asset["initial_due_dimensions"] = due_dimensions
+            asset["initial_preventive_due"] = bool(due_dimensions)
+            if due_dimensions:
+                asset["initial_state"] = "maintenance"
+        if assets:
+            inputs["aircraft"]["initial_ready"] = sum(
+                1 for asset in assets if isinstance(asset, dict) and asset.get("initial_state") == "available"
+            )
 
     def _runtime_experiment_config(
         self,
@@ -989,7 +1085,7 @@ class SimulationAdapter:
         aircraft_summary: dict[str, Any],
         fleet_count: int,
         initial_ready: int,
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         combat_unit = self._aircraft_support_v1_combat_unit(project, mission_profile)
         members = self._dict_list(combat_unit.get("members"))
         if not members:
@@ -1014,6 +1110,11 @@ class SimulationAdapter:
                     "initial_state": initial_state,
                     "airport": self._optional_string(member.get("airport")) or "",
                     "airport_id": self._optional_string(member.get("airportId") or member.get("baseAirportId")) or "",
+                    "initial_life_state": {
+                        "calendar_days": member.get("preLifeCalendarDays", 0),
+                        "flight_hours": member.get("preLifeFlightHours", 0),
+                        "takeoff_landing_cycles": member.get("preLifeTakeoffLandingCount", 0),
+                    },
                 }
             )
         return assets
@@ -1219,7 +1320,7 @@ class SimulationAdapter:
 
     def _support_activity_maintenance_kind(self, activity: dict[str, Any]) -> str:
         plan_type = str(activity.get("planType") or "").strip()
-        activity_type = str(activity.get("activityType") or "").strip().lower()
+        activity_type = str(activity.get("activityType") or activity.get("activity_type") or "").strip().lower()
         if plan_type == "修复性维修方案":
             return "repair"
         if plan_type == "预防性维修方案":
@@ -1320,7 +1421,13 @@ class SimulationAdapter:
             "mapping_version": "aircraft-support-v1-input-v0",
             "consumed_fields": [
                 "combatUnit.members",
+                "combatUnit.members[].preLifeCalendarDays",
+                "combatUnit.members[].preLifeFlightHours",
+                "combatUnit.members[].preLifeTakeoffLandingCount",
                 "missionProfile.combatUnit.members",
+                "missionProfile.combatUnit.members[].preLifeCalendarDays",
+                "missionProfile.combatUnit.members[].preLifeFlightHours",
+                "missionProfile.combatUnit.members[].preLifeTakeoffLandingCount",
                 "missionProfile.durationHours",
                 "missionProfile.compositeTasks",
                 "missionProfile.periodicTasks",
@@ -1341,6 +1448,9 @@ class SimulationAdapter:
                 "supportActivityJobs[]",
                 "supportActivities[].aircraftModel",
                 "supportActivities[].equipmentId",
+                "supportActivities[].calendarDayInterval",
+                "supportActivities[].runHourInterval",
+                "supportActivities[].takeoffLandingInterval",
                 "supportActivities[].activityCodes",
                 "supportActivities[].predecessors",
                 "supportActivities[].maintenanceMethods",
@@ -1356,6 +1466,7 @@ class SimulationAdapter:
             "derived_fields": [
                 "simulation_inputs.project_identity",
                 "simulation_inputs.aircraft.initial_ready",
+                "simulation_inputs.aircraft.assets[].initial_life_state",
                 "simulation_inputs.support_activities.activities[].aircraft_model",
                 "simulation_inputs.support_activities.activities[].equipment_id",
                 "simulation_inputs.support_activities.activities[].maintenance_methods",
@@ -1364,7 +1475,16 @@ class SimulationAdapter:
                 "simulation_inputs.time.requested_steps",
                 "ExperimentPlan.config.steps",
             ],
-            "ignored_fields": [],
+            "ignored_fields": [
+                "combatUnit.members[].calendarDays",
+                "combatUnit.members[].preLifeRequirementHours",
+                "combatUnit.members[].remainingLifeHours",
+                "combatUnit.members[].takeoffLandingCount",
+                "missionProfile.combatUnit.members[].calendarDays",
+                "missionProfile.combatUnit.members[].preLifeRequirementHours",
+                "missionProfile.combatUnit.members[].remainingLifeHours",
+                "missionProfile.combatUnit.members[].takeoffLandingCount",
+            ],
             "governance_only_fields": [
                 "projectInfo",
                 "missionProfile.combatUnit",
@@ -1525,6 +1645,7 @@ class SimulationAdapter:
         support_activities_disabled = self._modeling_import_domain_disabled(project, "supportActivities")
 
         issues.extend(self._periodic_profile_compile_issues(project))
+        issues.extend(self._aircraft_pre_life_compile_issues(project))
 
         if not components:
             issues.append(
@@ -1788,6 +1909,107 @@ class SimulationAdapter:
 
         return issues
 
+    def _aircraft_pre_life_compile_issues(self, project: dict[str, Any]) -> list[dict[str, str]]:
+        issues: list[dict[str, str]] = []
+        mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
+        members = self._aircraft_support_v1_combat_members(project, mission_profile)
+        components = self._dict_list(project.get("components"))
+        components_by_id = {
+            str(component.get("id") or "").strip(): component
+            for component in components
+            if str(component.get("id") or "").strip()
+        }
+        member_models = {str(member.get("model") or "").strip() for member in members} - {""}
+        known_models = member_models | {
+            str(component.get("aircraftModel") or "").strip() for component in components
+        } - {""}
+        preventive: list[tuple[int, dict[str, Any]]] = []
+        interval_specs = (
+            ("calendarDayInterval", "preLifeCalendarDays", "integer"),
+            ("runHourInterval", "preLifeFlightHours", "number"),
+            ("takeoffLandingInterval", "preLifeTakeoffLandingCount", "integer"),
+        )
+        for activity_index, activity in enumerate(self._dict_list(project.get("supportActivities"))):
+            if self._support_activity_maintenance_kind(activity) != "preventive":
+                continue
+            preventive.append((activity_index, activity))
+            activity_model = str(activity.get("aircraftModel") or "").strip()
+            if activity_model and activity_model not in known_models:
+                issues.append(self._compile_issue(
+                    "unknown_preventive_aircraft_model",
+                    f"supportActivities[{activity_index}].aircraftModel",
+                    f"预防性维修方案引用了未知飞机型号 {activity_model}。",
+                    "保障活动建模",
+                ))
+            equipment_id = str(activity.get("equipmentId") or "").strip()
+            component = components_by_id.get(equipment_id) if equipment_id else None
+            component_model = str((component or {}).get("aircraftModel") or "").strip()
+            if activity_model and component_model and activity_model != component_model:
+                issues.append(self._compile_issue(
+                    "conflicting_preventive_scope",
+                    f"supportActivities[{activity_index}].equipmentId",
+                    f"预防性维修方案的 aircraftModel={activity_model} 与组件 {equipment_id} 的型号 {component_model} 冲突。",
+                    "保障活动建模",
+                ))
+            for interval_field, _pre_life_field, kind in interval_specs:
+                value = activity.get(interval_field)
+                if value is None:
+                    continue
+                valid_number = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+                valid = valid_number and value >= 0 and (kind != "integer" or isinstance(value, int))
+                if not valid:
+                    issues.append(self._compile_issue(
+                        "invalid_preventive_interval",
+                        f"supportActivities[{activity_index}].{interval_field}",
+                        f"{interval_field} 必须是同单位的非负{'整数' if kind == 'integer' else '有限数值'}；0/null 表示禁用。",
+                        "保障活动建模",
+                    ))
+
+        reported_conflicts: set[tuple[str, str]] = set()
+        for member_index, member in enumerate(members):
+            member_model = str(member.get("model") or "").strip()
+            applicable: list[tuple[int, dict[str, Any]]] = []
+            for activity_index, activity in preventive:
+                activity_model = str(activity.get("aircraftModel") or "").strip()
+                equipment_id = str(activity.get("equipmentId") or "").strip()
+                component_model = str((components_by_id.get(equipment_id) or {}).get("aircraftModel") or "").strip()
+                effective_model = activity_model or component_model
+                if effective_model and effective_model != member_model:
+                    continue
+                applicable.append((activity_index, activity))
+            for interval_field, pre_life_field, _kind in interval_specs:
+                enabled = [
+                    (activity_index, activity[interval_field])
+                    for activity_index, activity in applicable
+                    if isinstance(activity.get(interval_field), (int, float))
+                    and not isinstance(activity.get(interval_field), bool)
+                    and math.isfinite(activity[interval_field])
+                    and activity[interval_field] > 0
+                ]
+                distinct = {float(value) for _index, value in enabled}
+                conflict_key = (member_model, interval_field)
+                if len(distinct) > 1 and conflict_key not in reported_conflicts:
+                    reported_conflicts.add(conflict_key)
+                    conflict_index = enabled[-1][0]
+                    issues.append(self._compile_issue(
+                        "conflicting_preventive_threshold",
+                        f"supportActivities[{conflict_index}].{interval_field}",
+                        f"型号 {member_model or '<empty>'} 的多个适用预防性维修方案对 {interval_field} 定义了冲突阈值。",
+                        "保障活动建模",
+                    ))
+                pre_life = member.get(pre_life_field, 0)
+                if not isinstance(pre_life, (int, float)) or isinstance(pre_life, bool) or pre_life <= 0:
+                    continue
+                if not enabled:
+                    issues.append(self._compile_issue(
+                        "missing_preventive_threshold",
+                        f"combatUnit.members[{member_index}].{pre_life_field}",
+                        f"{pre_life_field}>0，但型号 {member_model or '<empty>'} 没有启用对应的 {interval_field} 阈值。",
+                        "基本作战单元建模",
+                    ))
+                    continue
+        return issues
+
     def _compile_issue(self, code: str, field_path: str, message: str, page: str) -> dict[str, str]:
         return {
             "code": code,
@@ -1857,6 +2079,7 @@ class SimulationAdapter:
             "scenario_id": scenario["scenario_id"],
             "scenario_version": scenario["scenario_version"],
             "metrics": snapshot,
+            "lifecycle_trace": copy.deepcopy(execution.get("lifecycle_trace") or []),
         }
         result_summary_artifact_id = f"result_summary-{run_id}"
         projections = self._aircraft_support_v1_analysis_projections(
@@ -2093,6 +2316,14 @@ class SimulationAdapter:
             "seed": inputs["seed"],
             "sweep": profile["sweep"],
             "sample_points": profile["sample_points"],
+            "initial_life_state": [
+                {
+                    "tail_number": asset.get("tail_number"),
+                    "initial_life_state": copy.deepcopy(asset.get("initial_life_state") or {}),
+                }
+                for asset in inputs.get("aircraft", {}).get("assets", [])
+                if isinstance(asset, dict)
+            ],
             "samples": samples,
             "failed_samples": failed_samples,
             "aggregate_metrics": aggregate,
@@ -2197,6 +2428,7 @@ class SimulationAdapter:
             "scenario_id": scenario["scenario_id"],
             "scenario_version": scenario["scenario_version"],
             "metrics": aggregate,
+            "lifecycle_trace": copy.deepcopy(samples[0].get("lifecycle_trace") or []),
             "analysis_outputs": {
                 "large_sample_summary": projections["large_sample_summary"]["data"],
                 "spare_shortage": projections["spare_shortfall"]["data"],
@@ -2408,6 +2640,7 @@ class SimulationAdapter:
             "frames": frames,
             "events": copy.deepcopy(execution.get("events") or []),
             "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
+            "lifecycle_trace": copy.deepcopy(execution.get("lifecycle_trace") or []),
         }
 
     def _apply_aircraft_support_v1_failure_multiplier(self, inputs: dict[str, Any], multiplier: float) -> None:

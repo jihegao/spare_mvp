@@ -316,6 +316,23 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(all(metric["mean"] is None for metric in payload["metric_moments"]["metrics"]))
         self.assertTrue(all(metric["sample_variance"] is None for metric in payload["metric_moments"]["metrics"]))
 
+    def test_lite_mesa_sample_preserves_initial_life_trace_from_shared_model(self) -> None:
+        project = small_aircraft_support_project("project-lite-mesa-pre-life-trace")
+        scenario = self.api.adapter.compile_scenario(project)
+
+        sample = _run_aircraft_support_v1_analysis_sample(
+            scenario["simulation_inputs"],
+            seed=20260721,
+            sample_index=0,
+        )
+
+        self.assertTrue(sample["lifecycle_trace"])
+        self.assertEqual(sample["lifecycle_trace"][0]["initial_life_state"], {
+            "calendar_days": 0,
+            "flight_hours": 0.0,
+            "takeoff_landing_cycles": 0,
+        })
+
     def test_lite_mesa_finite_extremes_do_not_crash_the_api_or_emit_nonfinite_moments(self) -> None:
         project = small_aircraft_support_project("project-lite-mesa-finite-extremes")
 
@@ -2705,7 +2722,19 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
         self.assertNotIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
-        self.assertEqual(scope["fail_closed_fields"], [])
+        self.assertEqual(
+            set(scope["fail_closed_fields"]),
+            {
+                "combatUnit.members[].preLifeCalendarDays",
+                "combatUnit.members[].preLifeFlightHours",
+                "combatUnit.members[].preLifeTakeoffLandingCount",
+                "supportActivities[].aircraftModel",
+                "supportActivities[].equipmentId",
+                "supportActivities[].calendarDayInterval",
+                "supportActivities[].runHourInterval",
+                "supportActivities[].takeoffLandingInterval",
+            },
+        )
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aircraft_support_v1")
@@ -3460,7 +3489,19 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(submitted["model_family"], "aircraft_support_v1")
         self.assertEqual(provenance["unsupported_fields"], [])
         self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
-        self.assertEqual(report_payload["m9_7_4_behavior_scope"]["fail_closed_fields"], [])
+        self.assertEqual(
+            set(report_payload["m9_7_4_behavior_scope"]["fail_closed_fields"]),
+            {
+                "combatUnit.members[].preLifeCalendarDays",
+                "combatUnit.members[].preLifeFlightHours",
+                "combatUnit.members[].preLifeTakeoffLandingCount",
+                "supportActivities[].aircraftModel",
+                "supportActivities[].equipmentId",
+                "supportActivities[].calendarDayInterval",
+                "supportActivities[].runHourInterval",
+                "supportActivities[].takeoffLandingInterval",
+            },
+        )
 
     def test_formal_run_persists_modeling_import_validation_scope_in_scenario_provenance(self) -> None:
         import_package = self._reduced_scope_import_package_without_support_domain()

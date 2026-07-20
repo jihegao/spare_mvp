@@ -6,7 +6,13 @@
       "mapping_provenance": {
         "consumed_fields": [
           "combatUnit.members",
+          "combatUnit.members[].preLifeCalendarDays",
+          "combatUnit.members[].preLifeFlightHours",
+          "combatUnit.members[].preLifeTakeoffLandingCount",
           "missionProfile.combatUnit.members",
+          "missionProfile.combatUnit.members[].preLifeCalendarDays",
+          "missionProfile.combatUnit.members[].preLifeFlightHours",
+          "missionProfile.combatUnit.members[].preLifeTakeoffLandingCount",
           "missionProfile.durationHours",
           "missionProfile.compositeTasks",
           "missionProfile.periodicTasks",
@@ -27,6 +33,9 @@
           "supportActivityJobs[]",
           "supportActivities[].aircraftModel",
           "supportActivities[].equipmentId",
+          "supportActivities[].calendarDayInterval",
+          "supportActivities[].runHourInterval",
+          "supportActivities[].takeoffLandingInterval",
           "supportActivities[].activityCodes",
           "supportActivities[].predecessors",
           "supportActivities[].maintenanceMethods",
@@ -42,11 +51,24 @@
           "time.tick_minutes=1",
           "time.sample_every_minutes=30",
           "time.max_state_frames_single=2000",
-          "ExperimentPlan.config.stopPolicy=duration"
+          "ExperimentPlan.config.stopPolicy=duration",
+          "combatUnit.members[0].preLifeFlightHours=historicalDefault:0",
+          "combatUnit.members[0].preLifeTakeoffLandingCount=historicalDefault:0",
+          "combatUnit.members[1].preLifeFlightHours=historicalDefault:0",
+          "combatUnit.members[1].preLifeTakeoffLandingCount=historicalDefault:0",
+          "combatUnit.members[2].preLifeFlightHours=historicalDefault:0",
+          "combatUnit.members[2].preLifeTakeoffLandingCount=historicalDefault:0",
+          "combatUnit.members[3].preLifeFlightHours=historicalDefault:0",
+          "combatUnit.members[3].preLifeTakeoffLandingCount=historicalDefault:0",
+          "combatUnit.members[4].preLifeFlightHours=historicalDefault:0",
+          "combatUnit.members[4].preLifeTakeoffLandingCount=historicalDefault:0",
+          "combatUnit.members[5].preLifeFlightHours=historicalDefault:0",
+          "combatUnit.members[5].preLifeTakeoffLandingCount=historicalDefault:0"
         ],
         "derived_fields": [
           "simulation_inputs.project_identity",
           "simulation_inputs.aircraft.initial_ready",
+          "simulation_inputs.aircraft.assets[].initial_life_state",
           "simulation_inputs.support_activities.activities[].aircraft_model",
           "simulation_inputs.support_activities.activities[].equipment_id",
           "simulation_inputs.support_activities.activities[].maintenance_methods",
@@ -65,7 +87,16 @@
           "project_version",
           "supportOrganization.tree"
         ],
-        "ignored_fields": [],
+        "ignored_fields": [
+          "combatUnit.members[].calendarDays",
+          "combatUnit.members[].preLifeRequirementHours",
+          "combatUnit.members[].remainingLifeHours",
+          "combatUnit.members[].takeoffLandingCount",
+          "missionProfile.combatUnit.members[].calendarDays",
+          "missionProfile.combatUnit.members[].preLifeRequirementHours",
+          "missionProfile.combatUnit.members[].remainingLifeHours",
+          "missionProfile.combatUnit.members[].takeoffLandingCount"
+        ],
         "mapping_version": "aircraft-support-v1-input-v0",
         "model_family": "aircraft_support_v1",
         "modeling_snapshot_id": "snapshot-m9-6-platform-case",
@@ -98,48 +129,201 @@
             "aircraft_type": "J-15",
             "airport": "A",
             "airport_id": "",
+            "initial_due_dimensions": [],
+            "initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0,
+              "takeoff_landing_cycles": 0
+            },
+            "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-15",
+            "preventive_threshold_sources": {
+              "calendar_days": [],
+              "flight_hours": [],
+              "takeoff_landing_cycles": []
+            },
+            "preventive_thresholds": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
+            "source_initial_state": "available",
             "tail_number": "J15-101"
           },
           {
             "aircraft_type": "J-15",
             "airport": "A",
             "airport_id": "",
+            "initial_due_dimensions": [],
+            "initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0,
+              "takeoff_landing_cycles": 0
+            },
+            "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-15",
+            "preventive_threshold_sources": {
+              "calendar_days": [],
+              "flight_hours": [],
+              "takeoff_landing_cycles": []
+            },
+            "preventive_thresholds": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
+            "source_initial_state": "available",
             "tail_number": "J15-102"
           },
           {
             "aircraft_type": "J-35",
             "airport": "A",
             "airport_id": "",
+            "initial_due_dimensions": [],
+            "initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0,
+              "takeoff_landing_cycles": 0
+            },
+            "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-35",
+            "preventive_threshold_sources": {
+              "calendar_days": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ],
+              "flight_hours": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ],
+              "takeoff_landing_cycles": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ]
+            },
+            "preventive_thresholds": {
+              "calendar_days": 1,
+              "flight_hours": 8.0,
+              "takeoff_landing_cycles": 6
+            },
+            "source_initial_state": "available",
             "tail_number": "J35-201"
           },
           {
             "aircraft_type": "J-35",
             "airport": "A",
             "airport_id": "",
+            "initial_due_dimensions": [],
+            "initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0,
+              "takeoff_landing_cycles": 0
+            },
+            "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-35",
+            "preventive_threshold_sources": {
+              "calendar_days": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ],
+              "flight_hours": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ],
+              "takeoff_landing_cycles": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ]
+            },
+            "preventive_thresholds": {
+              "calendar_days": 1,
+              "flight_hours": 8.0,
+              "takeoff_landing_cycles": 6
+            },
+            "source_initial_state": "available",
             "tail_number": "J35-202"
           },
           {
             "aircraft_type": "J-15",
             "airport": "A",
             "airport_id": "",
+            "initial_due_dimensions": [],
+            "initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0,
+              "takeoff_landing_cycles": 0
+            },
+            "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-15",
+            "preventive_threshold_sources": {
+              "calendar_days": [],
+              "flight_hours": [],
+              "takeoff_landing_cycles": []
+            },
+            "preventive_thresholds": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
+            "source_initial_state": "available",
             "tail_number": "J15-103"
           },
           {
             "aircraft_type": "J-35",
             "airport": "A",
             "airport_id": "",
+            "initial_due_dimensions": [],
+            "initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0,
+              "takeoff_landing_cycles": 0
+            },
+            "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-35",
+            "preventive_threshold_sources": {
+              "calendar_days": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ],
+              "flight_hours": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ],
+              "takeoff_landing_cycles": [
+                {
+                  "activity_id": "preventive",
+                  "equipment_id": "j35-hydraulic"
+                }
+              ]
+            },
+            "preventive_thresholds": {
+              "calendar_days": 1,
+              "flight_hours": 8.0,
+              "takeoff_landing_cycles": 6
+            },
+            "source_initial_state": "available",
             "tail_number": "J35-203"
           }
         ],

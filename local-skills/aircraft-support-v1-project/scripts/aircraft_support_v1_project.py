@@ -222,6 +222,7 @@ def compile_project_json_to_aircraft_support_inputs(
     sample_every = _positive_int(runtime.get("sample_every_minutes"), 30)
     seed = _positive_int(runtime.get("seed"), 0)
     aircraft_summary = _aircraft_summary(project)
+    _validate_aircraft_pre_life_thresholds(project, aircraft_summary)
     products_by_id = _products_by_id(project)
     support_nodes = _support_nodes(project, products_by_id)
     support_aliases = _support_node_aliases(project)
@@ -523,12 +524,127 @@ def _aircraft_summary(project: dict[str, Any]) -> dict[str, Any]:
         assets.append(
             {
                 "tail_number": str(member.get("aircraftNo") or member.get("tailNumber") or f"AC-{index + 1:03d}"),
+                "aircraft_type": str(member.get("model") or models[0]),
                 "model": str(member.get("model") or models[0]),
                 "initial_state": initial_state,
+                "airport": str(member.get("airport") or ""),
+                "airport_id": str(member.get("airportId") or member.get("baseAirportId") or ""),
+                "initial_life_state": _aircraft_initial_life_state(member, index),
             }
         )
     initial_ready = sum(1 for asset in assets if asset["initial_state"] == "available") if assets else fleet_count
     return {"fleet_count": fleet_count, "initial_ready": min(initial_ready, fleet_count), "models": models, "assets": assets}
+
+
+def _aircraft_initial_life_state(member: dict[str, Any], index: int) -> dict[str, int | float]:
+    values = {
+        "calendar_days": member.get("preLifeCalendarDays", 0),
+        "flight_hours": member.get("preLifeFlightHours", 0),
+        "takeoff_landing_cycles": member.get("preLifeTakeoffLandingCount", 0),
+    }
+    for field, value in values.items():
+        path_field = {
+            "calendar_days": "preLifeCalendarDays",
+            "flight_hours": "preLifeFlightHours",
+            "takeoff_landing_cycles": "preLifeTakeoffLandingCount",
+        }[field]
+        is_number = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+        integer_required = field != "flight_hours"
+        if not is_number or value < 0 or (integer_required and not isinstance(value, int)):
+            raise ValueError(f"combatUnit.members[{index}].{path_field} must be a non-negative finite {'integer' if integer_required else 'number'}")
+    return values
+
+
+def _validate_aircraft_pre_life_thresholds(project: dict[str, Any], summary: dict[str, Any]) -> None:
+    components = {str(item.get("id") or ""): item for item in _list(project.get("components"))}
+    known_models = set(summary["models"])
+    preventive = []
+    interval_specs = (
+        ("calendarDayInterval", "calendar_days"),
+        ("runHourInterval", "flight_hours"),
+        ("takeoffLandingInterval", "takeoff_landing_cycles"),
+    )
+    for index, activity in enumerate(_list(project.get("supportActivities"))):
+        text = f"{activity.get('planType', '')} {activity.get('activityType', '')}".lower()
+        if "预防性维修" not in text and "preventive" not in text:
+            continue
+        preventive.append((index, activity))
+        model = str(activity.get("aircraftModel") or "")
+        equipment_id = str(activity.get("equipmentId") or "")
+        if model and model not in known_models:
+            raise ValueError(f"supportActivities[{index}].aircraftModel references unknown model {model}")
+        if equipment_id and equipment_id not in components:
+            raise ValueError(f"supportActivities[{index}].equipmentId references unknown component {equipment_id}")
+        component_model = str(components.get(equipment_id, {}).get("aircraftModel") or "")
+        if model and component_model and model != component_model:
+            raise ValueError(f"supportActivities[{index}].equipmentId conflicts with aircraftModel")
+        for threshold_field, _life_field in interval_specs:
+            value = activity.get(threshold_field)
+            if value is None:
+                continue
+            integer_required = threshold_field != "runHourInterval"
+            valid = (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and math.isfinite(value)
+                and value >= 0
+                and (not integer_required or isinstance(value, int))
+            )
+            if not valid:
+                raise ValueError(f"supportActivities[{index}].{threshold_field} must be a non-negative finite threshold")
+    for member_index, asset in enumerate(summary["assets"]):
+        model = asset["model"]
+        applicable = []
+        for activity_index, activity in preventive:
+            equipment_id = str(activity.get("equipmentId") or "")
+            scoped_model = str(activity.get("aircraftModel") or components.get(equipment_id, {}).get("aircraftModel") or "")
+            if not scoped_model or scoped_model == model:
+                applicable.append((activity_index, activity))
+        thresholds: dict[str, int | float] = {}
+        threshold_sources: dict[str, list[dict[str, str]]] = {}
+        due_dimensions: list[str] = []
+        for threshold_field, life_field in interval_specs:
+            enabled = [
+                (index, activity[threshold_field])
+                for index, activity in applicable
+                if isinstance(activity.get(threshold_field), (int, float))
+                and not isinstance(activity.get(threshold_field), bool)
+                and math.isfinite(activity[threshold_field])
+                and activity[threshold_field] > 0
+            ]
+            if len({float(value) for _index, value in enabled}) > 1:
+                raise ValueError(f"supportActivities[{enabled[-1][0]}].{threshold_field} conflicts for model {model}")
+            threshold = enabled[0][1] if enabled else 0
+            thresholds[life_field] = threshold
+            threshold_sources[life_field] = [
+                {
+                    "activity_id": str(activity.get("id") or ""),
+                    "equipment_id": str(activity.get("equipmentId") or ""),
+                }
+                for _index, activity in applicable
+                if isinstance(activity.get(threshold_field), (int, float))
+                and not isinstance(activity.get(threshold_field), bool)
+                and activity[threshold_field] > 0
+            ]
+            if asset["initial_life_state"][life_field] <= 0:
+                continue
+            if not enabled:
+                canonical = {
+                    "calendar_days": "preLifeCalendarDays",
+                    "flight_hours": "preLifeFlightHours",
+                    "takeoff_landing_cycles": "preLifeTakeoffLandingCount",
+                }[life_field]
+                raise ValueError(f"combatUnit.members[{member_index}].{canonical} has no enabled {threshold_field}")
+            if asset["initial_life_state"][life_field] >= threshold:
+                due_dimensions.append(life_field)
+        asset["source_initial_state"] = asset["initial_state"]
+        asset["preventive_thresholds"] = thresholds
+        asset["preventive_threshold_sources"] = threshold_sources
+        asset["initial_due_dimensions"] = due_dimensions
+        asset["initial_preventive_due"] = bool(due_dimensions)
+        if due_dimensions:
+            asset["initial_state"] = "maintenance"
+    summary["initial_ready"] = sum(1 for asset in summary["assets"] if asset["initial_state"] == "available")
 
 
 def _support_nodes(

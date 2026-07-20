@@ -10,7 +10,8 @@
     "result_id",
     "run_id",
     "scenario_id",
-    "metrics"
+    "metrics",
+    "lifecycle_trace"
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "result-v0" },
@@ -41,6 +42,20 @@
         "lru_failures": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": true
+    },
+    "lifecycle_trace": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tail_number", "initial_life_state", "preventive_thresholds", "initial_due_dimensions"],
+        "additionalProperties": true,
+        "properties": {
+          "tail_number": { "type": "string" },
+          "initial_life_state": { "type": "object" },
+          "preventive_thresholds": { "type": "object" },
+          "initial_due_dimensions": { "type": "array", "items": { "type": "string" } }
+        }
+      }
     },
     "analysis_outputs": {
       "type": "object",

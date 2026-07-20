@@ -40,6 +40,19 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         self.assertTrue(hasattr(model, "step"))
         self.assertTrue(hasattr(model, "running"))
 
+    def test_solara_uses_compiled_initial_life_state_without_visualization_fallback(self) -> None:
+        model = AircraftSupportV1Model(self.default_inputs)
+        frame = model.visualization_frame(run_id="solara-pre-life", step=0)
+        expected_by_tail = {
+            asset["tail_number"]: asset["initial_life_state"]
+            for asset in self.default_inputs["aircraft"]["assets"]
+        }
+
+        self.assertEqual(
+            {item["tail_number"]: item["initial_life_state"] for item in frame["aircraft"]},
+            expected_by_tail,
+        )
+
     def test_model_inputs_can_load_backend_project_by_query_project_id(self) -> None:
         project = dict(self.default_source["project"])
         project["project_id"] = "project-from-frontend-modeling"

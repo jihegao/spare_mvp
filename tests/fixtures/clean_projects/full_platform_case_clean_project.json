@@ -101,39 +101,57 @@
     "members": [
       {
         "aircraftNo": "J15-101",
-        "airport": "A",
-        "model": "J-15",
-        "status": "执行"
+      "airport": "A",
+      "model": "J-15",
+      "status": "执行",
+      "preLifeCalendarDays": 0,
+      "preLifeFlightHours": 0,
+      "preLifeTakeoffLandingCount": 0
       },
       {
         "aircraftNo": "J15-102",
-        "airport": "A",
-        "model": "J-15",
-        "status": "执行"
+      "airport": "A",
+      "model": "J-15",
+      "status": "执行",
+      "preLifeCalendarDays": 0,
+      "preLifeFlightHours": 0,
+      "preLifeTakeoffLandingCount": 0
       },
       {
         "aircraftNo": "J35-201",
-        "airport": "A",
-        "model": "J-35",
-        "status": "执行"
+      "airport": "A",
+      "model": "J-35",
+      "status": "执行",
+      "preLifeCalendarDays": 0,
+      "preLifeFlightHours": 0,
+      "preLifeTakeoffLandingCount": 0
       },
       {
         "aircraftNo": "J35-202",
-        "airport": "A",
-        "model": "J-35",
-        "status": "执行"
+      "airport": "A",
+      "model": "J-35",
+      "status": "执行",
+      "preLifeCalendarDays": 0,
+      "preLifeFlightHours": 0,
+      "preLifeTakeoffLandingCount": 0
       },
       {
         "aircraftNo": "J15-103",
-        "airport": "A",
-        "model": "J-15",
-        "status": "备用"
+      "airport": "A",
+      "model": "J-15",
+      "status": "备用",
+      "preLifeCalendarDays": 0,
+      "preLifeFlightHours": 0,
+      "preLifeTakeoffLandingCount": 0
       },
       {
         "aircraftNo": "J35-203",
-        "airport": "A",
-        "model": "J-35",
-        "status": "备用"
+      "airport": "A",
+      "model": "J-35",
+      "status": "备用",
+      "preLifeCalendarDays": 0,
+      "preLifeFlightHours": 0,
+      "preLifeTakeoffLandingCount": 0
       }
     ],
     "quantity": 6
