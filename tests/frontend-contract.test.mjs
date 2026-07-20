@@ -2230,7 +2230,12 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(basicActivitySource, /data-basic-activity-add/);
   assert.match(basicActivitySource, /data-basic-activity-batch-delete/);
   assert.match(basicActivitySource, /data-basic-activity-query/);
-  assert.match(basicActivitySource, /data-basic-activity-import-type/);
+  assert.match(basicActivitySource, /data-basic-activity-download-template/);
+  assert.match(basicActivitySource, /data-basic-activity-import-file/);
+  assert.match(basicActivitySource, /accept="\.csv,text\/csv"/);
+  assert.match(basicActivitySource, /data-basic-activity-import-status/);
+  assert.doesNotMatch(basicActivitySource, /data-basic-activity-import-type=/);
+  assert.doesNotMatch(basicActivitySource, /按活动类型导入/);
   assert.match(basicActivitySource, /durationProfile/);
   assert.match(basicActivitySource, /作业时长分布/);
   assert.match(basicActivitySource, /data-basic-activity-edit="\$\{htmlEscape\(row\.key\)\}"/);
@@ -2347,6 +2352,8 @@ test("support activity controls are wired through local draft fields", async () 
   assert.doesNotMatch(basicActivitySource, /<button type="button" disabled>导入<\/button>/);
   assert.match(basicActivitySource, /data-basic-activity-add/);
   assert.match(basicActivitySource, /data-basic-activity-batch-delete/);
+  assert.match(basicActivitySource, /data-basic-activity-import-file/);
+  assert.match(basicActivitySource, /data-basic-activity-download-template/);
   assert.match(basicActivitySource, /data-basic-activity-field/);
   assert.match(basicActivitySource, /data-basic-activity-resource-dialog-open/);
   assert.match(basicActivitySource, /data-basic-activity-resource-dialog-field/);

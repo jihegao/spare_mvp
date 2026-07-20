@@ -913,6 +913,61 @@ test("buildBackendProjectJson materializes legacy support applicability on top-l
   assert.deepEqual(projectJson.supportActivities[0].activityCodes, ["BA-001", "BA-002"]);
 });
 
+test("mixed-type basic activity CSV results survive Project save and reload without silent code changes", () => {
+  const scenario = {
+    scenarioId: "basic-activity-csv-persistence",
+    equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
+    supportActivityJobs: [
+      {
+        activityCode: "BA-002",
+        workName: "通电检查",
+        applicableAircraft: "J-15",
+        durationProfile: { distributionType: "固定值", value: 15 },
+        durationMinutes: 15
+      },
+      {
+        activityCode: "PM-101",
+        workName: "定检准备",
+        applicableAircraft: "J-15",
+        durationProfile: { distributionType: "正态分布", mean: 45, stdDev: 5 },
+        durationMinutes: 45
+      }
+    ],
+    supportActivities: [
+      {
+        id: "ops-import-host",
+        activityType: "使用保障",
+        planType: "直接准备方案",
+        activityName: "J-15直接准备方案",
+        aircraftModel: "J-15",
+        activityCodes: ["BA-002"],
+        predecessors: { "BA-002": [] }
+      },
+      {
+        id: "preventive-import-host",
+        activityType: "预防性维修",
+        planType: "预防性维修方案",
+        activityName: "J-15定检方案",
+        aircraftModel: "J-15",
+        activityCodes: ["PM-101"],
+        predecessors: { "PM-101": [] }
+      }
+    ]
+  };
+
+  const saved = buildBackendProjectJson(scenario, { id: scenario.scenarioId });
+  const reloaded = normalizeProjectJsonForClientDraft(saved);
+  const savedAgain = buildBackendProjectJson(reloaded, { id: scenario.scenarioId });
+
+  assert.deepEqual(savedAgain.supportActivityJobs.map((job) => job.activityCode), ["BA-002", "PM-101"]);
+  assert.deepEqual(savedAgain.supportActivityJobs[1].durationProfile, {
+    distributionType: "正态分布",
+    mean: 45,
+    stdDev: 5
+  });
+  assert.deepEqual(savedAgain.supportActivities.map((activity) => activity.activityCodes), [["BA-002"], ["PM-101"]]);
+});
+
 test("buildBackendProjectJson strips corrective MTTR fields from support activity jobs", () => {
   const scenario = {
     scenarioId: "support-job-mttr-boundary",

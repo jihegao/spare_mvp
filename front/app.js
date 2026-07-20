@@ -64,7 +64,9 @@ import {
 } from "./sim-engine.mjs";
 import {
   allowedSupportActivityDurationDistributions,
+  basicSupportActivityCsvTemplate,
   normalizeSupportActivityDurationProfile,
+  parseBasicSupportActivityCsv,
   supportActivityJobFromBasicActivity
 } from "./support-activity-jobs.mjs";
 import {
@@ -297,11 +299,11 @@ const LOCKED_MODELING_CLICK_SELECTORS = [
   "[data-basic-activity-resource-dialog-open]",
   "[data-basic-activity-resource-dialog-add]",
   "[data-basic-activity-resource-dialog-delete]",
-  "[data-basic-activity-import-type]",
   "[data-basic-activity-delete]"
 ];
 const LOCKED_MODELING_CHANGE_SELECTORS = [
   "[data-support-resource-import-file]",
+  "[data-basic-activity-import-file]",
   "[data-basic-activity-select-all]",
   "[data-basic-activity-select]",
   "[data-basic-activity-resource-field]",
@@ -861,6 +863,7 @@ let basicActivityResourceDialog = null;
 const BASIC_ACTIVITY_DRAFT_KEY = "__new_basic_activity__";
 let basicActivityDraft = null;
 let basicActivityQuery = "";
+let basicActivityImportStatus = "请选择统一 CSV 模板文件；活动类型由每行字段决定。";
 let supportActivityTemplateQuery = "";
 let supportActivityTemplatePickerTabKey = "";
 let supportActivityPredecessorQuery = "";
@@ -1601,10 +1604,9 @@ function bindEvents() {
       return;
     }
 
-    const basicActivityImportButton = event.target.closest("[data-basic-activity-import-type]");
-    if (basicActivityImportButton) {
-      importBasicActivityByType(basicActivityImportButton.dataset.basicActivityImportType || selectedBasicActivityImportType);
-      markProjectDraftChanged();
+    const basicActivityTemplateButton = event.target.closest("[data-basic-activity-download-template]");
+    if (basicActivityTemplateButton) {
+      downloadBasicSupportActivityCsvTemplate();
       render();
       return;
     }
@@ -2419,6 +2421,15 @@ function bindEvents() {
       return;
     }
 
+    const basicActivityImportFile = event.target.closest("[data-basic-activity-import-file]");
+    if (basicActivityImportFile) {
+      const imported = await importBasicSupportActivityCsvFile(basicActivityImportFile.files?.[0]);
+      basicActivityImportFile.value = "";
+      if (imported) markProjectDraftChanged();
+      render();
+      return;
+    }
+
     const supportResourceImportFile = event.target.closest("[data-support-resource-import-file]");
     if (supportResourceImportFile) {
       const imported = await importSupportResourceTableFile(
@@ -2559,7 +2570,7 @@ function bindEvents() {
 
     const basicActivityImportTypeSelect = event.target.closest("[data-basic-activity-import-type-select]");
     if (basicActivityImportTypeSelect) {
-      selectedBasicActivityImportType = basicActivityImportTypeSelect.value || selectedBasicActivityImportType;
+      selectedBasicActivityImportType = basicActivityImportTypeSelect.value;
       render();
       return;
     }
@@ -9602,11 +9613,14 @@ function renderBasicActivityLibrary() {
         <button type="button" class="btn-primary" data-basic-activity-add${lockedAttr}>新增</button>
         <button type="button" class="btn-danger" data-basic-activity-batch-delete${lockedAttr}>批量删除</button>
         <input data-basic-activity-query value="${htmlEscape(basicActivityQuery)}" placeholder="搜索活动编号、工作名称、适用飞机">
-        <select data-basic-activity-import-type-select aria-label="按活动类型筛选基本保障活动">
+        <select data-basic-activity-import-type-select aria-label="筛选基本保障活动类型">
+          <option value="" ${selectedBasicActivityImportType ? "" : "selected"}>全部类型</option>
           ${basicActivityTypeOptions().map((option) => `<option value="${htmlEscape(option.value)}" ${option.value === selectedBasicActivityImportType ? "selected" : ""}>${htmlEscape(option.label)}</option>`).join("")}
         </select>
-        <button type="button" class="inline-action" data-basic-activity-import-type="${htmlEscape(selectedBasicActivityImportType)}"${lockedAttr}>按活动类型导入</button>
+        <button type="button" class="inline-action" data-basic-activity-download-template>下载 CSV 模板</button>
+        <label class="rms-file-button rms-import-button${lockedAttr ? " disabled" : ""}" ${lockedAttr ? 'aria-disabled="true"' : ""}>导入 CSV<input data-basic-activity-import-file type="file" accept=".csv,text/csv"${lockedAttr}></label>
       </div>
+      <div class="form-note" role="status" data-basic-activity-import-status>${htmlEscape(basicActivityImportStatus)}</div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -10322,7 +10336,8 @@ function ensureBasicActivityDraftHostActivity(type) {
     return fallback;
   }
   const model = defaultSupportActivityAircraftModel();
-  const existing = operationsSupportPhaseActivity({ aircraftModel: model }, "直接准备方案");
+  const existing = operationsSupportActivityEntries(model)
+    .find(({ activity }) => normalizeOperationsSupportPlanType(activity.planType) === "直接准备方案")?.activity || null;
   if (existing) {
     selectedOperationsSupportAircraftModel = model;
     selectedOperationsSupportActivityKey = `supportActivity:${activities.indexOf(existing)}`;
@@ -10717,26 +10732,108 @@ function toggleAllBasicActivitySelection(checked) {
   selectedBasicActivityKeys = checked ? new Set(filteredBasicActivityLibraryRows().map((row) => row.key)) : new Set();
 }
 
-function importBasicActivityByType(type) {
-  const activityType = basicActivityTypeOptions().some((option) => option.value === type) ? type : "使用保障活动";
-  const activity = ensureBasicActivityDraftHostActivity(activityType);
-  if (!activity) return;
-  const jobs = supportActivityJobs(activity).slice();
-  const index = jobs.length;
-  const prefix = activityType === "预防性维修" ? "PM" : activityType === "修复性维修" ? "CM" : "BA";
-  jobs.push({
-    activityCode: nextBasicActivityCode(prefix),
-    workName: `${activityType}导入作业${index + 1}`,
-    predecessors: [],
-    durationProfile: { distributionType: "固定值", value: 30 },
-    durationMinutes: 30,
-    personnel: defaultPersonnelRequirement("机务", 1),
-    equipment: defaultMaterialRequirement("通用工具", "通用工具", 1),
-    spare: []
-  });
-  setSupportActivityJobs(activity, jobs);
-  const activityIndex = (scenario.supportActivities || []).indexOf(activity);
-  selectedBasicActivityKeys = new Set([`${activityIndex}:${index}`]);
+function downloadBasicSupportActivityCsvTemplate() {
+  downloadTextFile("基本保障活动统一导入模板.csv", basicSupportActivityCsvTemplate(), "text/csv;charset=utf-8");
+  basicActivityImportStatus = "已下载统一 CSV 模板；同一文件可混合三种活动类型。";
+}
+
+function existingBasicActivityImportTarget(type) {
+  const model = defaultSupportActivityAircraftModel();
+  if (type === "预防性维修") return preventiveMaintenanceActivityEntries(model)[0]?.activity || null;
+  if (type === "修复性维修") return correctiveMaintenanceActivityForComponent(selectedCorrectiveComponent()) || null;
+  return operationsSupportActivityEntries(model)
+    .find(({ activity }) => normalizeOperationsSupportPlanType(activity.planType) === "直接准备方案")?.activity || null;
+}
+
+function basicActivityImportExistingReferences() {
+  const targets = new Map(basicActivityTypeOptions().map(({ value }) => [value, existingBasicActivityImportTarget(value)]));
+  return basicActivityLibraryRows().map((row) => ({
+    activityCode: row.activityCode,
+    type: row.type,
+    allowedAsPredecessor: row.activity === targets.get(row.type)
+  }));
+}
+
+async function importBasicSupportActivityCsvFile(file) {
+  if (!file) {
+    basicActivityImportStatus = "基本保障活动导入失败：未选择 CSV 文件。";
+    return false;
+  }
+  try {
+    const existingRows = basicActivityLibraryRows();
+    const rows = parseBasicSupportActivityCsv(await file.text(), {
+      filename: file.name,
+      aircraftModels: wholeMachineModels(),
+      existingActivityCodes: existingRows.map((row) => row.activityCode),
+      existingActivities: basicActivityImportExistingReferences()
+    });
+    const staged = stageBasicSupportActivityImport(rows);
+    scenario = staged.scenario;
+    selectedOperationsSupportActivityKey = staged.selectedOperationsSupportActivityKey;
+    selectedOperationsSupportAircraftModel = staged.selectedOperationsSupportAircraftModel;
+    selectedPreventiveMaintenanceActivityKey = staged.selectedPreventiveMaintenanceActivityKey;
+    selectedPreventiveMaintenanceAircraftModel = staged.selectedPreventiveMaintenanceAircraftModel;
+    selectedBasicActivityKeys = new Set(staged.selectedKeys);
+    selectedBasicActivityImportType = "";
+    basicActivityQuery = "";
+    basicActivityImportStatus = `已导入 ${file.name}：${rows.length} 条基本保障活动，列表已刷新并等待 Project draft 保存。`;
+    updatePreviewResultsThroughApiClient();
+    return true;
+  } catch (err) {
+    basicActivityImportStatus = `基本保障活动导入失败：${err?.message || "CSV 文件无法解析"}`;
+    return false;
+  }
+}
+
+function stageBasicSupportActivityImport(rows) {
+  const original = {
+    scenario,
+    selectedOperationsSupportActivityKey,
+    selectedOperationsSupportAircraftModel,
+    selectedPreventiveMaintenanceActivityKey,
+    selectedPreventiveMaintenanceAircraftModel
+  };
+  const stagedScenario = cloneScenario(scenario);
+  const groups = new Map();
+  for (const row of rows) groups.set(row.type, [...(groups.get(row.type) || []), row]);
+  const selectedKeys = [];
+  scenario = stagedScenario;
+  try {
+    for (const [type, importedRows] of groups.entries()) {
+      const activity = ensureBasicActivityDraftHostActivity(type);
+      if (!activity) throw new Error(`无法创建${type}目标活动`);
+      const jobs = supportActivityJobs(activity).slice();
+      const firstIndex = jobs.length;
+      jobs.push(...importedRows.map((row) => ({
+        activityCode: row.activityCode,
+        workName: row.workName,
+        applicableAircraft: row.applicableAircraft,
+        durationProfile: { ...row.durationProfile },
+        durationMinutes: row.durationMinutes,
+        predecessors: [...row.predecessors],
+        personnel: [],
+        equipment: [],
+        spare: []
+      })));
+      setSupportActivityJobs(activity, jobs);
+      const activityIndex = (scenario.supportActivities || []).indexOf(activity);
+      importedRows.forEach((_, index) => selectedKeys.push(`${activityIndex}:${firstIndex + index}`));
+    }
+    return {
+      scenario: stagedScenario,
+      selectedKeys,
+      selectedOperationsSupportActivityKey,
+      selectedOperationsSupportAircraftModel,
+      selectedPreventiveMaintenanceActivityKey,
+      selectedPreventiveMaintenanceAircraftModel
+    };
+  } finally {
+    scenario = original.scenario;
+    selectedOperationsSupportActivityKey = original.selectedOperationsSupportActivityKey;
+    selectedOperationsSupportAircraftModel = original.selectedOperationsSupportAircraftModel;
+    selectedPreventiveMaintenanceActivityKey = original.selectedPreventiveMaintenanceActivityKey;
+    selectedPreventiveMaintenanceAircraftModel = original.selectedPreventiveMaintenanceAircraftModel;
+  }
 }
 
 function nextBasicActivityCode(prefix) {
