@@ -82,15 +82,7 @@ def minimal_clean_project() -> dict[str, Any]:
                 "quantity": 1,
             }
         ],
-        "transportPolicies": [
-            {
-                "id": "tp-1",
-                "fromSupportNodeName": "node A",
-                "toSupportNodeName": "node A",
-                "productId": "product-whole-aircraft",
-                "capacity": 1,
-            }
-        ],
+        "transportPolicies": [],
         "supportActivities": [
             {
                 "id": "corrective",
@@ -183,14 +175,7 @@ def legacy_polluted_project() -> dict[str, Any]:
                 "personnelCapacity": 1,
                 "equipmentCapacity": 1,
                 "inventory": {"aircraft_support_v1_spares": 2},
-                "transportPolicies": [
-                    {
-                        "from": "node-a",
-                        "to": "node-a",
-                        "spareType": "aircraft_support_v1_spares",
-                        "capacity": 1,
-                    }
-                ],
+                "transportPolicies": [{}],
             }
         ],
         "supportActivities": [

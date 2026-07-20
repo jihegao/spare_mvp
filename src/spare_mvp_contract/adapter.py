@@ -20,8 +20,10 @@ import re
 from typing import Any
 
 from src.spare_mvp_backend.project_payload import (
+    OrganizationContractError,
     normalize_aircraft_pre_life,
     normalize_project_products,
+    normalize_support_organization_contract,
     normalize_support_activity_maintenance_plans,
 )
 from src.spare_mvp_contract.downtime import (
@@ -125,6 +127,26 @@ class SimulationAdapter:
     def validate_project(self, project: dict[str, Any]) -> dict[str, Any]:
         """Validate the roots required by the current Project JSON contract."""
         errors: list[dict[str, str]] = []
+        try:
+            project, _changes = normalize_support_organization_contract(project)
+        except OrganizationContractError as error:
+            try:
+                errors.extend(self._support_resource_identity_errors(project))
+            except RecursionError:
+                pass
+            errors.append({
+                "code": error.code,
+                "category": "invalid_support_organization",
+                "path": error.path,
+                "message": error.message,
+            })
+            return {
+                "ok": False,
+                "project_id": self._project_id(project),
+                "project_version": self._project_version(project),
+                "project_schema_version": str(project.get("schema_version", PROJECT_SCHEMA_VERSION)),
+                "errors": errors,
+            }
         for field in self._project_required_fields():
             if field not in project:
                 errors.append(
@@ -431,6 +453,33 @@ class SimulationAdapter:
                     }],
                     "errors": [{"code": "invalid_maintenance_plan", "path": field_path, "message": message}],
                 }
+            try:
+                project, organization_changes = normalize_support_organization_contract(project)
+                normalization_changes.extend(organization_changes)
+            except OrganizationContractError as error:
+                provenance = self._aircraft_support_v1_mapping_provenance(
+                    self._project_id(project), project, runtime_config
+                )
+                return {
+                    "status": "blocked",
+                    "scenario": None,
+                    "provenance": provenance,
+                    "issues": [{
+                        "code": error.code,
+                        "category": "invalid_support_organization",
+                        "message": error.message,
+                        "field_path": error.path,
+                        "page": "Project JSON",
+                        "severity": "error",
+                        "suggestion": "Use one stable organization tree and canonical organization-node references.",
+                    }],
+                    "errors": [{
+                        "code": error.code,
+                        "category": "invalid_support_organization",
+                        "path": error.path,
+                        "message": error.message,
+                    }],
+                }
         validation = self.validate_project(project)
         if not validation["ok"]:
             issues = [
@@ -663,6 +712,7 @@ class SimulationAdapter:
             },
             "support_network": {
                 "nodes": support_network_nodes,
+                "organization_graph": self._aircraft_support_v1_organization_graph(project),
             },
             "support_activities": {
                 "activities": [
@@ -1172,6 +1222,76 @@ class SimulationAdapter:
 
         return list(nodes_by_name.values())
 
+    def _aircraft_support_v1_organization_graph(self, project: dict[str, Any]) -> dict[str, Any]:
+        organization = project.get("supportOrganization") if isinstance(project.get("supportOrganization"), dict) else {}
+        root = organization.get("tree")
+        nodes: list[dict[str, Any]] = []
+        parent_edges: list[dict[str, str]] = []
+
+        def visit(node: Any, parent_id: str | None = None) -> None:
+            if not isinstance(node, dict):
+                return
+            node_id = str(node.get("id") or "")
+            raw_scope = node.get("serviceScope") if isinstance(node.get("serviceScope"), dict) else {}
+            nodes.append({
+                "id": node_id,
+                "name": str(node.get("name") or node_id),
+                "parent_id": parent_id,
+                "service_scope": {
+                    "airport_ids": sorted(self._string_list(raw_scope.get("airportIds"))),
+                    "aircraft_models": sorted(self._string_list(raw_scope.get("aircraftModels"))),
+                    "product_ids": sorted(self._string_list(raw_scope.get("productIds"))),
+                    "resource_types": sorted(self._string_list(raw_scope.get("resourceTypes"))),
+                },
+            })
+            if parent_id is not None:
+                parent_edges.append({"from_node_id": parent_id, "to_node_id": node_id})
+            for child in node.get("children", []) if isinstance(node.get("children"), list) else []:
+                visit(child, node_id)
+
+        visit(root)
+        lateral_edges = [
+            {
+                "id": str(relation.get("id") or ""),
+                "from_node_id": str(relation.get("fromOrganizationNodeId") or ""),
+                "to_node_id": str(relation.get("toOrganizationNodeId") or ""),
+                "priority": self._positive_int(relation.get("priority"), 1),
+            }
+            for relation in self._dict_list(organization.get("relations"))
+        ]
+        resource_ownership = [
+            {
+                "resource_id": str(resource.get("id") or ""),
+                "resource_type": str(resource.get("type") or ""),
+                "organization_node_id": str(resource.get("organizationNodeId") or ""),
+            }
+            for resource in self._dict_list(project.get("supportResources"))
+        ]
+        transport_policies: list[dict[str, Any]] = []
+        for policy in self._dict_list(project.get("transportPolicies")):
+            item: dict[str, Any] = {
+                "id": str(policy.get("id") or ""),
+                "from_organization_node_id": str(policy.get("fromOrganizationNodeId") or ""),
+                "to_organization_node_id": str(policy.get("toOrganizationNodeId") or ""),
+                "capacity": self._positive_int(policy.get("capacity"), 1),
+                "priority": self._positive_int(policy.get("priority"), 1),
+                "transport_time_hours": self._non_negative_float(
+                    policy.get("transportTimeHours"),
+                    self._non_negative_float(policy.get("transport_time_hours"), 0.0),
+                ),
+            }
+            product_id = str(policy.get("productId") or "")
+            if product_id:
+                item["product_id"] = product_id
+            transport_policies.append(item)
+        return {
+            "nodes": sorted(nodes, key=lambda item: item["id"]),
+            "parent_edges": sorted(parent_edges, key=lambda item: (item["from_node_id"], item["to_node_id"])),
+            "lateral_edges": sorted(lateral_edges, key=lambda item: item["id"]),
+            "resource_ownership": sorted(resource_ownership, key=lambda item: item["resource_id"]),
+            "transport_policies": sorted(transport_policies, key=lambda item: item["id"]),
+        }
+
     def _aircraft_support_v1_support_node(
         self,
         node: dict[str, Any],
@@ -1264,8 +1384,8 @@ class SimulationAdapter:
         aliases: dict[str, str],
         products_by_id: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
-        from_value = str(policy.get("fromSupportNodeName") or policy.get("from") or "")
-        to_value = str(policy.get("toSupportNodeName") or policy.get("to") or "")
+        from_value = str(policy.get("fromOrganizationNodeId") or policy.get("fromSupportNodeName") or policy.get("from") or "")
+        to_value = str(policy.get("toOrganizationNodeId") or policy.get("toSupportNodeName") or policy.get("to") or "")
         product_id = str(policy.get("productId") or "")
         return {
             "from": aliases.get(from_value, from_value),
@@ -1444,7 +1564,14 @@ class SimulationAdapter:
                 "supportResources[].type",
                 "supportResources[].productId",
                 "supportResources[].supportNodeName",
+                "supportResources[].organizationNodeId",
+                "supportNodes[].organizationNodeId",
+                "supportOrganization.tree[].id",
+                "supportOrganization.tree[].serviceScope",
+                "supportOrganization.relations[]",
                 "transportPolicies[]",
+                "transportPolicies[].fromOrganizationNodeId",
+                "transportPolicies[].toOrganizationNodeId",
                 "supportActivityJobs[]",
                 "supportActivities[].aircraftModel",
                 "supportActivities[].equipmentId",
@@ -1471,6 +1598,11 @@ class SimulationAdapter:
                 "simulation_inputs.support_activities.activities[].equipment_id",
                 "simulation_inputs.support_activities.activities[].maintenance_methods",
                 "simulation_inputs.support_activities.activities[].replacement_ratio",
+                "simulation_inputs.support_network.organization_graph.nodes",
+                "simulation_inputs.support_network.organization_graph.parent_edges",
+                "simulation_inputs.support_network.organization_graph.lateral_edges",
+                "simulation_inputs.support_network.organization_graph.resource_ownership",
+                "simulation_inputs.support_network.organization_graph.transport_policies",
                 "simulation_inputs.time.duration_minutes",
                 "simulation_inputs.time.requested_steps",
                 "ExperimentPlan.config.steps",
@@ -1491,7 +1623,9 @@ class SimulationAdapter:
                 "scenarioId",
                 "project_id",
                 "project_version",
-                "supportOrganization.tree",
+            ],
+            "runtime_deferred_fields": [
+                "simulation_inputs.support_network.organization_graph",
             ],
             "unsupported_fields": self._aircraft_support_v1_unsupported_fields(project),
         }

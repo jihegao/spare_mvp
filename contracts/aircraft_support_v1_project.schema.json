@@ -15,6 +15,9 @@
     "products",
     "components",
     "supportNodes",
+    "supportResources",
+    "transportPolicies",
+    "supportOrganization",
     "supportActivities"
   ],
   "properties": {
@@ -114,7 +117,7 @@
     "periodicWeekProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name"],
+      "required": ["id", "name", "organizationNodeId"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 }
@@ -361,16 +364,18 @@
         "transportPolicies": { "type": "array", "items": { "$ref": "#/$defs/transportPolicy" } },
         "policy": { "type": "string" },
         "organizationStrategy": { "type": "string" }
+        ,"organizationNodeId": { "type": "string", "minLength": 1 }
       }
     },
     "supportResource": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type", "name", "quantity"],
+      "required": ["id", "organizationNodeId", "type", "name", "quantity"],
       "properties": {
         "id": { "type": "string" },
         "supportNodeName": { "type": "string" },
         "organizationNodeName": { "type": "string" },
+        "organizationNodeId": { "type": "string", "minLength": 1 },
         "type": { "type": "string", "enum": ["personnel", "equipment", "spare"] },
         "name": { "type": "string" },
         "model": { "type": "string" },
@@ -388,6 +393,7 @@
     "transportPolicy": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["id", "fromOrganizationNodeId", "toOrganizationNodeId"],
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
@@ -405,6 +411,8 @@
         "transportMode": { "type": "string" },
         "transportTimeHours": { "type": "number", "minimum": 0 },
         "transport_time_hours": { "type": "number", "minimum": 0 }
+        ,"fromOrganizationNodeId": { "type": "string", "minLength": 1 }
+        ,"toOrganizationNodeId": { "type": "string", "minLength": 1 }
       }
     },
     "supportActivity": {
@@ -523,13 +531,15 @@
     "supportOrganization": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["tree", "relations"],
       "properties": {
         "tree": {
           "oneOf": [
             { "$ref": "#/$defs/supportOrganizationNode" },
-            { "type": "array", "items": { "$ref": "#/$defs/supportOrganizationNode" } }
+            { "type": "null" }
           ]
-        }
+        },
+        "relations": { "type": "array", "items": { "$ref": "#/$defs/supportOrganizationRelation" } }
       }
     },
     "supportOrganizationNode": {
@@ -537,10 +547,34 @@
       "additionalProperties": false,
       "required": ["id", "name"],
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
         "description": { "type": "string" },
+        "serviceScope": { "$ref": "#/$defs/organizationServiceScope" },
         "children": { "type": "array", "items": { "$ref": "#/$defs/supportOrganizationNode" } }
+      }
+    },
+    "supportOrganizationRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "fromOrganizationNodeId", "toOrganizationNodeId", "priority"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "lateral" },
+        "fromOrganizationNodeId": { "type": "string", "minLength": 1 },
+        "toOrganizationNodeId": { "type": "string", "minLength": 1 },
+        "priority": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "organizationServiceScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aircraftModels", "airportIds", "productIds", "resourceTypes"],
+      "properties": {
+        "aircraftModels": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "airportIds": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "productIds": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "resourceTypes": { "type": "array", "uniqueItems": true, "items": { "enum": ["personnel", "equipment", "spare"] } }
       }
     },
     "modelingImportValidation": {

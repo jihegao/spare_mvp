@@ -6,6 +6,7 @@ from pathlib import Path
 import unittest
 
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
+from src.spare_mvp_backend.project_payload import ProjectJsonExporter
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -22,6 +23,10 @@ class SupportOrganizationContractTest(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        project["airports"] = [
+            {"id": "airport-a", "name": "A"},
+            {"id": "airport-b", "name": "B"},
+        ]
         project["supportOrganization"] = {
             "tree": {
                 "id": "org-root",
@@ -133,7 +138,7 @@ class SupportOrganizationContractTest(unittest.TestCase):
         matching = [
             issue
             for issue in result["issues"]
-            if issue.get("code") == "invalid_support_organization"
+            if issue.get("category") == "invalid_support_organization"
         ]
         self.assertTrue(matching, result["issues"])
         self.assertEqual(matching[0]["field_path"], field_path)
@@ -428,6 +433,68 @@ class SupportOrganizationContractTest(unittest.TestCase):
             baseline_inputs["support_network"]["nodes"],
         )
         self.assertEqual(changed_metrics, baseline_metrics)
+
+    def test_legacy_single_node_save_reload_compile_preserves_runtime_network(self) -> None:
+        project = json.loads(
+            (REPO_ROOT / "tests" / "fixtures" / "aircraft_support_v1_project.json").read_text(encoding="utf-8")
+        )
+        project.pop("supportOrganization", None)
+        project["transportPolicies"] = []
+        for node in project["supportNodes"]:
+            node.pop("organizationNodeId", None)
+        for resource in project["supportResources"]:
+            resource.pop("organizationNodeId", None)
+
+        direct = self.adapter.compile_scenario(project)["simulation_inputs"]["support_network"]["nodes"]
+        saved = ProjectJsonExporter(repo_root=REPO_ROOT).export(project)
+        reloaded = json.loads(json.dumps(saved, ensure_ascii=False))
+        after_reload = self.adapter.compile_scenario(reloaded)["simulation_inputs"]["support_network"]["nodes"]
+
+        self.assertEqual(after_reload, direct)
+        self.assertTrue(after_reload)
+
+    def test_node_scoped_legacy_policy_uses_host_owner_and_preserves_runtime_projection(self) -> None:
+        canonical = self._project()
+        expected = self.adapter.compile_scenario(canonical)["simulation_inputs"]["support_network"]["nodes"]
+        legacy = copy.deepcopy(canonical)
+        policy = legacy["transportPolicies"].pop()
+        policy.pop("id")
+        policy.pop("fromOrganizationNodeId")
+        legacy["supportNodes"][0]["transportPolicies"] = [policy]
+
+        result = self.adapter.compile_scenario_with_gate(legacy)
+
+        self.assertEqual(result["status"], "compiled")
+        self.assertEqual(result["scenario"]["simulation_inputs"]["support_network"]["nodes"], expected)
+        compiled_policy = result["scenario"]["simulation_inputs"]["support_network"]["organization_graph"]["transport_policies"][0]
+        self.assertRegex(compiled_policy["id"], r"^migrated-transport-[0-9a-f]{12}$")
+        defaults = result["scenario"]["compiled_from"]["mapping_provenance"]["defaults_applied"]
+        self.assertTrue(any("migratedHostOrganizationNodeId" in item for item in defaults), defaults)
+
+    def test_service_scope_references_and_resource_owner_scope_fail_closed(self) -> None:
+        unknown_airport = self._project()
+        unknown_airport["supportOrganization"]["tree"]["children"][0]["serviceScope"]["airportIds"] = ["missing-airport"]
+        self._assert_blocked_at(
+            unknown_airport,
+            "supportOrganization.tree.children[0].serviceScope.airportIds[0]",
+        )
+
+        resource_scope = self._project()
+        resource_scope["supportOrganization"]["tree"]["children"][0]["serviceScope"]["resourceTypes"] = ["spare"]
+        self._assert_blocked_at(resource_scope, "supportResources[1].type")
+
+    def test_legacy_policy_with_business_data_never_drops_missing_or_self_route(self) -> None:
+        missing_target = self._project()
+        missing_target["transportPolicies"] = [{"fromOrganizationNodeId": "org-a", "capacity": 2}]
+        self._assert_blocked_at(missing_target, "transportPolicies[0].toOrganizationNodeId")
+
+        self_route = self._project()
+        self_route["transportPolicies"] = [{
+            "fromSupportNodeName": "node A",
+            "toSupportNodeName": "node A",
+            "capacity": 2,
+        }]
+        self._assert_blocked_at(self_route, "transportPolicies[0].toOrganizationNodeId")
 
 
 if __name__ == "__main__":

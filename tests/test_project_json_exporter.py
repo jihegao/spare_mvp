@@ -115,6 +115,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "id": "support-node-1",
             "name": "基层",
             "airport": "Airport A",
+            "organizationNodeId": "org-line",
         }])
 
     def _polluted_project(self) -> dict:
@@ -273,14 +274,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "personnelCapacity": 1,
                     "equipmentCapacity": 1,
                     "inventory": {"aircraft_support_v1_spares": 2},
-                    "transportPolicies": [
-                        {
-                            "from": "node-a",
-                            "to": "node-a",
-                            "spareType": "aircraft_support_v1_spares",
-                            "capacity": 1,
-                        }
-                    ],
+                    "transportPolicies": [{}],
                 }
             ],
             "supportResources": [

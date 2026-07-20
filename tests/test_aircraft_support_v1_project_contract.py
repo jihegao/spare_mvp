@@ -74,6 +74,7 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                 {
                     "id": "node-a",
                     "name": "node A",
+                    "organizationNodeId": "node-a",
                     "personnelCapacity": 1,
                     "equipmentCapacity": 1,
                     "inventory": {"aircraft_support_v1_spares": 2},
@@ -83,20 +84,27 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                 {
                     "id": "node-a-personnel",
                     "supportNodeName": "node A",
+                    "organizationNodeId": "node-a",
                     "type": "personnel",
                     "name": "crew",
                     "quantity": 1,
                 }
             ],
-            "transportPolicies": [
-                {
-                    "id": "tp-1",
-                    "fromSupportNodeName": "node A",
-                    "toSupportNodeName": "node A",
-                    "productId": "product-whole-aircraft",
-                    "capacity": 1,
-                }
-            ],
+            "transportPolicies": [],
+            "supportOrganization": {
+                "tree": {
+                    "id": "node-a",
+                    "name": "node A",
+                    "serviceScope": {
+                        "airportIds": [],
+                        "aircraftModels": [],
+                        "productIds": [],
+                        "resourceTypes": [],
+                    },
+                    "children": [],
+                },
+                "relations": [],
+            },
             "supportActivities": [
                 {
                     "id": "corrective",

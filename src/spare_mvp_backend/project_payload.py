@@ -80,6 +80,9 @@ _REQUIRED_CLEAN_PROJECT_FIELDS = {
     "products",
     "components",
     "supportNodes",
+    "supportResources",
+    "transportPolicies",
+    "supportOrganization",
     "supportActivities",
 }
 _MODELING_IMPORT_VALIDATION_FIELDS = {"importId", "usedTables", "disabledDomains", "warnings"}
@@ -211,11 +214,13 @@ _SUPPORT_NODE_FIELDS = {
     "transportPolicies",
     "policy",
     "organizationStrategy",
+    "organizationNodeId",
 }
 _SUPPORT_RESOURCE_FIELDS = {
     "id",
     "supportNodeName",
     "organizationNodeName",
+    "organizationNodeId",
     "type",
     "name",
     "model",
@@ -240,7 +245,19 @@ _TRANSPORT_POLICY_FIELDS = {
     "transportMode",
     "transportTimeHours",
     "transport_time_hours",
+    "fromOrganizationNodeId",
+    "toOrganizationNodeId",
 }
+_ORGANIZATION_NODE_FIELDS = {"id", "name", "description", "serviceScope", "children"}
+_ORGANIZATION_RELATION_FIELDS = {
+    "id",
+    "type",
+    "fromOrganizationNodeId",
+    "toOrganizationNodeId",
+    "priority",
+}
+_SERVICE_SCOPE_FIELDS = {"airportIds", "aircraftModels", "productIds", "resourceTypes"}
+_RESOURCE_TYPES = {"personnel", "equipment", "spare"}
 _SUPPORT_ACTIVITY_FIELDS = {
     "id",
     "activityName",
@@ -307,6 +324,7 @@ class ProjectJsonExporter:
     def export(self, project_json: dict[str, Any]) -> dict[str, Any]:
         project = normalize_project_products(strip_project_sweep(project_json))
         project, _pre_life_changes = normalize_aircraft_pre_life(project)
+        project, _organization_changes = normalize_support_organization_contract(project)
         _strip_pollution_keys(project)
         _prune_clean_project(project)
         _drop_none_values(project)
@@ -351,6 +369,666 @@ class ProjectJsonExporter:
 
 def export_project_json(project_json: dict[str, Any], target: str = ACTIVE_CLEAN_PROJECT_TARGET) -> dict[str, Any]:
     return ProjectJsonExporter(target=target).export(project_json)
+
+
+class OrganizationContractError(ValueError):
+    """A precise fail-closed organization contract error."""
+
+    def __init__(self, code: str, path: str, message: str) -> None:
+        super().__init__(f"organization contract failed at {path}: {message}")
+        self.code = code
+        self.path = path
+        self.message = message
+
+
+def normalize_support_organization_contract(
+    project_json: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Canonicalize support organization identity without changing runtime selection.
+
+    Canonical Project data keeps a single nested tree as its authoring source,
+    explicit lateral relations, stable organization links on support nodes and
+    resources, and top-level transport policies with ID endpoints. Legacy names
+    migrate only when they resolve uniquely.
+    """
+
+    project = deepcopy(project_json)
+    changes: list[str] = []
+    organization = project.get("supportOrganization")
+    if organization in (None, {}):
+        organization = {}
+    if not isinstance(organization, dict):
+        raise OrganizationContractError(
+            "invalid_organization_contract", "supportOrganization", "expected object; supportOrganization must be an object"
+        )
+
+    raw_tree = organization.get("tree")
+    if isinstance(raw_tree, list):
+        if len(raw_tree) != 1:
+            raise OrganizationContractError(
+                "multiple_organization_roots",
+                "supportOrganization.tree",
+                "legacy tree arrays must contain exactly one root",
+            )
+        raw_tree = raw_tree[0]
+        changes.append("supportOrganization.tree[0]->supportOrganization.tree")
+    if raw_tree in (None, {}):
+        raw_tree = _organization_tree_from_support_nodes(project.get("supportNodes"))
+        if raw_tree:
+            changes.append("supportOrganization.tree=derivedSupportNodes")
+    if raw_tree is None:
+        if project.get("supportResources") or project.get("transportPolicies"):
+            raise OrganizationContractError(
+                "missing_organization_root",
+                "supportOrganization.tree",
+                "organization-scoped resources or policies require one organization root",
+            )
+        project["supportOrganization"] = {"tree": None, "relations": []}
+        project["transportPolicies"] = []
+        changes.append("supportOrganization=emptyGraph")
+        return project, changes
+    if not isinstance(raw_tree, dict):
+        raise OrganizationContractError(
+            "missing_organization_root", "supportOrganization.tree", "one canonical organization root is required"
+        )
+
+    nodes: list[dict[str, Any]] = []
+    id_path: dict[str, str] = {}
+    name_ids: dict[str, set[str]] = {}
+    canonical_tree = _canonical_organization_tree(
+        raw_tree,
+        "supportOrganization.tree",
+        nodes,
+        id_path,
+        name_ids,
+        set(),
+    )
+    node_ids = set(id_path)
+    for node in nodes:
+        for field in node.get("_scope_defaults", []):
+            changes.append(f"{node['_source_path']}.serviceScope.{field}=[](unrestricted)")
+    _validate_organization_service_scope(nodes, project)
+    aliases = _organization_aliases(nodes, project.get("supportNodes"), name_ids)
+
+    relations = _canonical_lateral_relations(organization.get("relations"), aliases, node_ids)
+    if not relations:
+        relations = _legacy_lateral_relations(project.get("supportNodes"), aliases, node_ids)
+        if relations:
+            changes.append("supportNodes[].lateralSupportNodes->supportOrganization.relations[]")
+    _validate_lateral_relation_dag(relations)
+
+    policies = _canonical_top_level_transport_policies(project, aliases, node_ids, nodes, changes)
+    _canonicalize_support_node_ownership(project.get("supportNodes"), aliases, node_ids)
+    _canonicalize_support_resource_ownership(project.get("supportResources"), aliases, node_ids, nodes, changes)
+
+    _strip_organization_internal_paths(canonical_tree)
+    organization = {
+        "tree": canonical_tree,
+        "relations": sorted(relations, key=lambda item: item["id"]),
+    }
+    project["supportOrganization"] = organization
+    project["transportPolicies"] = sorted(policies, key=lambda item: item["id"])
+    return project, changes
+
+
+def _organization_tree_from_support_nodes(value: Any) -> dict[str, Any] | None:
+    support_nodes = [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+    if not support_nodes:
+        return None
+    children = []
+    for index, node in enumerate(support_nodes):
+        node_id = _clean_text(node.get("organizationNodeId") or node.get("id"))
+        if not node_id:
+            raise OrganizationContractError(
+                "missing_organization_node_id", f"supportNodes[{index}].id", "stable organization node ID is required"
+            )
+        child: dict[str, Any] = {"id": node_id, "name": _clean_text(node.get("name")) or node_id}
+        airport_id = _clean_text(node.get("airportId") or node.get("baseAirportId"))
+        if airport_id:
+            child["serviceScope"] = {"airportIds": [airport_id]}
+        children.append(child)
+    if len(children) == 1:
+        return children[0]
+    return {"id": "support-organization-root", "name": "保障组织", "children": children}
+
+
+def _canonical_service_scope(value: Any, path: str) -> dict[str, list[str]]:
+    if value in (None, {}):
+        return {field: [] for field in sorted(_SERVICE_SCOPE_FIELDS)}
+    if not isinstance(value, dict):
+        raise OrganizationContractError("invalid_service_scope", path, "serviceScope must be an object")
+    extra = sorted(set(value) - _SERVICE_SCOPE_FIELDS)
+    if extra:
+        raise OrganizationContractError(
+            "invalid_service_scope", f"{path}.{extra[0]}", "unknown service scope field"
+        )
+    result: dict[str, list[str]] = {}
+    for field in sorted(_SERVICE_SCOPE_FIELDS):
+        raw_values = value.get(field, [])
+        if not isinstance(raw_values, list):
+            raise OrganizationContractError(
+                "invalid_service_scope", f"{path}.{field}", "service scope dimension must be an array"
+            )
+        values = sorted({_clean_text(item) for item in raw_values if _clean_text(item)})
+        if field == "resourceTypes" and any(item not in _RESOURCE_TYPES for item in values):
+            raise OrganizationContractError(
+                "invalid_service_scope", f"{path}.{field}", "resourceTypes contains an unsupported value"
+            )
+        result[field] = values
+    return result
+
+
+def _validate_organization_service_scope(nodes: list[dict[str, Any]], project: dict[str, Any]) -> None:
+    airport_ids: set[str] = set()
+    if isinstance(project.get("airports"), list):
+        airport_ids = set()
+        for item in project["airports"]:
+            if isinstance(item, dict):
+                for value in (item.get("id"), item.get("name")):
+                    if _clean_text(value):
+                        airport_ids.add(_clean_text(value))
+            elif _clean_text(item):
+                airport_ids.add(_clean_text(item))
+    models = {
+        _clean_text(item.get("aircraftModel"))
+        for item in project.get("components", []) if isinstance(item, dict) and _clean_text(item.get("aircraftModel"))
+    }
+    combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
+    models.update(
+        _clean_text(item.get("model"))
+        for item in combat_unit.get("members", []) if isinstance(item, dict) and _clean_text(item.get("model"))
+    )
+    product_ids = {
+        _clean_text(item.get("id"))
+        for item in project.get("products", []) if isinstance(item, dict) and _clean_text(item.get("id"))
+    }
+    known = {
+        "airportIds": airport_ids,
+        "aircraftModels": models,
+        "productIds": product_ids,
+    }
+    for node_index, node in enumerate(nodes):
+        scope = node["serviceScope"]
+        source_path = str(node.get("_source_path") or "supportOrganization.tree")
+        for field, known_values in known.items():
+            for value_index, value in enumerate(scope[field]):
+                if value not in known_values:
+                    raise OrganizationContractError(
+                        "unknown_organization_service_scope_reference",
+                        f"{source_path}.serviceScope.{field}[{value_index}]",
+                        f"organization node {node['id']} service scope references unknown {field} value {value}",
+                    )
+
+
+def _canonical_organization_tree(
+    raw: dict[str, Any],
+    path: str,
+    nodes: list[dict[str, Any]],
+    id_path: dict[str, str],
+    name_ids: dict[str, set[str]],
+    visiting: set[int],
+) -> dict[str, Any]:
+    marker = id(raw)
+    if marker in visiting:
+        raise OrganizationContractError(
+            "circular_organization_parent", path, "organization children contain a parent cycle"
+        )
+    visiting.add(marker)
+    node_id = _clean_text(raw.get("id"))
+    if not node_id:
+        raise OrganizationContractError(
+            "missing_organization_node_id", f"{path}.id", "stable organization node ID is required"
+        )
+    if node_id in id_path:
+        raise OrganizationContractError(
+            "duplicate_organization_node_id", f"{path}.id", f"organization node ID {node_id} duplicates {id_path[node_id]}"
+        )
+    id_path[node_id] = f"{path}.id"
+    name = _clean_text(raw.get("name")) or node_id
+    name_ids.setdefault(name, set()).add(node_id)
+    node: dict[str, Any] = {
+        "id": node_id,
+        "name": name,
+        "serviceScope": _canonical_service_scope(raw.get("serviceScope"), f"{path}.serviceScope"),
+        "_source_path": path,
+        "_scope_defaults": [
+            field
+            for field in sorted(_SERVICE_SCOPE_FIELDS)
+            if not isinstance(raw.get("serviceScope"), dict) or field not in raw["serviceScope"]
+        ],
+    }
+    description = _clean_text(raw.get("description"))
+    if description:
+        node["description"] = description
+    children = raw.get("children", [])
+    if children is None:
+        children = []
+    if not isinstance(children, list):
+        raise OrganizationContractError(
+            "invalid_organization_children", f"{path}.children", "children must be an array"
+        )
+    node["children"] = [
+        _canonical_organization_tree(child, f"{path}.children[{index}]", nodes, id_path, name_ids, visiting)
+        if isinstance(child, dict)
+        else _raise_organization_child(f"{path}.children[{index}]")
+        for index, child in enumerate(children)
+    ]
+    nodes.append(node)
+    visiting.remove(marker)
+    return node
+
+
+def _strip_organization_internal_paths(node: Any) -> None:
+    if not isinstance(node, dict):
+        return
+    node.pop("_source_path", None)
+    node.pop("_scope_defaults", None)
+    for child in node.get("children", []) if isinstance(node.get("children"), list) else []:
+        _strip_organization_internal_paths(child)
+
+
+def _raise_organization_child(path: str) -> dict[str, Any]:
+    raise OrganizationContractError("invalid_organization_node", path, "organization child must be an object")
+
+
+def _organization_aliases(
+    nodes: list[dict[str, Any]], support_nodes: Any, name_ids: dict[str, set[str]]
+) -> dict[str, str]:
+    candidates: dict[str, set[str]] = {node["id"]: {node["id"]} for node in nodes}
+    for name, ids in name_ids.items():
+        candidates.setdefault(name, set()).update(ids)
+    for support_node in support_nodes if isinstance(support_nodes, list) else []:
+        if not isinstance(support_node, dict):
+            continue
+        explicit = _clean_text(support_node.get("organizationNodeId"))
+        node_id = explicit if explicit in candidates and len(candidates[explicit]) == 1 else ""
+        if not node_id:
+            for ref in (_clean_text(support_node.get("id")), _clean_text(support_node.get("name"))):
+                matches = candidates.get(ref, set())
+                if len(matches) == 1:
+                    node_id = next(iter(matches))
+                    break
+        if node_id:
+            for field in ("id", "name", "supportNodeName", "organizationNodeId"):
+                ref = _clean_text(support_node.get(field))
+                if ref:
+                    candidates.setdefault(ref, set()).add(node_id)
+    return {ref: next(iter(ids)) for ref, ids in candidates.items() if len(ids) == 1}
+
+
+def _resolve_organization_ref(
+    value: Any, aliases: dict[str, str], node_ids: set[str], path: str, code: str
+) -> str:
+    ref = _clean_text(value)
+    if ref in node_ids:
+        return ref
+    if ref in aliases:
+        return aliases[ref]
+    raise OrganizationContractError(
+        code,
+        path,
+        f"{'unknown support organization; ' if 'organization' in code else ''}organization reference {ref or '<empty>'} does not resolve to one stable node ID",
+    )
+
+
+def _canonical_lateral_relations(value: Any, aliases: dict[str, str], node_ids: set[str]) -> list[dict[str, Any]]:
+    if value in (None, []):
+        return []
+    if not isinstance(value, list):
+        raise OrganizationContractError(
+            "invalid_organization_relations", "supportOrganization.relations", "relations must be an array"
+        )
+    result: list[dict[str, Any]] = []
+    seen: dict[str, int] = {}
+    for index, raw in enumerate(value):
+        path = f"supportOrganization.relations[{index}]"
+        if not isinstance(raw, dict):
+            raise OrganizationContractError("invalid_organization_relation", path, "relation must be an object")
+        relation_id = _clean_text(raw.get("id"))
+        if not relation_id:
+            raise OrganizationContractError(
+                "missing_organization_relation_id", f"{path}.id", "stable lateral relation ID is required"
+            )
+        if relation_id in seen:
+            raise OrganizationContractError(
+                "duplicate_organization_relation_id", f"{path}.id", f"relation ID {relation_id} duplicates relations[{seen[relation_id]}]"
+            )
+        seen[relation_id] = index
+        if _clean_text(raw.get("type")) != "lateral":
+            raise OrganizationContractError(
+                "invalid_organization_relation_type", f"{path}.type", "explicit relations must use type=lateral"
+            )
+        source = _resolve_organization_ref(
+            raw.get("fromOrganizationNodeId"), aliases, node_ids, f"{path}.fromOrganizationNodeId", "missing_organization_relation_endpoint"
+        )
+        target = _resolve_organization_ref(
+            raw.get("toOrganizationNodeId"), aliases, node_ids, f"{path}.toOrganizationNodeId", "missing_organization_relation_endpoint"
+        )
+        result.append({
+            "id": relation_id,
+            "type": "lateral",
+            "fromOrganizationNodeId": source,
+            "toOrganizationNodeId": target,
+            "priority": _positive_int(raw.get("priority"), 1),
+        })
+    return result
+
+
+def _legacy_lateral_relations(value: Any, aliases: dict[str, str], node_ids: set[str]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for node_index, node in enumerate(value if isinstance(value, list) else []):
+        if not isinstance(node, dict) or not isinstance(node.get("lateralSupportNodes"), list):
+            continue
+        source = _resolve_organization_ref(
+            node.get("organizationNodeId") or node.get("id") or node.get("name"),
+            aliases,
+            node_ids,
+            f"supportNodes[{node_index}].organizationNodeId",
+            "missing_organization_relation_endpoint",
+        )
+        for relation_index, target_ref in enumerate(node["lateralSupportNodes"]):
+            target = _resolve_organization_ref(
+                target_ref,
+                aliases,
+                node_ids,
+                f"supportNodes[{node_index}].lateralSupportNodes[{relation_index}]",
+                "missing_organization_relation_endpoint",
+            )
+            result.append({
+                "id": f"migrated-lateral-{source}-{target}",
+                "type": "lateral",
+                "fromOrganizationNodeId": source,
+                "toOrganizationNodeId": target,
+                "priority": relation_index + 1,
+            })
+    return result
+
+
+def _validate_lateral_relation_dag(relations: list[dict[str, Any]]) -> None:
+    graph: dict[str, list[tuple[str, int]]] = {}
+    seen_edges: set[tuple[str, str]] = set()
+    for index, relation in enumerate(relations):
+        edge = (relation["fromOrganizationNodeId"], relation["toOrganizationNodeId"])
+        if edge in seen_edges:
+            raise OrganizationContractError(
+                "duplicate_lateral_relation",
+                f"supportOrganization.relations[{index}].toOrganizationNodeId",
+                "lateral relation endpoint pair is duplicated",
+            )
+        seen_edges.add(edge)
+        graph.setdefault(edge[0], []).append((edge[1], index))
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in visited:
+            return
+        visiting.add(node_id)
+        for target, index in graph.get(node_id, []):
+            if target in visiting:
+                raise OrganizationContractError(
+                    "circular_lateral_relation",
+                    f"supportOrganization.relations[{index}].toOrganizationNodeId",
+                    "lateral relation graph must be acyclic",
+                )
+            visit(target)
+        visiting.remove(node_id)
+        visited.add(node_id)
+
+    for node_id in sorted(graph):
+        visit(node_id)
+
+
+def _canonicalize_support_node_ownership(value: Any, aliases: dict[str, str], node_ids: set[str]) -> None:
+    for index, node in enumerate(value if isinstance(value, list) else []):
+        if not isinstance(node, dict):
+            continue
+        refs = [node.get(field) for field in ("organizationNodeId", "id", "name") if _clean_text(node.get(field))]
+        resolved = {
+            _resolve_organization_ref(ref, aliases, node_ids, f"supportNodes[{index}].organizationNodeId", "unknown_support_node_organization")
+            for ref in refs
+            if _clean_text(ref) in node_ids or _clean_text(ref) in aliases
+        }
+        if len(resolved) != 1:
+            raise OrganizationContractError(
+                "conflicting_support_node_organization" if len(resolved) > 1 else "unknown_support_node_organization",
+                f"supportNodes[{index}].organizationNodeId",
+                "support node must link to exactly one organization node",
+            )
+        node["organizationNodeId"] = next(iter(resolved))
+        node.pop("lateralSupportNodes", None)
+        node.pop("transportPolicies", None)
+
+
+def _canonicalize_support_resource_ownership(
+    value: Any,
+    aliases: dict[str, str],
+    node_ids: set[str],
+    nodes: list[dict[str, Any]],
+    changes: list[str],
+) -> None:
+    owners_by_id: dict[str, tuple[str, int]] = {}
+    node_by_id = {node["id"]: node for node in nodes}
+    for index, resource in enumerate(value if isinstance(value, list) else []):
+        if not isinstance(resource, dict):
+            continue
+        had_explicit_owner = bool(_clean_text(resource.get("organizationNodeId")))
+        refs = [
+            (field, resource.get(field))
+            for field in ("organizationNodeId", "organizationNodeName", "supportNodeName")
+            if _clean_text(resource.get(field))
+        ]
+        owner = ""
+        for field, ref in refs:
+            resolved = _resolve_organization_ref(
+                ref,
+                aliases,
+                node_ids,
+                f"supportResources[{index}].{field}",
+                "unknown_support_resource_organization",
+            )
+            if owner and resolved != owner:
+                raise OrganizationContractError(
+                    "multiple_resource_ownership",
+                    f"supportResources[{index}].{field}",
+                    "resource ownership aliases resolve to different organization nodes",
+                )
+            owner = resolved
+        if not owner:
+            raise OrganizationContractError(
+                "missing_resource_ownership",
+                f"supportResources[{index}].organizationNodeId",
+                "personnel, equipment, and spare resources must each have exactly one organization owner",
+            )
+        resource_type = _clean_text(resource.get("type")).lower()
+        allowed_types = node_by_id[owner]["serviceScope"]["resourceTypes"]
+        if allowed_types and resource_type not in allowed_types:
+            raise OrganizationContractError(
+                "resource_owner_scope_conflict",
+                f"supportResources[{index}].type",
+                f"resource type {resource_type or '<empty>'} is outside owner {owner} service scope",
+            )
+        product_id = _clean_text(resource.get("productId"))
+        allowed_products = node_by_id[owner]["serviceScope"]["productIds"]
+        if resource_type == "spare" and product_id and allowed_products and product_id not in allowed_products:
+            raise OrganizationContractError(
+                "resource_owner_scope_conflict",
+                f"supportResources[{index}].productId",
+                f"resource product {product_id} is outside owner {owner} service scope",
+            )
+        resource["organizationNodeId"] = owner
+        if not had_explicit_owner:
+            changes.append(f"supportResources[{index}].organizationNodeId=migratedUniqueAlias")
+        resource_id = _clean_text(resource.get("id"))
+        if resource_id and resource_id in owners_by_id and owners_by_id[resource_id][0] != owner:
+            raise OrganizationContractError(
+                "multiple_resource_ownership",
+                f"supportResources[{index}].organizationNodeId",
+                f"resource {resource_id} is already owned by {owners_by_id[resource_id][0]}",
+            )
+        if resource_id:
+            owners_by_id[resource_id] = (owner, index)
+
+
+def _canonical_top_level_transport_policies(
+    project: dict[str, Any],
+    aliases: dict[str, str],
+    node_ids: set[str],
+    nodes: list[dict[str, Any]],
+    changes: list[str],
+) -> list[dict[str, Any]]:
+    top = project.get("transportPolicies")
+    node_scoped = [
+        (node_index, policy_index, policy)
+        for node_index, node in enumerate(project.get("supportNodes", []) if isinstance(project.get("supportNodes"), list) else [])
+        if isinstance(node, dict)
+        for policy_index, policy in enumerate(node.get("transportPolicies", []) if isinstance(node.get("transportPolicies"), list) else [])
+        if isinstance(policy, dict)
+    ]
+    if isinstance(top, list) and top and node_scoped:
+        raise OrganizationContractError(
+            "conflicting_transport_policy_sources",
+            f"supportNodes[{node_scoped[0][0]}].transportPolicies",
+            "node-scoped legacy policies cannot coexist with canonical top-level transportPolicies",
+        )
+    sources = [
+        (f"transportPolicies[{index}]", policy, None)
+        for index, policy in enumerate(top if isinstance(top, list) else [])
+        if isinstance(policy, dict)
+    ]
+    if not sources and node_scoped:
+        sources = [
+            (
+                f"supportNodes[{node_index}].transportPolicies[{policy_index}]",
+                policy,
+                (project["supportNodes"][node_index].get("organizationNodeId")
+                 or project["supportNodes"][node_index].get("id")
+                 or project["supportNodes"][node_index].get("name")),
+            )
+            for node_index, policy_index, policy in node_scoped
+        ]
+        changes.append("supportNodes[].transportPolicies[]->transportPolicies[]")
+    node_by_id = {node["id"]: node for node in nodes}
+    result: list[dict[str, Any]] = []
+    seen: dict[str, str] = {}
+    for index, (path, raw, host_ref) in enumerate(sources):
+        from_verbose = raw.get("fromOrganizationNodeId")
+        to_verbose = raw.get("toOrganizationNodeId")
+        source_ref = from_verbose or raw.get("fromSupportNodeName") or raw.get("from") or host_ref
+        target_ref = to_verbose or raw.get("toSupportNodeName") or raw.get("to")
+        route_fields = (
+            "fromOrganizationNodeId", "fromSupportNodeName", "from",
+            "toOrganizationNodeId", "toSupportNodeName", "to",
+        )
+        business_fields = (
+            "productId", "capacity", "priority", "transportTimeHours", "transport_time_hours",
+            "transferCycleHours", "criticalInventory", "triggerMode", "transportMode", "direction", "name",
+        )
+        if not any(raw.get(field) not in (None, "", [], {}) for field in (*route_fields, *business_fields)):
+            changes.append(f"{path}=droppedLegacyEmptyDraft")
+            continue
+        source = _resolve_organization_ref(
+            source_ref, aliases, node_ids, f"{path}.fromOrganizationNodeId", "missing_transport_policy_endpoint"
+        )
+        target = _resolve_organization_ref(
+            target_ref, aliases, node_ids, f"{path}.toOrganizationNodeId", "missing_transport_policy_endpoint"
+        )
+        if source == target:
+            raise OrganizationContractError(
+                "self_transport_policy",
+                f"{path}.toOrganizationNodeId",
+                "transport policy endpoints must be different organization nodes",
+            )
+        if host_ref not in (None, ""):
+            host = _resolve_organization_ref(
+                host_ref,
+                aliases,
+                node_ids,
+                f"{path}.fromOrganizationNodeId",
+                "missing_transport_policy_endpoint",
+            )
+            if source != host:
+                conflict_field = "fromOrganizationNodeId" if _clean_text(from_verbose) else (
+                    "fromSupportNodeName" if _clean_text(raw.get("fromSupportNodeName")) else "from"
+                )
+                raise OrganizationContractError(
+                    "conflicting_transport_policy_host",
+                    f"{path}.{conflict_field}",
+                    "node-scoped transport policy source conflicts with its host support node",
+                )
+            if not any(_clean_text(raw.get(field)) for field in ("fromOrganizationNodeId", "fromSupportNodeName", "from")):
+                changes.append(f"{path}.fromOrganizationNodeId=migratedHostOrganizationNodeId")
+        for legacy_field, legacy_ref, canonical in (
+            ("fromSupportNodeName", raw.get("fromSupportNodeName"), source),
+            ("from", raw.get("from"), source),
+            ("toSupportNodeName", raw.get("toSupportNodeName"), target),
+            ("to", raw.get("to"), target),
+        ):
+            if _clean_text(legacy_ref):
+                legacy_resolved = _resolve_organization_ref(
+                    legacy_ref,
+                    aliases,
+                    node_ids,
+                    f"{path}.{legacy_field}",
+                    "missing_transport_policy_endpoint",
+                )
+                if legacy_resolved != canonical:
+                    raise OrganizationContractError(
+                        "conflicting_transport_policy_endpoint",
+                        f"{path}.{legacy_field}",
+                        "canonical endpoint conflicts with legacy endpoint reference",
+                    )
+        for verbose_field, verbose_ref, resolved in (
+            ("fromOrganizationNodeId", from_verbose, source),
+            ("toOrganizationNodeId", to_verbose, target),
+        ):
+            if _clean_text(verbose_ref) and _resolve_organization_ref(
+                verbose_ref, aliases, node_ids, f"{path}.{verbose_field}", "missing_transport_policy_endpoint"
+            ) != resolved:
+                raise OrganizationContractError(
+                    "conflicting_transport_policy_endpoint", f"{path}.{verbose_field}", "canonical endpoint conflicts with legacy endpoint reference"
+                )
+        if not _clean_text(from_verbose):
+            changes.append(f"{path}.fromOrganizationNodeId=migratedUniqueAlias")
+        if not _clean_text(to_verbose):
+            changes.append(f"{path}.toOrganizationNodeId=migratedUniqueAlias")
+        product_id = _clean_text(raw.get("productId"))
+        for endpoint in (source, target):
+            allowed_products = node_by_id[endpoint]["serviceScope"]["productIds"]
+            if product_id and allowed_products and product_id not in allowed_products:
+                raise OrganizationContractError(
+                    "transport_policy_scope_conflict", f"{path}.productId", f"productId is outside organization node {endpoint} service scope"
+                )
+        policy_id = _clean_text(raw.get("id"))
+        if not policy_id:
+            identity = {
+                "fromOrganizationNodeId": source,
+                "toOrganizationNodeId": target,
+                "productId": product_id,
+                "capacity": raw.get("capacity"),
+                "priority": raw.get("priority"),
+                "transportTimeHours": raw.get("transportTimeHours", raw.get("transport_time_hours")),
+            }
+            digest = hashlib.sha256(
+                json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()[:12]
+            policy_id = f"migrated-transport-{digest}"
+            changes.append(f"{path}.id=stableContentHash")
+        if policy_id in seen:
+            raise OrganizationContractError(
+                "duplicate_transport_policy_id", f"{path}.id", f"transport policy ID {policy_id} duplicates {seen[policy_id]}"
+            )
+        seen[policy_id] = path
+        item: dict[str, Any] = {
+            "id": policy_id,
+            "fromOrganizationNodeId": source,
+            "toOrganizationNodeId": target,
+        }
+        for field in ("name", "productId", "direction", "triggerMode", "criticalInventory", "transferCycleHours", "capacity", "priority", "transportMode", "transportTimeHours", "transport_time_hours"):
+            if raw.get(field) not in (None, ""):
+                item[field] = deepcopy(raw[field])
+        result.append(item)
+    return result
 
 
 def normalize_project_products(project_json: dict[str, Any]) -> dict[str, Any]:
@@ -1121,14 +1799,14 @@ def _validate_clean_support_nodes(nodes: list[Any], target: str) -> None:
         path = f"supportNodes.{index}"
         if not isinstance(node, dict):
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
-        for field in ("id", "name"):
+        for field in ("id", "name", "organizationNodeId"):
             if field not in node:
                 raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
             _require_clean_string(node, field, f"{path}.{field}", target)
         extra = sorted(field for field in node if field not in _SUPPORT_NODE_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
-        for field in ("supportNodeName", "airport", "airportId", "baseAirportId", "nodeType", "supportLevel", "policy", "organizationStrategy"):
+        for field in ("supportNodeName", "airport", "airportId", "baseAirportId", "nodeType", "supportLevel", "policy", "organizationStrategy", "organizationNodeId"):
             _validate_optional_clean_string(node, field, f"{path}.{field}", target)
         for field in ("capacity", "personnelCapacity", "equipmentCapacity"):
             _validate_optional_clean_integer(node, field, f"{path}.{field}", target, minimum=0)
@@ -1154,7 +1832,7 @@ def _validate_clean_support_resources(resources: Any, target: str) -> None:
         path = f"supportResources.{index}"
         if not isinstance(resource, dict):
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
-        for field in ("id", "type", "name", "quantity"):
+        for field in ("id", "organizationNodeId", "type", "name", "quantity"):
             if field not in resource:
                 raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
         extra = sorted(field for field in resource if field not in _SUPPORT_RESOURCE_FIELDS)
@@ -1164,6 +1842,7 @@ def _validate_clean_support_resources(resources: Any, target: str) -> None:
             "id",
             "supportNodeName",
             "organizationNodeName",
+            "organizationNodeId",
             "name",
             "model",
             "productId",
@@ -1315,9 +1994,11 @@ def _validate_clean_transport_policies(policies: Any, path: str, target: str) ->
         extra = sorted(field for field in policy if field not in _TRANSPORT_POLICY_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at {policy_path}: unexpected field {extra[0]}")
+        for required in ("id", "fromOrganizationNodeId", "toOrganizationNodeId"):
+            _require_clean_non_empty_string(policy, required, f"{policy_path}.{required}", target)
         if "productId" in policy:
             _require_clean_non_empty_string(policy, "productId", f"{policy_path}.productId", target)
-        for field in ("id", "name", "fromSupportNodeName", "from", "toSupportNodeName", "to", "productId", "direction", "triggerMode", "transportMode"):
+        for field in ("id", "name", "fromSupportNodeName", "from", "toSupportNodeName", "to", "fromOrganizationNodeId", "toOrganizationNodeId", "productId", "direction", "triggerMode", "transportMode"):
             _validate_optional_clean_string(policy, field, f"{policy_path}.{field}", target)
         for field in ("capacity", "priority", "criticalInventory"):
             _validate_optional_clean_integer(policy, field, f"{policy_path}.{field}", target, minimum=0)
@@ -1439,17 +2120,29 @@ def _validate_clean_support_activity_jobs(jobs: Any, target: str) -> None:
 def _validate_clean_support_organization(value: Any, target: str) -> None:
     if not isinstance(value, dict):
         raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization: expected object")
-    extra = sorted(field for field in value if field != "tree")
+    extra = sorted(field for field in value if field not in {"tree", "relations"})
     if extra:
         raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization: unexpected field {extra[0]}")
-    if "tree" not in value:
-        return
+    if "tree" not in value or "relations" not in value:
+        raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization: tree and relations are required")
     tree = value["tree"]
-    if isinstance(tree, list):
-        for index, node in enumerate(tree):
-            _validate_clean_support_organization_node(node, f"supportOrganization.tree.{index}", target)
-        return
-    _validate_clean_support_organization_node(tree, "supportOrganization.tree", target)
+    if tree is not None:
+        _validate_clean_support_organization_node(tree, "supportOrganization.tree", target)
+    relations = value["relations"]
+    if not isinstance(relations, list):
+        raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization.relations: expected array")
+    for index, relation in enumerate(relations):
+        path = f"supportOrganization.relations.{index}"
+        if not isinstance(relation, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+        extra = sorted(set(relation) - _ORGANIZATION_RELATION_FIELDS)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+        for field in ("id", "type", "fromOrganizationNodeId", "toOrganizationNodeId"):
+            _require_clean_non_empty_string(relation, field, f"{path}.{field}", target)
+        if relation["type"] != "lateral":
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.type: expected lateral")
+        _require_clean_integer(relation, "priority", f"{path}.priority", target, minimum=1)
 
 
 def _validate_clean_support_organization_node(value: Any, path: str, target: str) -> None:
@@ -1459,10 +2152,16 @@ def _validate_clean_support_organization_node(value: Any, path: str, target: str
         if field not in value:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
         _require_clean_string(value, field, f"{path}.{field}", target)
-    extra = sorted(field for field in value if field not in {"id", "name", "description", "children"})
+    extra = sorted(field for field in value if field not in _ORGANIZATION_NODE_FIELDS)
     if extra:
         raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
     _validate_optional_clean_string(value, "description", f"{path}.description", target)
+    scope = value.get("serviceScope")
+    if not isinstance(scope, dict) or set(scope) != _SERVICE_SCOPE_FIELDS:
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}.serviceScope: expected canonical scope object")
+    for field in _SERVICE_SCOPE_FIELDS:
+        if not isinstance(scope[field], list) or any(not isinstance(item, str) or not item for item in scope[field]):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.serviceScope.{field}: expected non-empty string array")
     if "children" not in value:
         return
     children = value["children"]
@@ -1763,6 +2462,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _lift_support_activity_jobs_to_top_level(project)
     _materialize_support_activity_job_applicability(project)
     _normalize_support_activity_reference_fields(project)
+    project.update(normalize_support_organization_contract(project)[0])
 
 
 def _project_k_out_of_n_error(index: int, message: str) -> dict[str, str]:
@@ -2157,7 +2857,14 @@ def _materialize_legacy_support_tables(project: dict[str, Any]) -> None:
                 if not isinstance(policy, dict):
                     continue
                 next_policy = deepcopy(policy)
-                next_policy.setdefault("id", f"{node.get('id') or f'support-node-{node_index}'}-transport-{policy_index}")
+                meaningful_fields = {
+                    "fromOrganizationNodeId", "fromSupportNodeName", "from",
+                    "toOrganizationNodeId", "toSupportNodeName", "to",
+                    "productId", "capacity", "priority", "transportTimeHours", "transport_time_hours",
+                    "transferCycleHours", "criticalInventory", "triggerMode", "transportMode", "direction", "name",
+                }
+                if any(policy.get(field) not in (None, "", [], {}) for field in meaningful_fields):
+                    next_policy.setdefault("fromOrganizationNodeId", str(node.get("organizationNodeId") or node.get("id") or ""))
                 next_policy["fromSupportNodeName"] = str(policy.get("fromSupportNodeName") or name_by_id.get(str(policy.get("from") or ""), policy.get("from") or ""))
                 next_policy["toSupportNodeName"] = str(policy.get("toSupportNodeName") or name_by_id.get(str(policy.get("to") or ""), policy.get("to") or ""))
                 next_policy["spareName"] = str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or "")
@@ -2182,7 +2889,6 @@ def _legacy_transport_policies_from_support_activities(activities: Any, name_by_
             if not isinstance(policy, dict):
                 continue
             next_policy = deepcopy(policy)
-            next_policy.setdefault("id", f"{activity.get('id') or f'support-activity-{activity_index}'}-transport-{policy_index}")
             from_ref = str(policy.get("fromSupportNodeName") or policy.get("from") or "")
             to_ref = str(policy.get("toSupportNodeName") or policy.get("to") or "")
             next_policy["fromSupportNodeName"] = str(policy.get("fromSupportNodeName") or aliases.get(from_ref, from_ref))
@@ -2231,17 +2937,20 @@ def _legacy_support_node_name_by_ref(support_nodes: Any) -> dict[str, str]:
     return name_by_ref
 
 
-def _support_node_scope_by_ref(support_nodes: Any) -> dict[str, dict[str, str]]:
-    scope_by_ref: dict[str, dict[str, str]] = {}
+def _support_node_scope_by_ref(support_nodes: Any) -> dict[str, dict[str, Any]]:
+    scope_by_ref: dict[str, dict[str, Any]] = {}
     if not isinstance(support_nodes, list):
         return scope_by_ref
     for node in support_nodes:
         if not isinstance(node, dict):
             continue
         scope = {
-            field: value
-            for field in ("airport", "airportId", "baseAirportId")
-            if (value := _clean_text(node.get(field)))
+            field: deepcopy(node[field])
+            for field in (
+                "airport", "airportId", "baseAirportId", "capacity",
+                "personnelCapacity", "equipmentCapacity", "inventory",
+            )
+            if node.get(field) not in (None, "", {})
         }
         if not scope:
             continue
@@ -2253,10 +2962,10 @@ def _support_node_scope_by_ref(support_nodes: Any) -> dict[str, dict[str, str]]:
 
 
 def _support_node_scope_by_name(
-    scope_by_ref: dict[str, dict[str, str]],
+    scope_by_ref: dict[str, dict[str, Any]],
     name_by_ref: dict[str, str],
-) -> dict[str, dict[str, str]]:
-    scope_by_name: dict[str, dict[str, str]] = {}
+) -> dict[str, dict[str, Any]]:
+    scope_by_name: dict[str, dict[str, Any]] = {}
     for ref, scope in scope_by_ref.items():
         name = _clean_text(name_by_ref.get(ref) or ref)
         if name:
@@ -2283,6 +2992,13 @@ def _normalize_support_organization(support_organization: Any, fallback_name_by_
         state,
         is_root=True,
     )
+    if not support_node_names:
+        root_name = _clean_text(support_organization["tree"].get("name"))
+        root_id = _clean_text(support_organization["tree"].get("id"))
+        if root_name:
+            support_node_names.append(root_name)
+            if root_id:
+                name_by_ref[root_id] = root_name
     return support_node_names, name_by_ref
 
 
@@ -2304,6 +3020,8 @@ def _normalize_support_organization_node(
     description = _clean_text(node.get("description"))
     if description:
         normalized["description"] = description
+    if isinstance(node.get("serviceScope"), dict):
+        normalized["serviceScope"] = deepcopy(node["serviceScope"])
     for ref in (node.get("id"), node.get("name"), node.get("supportNodeId"), node.get("code"), node.get("sourceId")):
         key = _clean_text(ref)
         if key:
@@ -2374,11 +3092,18 @@ def _normalize_top_level_transport_policies(project: dict[str, Any], name_by_ref
         if not isinstance(policy, dict):
             continue
         normalized: dict[str, Any] = {
-            "id": _clean_text(policy.get("id")) or f"transport-policy-{index + 1}",
             "fromSupportNodeName": _support_node_name_for_ref(policy.get("fromSupportNodeName") or policy.get("from"), name_by_ref),
             "toSupportNodeName": _support_node_name_for_ref(policy.get("toSupportNodeName") or policy.get("to"), name_by_ref),
             "spareName": _clean_text(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type")),
         }
+        if _clean_text(policy.get("id")):
+            normalized["id"] = _clean_text(policy.get("id"))
+        if _clean_text(policy.get("fromOrganizationNodeId")):
+            normalized["fromOrganizationNodeId"] = _clean_text(policy.get("fromOrganizationNodeId"))
+        if _clean_text(policy.get("toOrganizationNodeId")):
+            normalized["toOrganizationNodeId"] = _clean_text(policy.get("toOrganizationNodeId"))
+        if _clean_text(policy.get("productId")):
+            normalized["productId"] = _clean_text(policy.get("productId"))
         for field in ("name", "direction", "triggerMode", "criticalInventory", "transferCycleHours", "capacity", "priority", "transportMode", "transportTimeHours"):
             if field in policy:
                 normalized[field] = policy[field]
@@ -2440,13 +3165,9 @@ def _strip_legacy_support_node_resource_fields(project: dict[str, Any]) -> None:
     if not isinstance(support_nodes, list):
         return
     legacy_fields = {
-        "capacity",
-        "equipmentCapacity",
-        "inventory",
         "lateralSupportNodes",
         "nodeType",
         "organizationStrategy",
-        "personnelCapacity",
         "policy",
         "supportLevel",
         "transportPolicies",
@@ -3008,7 +3729,7 @@ def _prune_support_activity_jobs(value: Any) -> None:
 
 
 def _prune_support_organization(value: dict[str, Any]) -> None:
-    _keep_fields(value, {"tree"})
+    _keep_fields(value, {"tree", "relations"})
     tree = value.get("tree")
     if isinstance(tree, dict):
         _prune_support_organization_node(tree)
@@ -3016,10 +3737,13 @@ def _prune_support_organization(value: dict[str, Any]) -> None:
         for node in tree:
             if isinstance(node, dict):
                 _prune_support_organization_node(node)
+    _prune_typed_list(value.get("relations"), _ORGANIZATION_RELATION_FIELDS)
 
 
 def _prune_support_organization_node(value: dict[str, Any]) -> None:
-    _keep_fields(value, {"id", "name", "description", "children"})
+    _keep_fields(value, _ORGANIZATION_NODE_FIELDS)
+    if isinstance(value.get("serviceScope"), dict):
+        _keep_fields(value["serviceScope"], _SERVICE_SCOPE_FIELDS)
     children = value.get("children")
     if not isinstance(children, list):
         return
