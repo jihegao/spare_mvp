@@ -1783,6 +1783,60 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(cancelled_job.spare_reservations, {})
         self.assertEqual(cancelled_model.nodes["deck"]["inventory"]["shared-spare"], 1)
 
+    def test_canonical_local_and_parent_stock_are_one_job_reservation_before_arrival(self) -> None:
+        # Arrange: job 1 needs the leaf unit plus one parent unit; job 2 only needs
+        # one unit and becomes higher priority after job 1's atomic plan commits.
+        inputs = _vertical_organization_inputs(local_quantity=1, parent_quantity=1)
+        inputs["aircraft"].update({"fleet_count": 2, "initial_ready": 2})
+        inputs["support_network"]["organization_graph"]["transport_policies"][0].update(
+            {"capacity": 1, "transport_time_hours": 1 / 60}
+        )
+        repair = inputs["support_activities"]["activities"][1]
+        repair["jobs"][0]["spare"][0]["quantity"] = 2
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        repair_activity = model.activities[1]
+        repair_activity["jobs"][0]["spare"][0]["quantity"] = 1
+        model._create_job(model.aircraft[1], repair_activity, kind="repair")
+        requesting_job, competing_job = model.jobs
+
+        # Act / Assert: local and parent contributions commit atomically for job 1.
+        model._start_waiting_jobs()
+        self.assertEqual(requesting_job.spare_reservations, {(0, "shared-spare"): 1})
+        self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], 0)
+        self.assertEqual(model.nodes["stock"]["inventory"]["shared-spare"], 0)
+        self.assertEqual(len(model.transport_shipments), 1)
+
+        competing_job.priority = 1
+        requesting_job.priority = 2
+        model._start_waiting_jobs()
+        self.assertEqual(competing_job.state, "waiting")
+
+        model.minute = 1
+        model._process_transport_arrivals()
+        self.assertEqual(requesting_job.spare_reservations, {(0, "shared-spare"): 2})
+        model._start_waiting_jobs()
+        self.assertEqual(requesting_job.state, "running")
+        self.assertEqual(competing_job.state, "waiting")
+
+        # The same local + inbound reservation is fully recoverable on cancel.
+        cancelled_inputs = _vertical_organization_inputs(local_quantity=1, parent_quantity=1)
+        cancelled_inputs["support_network"]["organization_graph"]["transport_policies"][0].update(
+            {"capacity": 1, "transport_time_hours": 1 / 60}
+        )
+        cancelled_inputs["support_activities"]["activities"][1]["jobs"][0]["spare"][0]["quantity"] = 2
+        cancelled_model = AircraftSupportV1Model(cancelled_inputs)
+        cancelled_model._create_job(
+            cancelled_model.aircraft[0], cancelled_model.activities[1], kind="repair"
+        )
+        cancelled_job = cancelled_model.jobs[-1]
+        cancelled_model._start_waiting_jobs()
+        cancelled_job.state = "cancelled"
+        cancelled_model.minute = 1
+        cancelled_model._process_transport_arrivals()
+        self.assertEqual(cancelled_job.spare_reservations, {})
+        self.assertEqual(cancelled_model.nodes["deck"]["inventory"]["shared-spare"], 2)
+
     def test_canonical_personnel_and_equipment_can_arrive_from_different_nearest_ancestors(self) -> None:
         # Arrange: the parent can supply personnel while only the root can supply equipment.
         inputs = _vertical_organization_inputs(local_quantity=0, parent_quantity=0)

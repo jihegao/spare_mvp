@@ -2737,8 +2737,15 @@ class AircraftSupportV1Model:
         requirements: list[tuple[str, int]],
     ) -> dict[str, str]:
         plans: list[dict[str, Any]] = []
+        local_reservations: list[tuple[str, int]] = []
         failures: dict[str, str] = {}
         for spare_type, needed in requirements:
+            reservation_key = (job.task_index, spare_type)
+            already_reserved = int(job.spare_reservations.get(reservation_key, 0))
+            shared_quantity = int(destination_node["inventory"].get(spare_type, 0) or 0)
+            local_quantity = min(shared_quantity, max(0, needed - already_reserved))
+            if local_quantity:
+                local_reservations.append((spare_type, local_quantity))
             plan, reason = self._canonical_spare_dispatch_plan(
                 job, destination_node, spare_type, needed
             )
@@ -2765,8 +2772,16 @@ class AircraftSupportV1Model:
                 )
             return failures
 
-        # Planning is side-effect free. Only a fully feasible task-level plan is
-        # committed, preventing plural-spare partial inventory reservations.
+        # Planning is side-effect free. Local stock and every ancestor shipment
+        # are committed together only after the whole task is feasible.
+        for spare_type, quantity in local_reservations:
+            reservation_key = (job.task_index, spare_type)
+            destination_node["inventory"][spare_type] = (
+                int(destination_node["inventory"].get(spare_type, 0)) - quantity
+            )
+            job.spare_reservations[reservation_key] = (
+                int(job.spare_reservations.get(reservation_key, 0)) + quantity
+            )
         for plan in plans:
             shipment = plan["shipment"]
             source_node = plan["source_node"]
