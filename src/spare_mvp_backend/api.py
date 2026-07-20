@@ -6,7 +6,6 @@ import copy
 import base64
 from contextlib import contextmanager
 import hashlib
-import io
 import json
 import math
 import multiprocessing
@@ -34,6 +33,11 @@ from src.spare_mvp_backend.project_xlsx import (
     MAX_XLSX_BYTES, ProjectXlsxError, locate_issues, parse_project_xlsx, preview_counts, validate_import_relations,
 )
 from src.spare_mvp_backend.repository import ContractRepository
+from src.spare_mvp_backend.rms_allocation_xlsx import (
+    RmsAllocationXlsxError,
+    export_rms_allocation_xlsx,
+    parse_rms_allocation_xlsx,
+)
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRED_FORMAL_MODEL_FAMILIES, RunService, RunServiceError
 from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     mission_period_outcome,
@@ -403,30 +407,30 @@ class BackendApi:
         }
 
     def export_rms_allocation_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:
-        from openpyxl import Workbook
+        try:
+            return export_rms_allocation_xlsx(payload)
+        except RmsAllocationXlsxError as exc:
+            raise BackendApiError("rms_allocation_export_invalid", str(exc)) from exc
 
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "RMS分配结果"
-        sheet.append(["项目", str(payload.get("project_name") or "")])
-        sheet.append(["计算方法", str(payload.get("method") or "")])
-        sheet.append(["生成时间", str(payload.get("generated_at") or "")])
-        sheet.append([])
-        sheet.append(["层级", "节点", "运行比", "失效率", "MTBF(h)", "MTTR(h)"])
-        for row in payload.get("rows") or []:
-            sheet.append([
-                str(row.get("level") or ""), str(row.get("nodeName") or ""),
-                float(row.get("runningRatio") or 0), float(row.get("failureRate") or 0),
-                None if row.get("mtbfHours") is None else float(row["mtbfHours"]),
-                None if row.get("mttrHours") is None else float(row["mttrHours"]),
-            ])
-        output = io.BytesIO()
-        workbook.save(output)
-        return {
-            "body": output.getvalue(),
-            "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "filename": "rms-allocation-result.xlsx",
-        }
+    def preview_rms_allocation_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:
+        encoded = str(payload.get("content_base64") or "")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except ValueError as exc:
+            raise BackendApiError("invalid_rms_allocation_xlsx", "XLSX 内容不是有效的 base64") from exc
+        if len(content) > MAX_XLSX_BYTES:
+            raise BackendApiError(
+                "rms_allocation_xlsx_too_large",
+                "RMS XLSX 文件超过导入上限",
+                limit_bytes=MAX_XLSX_BYTES,
+                received_bytes=len(content),
+            )
+        try:
+            preview = parse_rms_allocation_xlsx(content)
+        except RmsAllocationXlsxError as exc:
+            raise BackendApiError("invalid_rms_allocation_xlsx", str(exc)) from exc
+        preview["fileName"] = str(payload.get("file_name") or "")
+        return preview
 
     def export_analysis_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:

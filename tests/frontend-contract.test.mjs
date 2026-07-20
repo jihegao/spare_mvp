@@ -4272,7 +4272,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.equal(page.secondary, "装备RMS指标分配");
   assert.equal(page.tertiary, "装备RMS指标分配");
   assert.equal(page.name, "装备RMS指标分配");
-  assert.deepEqual(page.dataObjects, ["rmsAllocationPlan", "equipmentNodes", "missionExposure", "allocationResults"]);
+  assert.deepEqual(page.dataObjects, ["rmsAllocationPlan", "basicMissions", "equipmentNodes", "allocationResults"]);
 
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
@@ -4283,6 +4283,9 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(appSource, /data-rms-equipment-node/);
   assert.match(appSource, /data-rms-equipment-field/);
   assert.match(appSource, /data-rms-aircraft-model/);
+  assert.match(appSource, /data-rms-basic-mission/);
+  assert.match(appSource, /data-rms-result-import-file/);
+  assert.match(appSource, /data-rms-result-field/);
   assert.match(appSource, /function updateRmsEquipmentField/);
   assert.match(appSource, /function persistRmsAllocationDraftToScenario/);
   assert.match(appSource, /rms-allocation-workbench-v1/);
@@ -4294,6 +4297,8 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(appSource, /state\.calculationStatus = "calculating"/);
   assert.match(appSource, /state\.calculationStatus = completed \? "completed" : "not-calculated"/);
   assert.match(appSource, /state\.calculationRunId !== calculationRunId/);
+  assert.match(appSource, /function saveCurrentRmsAllocationResult\(\)/);
+  assert.match(appSource, /function importRmsAllocationResultFile\(file\)/);
   assert.doesNotMatch(appSource, /publishRmsAllocation\(rmsAllocationProject, rmsAllocationResult\)/);
   assert.doesNotMatch(appSource, /function renderTopbarContext\(page\)/);
   assert.match(appSource, /<p>\$\{htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)\}<\/p>/);
@@ -4332,7 +4337,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(dataPreparationPanelSource, /data-rms-aircraft-model/);
   assert.match(dataPreparationPanelSource, /data-rms-action="download-template"/);
   assert.match(dataPreparationPanelSource, /data-rms-equipment-import-file/);
-  assert.doesNotMatch(dataPreparationPanelSource, /inputs\.missionReliability|inputs\.missionHours|inputs\.mtbfHours|inputs\.mttrHours/);
+  assert.doesNotMatch(dataPreparationPanelSource, /data-rms-basic-mission|inputs\.missionReliability|inputs\.missionHours|inputs\.mtbfHours|inputs\.mttrHours/);
   const equipmentTreePanelSource = workbenchSource.slice(
     workbenchSource.indexOf('<aside class="tree-container rms-equipment-tree">'),
     workbenchSource.indexOf('<section class="detail-panel equipment-system-table-panel rms-installation-panel">')
@@ -4356,19 +4361,23 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(calculationPanelSource, /执行计算/);
   assert.match(calculationPanelSource, /data-rms-calculation-status/);
   assert.match(calculationPanelSource, /data-rms-action="calculate"/);
+  assert.match(calculationPanelSource, /data-rms-basic-mission/);
+  assert.match(calculationPanelSource, /任务时长由基本任务只读取得/);
   assert.doesNotMatch(calculationPanelSource, /data-rms-aircraft-model|下载模板|上传文件/);
   assert.equal((workbenchSource.match(/data-rms-aircraft-model/g) || []).length, 1);
   assert.equal((workbenchSource.match(/data-rms-action="download-template"/g) || []).length, 1);
   assert.equal((workbenchSource.match(/data-rms-equipment-import-file/g) || []).length, 1);
   assert.equal((workbenchSource.match(/data-rms-action="calculate"/g) || []).length, 1);
   assert.match(workbenchSource, /data-rms-aircraft-model/);
-  assert.doesNotMatch(workbenchSource, /inputs\.missionReliability|任务可靠度/);
-  assert.match(workbenchSource, /inputs\.missionHours/);
-  assert.match(workbenchSource, /inputs\.mtbfHours/);
+  assert.match(workbenchSource, /data-rms-basic-mission/);
+  assert.match(workbenchSource, /inputs\.missionReliability|整机任务可靠度 R\(T\)/);
+  assert.doesNotMatch(workbenchSource, /data-rms-path="inputs\.missionHours"|data-rms-path="inputs\.mtbfHours"/);
+  assert.match(workbenchSource, /basicMission\.missionHours/);
   assert.doesNotMatch(workbenchSource, /inputs\.criticalFailureRatio|关键故障占比/);
   assert.match(workbenchSource, /inputs\.mttrHours/);
-  assert.ok(calculationPanelSource.indexOf('input("任务时长"') < calculationPanelSource.indexOf('input("MTBF"'));
-  assert.ok(calculationPanelSource.indexOf('input("MTBF"') < calculationPanelSource.indexOf('input("MTTR"'));
+  assert.ok(calculationPanelSource.indexOf("data-rms-basic-mission") < calculationPanelSource.indexOf('input("任务时长"'));
+  assert.ok(calculationPanelSource.indexOf('input("任务时长"') < calculationPanelSource.indexOf('input("整机任务可靠度 R(T)"'));
+  assert.ok(calculationPanelSource.indexOf('input("整机任务可靠度 R(T)"') < calculationPanelSource.indexOf('input("MTTR"'));
   assert.ok(calculationPanelSource.indexOf('input("MTTR"') < calculationPanelSource.indexOf("指标分配方法"));
   assert.ok(calculationPanelSource.indexOf("指标分配方法") < calculationPanelSource.indexOf("执行计算"));
   assert.ok(calculationPanelSource.indexOf("执行计算") < calculationPanelSource.indexOf('data-rms-action="calculate"'));
@@ -4390,23 +4399,24 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(workbenchSource, /plan\.methods\.allocation === "similar"/);
   assert.match(workbenchSource, /基准机型/);
   assert.match(workbenchSource, /data-rms-action="calculate"\$\{calculateDisabled \? " disabled" : ""\}/);
+  assert.match(workbenchSource, /data-rms-result-import-file/);
+  assert.match(workbenchSource, /data-rms-result-field="mtbfHours"/);
+  assert.match(workbenchSource, /data-rms-result-field="mttrHours"/);
+  assert.match(workbenchSource, /data-rms-action="save-result"/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="save-draft"/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="publish"/);
   assert.doesNotMatch(workbenchSource, /AGREE 分配法/);
   assert.doesNotMatch(workbenchSource, /评分分配法/);
-  assert.doesNotMatch(workbenchSource, /任务暴露矩阵/);
-  assert.doesNotMatch(workbenchSource, /暴露时间/);
-  assert.doesNotMatch(workbenchSource, /R目标/);
-  assert.doesNotMatch(workbenchSource, /反算 R/);
-  assert.doesNotMatch(workbenchSource, /目标 R|校核可靠度|MTBCF|MTTR 裕度/);
+  assert.doesNotMatch(workbenchSource, /任务暴露矩阵|节点暴露|暴露时间/);
+  assert.doesNotMatch(workbenchSource, /missionProfile|compositeTasks|periodicTasks/);
   assert.ok(workbenchSource.indexOf("机型选择与数据准备") < workbenchSource.indexOf("装备结构树"));
   assert.ok(workbenchSource.indexOf("装备结构树") < workbenchSource.indexOf("RMS 输入与指标分配计算"));
   assert.ok(workbenchSource.indexOf("RMS 输入与指标分配计算") < workbenchSource.indexOf("<h3>节点分配结果</h3>"));
   assert.match(workbenchSource, /运行比/);
-  assert.match(workbenchSource, /<th>层级<\/th><th>节点<\/th><th>运行比<\/th><th>失效率<\/th><th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th>/);
+  assert.match(workbenchSource, /<th>层级<\/th><th>节点<\/th><th>运行比<\/th><th>本层份额<\/th><th>失效率<\/th><th>MTBF\(h\)<\/th><th>MTTR\(h\)<\/th><th>校核<\/th>/);
   assert.match(workbenchSource, /compactNumber\(row\.failureRate, 8\)/);
-  assert.match(workbenchSource, /compactNumber\(row\.mtbfHours\)/);
-  assert.match(workbenchSource, /compactNumber\(row\.mttrHours\)/);
+  assert.match(workbenchSource, /compactNumber\(row\.mtbfHours, 6\)/);
+  assert.match(workbenchSource, /compactNumber\(row\.mttrHours, 6\)/);
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
   assert.doesNotMatch(workbenchSource, /<th>结构<\/th>/);
   assert.match(workbenchSource, /计算完成。/);
@@ -4429,12 +4439,48 @@ test("system management exposes an independent equipment RMS allocation workbenc
     appSource.indexOf('const equipmentImportFile = event.target.closest("[data-equipment-import-file]")')
   );
   assert.match(rmsImportChangeSource, /importRmsEquipmentTableFile\(rmsEquipmentImportFile\.files\?\.\[0\]\)/);
+  assert.match(rmsImportChangeSource, /importRmsAllocationResultFile\(rmsResultImportFile\.files\?\.\[0\]\)/);
   const rmsActionClickSource = appSource.slice(
     appSource.indexOf('const rmsActionButton = event.target.closest("[data-rms-action]")'),
     appSource.indexOf('const rmsEquipmentRootButton = event.target.closest("[data-rms-equipment-root]")')
   );
   assert.match(rmsActionClickSource, /downloadRmsEquipmentTemplate\(\)/);
   assert.match(rmsActionClickSource, /startRmsAllocationCalculation\(\)/);
+  assert.match(rmsActionClickSource, /saveCurrentRmsAllocationResult\(\)/);
+  const rmsMissionSelectionSource = appSource.slice(
+    appSource.indexOf("function rmsBasicMissionForProject"),
+    appSource.indexOf("function updateRmsAllocationResultField")
+  );
+  assert.match(rmsMissionSelectionSource, /project\?\.basicMissions/);
+  assert.match(rmsMissionSelectionSource, /taskDurationMinutes/);
+  assert.match(rmsMissionSelectionSource, /inputs: normalizeRmsAllocationInputs/);
+  assert.doesNotMatch(rmsMissionSelectionSource, /missionProfile|compositeTasks|periodicTasks|exposure/);
+  const rmsResultEditSource = appSource.slice(
+    appSource.indexOf("function updateRmsAllocationResultField"),
+    appSource.indexOf("async function saveCurrentRmsAllocationResult")
+  );
+  assert.match(rmsResultEditSource, /\["mtbfHours", "mttrHours"\]/);
+  assert.match(rmsResultEditSource, /state\.result\.source = "edited"/);
+  assert.match(rmsResultEditSource, /结果已编辑，尚未保存/);
+  assert.match(rmsResultEditSource, /叶子节点回算风险/);
+  const rmsResultSaveSource = appSource.slice(
+    appSource.indexOf("async function saveCurrentRmsAllocationResult"),
+    appSource.indexOf("async function importRmsAllocationResultFile")
+  );
+  assert.match(rmsResultSaveSource, /rmsEditableResultErrors/);
+  assert.match(rmsResultSaveSource, /await saveProjectDraftNow\(\)/);
+  assert.match(rmsResultSaveSource, /分解结果已保存/);
+  assert.match(rmsResultSaveSource, /分解结果保存失败/);
+  const rmsResultImportSource = appSource.slice(
+    appSource.indexOf("async function importRmsAllocationResultFile"),
+    appSource.indexOf("function selectRmsAircraftModel")
+  );
+  assert.match(rmsResultImportSource, /previewRmsAllocationXlsx/);
+  assert.match(rmsResultImportSource, /项目 ID 与当前项目不一致/);
+  assert.match(rmsResultImportSource, /基本任务与当前选择不一致/);
+  assert.match(rmsResultImportSource, /算法版本与当前方案不一致/);
+  assert.match(rmsResultImportSource, /source: "xlsx-import"/);
+  assert.match(rmsResultImportSource, /结果尚未保存/);
 });
 
 test("RMS outer groups stack across the narrow two-column workspace without changing the inner mobile grid", async () => {

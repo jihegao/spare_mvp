@@ -1,19 +1,22 @@
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-5.0.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-6.0.0";
 
 export const DEFAULT_RMS_ALLOCATION_INPUTS = Object.freeze({
-  missionHours: 3,
-  mtbfHours: 1000,
+  basicMissionId: "",
+  missionReliability: 0.95,
   mttrHours: 2
 });
 
-export function normalizeRmsAllocationInputs(inputs = {}) {
+export function normalizeRmsAllocationInputs(inputs = {}, project = null) {
+  const missionOptions = project ? rmsBasicMissionOptions(project, selectedAircraftModelForProject(project)) : [];
+  const requestedMissionId = String(inputs.basicMissionId ?? inputs.missionId ?? "").trim();
+  const basicMissionId = missionOptions.some((mission) => mission.id === requestedMissionId)
+    ? requestedMissionId
+    : (requestedMissionId || (missionOptions.length === 1 ? missionOptions[0].id : ""));
   const normalized = {
-    missionHours: Object.hasOwn(inputs, "missionHours")
-      ? inputs.missionHours
-      : DEFAULT_RMS_ALLOCATION_INPUTS.missionHours,
-    mtbfHours: Object.hasOwn(inputs, "mtbfHours")
-      ? inputs.mtbfHours
-      : legacyMtbfHours(inputs),
+    basicMissionId,
+    missionReliability: Object.hasOwn(inputs, "missionReliability")
+      ? inputs.missionReliability
+      : legacyMissionReliability(inputs),
     mttrHours: Object.hasOwn(inputs, "mttrHours")
       ? inputs.mttrHours
       : DEFAULT_RMS_ALLOCATION_INPUTS.mttrHours
@@ -84,6 +87,7 @@ export function createRmsAllocationProjectForScenario(scenario, selectedAircraft
     projectId: scenario?.project_id || scenario?.scenarioId || "rms-project",
     rootId: selectedModel ? rmsScenarioNodeId(selectedModel, "aircraft-root") : "",
     name: scenario?.projectInfo?.name || scenario?.experiment?.name || "装备 RMS 指标分配",
+    basicMissions: structuredClone(scenario?.basicMissions || []),
     missionProfile: structuredClone(scenario?.missionProfile || {}),
     missionPhases: structuredClone(scenario?.missionPhases || []),
     reliabilityGroups,
@@ -91,20 +95,54 @@ export function createRmsAllocationProjectForScenario(scenario, selectedAircraft
   };
 }
 
-export function rmsAllocationInputErrors(inputs = {}) {
+export function rmsBasicMissionOptions(project = {}, aircraftModel = "") {
+  const selectedModel = String(aircraftModel || "").trim();
+  return (Array.isArray(project?.basicMissions) ? project.basicMissions : [])
+    .filter((mission) => mission && typeof mission === "object" && !Array.isArray(mission))
+    .map((mission) => {
+      const id = String(mission.id || mission.missionId || "").trim();
+      const applicableModel = String(mission.aircraftModel ?? mission.equipmentType ?? "").trim();
+      const durationMinutes = Number(mission.taskDurationMinutes);
+      return {
+        id,
+        name: String(mission.name || mission.basicTaskName || mission.missionName || id).trim(),
+        aircraftModel: applicableModel,
+        durationMinutes,
+        durationHours: Number.isFinite(durationMinutes) ? durationMinutes / 60 : Number.NaN,
+        mission
+      };
+    })
+    .filter((mission) => mission.id && (!selectedModel || !mission.aircraftModel || mission.aircraftModel === selectedModel));
+}
+
+export function rmsAllocationInputErrors(inputs = {}, project = null) {
   const errors = [];
-  validateRequiredRange(errors, inputs.missionHours, "任务时长", { min: 0, minExclusive: true, unit: "h" });
-  validateRequiredRange(errors, inputs.mtbfHours, "MTBF", { min: 0, minExclusive: true, unit: "h" });
+  if (!String(inputs.basicMissionId || "").trim()) errors.push("基本任务不能为空");
+  validateRequiredRange(errors, inputs.missionReliability, "整机任务可靠度 R(T)", {
+    min: 0,
+    max: 1,
+    minExclusive: true,
+    maxExclusive: true
+  });
   validateRequiredRange(errors, inputs.mttrHours, "MTTR", { min: 0, unit: "h" });
+  if (project && String(inputs.basicMissionId || "").trim()) {
+    const mission = rmsBasicMissionOptions(project, selectedAircraftModelForProject(project))
+      .find((option) => option.id === String(inputs.basicMissionId));
+    if (!mission) {
+      errors.push("所选基本任务不存在或不适用于当前飞机型号");
+    } else if (!Number.isFinite(mission.durationHours) || mission.durationHours <= 0) {
+      errors.push("所选基本任务的任务时长必须大于 0 h");
+    }
+  }
   return errors;
 }
 
-export function validateRmsAllocationInputs(inputs = {}) {
-  const errors = rmsAllocationInputErrors(inputs);
+export function validateRmsAllocationInputs(inputs = {}, project = null) {
+  const errors = rmsAllocationInputErrors(inputs, project);
   if (errors.length) throw new Error(`RMS_INPUT_INVALID: ${errors.join("；")}`);
   return {
-    missionHours: Number(inputs.missionHours),
-    mtbfHours: Number(inputs.mtbfHours),
+    basicMissionId: String(inputs.basicMissionId),
+    missionReliability: Number(inputs.missionReliability),
     mttrHours: Number(inputs.mttrHours)
   };
 }
@@ -114,6 +152,13 @@ export function createDemoRmsAllocationProject() {
     projectId: "landbase-day-night",
     rootId: "aircraft-root",
     name: "陆基机群昼夜保障验证",
+    basicMissions: [{
+      id: "basic-mission-patrol",
+      missionId: "BM-PATROL",
+      name: "近海巡逻基本任务",
+      equipmentType: "F16",
+      taskDurationMinutes: 180
+    }],
     missionProfile: {
       profileId: "MP-01",
       name: "近海巡逻任务剖面",
@@ -696,15 +741,20 @@ export function normalizeRmsEquipmentImportRows(input, { baseProject = createDem
 }
 
 export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocationProject()) {
+  const selectedAircraftModel = selectedAircraftModelForProject(project);
+  const defaultMission = rmsBasicMissionOptions(project, selectedAircraftModel)[0];
   return {
-    schemaVersion: "rms-allocation-plan-v5",
+    schemaVersion: "rms-allocation-plan-v6",
     planId: "RMS-PLAN-001",
     planVersion: 1,
     name: "近海巡逻任务RMS分配方案",
     status: "draft",
     projectId: project.projectId,
     algorithmVersion: RMS_ALLOCATION_ALGORITHM_VERSION,
-    inputs: { ...DEFAULT_RMS_ALLOCATION_INPUTS },
+    inputs: {
+      ...DEFAULT_RMS_ALLOCATION_INPUTS,
+      basicMissionId: defaultMission?.id || ""
+    },
     methods: {
       allocation: "equal",
       similarProduct: {
@@ -713,56 +763,94 @@ export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocation
       }
     },
     assumptions: [
-      "当前工作台按选中装备根节点的直接子系统分配指标份额",
+      "任务时长只从所选基本任务读取，不使用复合任务或周期任务剖面",
+      "整机任务风险按装备组成关系逐层分配到系统、分系统和 LRU",
+      "节点 MTBF 为单件指标，安装数按装备树路径累计进入风险贡献",
       "安装数与运行比来自 RMS 工作台独立导入数据，不回写项目建模数据"
     ]
   };
 }
 
 export function calculateRmsAllocation(plan, project) {
-  const inputSnapshot = validateRmsAllocationInputs(plan.inputs);
-  const childNodes = project.equipmentNodes.filter((node) => node.parentId === project.rootId);
-  if (!childNodes.length) {
+  const normalizedInputs = validateRmsAllocationInputs(plan.inputs, project);
+  const selectedRoot = project.equipmentNodes.find((node) => node.id === project.rootId);
+  const basicMission = rmsBasicMissionOptions(project, selectedRoot?.aircraftModel || selectedRoot?.name)
+    .find((mission) => mission.id === normalizedInputs.basicMissionId);
+  const inputSnapshot = {
+    basicMissionId: basicMission.id,
+    basicMissionName: basicMission.name,
+    missionHours: roundRmsMetric(basicMission.durationHours),
+    missionReliability: normalizedInputs.missionReliability,
+    mttrHours: normalizedInputs.mttrHours
+  };
+  const selectedNodes = rmsEquipmentSubtree(project, project.rootId);
+  const childNodes = selectedNodes.filter((node) => node.parentId === project.rootId);
+  if (!selectedRoot || !childNodes.length) {
     throw new Error("RMS_ALLOCATION_EMPTY: 当前装备没有可分配的直接子系统");
   }
-  for (const node of childNodes) validateAllocationNode(node);
-  const weights = allocationWeights(plan, project, childNodes);
-  const totalRiskBudget = inputSnapshot.missionHours / inputSnapshot.mtbfHours;
-  const reliabilityRows = childNodes.map((node) => {
-    const runningRatio = runningRatioForNode(node);
-    const allocationShare = weights[node.id];
-    const productIntensityHours = inputSnapshot.missionHours * runningRatio;
-    const nodeRiskBudget = totalRiskBudget * allocationShare;
-    const mtbfHours = productIntensityHours > 0 && nodeRiskBudget > 0
-      ? roundRmsMetric(productIntensityHours / nodeRiskBudget)
-      : null;
-    return {
-      node,
-      nodeId: node.id,
-      nodeName: node.name,
-      level: node.level,
-      model: node.model || node.partNumber || "",
-      installationCount: normalizedInstallationCount(node.quantity),
-      runningRatio,
-      failureRate: mtbfHours === null ? 0 : roundRmsMetric(1 / mtbfHours),
-      mtbfHours,
-      allocationShare,
-      status: mtbfHours === null ? "未参与" : "已分配"
-    };
-  });
-  const failureRateSum = reliabilityRows.reduce((sum, row) => sum + row.failureRate, 0);
-  const mttrDenominator = reliabilityRows.reduce((sum, row) => (
-    sum + (failureRateSum > 0 ? row.failureRate / failureRateSum : 0) * repairDifficultyForNode(row.node)
-  ), 0);
-  const mttrScale = mttrDenominator > 0 ? inputSnapshot.mttrHours / mttrDenominator : 0;
-  const nodeResults = reliabilityRows.map(({ node, ...row }) => ({
-    ...row,
-    mttrHours: row.failureRate > 0
-      ? roundRmsMetric(mttrScale * repairDifficultyForNode(node))
-      : null
-  }));
+  for (const node of selectedNodes) {
+    if (node.id !== project.rootId) validateAllocationNode(node);
+  }
+  const childrenByParent = selectedNodes.reduce((acc, node) => {
+    if (node.parentId) {
+      acc[node.parentId] ||= [];
+      acc[node.parentId].push(node);
+    }
+    return acc;
+  }, {});
+  const totalRiskBudget = -Math.log(inputSnapshot.missionReliability);
+  const reliabilityRows = [];
+  const visited = new Set();
+  const allocateReliability = (parentNodeId, parentShare, parentRiskBudget, parentInstallationCount) => {
+    const children = childrenByParent[parentNodeId] || [];
+    if (!children.length) return;
+    const activeParent = parentRiskBudget > 0;
+    const weights = activeParent
+      ? allocationWeights(plan, project, children)
+      : Object.fromEntries(children.map((node) => [node.id, 0]));
+    for (const node of children) {
+      if (visited.has(node.id)) throw new Error(`RMS_EQUIPMENT_CYCLE: 装备节点 ${node.id} 重复或形成环`);
+      visited.add(node.id);
+      const installationCount = normalizedInstallationCount(node.quantity);
+      const cumulativeInstallationCount = parentInstallationCount * installationCount;
+      const runningRatio = runningRatioForNode(node);
+      const localAllocationShare = weights[node.id] || 0;
+      const cumulativeAllocationShare = parentShare * localAllocationShare;
+      const riskBudget = parentRiskBudget * localAllocationShare;
+      const missionOperatingHours = inputSnapshot.missionHours * runningRatio;
+      const mtbfHours = missionOperatingHours > 0 && riskBudget > 0
+        ? roundRmsMetric(cumulativeInstallationCount * missionOperatingHours / riskBudget)
+        : null;
+      reliabilityRows.push({
+        node,
+        nodeId: node.id,
+        nodeName: node.name,
+        parentNodeId: node.parentId,
+        level: node.level,
+        model: node.model || node.partNumber || "",
+        installationCount,
+        cumulativeInstallationCount,
+        runningRatio,
+        failureRate: mtbfHours === null ? 0 : roundRmsMetric(1 / mtbfHours),
+        mtbfHours,
+        localAllocationShare: roundRmsMetric(localAllocationShare),
+        cumulativeAllocationShare: roundRmsMetric(cumulativeAllocationShare),
+        riskBudget: roundRmsMetric(riskBudget),
+        mttrHours: null,
+        verificationStatus: mtbfHours === null ? "未参与" : "满足",
+        status: mtbfHours === null ? "未参与" : "已分配"
+      });
+      allocateReliability(node.id, cumulativeAllocationShare, riskBudget, cumulativeInstallationCount);
+    }
+  };
+  allocateReliability(project.rootId, 1, totalRiskBudget, 1);
+  allocateMttrByLevel(reliabilityRows, project.rootId, inputSnapshot.mttrHours);
+  const nodeResults = reliabilityRows.map(({ node: _node, ...row }) => row);
   const warnings = methodWarnings(plan, project);
-  const selectedRoot = project.equipmentNodes.find((node) => node.id === project.rootId);
+  const parentIds = new Set(nodeResults.map((row) => row.parentNodeId));
+  const leafRows = nodeResults.filter((row) => !parentIds.has(row.nodeId));
+  const leafRiskBudget = leafRows.reduce((sum, row) => sum + row.riskBudget, 0);
+  const verifiedReliability = Math.exp(-leafRiskBudget);
 
   return {
     ok: true,
@@ -770,6 +858,7 @@ export function calculateRmsAllocation(plan, project) {
     planVersion: plan.planVersion,
     planStatus: "calculated",
     status: "calculated",
+    source: "calculated",
     algorithmVersion: RMS_ALLOCATION_ALGORITHM_VERSION,
     aircraftModel: selectedRoot?.aircraftModel || selectedRoot?.name || "",
     inputSnapshot,
@@ -777,8 +866,10 @@ export function calculateRmsAllocation(plan, project) {
     similarProduct: plan.methods.similarProduct || null,
     nodeResults,
     totals: {
-      installationCount: nodeResults.reduce((sum, row) => sum + row.installationCount, 0),
-      allocationShare: nodeResults.reduce((sum, row) => sum + row.allocationShare, 0)
+      installationCount: leafRows.reduce((sum, row) => sum + row.cumulativeInstallationCount, 0),
+      allocationShare: roundRmsMetric(leafRows.reduce((sum, row) => sum + row.cumulativeAllocationShare, 0)),
+      riskBudget: roundRmsMetric(leafRiskBudget),
+      missionReliability: roundRmsMetric(verifiedReliability)
     },
     warnings,
     assumptions: plan.assumptions
@@ -794,14 +885,16 @@ export function createRmsAllocationFailureResult(plan, error) {
     algorithmVersion: plan.algorithmVersion || RMS_ALLOCATION_ALGORITHM_VERSION,
     aircraftModel: plan.methods?.similarProduct?.targetModel || "",
     inputSnapshot: {
-      missionHours: Number(plan.inputs?.missionHours) || 0,
-      mtbfHours: Number(plan.inputs?.mtbfHours) || 0,
+      basicMissionId: String(plan.inputs?.basicMissionId || ""),
+      basicMissionName: "",
+      missionHours: 0,
+      missionReliability: Number(plan.inputs?.missionReliability) || 0,
       mttrHours: Number(plan.inputs?.mttrHours) || 0
     },
     method: plan.methods.allocation,
     similarProduct: plan.methods.similarProduct || null,
     nodeResults: [],
-    totals: { installationCount: 0, allocationShare: 0 },
+    totals: { installationCount: 0, allocationShare: 0, riskBudget: 0, missionReliability: 0 },
     warnings: [{
       code: "RMS_METHOD_NOT_APPLICABLE",
       message: error?.message || "当前分配方法不适用"
@@ -810,19 +903,13 @@ export function createRmsAllocationFailureResult(plan, error) {
   };
 }
 
-function legacyMtbfHours(inputs) {
-  const missionReliability = Number(inputs.missionReliability);
+function legacyMissionReliability(inputs) {
   const missionHours = Number(inputs.missionHours);
-  const criticalFailureRatio = Number(inputs.criticalFailureRatio);
-  if (
-    missionReliability > 0
-    && missionReliability < 1
-    && missionHours > 0
-    && criticalFailureRatio > 0
-  ) {
-    return Number((criticalFailureRatio * (-missionHours / Math.log(missionReliability))).toFixed(6));
+  const mtbfHours = Number(inputs.mtbfHours);
+  if (missionHours > 0 && mtbfHours > 0) {
+    return roundRmsMetric(Math.exp(-missionHours / mtbfHours));
   }
-  return DEFAULT_RMS_ALLOCATION_INPUTS.mtbfHours;
+  return DEFAULT_RMS_ALLOCATION_INPUTS.missionReliability;
 }
 
 export function rmsEquipmentRoots(project) {
@@ -923,6 +1010,27 @@ function methodWarnings(plan, project) {
   }];
 }
 
+function allocateMttrByLevel(rows, parentNodeId, parentMttrHours) {
+  const children = rows.filter((row) => row.parentNodeId === parentNodeId);
+  if (!children.length) return;
+  const activeChildren = children.filter((row) => row.failureRate > 0);
+  const failureRateSum = activeChildren.reduce(
+    (sum, row) => sum + row.installationCount * row.failureRate,
+    0
+  );
+  const mttrDenominator = activeChildren.reduce((sum, row) => (
+    sum + (failureRateSum > 0 ? row.installationCount * row.failureRate / failureRateSum : 0)
+      * repairDifficultyForNode(row.node)
+  ), 0);
+  const mttrScale = mttrDenominator > 0 ? parentMttrHours / mttrDenominator : 0;
+  for (const row of children) {
+    row.mttrHours = row.failureRate > 0
+      ? roundRmsMetric(mttrScale * repairDifficultyForNode(row.node))
+      : null;
+    allocateMttrByLevel(rows, row.nodeId, row.mttrHours ?? 0);
+  }
+}
+
 function normalizedInstallationCount(value) {
   const number = Number(value);
   if (Number.isInteger(number) && number > 0) return number;
@@ -971,6 +1079,11 @@ function scenarioAircraftModels(scenario) {
   ].map((item) => String(item || "").trim()).filter(Boolean)));
 }
 
+function selectedAircraftModelForProject(project) {
+  const selectedRoot = (project?.equipmentNodes || []).find((node) => node.id === project.rootId);
+  return String(selectedRoot?.aircraftModel || selectedRoot?.name || "").trim();
+}
+
 function rmsScenarioNodeId(aircraftModel, sourceNodeId) {
   return `rms:${encodeURIComponent(aircraftModel)}:${encodeURIComponent(sourceNodeId)}`;
 }
@@ -979,7 +1092,13 @@ function isSyntheticAircraftRoot(component) {
   return String(component?.id || "") === "aircraft-root";
 }
 
-function validateRequiredRange(errors, value, label, { min, max, minExclusive = false, unit = "" } = {}) {
+function validateRequiredRange(errors, value, label, {
+  min,
+  max,
+  minExclusive = false,
+  maxExclusive = false,
+  unit = ""
+} = {}) {
   if (value === "" || value === null || value === undefined) {
     errors.push(`${label}不能为空`);
     return;
@@ -992,8 +1111,8 @@ function validateRequiredRange(errors, value, label, { min, max, minExclusive = 
   if (min !== undefined && (minExclusive ? number <= min : number < min)) {
     errors.push(`${label}必须${minExclusive ? "大于" : "大于等于"} ${min}${unit ? ` ${unit}` : ""}`);
   }
-  if (max !== undefined && number > max) {
-    errors.push(`${label}必须小于等于 ${max}${unit ? ` ${unit}` : ""}`);
+  if (max !== undefined && (maxExclusive ? number >= max : number > max)) {
+    errors.push(`${label}必须${maxExclusive ? "小于" : "小于等于"} ${max}${unit ? ` ${unit}` : ""}`);
   }
 }
 

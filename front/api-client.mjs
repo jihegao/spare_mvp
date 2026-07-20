@@ -148,6 +148,13 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     exportRmsAllocationXlsx(payload) {
       return request({ method: "POST", path: "/rms-allocation/export-xlsx", body: payload, responseType: "blob" });
     },
+    previewRmsAllocationXlsx(contentBase64, fileName) {
+      return request({
+        method: "POST",
+        path: "/rms-allocation/import-xlsx/preview",
+        body: { content_base64: contentBase64, file_name: fileName }
+      });
+    },
     exportAnalysisXlsx(payload) {
       return request({ method: "POST", path: "/analysis-results/export-xlsx", body: payload, responseType: "download" });
     },
