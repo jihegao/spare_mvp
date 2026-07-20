@@ -1976,6 +1976,10 @@ test("buildBackendProjectJson saves canonical combat-unit pre-life consumption f
           aircraftNo: "J15-102",
           calendarDays: 45,
           takeoffLandingCount: 3,
+          landingCount: 4,
+          landings: 5,
+          flightHours: 77,
+          flight_hours: 78,
           preLifeRequirementHours: 200,
           remainingLifeHours: 180
         },
@@ -1992,12 +1996,16 @@ test("buildBackendProjectJson saves canonical combat-unit pre-life consumption f
     })),
     [
       { preLifeCalendarDays: 14, preLifeFlightHours: 23.5, preLifeTakeoffLandingCount: 8 },
-      { preLifeCalendarDays: 0, preLifeFlightHours: 0, preLifeTakeoffLandingCount: 3 },
+      { preLifeCalendarDays: 0, preLifeFlightHours: 0, preLifeTakeoffLandingCount: 0 },
       { preLifeCalendarDays: 0, preLifeFlightHours: 0, preLifeTakeoffLandingCount: 0 }
     ]
   );
-  assert.equal(Object.hasOwn(projectJson.combatUnit.members[0], "takeoffLandingCount"), false);
-  assert.equal(Object.hasOwn(projectJson.combatUnit.members[1], "takeoffLandingCount"), false);
+  assert.equal(projectJson.combatUnit.members[0].takeoffLandingCount, 8);
+  assert.equal(projectJson.combatUnit.members[1].takeoffLandingCount, 3);
+  assert.equal(projectJson.combatUnit.members[1].landingCount, 4);
+  assert.equal(projectJson.combatUnit.members[1].landings, 5);
+  assert.equal(projectJson.combatUnit.members[1].flightHours, 77);
+  assert.equal(projectJson.combatUnit.members[1].flight_hours, 78);
   assert.equal(projectJson.combatUnit.members[0].preLifeRequirementHours, 120);
   assert.equal(projectJson.combatUnit.members[0].remainingLifeHours, 96.5);
   assert.equal(projectJson.combatUnit.members[1].preLifeRequirementHours, 200);
@@ -2005,13 +2013,23 @@ test("buildBackendProjectJson saves canonical combat-unit pre-life consumption f
   assert.equal(projectJson.combatUnit.members[1].calendarDays, 45);
 });
 
-test("combat-unit pre-life migration rejects conflicts and invalid canonical values", () => {
-  assert.throws(
-    () => normalizeProjectJsonForClientDraft({
-      combatUnit: { members: [{ preLifeTakeoffLandingCount: 4, takeoffLandingCount: 5 }] }
-    }),
-    /combatUnit\.members\.0\.preLifeTakeoffLandingCount: conflicts with legacy takeoffLandingCount/
-  );
+test("combat-unit pre-life normalization ignores unrelated legacy life values and rejects invalid canonical values", () => {
+  const legacyConflict = normalizeProjectJsonForClientDraft({
+    combatUnit: {
+      members: [{
+        preLifeFlightHours: 6,
+        preLifeTakeoffLandingCount: 4,
+        preLifeRequirementHours: 120,
+        remainingLifeHours: 90,
+        takeoffLandingCount: 5
+      }]
+    }
+  });
+  assert.equal(legacyConflict.combatUnit.members[0].preLifeFlightHours, 6);
+  assert.equal(legacyConflict.combatUnit.members[0].preLifeTakeoffLandingCount, 4);
+  assert.equal(legacyConflict.combatUnit.members[0].preLifeRequirementHours, 120);
+  assert.equal(legacyConflict.combatUnit.members[0].remainingLifeHours, 90);
+  assert.equal(legacyConflict.combatUnit.members[0].takeoffLandingCount, 5);
 
   const invalidCases = [
     ["preLifeCalendarDays", -1],
@@ -2019,8 +2037,7 @@ test("combat-unit pre-life migration rejects conflicts and invalid canonical val
     ["preLifeFlightHours", -0.5],
     ["preLifeFlightHours", Number.POSITIVE_INFINITY],
     ["preLifeTakeoffLandingCount", 2.5],
-    ["preLifeTakeoffLandingCount", "4"],
-    ["takeoffLandingCount", -1]
+    ["preLifeTakeoffLandingCount", "4"]
   ];
   for (const [fieldName, value] of invalidCases) {
     assert.throws(

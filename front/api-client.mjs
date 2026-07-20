@@ -373,16 +373,6 @@ function validateCombatUnitPreLife(projectJson) {
       if (!hasProjectFieldValue(member, fieldName)) continue;
       normalizedPreLifeNumber(member[fieldName], `${path}.${fieldName}`, { integer });
     }
-    if (!hasProjectFieldValue(member, "takeoffLandingCount")) return;
-    const legacyTakeoffLandingCount = normalizedPreLifeNumber(
-      member.takeoffLandingCount,
-      `${path}.takeoffLandingCount`,
-      { integer: true }
-    );
-    if (hasProjectFieldValue(member, "preLifeTakeoffLandingCount")
-      && member.preLifeTakeoffLandingCount !== legacyTakeoffLandingCount) {
-      throw new Error(`${path}.preLifeTakeoffLandingCount: conflicts with legacy takeoffLandingCount`);
-    }
   });
 }
 
@@ -401,27 +391,11 @@ function normalizeCombatUnitPreLife(projectJson) {
       `${path}.preLifeFlightHours`
     );
 
-    const hasCanonicalTakeoffLandingCount = hasProjectFieldValue(member, "preLifeTakeoffLandingCount");
-    const canonicalTakeoffLandingCount = normalizedPreLifeNumber(
+    member.preLifeTakeoffLandingCount = normalizedPreLifeNumber(
       member.preLifeTakeoffLandingCount,
       `${path}.preLifeTakeoffLandingCount`,
       { integer: true }
     );
-    const hasLegacyTakeoffLandingCount = hasProjectFieldValue(member, "takeoffLandingCount");
-    if (hasLegacyTakeoffLandingCount) {
-      const legacyTakeoffLandingCount = normalizedPreLifeNumber(
-        member.takeoffLandingCount,
-        `${path}.takeoffLandingCount`,
-        { integer: true }
-      );
-      if (hasCanonicalTakeoffLandingCount && canonicalTakeoffLandingCount !== legacyTakeoffLandingCount) {
-        throw new Error(`${path}.preLifeTakeoffLandingCount: conflicts with legacy takeoffLandingCount`);
-      }
-      member.preLifeTakeoffLandingCount = legacyTakeoffLandingCount;
-    } else {
-      member.preLifeTakeoffLandingCount = canonicalTakeoffLandingCount;
-    }
-    delete member.takeoffLandingCount;
   });
 }
 
