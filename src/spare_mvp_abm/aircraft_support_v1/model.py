@@ -40,6 +40,10 @@ BEHAVIOR_DRIVING_FIELDS = [
     "supportResources[].productId",
     "supportResources[].supportNodeName",
     "transportPolicies[]",
+    "support_network.nodes[].organization_node_id",
+    "support_network.organization_graph.nodes[]",
+    "support_network.organization_graph.parent_edges[]",
+    "support_network.organization_graph.transport_policies[]",
     "supportActivityJobs[]",
     "supportActivities[].aircraftModel",
     "supportActivities[].equipmentId",
@@ -67,6 +71,10 @@ FAIL_CLOSED_FIELDS: list[str] = [
     "supportActivities[].calendarDayInterval",
     "supportActivities[].runHourInterval",
     "supportActivities[].takeoffLandingInterval",
+    "support_network.nodes[].organization_node_id",
+    "support_network.organization_graph.nodes[]",
+    "support_network.organization_graph.parent_edges[]",
+    "support_network.organization_graph.transport_policies[]",
 ]
 
 M9_7_4_COVERAGE_HARDENING_FIELDS: list[str] = []
@@ -261,6 +269,8 @@ class AircraftSupportV1Model:
         self.jobs: list[JobState] = []
         self.transport_shipments: list[TransportShipment] = []
         self.resource_transits: list[ResourceTransit] = []
+        self._transport_shipment_keys: set[tuple[str, int, str, tuple[str, ...], int]] = set()
+        self._transport_batch_counts: dict[tuple[str, int, str], int] = {}
         self._job_sequence = 0
         self._maintenance_occurrence_by_kind = {"repair": 0, "preventive": 0}
         self.completed_sorties = 0
@@ -977,6 +987,13 @@ class AircraftSupportV1Model:
 
     def _build_support_nodes(self) -> dict[str, dict[str, Any]]:
         nodes: dict[str, dict[str, Any]] = {}
+        raw_graph = self.inputs.get("support_network", {}).get("organization_graph")
+        canonical_requested = bool(
+            isinstance(raw_graph, dict)
+            and isinstance(raw_graph.get("nodes"), list)
+            and raw_graph["nodes"]
+        )
+        minimum_capacity = 0 if canonical_requested else 1
         for item in self.inputs.get("support_network", {}).get("nodes", []):
             node_id = str(item.get("id") or f"node-{len(nodes) + 1}")
             nodes[node_id] = {
@@ -987,8 +1004,8 @@ class AircraftSupportV1Model:
                 "organization_node_id": str(
                     item.get("organization_node_id") or item.get("organizationNodeId") or ""
                 ).strip(),
-                "personnel_capacity": max(1, int(item.get("personnel_capacity", 1))),
-                "equipment_capacity": max(1, int(item.get("equipment_capacity", 1))),
+                "personnel_capacity": max(minimum_capacity, int(item.get("personnel_capacity", 1))),
+                "equipment_capacity": max(minimum_capacity, int(item.get("equipment_capacity", 1))),
                 "personnel_in_use": 0,
                 "equipment_in_use": 0,
                 "inventory": {
@@ -1641,7 +1658,7 @@ class AircraftSupportV1Model:
                 task.get("requiredDevices", task.get("required_devices", activity.get("required_devices"))),
                 default=1,
             )
-            if node["personnel_in_use"] + personnel > node["personnel_capacity"]:
+            if not self.canonical_organization_enabled and node["personnel_in_use"] + personnel > node["personnel_capacity"]:
                 self.resource_delay_events += 1
                 job.shortage_reason = "personnel_capacity"
                 self._event(
@@ -1655,7 +1672,7 @@ class AircraftSupportV1Model:
                     },
                 )
                 continue
-            if node["equipment_in_use"] + equipment > node["equipment_capacity"]:
+            if not self.canonical_organization_enabled and node["equipment_in_use"] + equipment > node["equipment_capacity"]:
                 self.resource_delay_events += 1
                 self.equipment_shortage_events += 1
                 job.shortage_reason = "equipment_capacity"
@@ -1722,6 +1739,11 @@ class AircraftSupportV1Model:
                     )
                 continue
             job.spare_shortage_signature = None
+            if self.canonical_organization_enabled:
+                if not self._ensure_canonical_job_resources(job, node, personnel, equipment):
+                    continue
+                if job.remote_resources_pending:
+                    continue
             if self.canonical_organization_enabled and spare_requirements:
                 self._event(
                     "organization_local_fulfilled",
@@ -1736,8 +1758,9 @@ class AircraftSupportV1Model:
                 )
             if not self._consume_task_spare(job, task):
                 continue
-            node["personnel_in_use"] += personnel
-            node["equipment_in_use"] += equipment
+            if not self.canonical_organization_enabled:
+                node["personnel_in_use"] += personnel
+                node["equipment_in_use"] += equipment
             node["work_count"] += 1
             job.state = "running"
             job.remaining = max(1, int(task.get("durationMinutes") or task.get("duration_minutes") or activity.get("duration_minutes") or 30))
@@ -2162,6 +2185,8 @@ class AircraftSupportV1Model:
 
     def _default_resource_node_id(self, aircraft: AircraftState) -> str:
         """Choose the aircraft's explicitly associated support node before list-order fallback."""
+        if self.canonical_organization_enabled:
+            return ""
         aircraft_scope = {value.strip().casefold() for value in (aircraft.airport, aircraft.airport_id) if value and value.strip()}
         if aircraft_scope:
             for node_id, node in self.nodes.items():
@@ -2175,6 +2200,29 @@ class AircraftSupportV1Model:
 
     def _release_job_resources(self, job: JobState) -> None:
         task = job.current_task or {}
+        if self.canonical_organization_enabled and job.resource_reservations:
+            released: list[dict[str, Any]] = []
+            for resource_kind, (supplier_node_id, quantity) in job.resource_reservations.items():
+                supplier = self.nodes.get(supplier_node_id)
+                if supplier is None:
+                    continue
+                in_use_key = f"{resource_kind}_in_use"
+                supplier[in_use_key] = max(0, int(supplier[in_use_key]) - quantity)
+                released.append(
+                    {
+                        "resource_kind": resource_kind,
+                        "quantity": quantity,
+                        "supplier_resource_id": supplier_node_id,
+                    }
+                )
+            job.resource_reservations.clear()
+            job.remote_resources_pending.clear()
+            self._event(
+                "organization_resources_released",
+                f"released canonical resources for {job.job_id}",
+                {"job_id": job.job_id, "task_index": job.task_index, "resources": released},
+            )
+            return
         node = self.nodes.get(job.resource_node_id) or next(iter(self.nodes.values()))
         activity = self._activity_by_id(job.activity_id)
         personnel = _resource_quantity(
@@ -2189,6 +2237,137 @@ class AircraftSupportV1Model:
         )
         node["personnel_in_use"] = max(0, node["personnel_in_use"] - personnel)
         node["equipment_in_use"] = max(0, node["equipment_in_use"] - equipment)
+
+    def _canonical_resource_plan(
+        self,
+        destination_node: dict[str, Any],
+        resource_kind: str,
+        quantity: int,
+    ) -> tuple[dict[str, Any] | None, str]:
+        capacity_key = f"{resource_kind}_capacity"
+        in_use_key = f"{resource_kind}_in_use"
+        local_available = int(destination_node[capacity_key]) - int(destination_node[in_use_key])
+        if local_available >= quantity:
+            return (
+                {
+                    "source_node_id": destination_node["id"],
+                    "path": (destination_node["organization_node_id"],),
+                    "policies": (),
+                },
+                "",
+            )
+
+        supplier_with_missing_path = False
+        for path in self._organization_ancestor_paths(destination_node["organization_node_id"]):
+            source_node_id = self.runtime_node_by_organization_id.get(path[0])
+            if not source_node_id:
+                continue
+            source_node = self.nodes[source_node_id]
+            available = int(source_node[capacity_key]) - int(source_node[in_use_key])
+            if available < quantity:
+                continue
+            policies = self._organization_policies_for_path(path, resource_kind)
+            if policies is None:
+                supplier_with_missing_path = True
+                continue
+            if min(policy["capacity"] for policy in policies) < quantity:
+                supplier_with_missing_path = True
+                continue
+            return (
+                {"source_node_id": source_node_id, "path": path, "policies": policies},
+                "",
+            )
+        return None, "no_vertical_resource_path" if supplier_with_missing_path else "no_available_resource_ancestor"
+
+    def _ensure_canonical_job_resources(
+        self,
+        job: JobState,
+        destination_node: dict[str, Any],
+        personnel: int,
+        equipment: int,
+    ) -> bool:
+        if job.resource_reservations:
+            return True
+
+        requirements = {"personnel": personnel, "equipment": equipment}
+        plans: dict[str, dict[str, Any]] = {}
+        for resource_kind, quantity in requirements.items():
+            plan, reason = self._canonical_resource_plan(destination_node, resource_kind, quantity)
+            if plan is None:
+                if resource_kind == "personnel":
+                    self.resource_delay_events += 1
+                else:
+                    self.resource_delay_events += 1
+                    self.equipment_shortage_events += 1
+                job.shortage_reason = f"organization_{reason}:{resource_kind}"
+                self._event(
+                    "organization_resource_blocked",
+                    f"{job.job_id} blocked by {resource_kind}",
+                    {
+                        "job_id": job.job_id,
+                        "task_index": job.task_index,
+                        "resource_kind": resource_kind,
+                        "required_quantity": quantity,
+                        "resource_id": destination_node["id"],
+                        "organization_node_id": destination_node["organization_node_id"],
+                        "reason": reason,
+                    },
+                )
+                return False
+            plans[resource_kind] = plan
+
+        # All plans are validated before any capacity is mutated, so personnel and
+        # equipment reservations are atomic even when their suppliers differ.
+        for resource_kind, plan in plans.items():
+            quantity = requirements[resource_kind]
+            supplier = self.nodes[plan["source_node_id"]]
+            supplier[f"{resource_kind}_in_use"] += quantity
+            job.resource_reservations[resource_kind] = (supplier["id"], quantity)
+        for resource_kind, plan in plans.items():
+            quantity = requirements[resource_kind]
+            policies = plan["policies"]
+            policy_ids = tuple(policy["id"] for policy in policies)
+            details = {
+                "job_id": job.job_id,
+                "task_index": job.task_index,
+                "resource_kind": resource_kind,
+                "quantity": quantity,
+                "source_resource_id": plan["source_node_id"],
+                "resource_id": destination_node["id"],
+                "organization_path": list(plan["path"]),
+                "transport_policy_ids": list(policy_ids),
+            }
+            self._event(
+                "organization_resource_selected",
+                f"selected {resource_kind} at {plan['source_node_id']} for {job.job_id}",
+                details,
+            )
+            if not policies:
+                continue
+            transport_minutes = sum(policy["transport_minutes"] for policy in policies)
+            arrival_minute = self.minute + max(self.tick_minutes, transport_minutes)
+            job.remote_resources_pending.add(resource_kind)
+            self.resource_transits.append(
+                ResourceTransit(
+                    job_id=job.job_id,
+                    task_index=job.task_index,
+                    resource_kind=resource_kind,
+                    quantity=quantity,
+                    source_node_id=plan["source_node_id"],
+                    destination_node_id=destination_node["id"],
+                    requested_minute=self.minute,
+                    arrival_minute=arrival_minute,
+                    path_organization_node_ids=plan["path"],
+                    transport_policy_ids=policy_ids,
+                )
+            )
+            self._event(
+                "organization_resource_dispatched",
+                f"dispatched {resource_kind} for {job.job_id}",
+                {**details, "arrival_minute": arrival_minute},
+            )
+        job.shortage_reason = "organization_resources_in_transit" if job.remote_resources_pending else None
+        return True
 
     def _raw_task_spare_requirements(self, task: dict[str, Any]) -> list[tuple[str, int]]:
         spare = task.get("spare")
@@ -2385,25 +2564,10 @@ class AircraftSupportV1Model:
             if moved <= 0:
                 continue
             policy_ids = tuple(policy["id"] for policy in policies)
-            prior_batches = [
-                shipment
-                for shipment in self.transport_shipments
-                if shipment.job_id == job.job_id
-                and shipment.task_index == job.task_index
-                and shipment.spare_type == spare_type
-            ]
-            batch_sequence = len(prior_batches) + 1
+            batch_counter_key = (job.job_id, job.task_index, spare_type)
+            batch_sequence = self._transport_batch_counts.get(batch_counter_key, 0) + 1
             shipment_key = (job.job_id, job.task_index, spare_type, policy_ids, batch_sequence)
-            if any(
-                (
-                    shipment.job_id,
-                    shipment.task_index,
-                    shipment.spare_type,
-                    shipment.transport_policy_ids,
-                    shipment.batch_sequence,
-                ) == shipment_key
-                for shipment in self.transport_shipments
-            ):
+            if shipment_key in self._transport_shipment_keys:
                 return None
             source_node["inventory"][spare_type] = available - moved
             transport_minutes = sum(policy["transport_minutes"] for policy in policies)
@@ -2422,6 +2586,8 @@ class AircraftSupportV1Model:
                 batch_sequence=batch_sequence,
             )
             self.transport_shipments.append(shipment)
+            self._transport_shipment_keys.add(shipment_key)
+            self._transport_batch_counts[batch_counter_key] = batch_sequence
             self.transport_replenishment_events += 1
             details = {
                 "job_id": job.job_id,
