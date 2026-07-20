@@ -1512,6 +1512,9 @@ function normalizeSupportActivityMaintenanceMethods(projectJson) {
     }
     let legacyMigration = null;
     if (hasLegacyRepairType) {
+      if (canonicalSupportActivityPlanType(activity) !== "修复性维修方案") {
+        throw new Error(`${path}.repairType: legacy migration is only supported for corrective maintenance`);
+      }
       const legacyValue = String(activity.repairType ?? "").trim();
       legacyMigration = LEGACY_REPAIR_TYPE_MIGRATIONS.get(legacyValue) || null;
       if (!legacyMigration) throw new Error(`${path}.repairType: unsupported legacy value “${legacyValue}”`);
@@ -1560,6 +1563,9 @@ function validateSupportActivityMaintenanceMethods(activity, path) {
   }
   if (methods.length === 1 && methods[0] === "replacement" && ratio !== 1) {
     throw new Error(`${path}.replacementRatio: replacement-only plans require 1`);
+  }
+  if (Math.abs(ratio * 10000 - Math.round(ratio * 10000)) > 1e-8) {
+    throw new Error(`${path}.replacementRatio: expected at most four decimal places`);
   }
 }
 

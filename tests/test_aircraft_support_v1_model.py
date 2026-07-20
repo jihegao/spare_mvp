@@ -1279,6 +1279,142 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual({event["details"]["product_id"] for event in arrived}, {"product-a", "product-b"})
         self.assertEqual({event["details"]["product_id"] for event in consumed}, {"product-a", "product-b"})
 
+    def test_replacement_reserves_spare_at_start_so_one_unit_cannot_complete_two_jobs(self) -> None:
+        inputs = _minimal_inputs()
+        activity = inputs["support_activities"]["activities"][1]
+        activity["maintenance_methods"] = ["replacement"]
+        activity["replacement_ratio"] = 1.0
+        activity["jobs"] = [{
+            "activityCode": "replace", "durationMinutes": 1,
+            "spare": [{"product_id": "shared-spare", "quantity": 1}],
+        }]
+        inputs["support_network"]["nodes"][0]["inventory"] = {"shared-spare": 1}
+        model = AircraftSupportV1Model(inputs)
+        for aircraft in model.aircraft:
+            model._create_job(aircraft, model.activities[1], kind="repair")
+
+        model._start_waiting_jobs()
+
+        running = [job for job in model.jobs if job.state == "running"]
+        waiting = [job for job in model.jobs if job.state == "waiting"]
+        self.assertEqual(len(running), 1)
+        self.assertEqual(len(waiting), 1)
+        self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], 0)
+        self.assertEqual(model.spare_consumed_total, 1)
+
+        model._process_job_progress_and_completions()
+        model._start_waiting_jobs()
+
+        self.assertEqual(len([job for job in model.jobs if job.state == "completed"]), 1)
+        self.assertEqual(len([job for job in model.jobs if job.state == "waiting"]), 1)
+        consumed = [event for event in model.event_log if event["event"] == "spare_consumed"]
+        self.assertEqual(len(consumed), 1)
+
+    def test_replacement_reservation_is_atomic_across_plural_spares(self) -> None:
+        inputs = _minimal_inputs()
+        activity = inputs["support_activities"]["activities"][1]
+        activity["maintenance_methods"] = ["replacement"]
+        activity["replacement_ratio"] = 1.0
+        activity["jobs"] = [{
+            "activityCode": "replace", "durationMinutes": 1,
+            "spare": [
+                {"product_id": "product-a", "quantity": 2},
+                {"product_id": "product-b", "quantity": 3},
+            ],
+        }]
+        inputs["support_network"]["nodes"][0]["inventory"] = {"product-a": 2, "product-b": 2}
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+
+        model._start_waiting_jobs()
+
+        self.assertEqual(job.state, "waiting")
+        self.assertEqual(model.nodes["deck"]["inventory"], {"product-a": 2, "product-b": 2})
+        self.assertEqual(model.spare_consumed_total, 0)
+        self.assertFalse(any(event["event"] == "spare_consumed" for event in model.event_log))
+
+        model.nodes["deck"]["inventory"]["product-b"] = 3
+        model._start_waiting_jobs()
+
+        self.assertEqual(job.state, "running")
+        self.assertEqual(model.nodes["deck"]["inventory"], {"product-a": 0, "product-b": 0})
+        self.assertEqual(model.spare_consumed_total, 5)
+
+    def test_zero_quantity_is_explicit_no_requirement_on_all_replacement_paths(self) -> None:
+        inputs = _minimal_inputs()
+        activity = inputs["support_activities"]["activities"][1]
+        activity["maintenance_methods"] = ["replacement"]
+        activity["replacement_ratio"] = 1.0
+        activity["jobs"] = [{
+            "activityCode": "replace", "durationMinutes": 1,
+            "spare": [
+                {"product_id": "zero-spare", "quantity": 0},
+                {"product_id": "positive-spare", "quantity": 2},
+            ],
+        }]
+        inputs["support_network"]["nodes"][0]["inventory"] = {"zero-spare": 0, "positive-spare": 2, "failed-lru": 4}
+        model = AircraftSupportV1Model(inputs)
+        failed_lru = _runtime_component("failed", "aircraft", "Failed LRU", 0.1, product_id="failed-lru")
+
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair", component=failed_lru)
+        job = model.jobs[-1]
+
+        self.assertEqual(model._task_spare_requirements(job, job.tasks[0]), [("positive-spare", 2)])
+        self.assertEqual(job.tasks[0]["spare"][0], {"product_id": "zero-spare", "quantity": 0})
+        self.assertFalse(any("failed-lru" in str(task.get("spare")) for task in job.tasks))
+
+        model._start_waiting_jobs()
+        model._process_job_progress_and_completions()
+
+        self.assertEqual(job.state, "completed")
+        self.assertEqual(model.nodes["deck"]["inventory"]["zero-spare"], 0)
+        self.assertEqual(model.nodes["deck"]["inventory"]["positive-spare"], 0)
+        self.assertEqual(model.nodes["deck"]["inventory"]["failed-lru"], 4)
+        self.assertEqual(model.spare_consumed_total, 2)
+        traced_products = {
+            event["details"]["product_id"]
+            for event in model.event_log
+            if event["event"] in {"spare_shortage", "spare_consumed"}
+        }
+        self.assertEqual(traced_products, {"positive-spare"})
+
+    def test_unchanged_shortage_is_not_relogged_but_new_task_shortage_is(self) -> None:
+        inputs = _minimal_inputs()
+        activity = inputs["support_activities"]["activities"][1]
+        activity["maintenance_methods"] = ["replacement"]
+        activity["replacement_ratio"] = 1.0
+        activity["jobs"] = [
+            {"activityCode": "replace-1", "durationMinutes": 1, "spare": [{"product_id": "repeat-spare", "quantity": 1}]},
+            {"activityCode": "replace-2", "durationMinutes": 1, "spare": [{"product_id": "repeat-spare", "quantity": 1}]},
+        ]
+        inputs["support_network"]["nodes"][0]["inventory"] = {"repeat-spare": 0}
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+        job = model.jobs[-1]
+
+        for minute in (1, 2, 3):
+            model.minute = minute
+            model._start_waiting_jobs()
+
+        shortages = [event for event in model.event_log if event["event"] == "spare_shortage"]
+        self.assertEqual(len(shortages), 1)
+        self.assertEqual(model.shortage_events, 1)
+
+        model.nodes["deck"]["inventory"]["repeat-spare"] = 1
+        model._start_waiting_jobs()
+        model._process_job_progress_and_completions()
+        model._start_waiting_jobs()
+
+        shortages = [event for event in model.event_log if event["event"] == "spare_shortage"]
+        self.assertEqual(job.task_index, 1)
+        self.assertEqual(job.state, "waiting")
+        self.assertEqual(len(shortages), 2)
+        self.assertEqual(model.shortage_events, 2)
+
+        model._start_waiting_jobs()
+        self.assertEqual(len([event for event in model.event_log if event["event"] == "spare_shortage"]), 2)
+
     def test_maintenance_ratio_boundaries_and_midpoint_use_one_deterministic_roll(self) -> None:
         for ratio in (0.0, 0.5, 1.0):
             with self.subTest(ratio=ratio):
@@ -1305,35 +1441,59 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         activity = inputs["support_activities"]["activities"][1]
         activity["maintenance_methods"] = ["non_replacement", "replacement"]
         activity["replacement_ratio"] = 0.5
-        first = AircraftSupportV1Model(inputs)
-        second = AircraftSupportV1Model(inputs)
-        first_failure_rng_state = first.rng.getstate()
-        second_failure_rng_state = second.rng.getstate()
+        interleaved = AircraftSupportV1Model(inputs)
+        repair_control = AircraftSupportV1Model(inputs)
+        preventive_control = AircraftSupportV1Model(inputs)
+        interleaved_failure_rng_state = interleaved.rng.getstate()
+        control_failure_rng_state = repair_control.rng.getstate()
 
-        first._create_job(first.aircraft[0], first.activities[1], kind="repair")
-        second._create_job(second.aircraft[0], second.activities[1], kind="repair")
+        interleaved._create_job(interleaved.aircraft[0], interleaved.activities[3], kind="preventive")
+        first_preventive = interleaved.jobs[-1]
+        interleaved._create_job(interleaved.aircraft[0], interleaved.activities[0], kind="preflight")
+        interleaved._create_job(interleaved.aircraft[0], interleaved.activities[1], kind="repair")
+        repair_control._create_job(repair_control.aircraft[0], repair_control.activities[1], kind="repair")
+        preventive_control._create_job(
+            preventive_control.aircraft[0],
+            preventive_control.activities[3],
+            kind="preventive",
+        )
+        first_interleaved_repair = interleaved.jobs[-1]
+        first_control_repair = repair_control.jobs[-1]
 
-        first_job = first.jobs[-1]
-        second_job = second.jobs[-1]
-        self.assertEqual(first_job.maintenance_method, second_job.maintenance_method)
-        self.assertEqual(first_job.maintenance_decision_roll, second_job.maintenance_decision_roll)
-        self.assertEqual(first_job.maintenance_rng_stream, second_job.maintenance_rng_stream)
-        self.assertEqual(first.rng.getstate(), first_failure_rng_state)
-        self.assertEqual(second.rng.getstate(), second_failure_rng_state)
-        first_next_failure = first._sample_lru_failure_minutes(first.components[0])
-        second_next_failure = second._sample_lru_failure_minutes(second.components[0])
-        self.assertEqual(first_next_failure, second_next_failure)
-        self.assertEqual(first.rng.getstate(), second.rng.getstate())
-        failure_rng_state_after_sample = first.rng.getstate()
-        decision = next(event for event in first.event_log if event["event"] == "maintenance_method_selected")
-        self.assertEqual(decision["details"]["job_id"], first_job.job_id)
-        self.assertEqual(decision["details"]["maintenance_method"], first_job.maintenance_method)
-        self.assertEqual(decision["details"]["rng_stream"], first_job.maintenance_rng_stream)
+        self.assertNotEqual(first_interleaved_repair.job_id, first_control_repair.job_id)
+        self.assertEqual(first_interleaved_repair.maintenance_occurrence, 1)
+        self.assertEqual(first_control_repair.maintenance_occurrence, 1)
+        self.assertEqual(first_interleaved_repair.maintenance_decision_roll, first_control_repair.maintenance_decision_roll)
+        self.assertEqual(first_interleaved_repair.maintenance_rng_stream, first_control_repair.maintenance_rng_stream)
+        self.assertEqual(first_preventive.maintenance_decision_roll, preventive_control.jobs[-1].maintenance_decision_roll)
 
-        first._create_job(first.aircraft[0], first.activities[1], kind="repair")
+        interleaved._create_job(interleaved.aircraft[0], interleaved.activities[2], kind="postflight")
+        interleaved._create_job(interleaved.aircraft[0], interleaved.activities[3], kind="preventive")
+        interleaved._create_job(interleaved.aircraft[0], interleaved.activities[1], kind="repair")
+        repair_control._create_job(repair_control.aircraft[0], repair_control.activities[1], kind="repair")
+        second_interleaved_repair = interleaved.jobs[-1]
+        second_control_repair = repair_control.jobs[-1]
 
-        self.assertNotEqual(first.jobs[-1].maintenance_rng_stream, first_job.maintenance_rng_stream)
-        self.assertEqual(first.rng.getstate(), failure_rng_state_after_sample)
+        self.assertEqual(second_interleaved_repair.maintenance_occurrence, 2)
+        self.assertEqual(second_control_repair.maintenance_occurrence, 2)
+        self.assertEqual(second_interleaved_repair.maintenance_decision_roll, second_control_repair.maintenance_decision_roll)
+        self.assertEqual(second_interleaved_repair.maintenance_rng_stream, second_control_repair.maintenance_rng_stream)
+        self.assertNotEqual(second_interleaved_repair.maintenance_rng_stream, first_interleaved_repair.maintenance_rng_stream)
+        self.assertEqual(interleaved.rng.getstate(), interleaved_failure_rng_state)
+        self.assertEqual(repair_control.rng.getstate(), control_failure_rng_state)
+
+        interleaved_next_failure = interleaved._sample_lru_failure_minutes(interleaved.components[0])
+        control_next_failure = repair_control._sample_lru_failure_minutes(repair_control.components[0])
+
+        self.assertEqual(interleaved_next_failure, control_next_failure)
+        decision = next(
+            event
+            for event in interleaved.event_log
+            if event["event"] == "maintenance_method_selected"
+            and event["details"]["job_id"] == first_interleaved_repair.job_id
+        )
+        self.assertEqual(decision["details"]["maintenance_occurrence"], 1)
+        self.assertEqual(decision["details"]["rng_stream"], first_interleaved_repair.maintenance_rng_stream)
 
     def test_dispatch_requires_every_aircraft_to_complete_preflight(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())

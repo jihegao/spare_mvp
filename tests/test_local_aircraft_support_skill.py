@@ -258,6 +258,35 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "conflicts with canonical"):
             skill.compile_project_json_to_aircraft_support_inputs(project)
 
+        preventive = self._project()
+        preventive_activity = preventive["supportActivities"][0]
+        preventive_activity.update({
+            "activityType": "预防性维修",
+            "planType": "预防性维修方案",
+            "repairType": "换件维修",
+        })
+        with self.assertRaisesRegex(ValueError, "only supported for corrective maintenance"):
+            skill.compile_project_json_to_aircraft_support_inputs(preventive)
+
+    def test_maintenance_plan_precision_and_type_scope_fail_closed(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        activity = project["supportActivities"][0]
+        activity.update({
+            "maintenanceMethods": ["non_replacement", "replacement"],
+            "replacementRatio": 0.1234,
+        })
+        compiled = skill.compile_project_json_to_aircraft_support_inputs(project)
+        self.assertEqual(compiled["support_activities"]["activities"][0]["replacement_ratio"], 0.1234)
+
+        activity["replacementRatio"] = 0.12345
+        with self.assertRaisesRegex(ValueError, "at most four decimal places"):
+            skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        activity.update({"activityType": "使用保障", "planType": "使用保障方案", "name": "repair-looking-name"})
+        with self.assertRaisesRegex(ValueError, "only valid on corrective or preventive activities"):
+            skill.compile_project_json_to_aircraft_support_inputs(project)
+
     def test_compiles_missing_or_zero_spare_quantity_as_zero(self) -> None:
         skill = _load_skill_module()
         project = self._project()

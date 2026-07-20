@@ -1024,21 +1024,25 @@ test("maintenance method fields default and round-trip only on corrective and pr
   assert.deepEqual(savedAgain.supportActivities, saved.supportActivities);
 });
 
-test("legacy scalar repairType migrates exactly and unknown values fail closed", () => {
+test("legacy scalar repairType migrates only on corrective maintenance and unknown values fail closed", () => {
   const migrated = normalizeProjectJsonForClientDraft({
     scenarioId: "legacy-maintenance-methods",
     supportActivities: [
-      { id: "corrective", activityType: "修复性维修", repairType: "原位维修" },
-      { id: "preventive", activityType: "预防性维修", repairType: "换件维修" }
+      { id: "corrective", activityType: "修复性维修", repairType: "原位维修" }
     ]
   });
 
   assert.deepEqual(migrated.supportActivities[0].maintenanceMethods, ["non_replacement"]);
   assert.equal(migrated.supportActivities[0].replacementRatio, 0);
-  assert.deepEqual(migrated.supportActivities[1].maintenanceMethods, ["replacement"]);
-  assert.equal(migrated.supportActivities[1].replacementRatio, 1);
   assert.equal(Object.hasOwn(migrated.supportActivities[0], "repairType"), false);
-  assert.equal(Object.hasOwn(migrated.supportActivities[1], "repairType"), false);
+
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft({
+      scenarioId: "preventive-legacy-maintenance-method",
+      supportActivities: [{ id: "preventive", activityType: "预防性维修", repairType: "换件维修" }]
+    }),
+    /legacy migration is only supported for corrective maintenance/
+  );
 
   assert.throws(
     () => normalizeProjectJsonForClientDraft({
@@ -1076,6 +1080,13 @@ test("maintenance method canonical fields reject partial, invalid, and inconsist
   assert.throws(
     () => normalizeActivity({ maintenanceMethods: ["non_replacement", "replacement"], replacementRatio: 1.1 }),
     /finite number between 0 and 1/
+  );
+  assert.doesNotThrow(
+    () => normalizeActivity({ maintenanceMethods: ["non_replacement", "replacement"], replacementRatio: 0.1234 })
+  );
+  assert.throws(
+    () => normalizeActivity({ maintenanceMethods: ["non_replacement", "replacement"], replacementRatio: 0.12345 }),
+    /at most four decimal places/
   );
 });
 

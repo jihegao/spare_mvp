@@ -742,6 +742,68 @@ class SimulationAdapterTest(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(instance=invalid_inputs, schema=input_schema)
 
+    def test_aircraft_support_v1_direct_compile_normalizes_only_valid_maintenance_history(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        activity = project["supportActivities"][0]
+
+        historical = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        compiled = historical["simulation_inputs"]["support_activities"]["activities"][0]
+        self.assertEqual(compiled["maintenance_methods"], ["non_replacement"])
+        self.assertEqual(compiled["replacement_ratio"], 0)
+        defaults = historical["compiled_from"]["mapping_provenance"]["defaults_applied"]
+        self.assertIn("supportActivities.0.maintenanceMethods=historicalDefault", defaults)
+        self.assertIn("supportActivities.0.replacementRatio=historicalDefault", defaults)
+
+        legacy = copy.deepcopy(project)
+        legacy["supportActivities"][0]["repairType"] = "换件维修"
+        migrated = self.adapter.compile_scenario(legacy, model_family="aircraft_support_v1")
+        compiled = migrated["simulation_inputs"]["support_activities"]["activities"][0]
+        self.assertEqual(compiled["maintenance_methods"], ["replacement"])
+        self.assertEqual(compiled["replacement_ratio"], 1)
+        defaults = migrated["compiled_from"]["mapping_provenance"]["defaults_applied"]
+        self.assertIn("supportActivities.0.maintenanceMethods=legacyRepairType:换件维修", defaults)
+        self.assertIn("supportActivities.0.replacementRatio=legacyRepairType:换件维修", defaults)
+
+    def test_aircraft_support_v1_direct_compile_rejects_invalid_maintenance_plans_with_path(self) -> None:
+        base = self._load_fixture("aircraft_support_v1_project.json")
+        invalid_cases = (
+            ({"maintenanceMethods": ["replacement"], "replacementRatio": 0.5}, "replacementRatio"),
+            ({"maintenanceMethods": ["non_replacement", "replacement"], "replacementRatio": 0.12345}, "replacementRatio"),
+            ({"maintenanceMethods": ["replacement", "replacement"], "replacementRatio": 1}, "maintenanceMethods"),
+            ({"maintenanceMethods": ["unknown"], "replacementRatio": 0}, "maintenanceMethods"),
+        )
+        for patch, expected_path in invalid_cases:
+            with self.subTest(patch=patch):
+                project = copy.deepcopy(base)
+                project["supportActivities"][0].update(patch)
+                result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["issues"][0]["code"], "invalid_maintenance_plan")
+                self.assertIn(expected_path, result["issues"][0]["field_path"])
+                with self.assertRaises(AdapterError):
+                    self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+    def test_aircraft_support_v1_does_not_classify_maintenance_by_generic_name(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        activity = project["supportActivities"][0]
+        activity.update({
+            "activityType": "使用保障",
+            "planType": "使用保障方案",
+            "activityName": "repair-looking-name",
+            "maintenanceMethods": ["non_replacement"],
+            "replacementRatio": 0,
+        })
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["issues"][0]["code"], "invalid_maintenance_plan")
+
+        activity.pop("maintenanceMethods", None)
+        activity.pop("replacementRatio", None)
+        compiled = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        runtime_activity = compiled["simulation_inputs"]["support_activities"]["activities"][0]
+        self.assertNotIn("maintenance_methods", runtime_activity)
+        self.assertNotIn("replacement_ratio", runtime_activity)
+
     def test_aircraft_support_v1_compile_gate_blocks_missing_support_activity_job_reference(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         activity = project["supportActivities"][0]

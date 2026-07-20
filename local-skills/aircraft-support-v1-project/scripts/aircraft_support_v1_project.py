@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from decimal import Decimal, InvalidOperation
 import json
 import math
 from pathlib import Path
@@ -682,8 +683,12 @@ def _support_activity(
 
 
 def _maintenance_method_plan(activity: dict[str, Any]) -> tuple[list[str], float] | None:
-    text = f"{activity.get('id', '')} {activity.get('name', '')} {activity.get('activityType', '')} {activity.get('planType', '')}".lower()
-    is_maintenance = any(token in text for token in ("corrective", "preventive", "repair", "维修", "修复", "预防", "定检"))
+    plan_type = str(activity.get("planType") or "").strip()
+    activity_type = str(activity.get("activityType") or "").strip()
+    activity_contract = f"{plan_type} {activity_type}".lower()
+    is_corrective = plan_type == "修复性维修方案" or "corrective" in activity_contract or "修复性维修" in activity_contract
+    is_preventive = plan_type == "预防性维修方案" or "preventive" in activity_contract or "预防性维修" in activity_contract
+    is_maintenance = is_corrective or is_preventive
     has_methods = "maintenanceMethods" in activity
     has_ratio = "replacementRatio" in activity
     has_legacy = "repairType" in activity
@@ -698,6 +703,8 @@ def _maintenance_method_plan(activity: dict[str, Any]) -> tuple[list[str], float
         "换件维修": (["replacement"], 1.0),
     }
     if has_legacy:
+        if not is_corrective:
+            raise ValueError("legacy repairType migration is only supported for corrective maintenance")
         legacy_value = str(activity.get("repairType") or "").strip()
         if legacy_value not in legacy:
             raise ValueError(f"unsupported legacy repairType: {legacy_value}")
@@ -727,6 +734,12 @@ def _maintenance_method_plan(activity: dict[str, Any]) -> tuple[list[str], float
         raise ValueError("non_replacement-only activities require replacementRatio 0")
     if methods == ["replacement"] and normalized_ratio != 1:
         raise ValueError("replacement-only activities require replacementRatio 1")
+    try:
+        decimal_ratio = Decimal(str(ratio))
+    except (InvalidOperation, ValueError):
+        decimal_ratio = Decimal("NaN")
+    if not decimal_ratio.is_finite() or decimal_ratio != decimal_ratio.quantize(Decimal("0.0001")):
+        raise ValueError("replacementRatio must have at most four decimal places")
     return list(methods), normalized_ratio
 
 

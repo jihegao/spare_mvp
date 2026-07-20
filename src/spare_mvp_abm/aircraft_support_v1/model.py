@@ -144,6 +144,9 @@ class JobState:
     replacement_ratio: float | None = None
     maintenance_decision_roll: float | None = None
     maintenance_rng_stream: str | None = None
+    maintenance_occurrence: int | None = None
+    consumed_spare_task_indexes: set[int] = field(default_factory=set)
+    spare_shortage_signature: tuple[tuple[str, int, int, str], ...] | None = None
 
     @property
     def current_task(self) -> dict[str, Any] | None:
@@ -210,6 +213,7 @@ class AircraftSupportV1Model:
         self.jobs: list[JobState] = []
         self.transport_shipments: list[TransportShipment] = []
         self._job_sequence = 0
+        self._maintenance_occurrence_by_kind = {"repair": 0, "preventive": 0}
         self.completed_sorties = 0
         self.failed_sorties = 0
         self.launched_sorties = 0
@@ -1449,21 +1453,28 @@ class AircraftSupportV1Model:
                 if node["inventory"].get(spare_type, 0) < spare_qty and not self._has_in_transit_spare(node["id"], spare_type):
                     self._try_transport_replenishment(node, spare_type, spare_qty)
             shortages = [
-                (spare_type, spare_qty)
+                (
+                    spare_type,
+                    spare_qty,
+                    int(node["inventory"].get(spare_type, 0) or 0),
+                    (
+                        "in_transit"
+                        if self._has_in_transit_spare(node["id"], spare_type)
+                        else f"spare:{spare_type}"
+                    ),
+                )
                 for spare_type, spare_qty in spare_requirements
                 if node["inventory"].get(spare_type, 0) < spare_qty
             ]
             if shortages:
+                job.shortage_reason = shortages[0][3]
+                shortage_signature = tuple(shortages)
+                if job.spare_shortage_signature == shortage_signature:
+                    continue
+                job.spare_shortage_signature = shortage_signature
                 aircraft = self._aircraft_by_tail(job.tail_number)
-                for shortage_index, (spare_type, spare_qty) in enumerate(shortages):
+                for spare_type, spare_qty, available_quantity, reason in shortages:
                     self.shortage_events += 1
-                    reason = (
-                        "in_transit"
-                        if self._has_in_transit_spare(node["id"], spare_type)
-                        else f"spare:{spare_type}"
-                    )
-                    if shortage_index == 0:
-                        job.shortage_reason = reason
                     display_name = self._product_display_name(spare_type)
                     self._event(
                         "spare_shortage",
@@ -1475,10 +1486,13 @@ class AircraftSupportV1Model:
                             "product_id": spare_type,
                             "spare_type": display_name,
                             "required_quantity": spare_qty,
-                            "available_quantity": int(node["inventory"].get(spare_type, 0) or 0),
+                            "available_quantity": available_quantity,
                             "reason": reason,
                         },
                     )
+                continue
+            job.spare_shortage_signature = None
+            if not self._consume_task_spare(job, task):
                 continue
             node["personnel_in_use"] += personnel
             node["equipment_in_use"] += equipment
@@ -1735,19 +1749,22 @@ class AircraftSupportV1Model:
         replacement_ratio = None
         decision_roll = None
         rng_stream = None
+        maintenance_occurrence = None
         if kind in {"repair", "preventive"}:
-            maintenance_method, replacement_ratio, decision_roll, rng_stream = self._maintenance_method_for_event(
-                job_id=job_id,
-                aircraft=aircraft,
+            (
+                maintenance_method,
+                replacement_ratio,
+                decision_roll,
+                rng_stream,
+                maintenance_occurrence,
+            ) = self._maintenance_method_for_event(
                 activity=activity,
                 kind=kind,
-                component=component,
-                mission_id=mission_id,
             )
         if kind == "repair" and component is not None:
             if component.get("repair_duration_minutes"):
                 tasks[-1]["durationMinutes"] = max(1, int(component["repair_duration_minutes"]))
-            has_explicit_spares = any(self._raw_task_spare_requirements(task) for task in tasks)
+            has_explicit_spares = any(self._task_has_explicit_spare_requirement(task) for task in tasks)
             if (
                 maintenance_method == "replacement"
                 and not has_explicit_spares
@@ -1771,6 +1788,7 @@ class AircraftSupportV1Model:
             replacement_ratio=replacement_ratio,
             maintenance_decision_roll=decision_roll,
             maintenance_rng_stream=rng_stream,
+            maintenance_occurrence=maintenance_occurrence,
         )
         self.jobs.append(job)
         if maintenance_method is not None:
@@ -1788,19 +1806,16 @@ class AircraftSupportV1Model:
                     "replacement_ratio": replacement_ratio,
                     "decision_roll": decision_roll,
                     "rng_stream": rng_stream,
+                    "maintenance_occurrence": maintenance_occurrence,
                 },
             )
 
     def _maintenance_method_for_event(
         self,
         *,
-        job_id: str,
-        aircraft: AircraftState,
         activity: dict[str, Any],
         kind: str,
-        component: dict[str, Any] | None,
-        mission_id: str | None,
-    ) -> tuple[str, float, float, str]:
+    ) -> tuple[str, float, float, str, int]:
         methods = [
             str(value)
             for value in activity.get("maintenance_methods", [])
@@ -1812,24 +1827,14 @@ class AircraftSupportV1Model:
             ratio = 1.0
         elif "replacement" not in methods:
             ratio = 0.0
-        stream_key = "|".join(
-            (
-                str(self.seed),
-                "maintenance-method",
-                job_id,
-                aircraft.tail_number,
-                kind,
-                str(activity.get("id") or ""),
-                str((component or {}).get("id") or ""),
-                str(mission_id or ""),
-                str(self.minute),
-            )
-        )
+        self._maintenance_occurrence_by_kind[kind] = self._maintenance_occurrence_by_kind.get(kind, 0) + 1
+        occurrence = self._maintenance_occurrence_by_kind[kind]
+        stream_key = f"{self.seed}|maintenance-method|{kind}|{occurrence}"
         digest = hashlib.sha256(stream_key.encode("utf-8")).digest()
         stream_seed = int.from_bytes(digest[:16], "big")
         decision_roll = random.Random(stream_seed).random()
         method = "replacement" if "replacement" in methods and decision_roll < ratio else "non_replacement"
-        return method, ratio, decision_roll, digest.hex()[:16]
+        return method, ratio, decision_roll, digest.hex()[:16], occurrence
 
     def _default_resource_node_id(self, aircraft: AircraftState) -> str:
         """Choose the aircraft's explicitly associated support node before list-order fallback."""
@@ -1871,7 +1876,7 @@ class AircraftSupportV1Model:
                 spare_type = str(item.get("productId") or item.get("product_id") or item.get("name") or item.get("model") or "").strip()
                 if _is_no_spare_value(spare_type):
                     continue
-                quantity = _positive_int(item.get("quantity"), 1)
+                quantity = _non_negative_int(item.get("quantity"), 1)
                 if spare_type and quantity > 0:
                     requirements.append((self._product_id_for_label(spare_type), quantity))
         if isinstance(spare, str) and spare and not _is_no_spare_value(spare):
@@ -1880,10 +1885,27 @@ class AircraftSupportV1Model:
                 quantity = 1
                 for part in reversed(parts):
                     if part.isdigit():
-                        quantity = max(1, int(part))
+                        quantity = max(0, int(part))
                         break
-                requirements.append((self._product_id_for_label(parts[0]), quantity))
+                if quantity > 0:
+                    requirements.append((self._product_id_for_label(parts[0]), quantity))
         return requirements
+
+    def _task_has_explicit_spare_requirement(self, task: dict[str, Any]) -> bool:
+        if self._raw_task_spare_requirements(task):
+            return True
+        spare = task.get("spare")
+        if isinstance(spare, list):
+            return any(
+                isinstance(item, dict)
+                and str(item.get("productId") or item.get("product_id") or item.get("name") or item.get("model") or "").strip()
+                and _non_negative_int(item.get("quantity"), 1) == 0
+                for item in spare
+            )
+        if isinstance(spare, str) and spare and not _is_no_spare_value(spare):
+            parts = [part.strip() for part in spare.split(",") if part.strip()]
+            return bool(parts and parts[-1].isdigit() and int(parts[-1]) == 0)
+        return False
 
     def _task_spare_requirements(self, job: JobState, task: dict[str, Any]) -> list[tuple[str, int]]:
         if job.kind in {"repair", "preventive"} and job.maintenance_method == "non_replacement":
@@ -1924,15 +1946,18 @@ class AircraftSupportV1Model:
                     return str(product_id)
         return value
 
-    def _consume_task_spare(self, job: JobState, task: dict[str, Any]) -> None:
+    def _consume_task_spare(self, job: JobState, task: dict[str, Any]) -> bool:
+        if job.task_index in job.consumed_spare_task_indexes:
+            return True
         requirements = self._task_spare_requirements(job, task)
         if not requirements:
-            return
+            return True
         node = self.nodes.get(job.resource_node_id) or next(iter(self.nodes.values()))
+        if any(node["inventory"].get(spare_type, 0) < spare_quantity for spare_type, spare_quantity in requirements):
+            return False
+        job.consumed_spare_task_indexes.add(job.task_index)
         for spare_type, spare_quantity in requirements:
             current = node["inventory"].get(spare_type, 0)
-            if current < spare_quantity:
-                continue
             node["inventory"][spare_type] = current - spare_quantity
             self.spare_consumed_total += spare_quantity
             aircraft = self._aircraft_by_tail(job.tail_number)
@@ -1950,6 +1975,7 @@ class AircraftSupportV1Model:
                     "maintenance_method": job.maintenance_method,
                 },
             )
+        return True
 
     def _try_transport_replenishment(self, node: dict[str, Any], spare_type: str, needed: int) -> None:
         shortage = max(0, needed - int(node["inventory"].get(spare_type, 0)))
@@ -2353,6 +2379,7 @@ class AircraftSupportV1Model:
             "replacement_ratio": job.replacement_ratio,
             "maintenance_decision_roll": job.maintenance_decision_roll,
             "maintenance_rng_stream": job.maintenance_rng_stream,
+            "maintenance_occurrence": job.maintenance_occurrence,
         }
 
     def _events_for_frame(self) -> list[dict[str, Any]]:
@@ -2597,6 +2624,13 @@ def _resource_quantity(text: Any, explicit: Any, *, default: int) -> int:
 def _non_negative_float(value: Any, fallback: float) -> float:
     try:
         return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _non_negative_int(value: Any, fallback: int) -> int:
+    try:
+        return max(0, int(float(value)))
     except (TypeError, ValueError):
         return fallback
 

@@ -149,7 +149,7 @@
                 "uniqueItems": true,
                 "items": { "enum": ["non_replacement", "replacement"] }
               },
-              "replacement_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+              "replacement_ratio": { "type": "number", "minimum": 0, "maximum": 1, "multipleOf": 0.0001 },
               "jobs": { "type": "array", "items": { "type": "object" } }
             },
             "dependentRequired": {
@@ -157,6 +157,14 @@
               "replacement_ratio": ["maintenance_methods"]
             },
             "allOf": [
+              {
+                "if": { "required": ["maintenance_methods"] },
+                "then": {
+                  "properties": {
+                    "activity_type": { "enum": ["corrective", "preventive", "修复性维修", "预防性维修"] }
+                  }
+                }
+              },
               {
                 "if": {
                   "required": ["maintenance_methods"],

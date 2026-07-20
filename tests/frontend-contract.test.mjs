@@ -2510,9 +2510,12 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(correctiveSource, /distribution\.max/);
   assert.match(correctiveSource, /distribution\.variance/);
   assert.match(appSource, /function renderMaintenanceMethodControls/);
-  assert.match(appSource, /methodOption\("non_replacement", "原位维修"\)/);
+  assert.match(appSource, /preventive \? "检查\/保养" : "原位维修"/);
   assert.match(appSource, /methodOption\("replacement", "换件维修"\)/);
   assert.match(appSource, /data-maintenance-replacement-ratio="\$\{activityIndex\}"/);
+  assert.match(appSource, /<span>维修比例<\/span>/);
+  assert.match(appSource, /const ratioInputs = bothSelected/);
+  assert.match(appSource, /min="0" max="100" step="0\.01" required/);
   assert.match(preventiveSource, /renderMaintenanceMethodControls\(activity, activityIndex\)/);
   assert.match(correctiveSource, /renderMaintenanceMethodControls\(componentActivity, activityIndex\)/);
   assert.doesNotMatch(correctiveSource, /\.repairType/);

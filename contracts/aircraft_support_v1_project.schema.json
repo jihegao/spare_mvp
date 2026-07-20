@@ -435,7 +435,7 @@
           "uniqueItems": true,
           "items": { "type": "string", "enum": ["non_replacement", "replacement"] }
         },
-        "replacementRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "replacementRatio": { "type": "number", "minimum": 0, "maximum": 1, "multipleOf": 0.0001 },
         "activityCodes": { "type": "array", "items": { "type": "string" } },
         "predecessors": {
           "type": "object",
@@ -447,6 +447,15 @@
         "replacementRatio": ["maintenanceMethods"]
       },
       "allOf": [
+        {
+          "if": { "required": ["maintenanceMethods"] },
+          "then": {
+            "required": ["planType"],
+            "properties": {
+              "planType": { "enum": ["修复性维修方案", "预防性维修方案"] }
+            }
+          }
+        },
         {
           "if": {
             "required": ["maintenanceMethods"],
