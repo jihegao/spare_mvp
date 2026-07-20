@@ -879,6 +879,15 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         with self.assertRaisesRegex(ValueError, "supportOrganization: expected object"):
             self._export_with_old_jsonschema(invalid_support_organization)
 
+        for field in ("serviceScope", "children"):
+            with self.subTest(field=field):
+                canonical = ProjectJsonExporter(target="aircraft_support_v1").export(self._polluted_project())
+                canonical["supportOrganization"]["tree"].pop(field)
+                with self.assertRaisesRegex(ValueError, rf"supportOrganization\.tree\.{field}"):
+                    from src.spare_mvp_backend.project_payload import _validate_clean_project_fallback
+
+                    _validate_clean_project_fallback(canonical, "aircraft_support_v1")
+
     def test_aircraft_support_v1_exporter_accepts_full_platform_case(self) -> None:
         package = json.loads((REPO_ROOT / "tests" / "fixtures" / "m9_6_platform_case_export.json").read_text(encoding="utf-8"))
 

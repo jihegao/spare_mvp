@@ -341,7 +341,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["resource_id", "resource_type", "organization_node_id"],
       "properties": {
-        "resource_id": { "type": "string" },
+        "resource_id": { "type": "string", "minLength": 1 },
         "resource_type": { "enum": ["personnel", "equipment", "spare"] },
         "organization_node_id": { "type": "string" }
       }

@@ -372,7 +372,7 @@
       "additionalProperties": false,
       "required": ["id", "organizationNodeId", "type", "name", "quantity"],
       "properties": {
-        "id": { "type": "string" },
+        "id": { "type": "string", "minLength": 1 },
         "supportNodeName": { "type": "string" },
         "organizationNodeName": { "type": "string" },
         "organizationNodeId": { "type": "string", "minLength": 1 },
@@ -545,7 +545,7 @@
     "supportOrganizationNode": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name"],
+      "required": ["id", "name", "serviceScope", "children"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },

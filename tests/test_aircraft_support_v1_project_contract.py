@@ -130,6 +130,40 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
     def test_schema_accepts_minimal_clean_project(self) -> None:
         self.assertEqual(self._schema_errors(self._clean_project()), [])
 
+    def test_schema_rejects_organization_nodes_without_materialized_scope_or_children(self) -> None:
+        for field in ("serviceScope", "children"):
+            with self.subTest(field=field):
+                project = self._clean_project()
+                project["supportOrganization"]["tree"].pop(field)
+
+                errors = self._schema_errors(project)
+
+                self.assertTrue(errors)
+                nested_errors = list(errors)
+                for error in nested_errors:
+                    nested_errors.extend(error.context)
+                self.assertTrue(
+                    any(error.validator == "required" and field in error.message for error in nested_errors),
+                    nested_errors,
+                )
+
+    def test_periodic_week_profile_required_fields_remain_task_only(self) -> None:
+        self.assertEqual(
+            self.schema["$defs"]["periodicWeekProfile"]["required"],
+            ["id", "name"],
+        )
+
+    def test_schema_rejects_empty_support_resource_id(self) -> None:
+        project = self._clean_project()
+        project["supportResources"][0]["id"] = ""
+
+        errors = self._schema_errors(project)
+
+        self.assertTrue(
+            any(list(error.path) == ["supportResources", 0, "id"] for error in errors),
+            errors,
+        )
+
     def test_schema_accepts_canonical_mission_profile_tasks(self) -> None:
         project = self._clean_project()
         project["missionProfile"].pop("durationHours", None)

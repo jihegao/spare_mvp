@@ -1,16 +1,16 @@
 {
-  "schema_version": "run-v0",
-  "run_id": "run-aircraft-support-contract-001",
-  "project_id": "project-aircraft-support-contract-001",
+  "artifact_manifest_id": "artifact-manifest-aircraft-support-contract-001",
   "experiment_plan_id": "experiment-plan-aircraft-support-001",
-  "scenario_id": "scenario-aircraft-support-contract-001",
-  "scenario_version": "scenario-v0.1",
   "model_family": "aircraft_support_v1",
   "model_id": "AircraftSupportV1Model",
-  "status": "succeeded",
-  "run_type": "single",
-  "seed": 20260716,
   "progress": 1,
+  "project_id": "project-aircraft-support-contract-001",
   "result_summary_id": "result-aircraft-support-contract-001",
-  "artifact_manifest_id": "artifact-manifest-aircraft-support-contract-001"
+  "run_id": "run-aircraft-support-contract-001",
+  "run_type": "single",
+  "scenario_id": "scenario-aircraft-support-contract-demo",
+  "scenario_version": "scenario-v0.1",
+  "schema_version": "run-v0",
+  "seed": 20260716,
+  "status": "succeeded"
 }

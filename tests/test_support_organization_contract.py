@@ -189,6 +189,7 @@ class SupportOrganizationContractTest(unittest.TestCase):
                 },
             ],
         )
+
         self.assertEqual(
             graph["parent_edges"],
             [
@@ -241,6 +242,28 @@ class SupportOrganizationContractTest(unittest.TestCase):
                 }
             ],
         )
+
+    def test_empty_support_resource_ids_block_in_either_input_order(self) -> None:
+        for reverse in (False, True):
+            with self.subTest(reverse=reverse):
+                project = self._project()
+                resources = copy.deepcopy(project["supportResources"][:2])
+                resources[0]["id"] = ""
+                if reverse:
+                    resources.reverse()
+                project["supportResources"] = resources
+
+                result = self.adapter.compile_scenario_with_gate(project)
+
+                self.assertEqual(result["status"], "blocked")
+                issues = [
+                    issue
+                    for issue in result["issues"]
+                    if issue.get("code") == "missing_support_resource_id"
+                ]
+                self.assertEqual(len(issues), 1, result["issues"])
+                expected_index = 1 if reverse else 0
+                self.assertEqual(issues[0]["field_path"], f"supportResources[{expected_index}].id")
 
     def test_legacy_single_element_tree_array_migrates_without_changing_graph(self) -> None:
         # Arrange.

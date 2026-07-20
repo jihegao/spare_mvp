@@ -812,6 +812,19 @@ def _canonicalize_support_resource_ownership(
     for index, resource in enumerate(value if isinstance(value, list) else []):
         if not isinstance(resource, dict):
             continue
+        resource_id = _clean_text(resource.get("id"))
+        if not resource_id:
+            raise OrganizationContractError(
+                "missing_support_resource_id",
+                f"supportResources[{index}].id",
+                "support resource id must be a non-empty stable identifier",
+            )
+        if resource_id in owners_by_id:
+            raise OrganizationContractError(
+                "duplicate_support_resource_id",
+                f"supportResources[{index}].id",
+                f"support resource ID {resource_id} duplicates supportResources[{owners_by_id[resource_id][1]}].id",
+            )
         had_explicit_owner = bool(_clean_text(resource.get("organizationNodeId")))
         refs = [
             (field, resource.get(field))
@@ -859,15 +872,7 @@ def _canonicalize_support_resource_ownership(
         resource["organizationNodeId"] = owner
         if not had_explicit_owner:
             changes.append(f"supportResources[{index}].organizationNodeId=migratedUniqueAlias")
-        resource_id = _clean_text(resource.get("id"))
-        if resource_id and resource_id in owners_by_id and owners_by_id[resource_id][0] != owner:
-            raise OrganizationContractError(
-                "multiple_resource_ownership",
-                f"supportResources[{index}].organizationNodeId",
-                f"resource {resource_id} is already owned by {owners_by_id[resource_id][0]}",
-            )
-        if resource_id:
-            owners_by_id[resource_id] = (owner, index)
+        owners_by_id[resource_id] = (owner, index)
 
 
 def _canonical_top_level_transport_policies(
@@ -1839,7 +1844,6 @@ def _validate_clean_support_resources(resources: Any, target: str) -> None:
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
         for field in (
-            "id",
             "supportNodeName",
             "organizationNodeName",
             "organizationNodeId",
@@ -1848,6 +1852,7 @@ def _validate_clean_support_resources(resources: Any, target: str) -> None:
             "productId",
         ):
             _validate_optional_clean_string(resource, field, f"{path}.{field}", target)
+        _require_clean_non_empty_string(resource, "id", f"{path}.id", target)
         if resource.get("type") not in {"personnel", "equipment", "spare"}:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}.type: unsupported resource type")
         if resource.get("type") == "spare":
@@ -1862,7 +1867,10 @@ def _validate_support_resource_identities(project: dict[str, Any], target: str) 
     for index, resource in enumerate(resources):
         resource_id = _clean_text(resource.get("id"))
         if not resource_id:
-            continue
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportResources.{index}.id: "
+                "expected non-empty string"
+            )
         if resource_id in resource_index_by_id:
             raise ValueError(
                 f"clean Project JSON failed {target} schema at supportResources.{index}.id: "
@@ -2163,7 +2171,7 @@ def _validate_clean_support_organization_node(value: Any, path: str, target: str
         if not isinstance(scope[field], list) or any(not isinstance(item, str) or not item for item in scope[field]):
             raise ValueError(f"clean Project JSON failed {target} schema at {path}.serviceScope.{field}: expected non-empty string array")
     if "children" not in value:
-        return
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}.children: required")
     children = value["children"]
     if not isinstance(children, list):
         raise ValueError(f"clean Project JSON failed {target} schema at {path}.children: expected array")

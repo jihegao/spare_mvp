@@ -184,6 +184,11 @@ class SimulationAdapter:
         for index, resource in enumerate(resources):
             resource_id = str(resource.get("id") or "").strip()
             if not resource_id:
+                errors.append({
+                    "code": "missing_support_resource_id",
+                    "path": f"supportResources[{index}].id",
+                    "message": "support resource id must be a non-empty stable identifier",
+                })
                 continue
             if resource_id in ids:
                 errors.append({
