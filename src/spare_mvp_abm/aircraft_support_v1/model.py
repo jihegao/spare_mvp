@@ -173,6 +173,8 @@ class JobState:
     consumed_spare_task_indexes: set[int] = field(default_factory=set)
     spare_shortage_signature: tuple[tuple[str, int, int, str], ...] | None = None
     due_dimensions: list[str] = field(default_factory=list)
+    resource_reservations: dict[str, tuple[str, int]] = field(default_factory=dict)
+    remote_resources_pending: set[str] = field(default_factory=set)
 
     @property
     def current_task(self) -> dict[str, Any] | None:
@@ -189,6 +191,25 @@ class TransportShipment:
     quantity: int
     requested_minute: int
     arrival_minute: int
+    job_id: str = ""
+    task_index: int = 0
+    path_organization_node_ids: tuple[str, ...] = ()
+    transport_policy_ids: tuple[str, ...] = ()
+    batch_sequence: int = 1
+
+
+@dataclass
+class ResourceTransit:
+    job_id: str
+    task_index: int
+    resource_kind: str
+    quantity: int
+    source_node_id: str
+    destination_node_id: str
+    requested_minute: int
+    arrival_minute: int
+    path_organization_node_ids: tuple[str, ...]
+    transport_policy_ids: tuple[str, ...]
 
 
 class AircraftSupportV1Model:
@@ -229,6 +250,7 @@ class AircraftSupportV1Model:
         self.components = self._behavior_components()
         self._initialize_aircraft_lru_failure_timers()
         self.nodes = self._build_support_nodes()
+        self._initialize_organization_graph()
         self.activities = self._build_activities()
         self.mission_context = self._mission_context()
         self.preflight_activity = self._select_activity("preflight")
@@ -238,6 +260,7 @@ class AircraftSupportV1Model:
         self.missions = self._build_missions()
         self.jobs: list[JobState] = []
         self.transport_shipments: list[TransportShipment] = []
+        self.resource_transits: list[ResourceTransit] = []
         self._job_sequence = 0
         self._maintenance_occurrence_by_kind = {"repair": 0, "preventive": 0}
         self.completed_sorties = 0
@@ -961,6 +984,9 @@ class AircraftSupportV1Model:
                 "name": str(item.get("name") or node_id),
                 "airport": str(item.get("airport") or ""),
                 "airport_id": str(item.get("airport_id") or item.get("airportId") or item.get("baseAirportId") or ""),
+                "organization_node_id": str(
+                    item.get("organization_node_id") or item.get("organizationNodeId") or ""
+                ).strip(),
                 "personnel_capacity": max(1, int(item.get("personnel_capacity", 1))),
                 "equipment_capacity": max(1, int(item.get("equipment_capacity", 1))),
                 "personnel_in_use": 0,
@@ -983,6 +1009,7 @@ class AircraftSupportV1Model:
                 "name": "support node",
                 "airport": "",
                 "airport_id": "",
+                "organization_node_id": "",
                 "personnel_capacity": 1,
                 "equipment_capacity": 1,
                 "personnel_in_use": 0,
@@ -993,6 +1020,97 @@ class AircraftSupportV1Model:
                 "work_count": 0,
             }
         return nodes
+
+    def _initialize_organization_graph(self) -> None:
+        raw_graph = self.inputs.get("support_network", {}).get("organization_graph")
+        graph_nodes = raw_graph.get("nodes") if isinstance(raw_graph, dict) else None
+        self.canonical_organization_enabled = bool(isinstance(graph_nodes, list) and graph_nodes)
+        self.organization_nodes: dict[str, dict[str, Any]] = {}
+        self.organization_parent_by_id: dict[str, str | None] = {}
+        self.runtime_node_by_organization_id: dict[str, str] = {}
+        self.organization_transport_policies: list[dict[str, Any]] = []
+        if not self.canonical_organization_enabled:
+            return
+
+        for raw_node in graph_nodes:
+            if not isinstance(raw_node, dict):
+                raise ValueError("canonical organization_graph nodes must be objects")
+            organization_id = str(raw_node.get("id") or "").strip()
+            if not organization_id or organization_id in self.organization_nodes:
+                raise ValueError("canonical organization_graph node ids must be non-empty and unique")
+            self.organization_nodes[organization_id] = copy.deepcopy(raw_node)
+
+        parent_by_child: dict[str, str] = {}
+        for edge in raw_graph.get("parent_edges") or []:
+            if not isinstance(edge, dict):
+                continue
+            parent_id = str(edge.get("from_node_id") or edge.get("fromOrganizationNodeId") or "").strip()
+            child_id = str(edge.get("to_node_id") or edge.get("toOrganizationNodeId") or "").strip()
+            if not parent_id or not child_id:
+                continue
+            if child_id in parent_by_child and parent_by_child[child_id] != parent_id:
+                raise ValueError(f"canonical organization node {child_id!r} has multiple parents")
+            parent_by_child[child_id] = parent_id
+        for organization_id, raw_node in self.organization_nodes.items():
+            declared_parent = str(raw_node.get("parent_id") or raw_node.get("parentId") or "").strip() or None
+            edge_parent = parent_by_child.get(organization_id)
+            if declared_parent and edge_parent and declared_parent != edge_parent:
+                raise ValueError(f"canonical organization node {organization_id!r} has conflicting parents")
+            parent_id = declared_parent or edge_parent
+            if parent_id is not None and parent_id not in self.organization_nodes:
+                raise ValueError(f"canonical organization node {organization_id!r} has unknown parent {parent_id!r}")
+            self.organization_parent_by_id[organization_id] = parent_id
+
+        for organization_id in self.organization_nodes:
+            seen: set[str] = set()
+            cursor: str | None = organization_id
+            while cursor is not None:
+                if cursor in seen:
+                    raise ValueError("canonical organization_graph parent relation must be acyclic")
+                seen.add(cursor)
+                cursor = self.organization_parent_by_id.get(cursor)
+
+        for node_id, node in self.nodes.items():
+            organization_id = str(node.get("organization_node_id") or "").strip()
+            if not organization_id:
+                raise ValueError(f"canonical runtime support node {node_id!r} requires organization_node_id")
+            if organization_id not in self.organization_nodes:
+                raise ValueError(
+                    f"canonical runtime support node {node_id!r} references unknown organization node {organization_id!r}"
+                )
+            if organization_id in self.runtime_node_by_organization_id:
+                raise ValueError(f"canonical organization node {organization_id!r} maps to multiple runtime nodes")
+            self.runtime_node_by_organization_id[organization_id] = node_id
+
+        for index, raw_policy in enumerate(raw_graph.get("transport_policies") or []):
+            if not isinstance(raw_policy, dict):
+                continue
+            policy_id = str(raw_policy.get("id") or f"organization-policy-{index + 1}").strip()
+            source_id = str(
+                raw_policy.get("from_organization_node_id")
+                or raw_policy.get("fromOrganizationNodeId")
+                or ""
+            ).strip()
+            destination_id = str(
+                raw_policy.get("to_organization_node_id")
+                or raw_policy.get("toOrganizationNodeId")
+                or ""
+            ).strip()
+            if source_id not in self.organization_nodes or destination_id not in self.organization_nodes:
+                continue
+            self.organization_transport_policies.append(
+                {
+                    "id": policy_id,
+                    "from_organization_node_id": source_id,
+                    "to_organization_node_id": destination_id,
+                    "product_id": str(
+                        raw_policy.get("product_id") or raw_policy.get("productId") or ""
+                    ).strip(),
+                    "capacity": max(1, int(raw_policy.get("capacity") or 1)),
+                    "priority": max(1, int(raw_policy.get("priority") or 1)),
+                    "transport_minutes": self._transport_policy_minutes(raw_policy),
+                }
+            )
 
     def _normalized_transport_policies(self, policies: list[dict[str, Any]]) -> list[dict[str, Any]]:
         normalized = []
@@ -1351,6 +1469,47 @@ class AircraftSupportV1Model:
                     "resource_id": shipment.destination_node_id,
                 },
             )
+            if self.canonical_organization_enabled:
+                self._event(
+                    "organization_transport_arrived",
+                    f"organization shipment arrived for {shipment.job_id}",
+                    {
+                        "job_id": shipment.job_id,
+                        "task_index": shipment.task_index,
+                        "product_id": shipment.spare_type,
+                        "quantity": shipment.quantity,
+                        "source_resource_id": shipment.source_node_id,
+                        "resource_id": shipment.destination_node_id,
+                        "organization_path": list(shipment.path_organization_node_ids),
+                        "transport_policy_ids": list(shipment.transport_policy_ids),
+                    },
+                )
+
+        arrived_resources = [
+            transit for transit in self.resource_transits if transit.arrival_minute <= self.minute
+        ]
+        self.resource_transits = [
+            transit for transit in self.resource_transits if transit.arrival_minute > self.minute
+        ]
+        for transit in arrived_resources:
+            job = next((item for item in self.jobs if item.job_id == transit.job_id), None)
+            if job is None or job.task_index != transit.task_index:
+                continue
+            job.remote_resources_pending.discard(transit.resource_kind)
+            self._event(
+                "organization_resource_arrived",
+                f"{transit.resource_kind} arrived for {transit.job_id}",
+                {
+                    "job_id": transit.job_id,
+                    "task_index": transit.task_index,
+                    "resource_kind": transit.resource_kind,
+                    "quantity": transit.quantity,
+                    "source_resource_id": transit.source_node_id,
+                    "resource_id": transit.destination_node_id,
+                    "organization_path": list(transit.path_organization_node_ids),
+                    "transport_policy_ids": list(transit.transport_policy_ids),
+                },
+            )
 
     def _process_mission_returns(self) -> None:
         for aircraft in self.aircraft:
@@ -1460,7 +1619,17 @@ class AircraftSupportV1Model:
             if task is None:
                 job.state = "completed"
                 continue
-            node = self.nodes.get(job.resource_node_id) or next(iter(self.nodes.values()))
+            node = self.nodes.get(job.resource_node_id)
+            if node is None:
+                if self.canonical_organization_enabled:
+                    job.shortage_reason = "organization_unknown_runtime_node"
+                    self._event(
+                        "organization_dispatch_failed",
+                        f"{job.job_id} references unknown runtime support node",
+                        {"job_id": job.job_id, "reason": "unknown_runtime_node", "resource_id": job.resource_node_id},
+                    )
+                    continue
+                node = next(iter(self.nodes.values()))
             activity = self._activity_by_id(job.activity_id)
             personnel = _resource_quantity(
                 task.get("personnel"),
@@ -1502,9 +1671,17 @@ class AircraftSupportV1Model:
                 )
                 continue
             spare_requirements = self._task_spare_requirements(job, task)
+            canonical_failure_reasons: dict[str, str] = {}
             for spare_type, spare_qty in spare_requirements:
                 if node["inventory"].get(spare_type, 0) < spare_qty and not self._has_in_transit_spare(node["id"], spare_type):
-                    self._try_transport_replenishment(node, spare_type, spare_qty)
+                    if self.canonical_organization_enabled:
+                        failure_reason = self._try_canonical_transport_replenishment(
+                            job, node, spare_type, spare_qty
+                        )
+                        if failure_reason:
+                            canonical_failure_reasons[spare_type] = failure_reason
+                    else:
+                        self._try_transport_replenishment(node, spare_type, spare_qty)
             shortages = [
                 (
                     spare_type,
@@ -1513,7 +1690,7 @@ class AircraftSupportV1Model:
                     (
                         "in_transit"
                         if self._has_in_transit_spare(node["id"], spare_type)
-                        else f"spare:{spare_type}"
+                        else canonical_failure_reasons.get(spare_type, f"spare:{spare_type}")
                     ),
                 )
                 for spare_type, spare_qty in spare_requirements
@@ -1545,6 +1722,18 @@ class AircraftSupportV1Model:
                     )
                 continue
             job.spare_shortage_signature = None
+            if self.canonical_organization_enabled and spare_requirements:
+                self._event(
+                    "organization_local_fulfilled",
+                    f"{job.job_id} spare requirements fulfilled at {node['id']}",
+                    {
+                        "job_id": job.job_id,
+                        "task_index": job.task_index,
+                        "organization_node_id": node["organization_node_id"],
+                        "resource_id": node["id"],
+                        "products": [item[0] for item in spare_requirements],
+                    },
+                )
             if not self._consume_task_spare(job, task):
                 continue
             node["personnel_in_use"] += personnel
@@ -2087,7 +2276,11 @@ class AircraftSupportV1Model:
         requirements = self._task_spare_requirements(job, task)
         if not requirements:
             return True
-        node = self.nodes.get(job.resource_node_id) or next(iter(self.nodes.values()))
+        node = self.nodes.get(job.resource_node_id)
+        if node is None:
+            if self.canonical_organization_enabled:
+                return False
+            node = next(iter(self.nodes.values()))
         if any(node["inventory"].get(spare_type, 0) < spare_quantity for spare_type, spare_quantity in requirements):
             return False
         job.consumed_spare_task_indexes.add(job.task_index)
@@ -2111,6 +2304,163 @@ class AircraftSupportV1Model:
                 },
             )
         return True
+
+    def _organization_ancestor_paths(self, destination_organization_id: str) -> list[tuple[str, ...]]:
+        """Return nearest-first vertical paths from each ancestor down to the destination."""
+        reversed_path = [destination_organization_id]
+        cursor = self.organization_parent_by_id.get(destination_organization_id)
+        paths: list[tuple[str, ...]] = []
+        while cursor is not None:
+            reversed_path.append(cursor)
+            paths.append(tuple(reversed(reversed_path)))
+            cursor = self.organization_parent_by_id.get(cursor)
+        return paths
+
+    def _organization_policy_for_edge(
+        self,
+        source_organization_id: str,
+        destination_organization_id: str,
+        product_id: str,
+    ) -> dict[str, Any] | None:
+        edge_policies = [
+            policy
+            for policy in self.organization_transport_policies
+            if policy["from_organization_node_id"] == source_organization_id
+            and policy["to_organization_node_id"] == destination_organization_id
+        ]
+        product_specific = [policy for policy in edge_policies if policy["product_id"] == product_id]
+        candidates = product_specific or [
+            policy for policy in edge_policies if policy["product_id"] in {"", "*"}
+        ]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda policy: (
+                policy["priority"],
+                policy["transport_minutes"],
+                policy["id"],
+            ),
+        )
+
+    def _organization_policies_for_path(
+        self,
+        path: tuple[str, ...],
+        product_id: str,
+    ) -> tuple[dict[str, Any], ...] | None:
+        policies: list[dict[str, Any]] = []
+        for source_id, destination_id in zip(path, path[1:]):
+            policy = self._organization_policy_for_edge(source_id, destination_id, product_id)
+            if policy is None:
+                return None
+            policies.append(policy)
+        return tuple(policies)
+
+    def _try_canonical_transport_replenishment(
+        self,
+        job: JobState,
+        destination_node: dict[str, Any],
+        spare_type: str,
+        needed: int,
+    ) -> str | None:
+        shortage = max(0, needed - int(destination_node["inventory"].get(spare_type, 0)))
+        if shortage <= 0:
+            return None
+        destination_organization_id = destination_node["organization_node_id"]
+        supplier_with_missing_path = False
+        for path in self._organization_ancestor_paths(destination_organization_id):
+            source_node_id = self.runtime_node_by_organization_id.get(path[0])
+            if not source_node_id:
+                continue
+            source_node = self.nodes[source_node_id]
+            available = int(source_node["inventory"].get(spare_type, 0))
+            if available <= 0:
+                continue
+            policies = self._organization_policies_for_path(path, spare_type)
+            if policies is None:
+                supplier_with_missing_path = True
+                continue
+            path_capacity = min(policy["capacity"] for policy in policies)
+            moved = min(shortage, available, path_capacity)
+            if moved <= 0:
+                continue
+            policy_ids = tuple(policy["id"] for policy in policies)
+            prior_batches = [
+                shipment
+                for shipment in self.transport_shipments
+                if shipment.job_id == job.job_id
+                and shipment.task_index == job.task_index
+                and shipment.spare_type == spare_type
+            ]
+            batch_sequence = len(prior_batches) + 1
+            shipment_key = (job.job_id, job.task_index, spare_type, policy_ids, batch_sequence)
+            if any(
+                (
+                    shipment.job_id,
+                    shipment.task_index,
+                    shipment.spare_type,
+                    shipment.transport_policy_ids,
+                    shipment.batch_sequence,
+                ) == shipment_key
+                for shipment in self.transport_shipments
+            ):
+                return None
+            source_node["inventory"][spare_type] = available - moved
+            transport_minutes = sum(policy["transport_minutes"] for policy in policies)
+            arrival_minute = self.minute + max(self.tick_minutes, transport_minutes)
+            shipment = TransportShipment(
+                source_node_id=source_node_id,
+                destination_node_id=destination_node["id"],
+                spare_type=spare_type,
+                quantity=moved,
+                requested_minute=self.minute,
+                arrival_minute=arrival_minute,
+                job_id=job.job_id,
+                task_index=job.task_index,
+                path_organization_node_ids=path,
+                transport_policy_ids=policy_ids,
+                batch_sequence=batch_sequence,
+            )
+            self.transport_shipments.append(shipment)
+            self.transport_replenishment_events += 1
+            details = {
+                "job_id": job.job_id,
+                "task_index": job.task_index,
+                "product_id": spare_type,
+                "quantity": moved,
+                "source_resource_id": source_node_id,
+                "resource_id": destination_node["id"],
+                "organization_path": list(path),
+                "transport_policy_ids": list(policy_ids),
+                "batch_sequence": batch_sequence,
+                "arrival_minute": arrival_minute,
+            }
+            self._event(
+                "organization_supply_selected",
+                f"selected {source_node_id} for {job.job_id}",
+                details,
+            )
+            self._event(
+                "organization_transport_dispatched",
+                f"dispatched {moved} {spare_type} from {source_node_id}",
+                details,
+            )
+            return None
+
+        reason = "no_vertical_path" if supplier_with_missing_path else "no_available_ancestor"
+        self._event(
+            "organization_dispatch_failed",
+            f"unable to dispatch {spare_type} for {job.job_id}",
+            {
+                "job_id": job.job_id,
+                "task_index": job.task_index,
+                "product_id": spare_type,
+                "resource_id": destination_node["id"],
+                "organization_node_id": destination_organization_id,
+                "reason": reason,
+            },
+        )
+        return f"organization_{reason}:{spare_type}"
 
     def _try_transport_replenishment(self, node: dict[str, Any], spare_type: str, needed: int) -> None:
         shortage = max(0, needed - int(node["inventory"].get(spare_type, 0)))
