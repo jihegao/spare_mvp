@@ -1217,7 +1217,7 @@ class AircraftSupportV1Model:
             raise ValueError("canonical organization_graph lateral_edges must be an array")
         seen_ids: set[str] = set()
         seen_endpoints: set[tuple[str, str]] = set()
-        enabled_adjacency: dict[str, list[str]] = {}
+        adjacency: dict[str, list[str]] = {}
         for index, raw_edge in enumerate(raw_edges):
             if not isinstance(raw_edge, dict):
                 raise ValueError("canonical organization_graph lateral edges must be objects")
@@ -1257,8 +1257,7 @@ class AircraftSupportV1Model:
                 "enabled": enabled,
             }
             self.organization_lateral_edges.append(edge)
-            if enabled:
-                enabled_adjacency.setdefault(source_id, []).append(destination_id)
+            adjacency.setdefault(source_id, []).append(destination_id)
 
         visiting: set[str] = set()
         visited: set[str] = set()
@@ -1269,12 +1268,12 @@ class AircraftSupportV1Model:
             if organization_id in visiting:
                 raise ValueError("canonical organization_graph lateral relation must be acyclic")
             visiting.add(organization_id)
-            for target_id in sorted(enabled_adjacency.get(organization_id, [])):
+            for target_id in sorted(adjacency.get(organization_id, [])):
                 visit(target_id)
             visiting.remove(organization_id)
             visited.add(organization_id)
 
-        for organization_id in sorted(enabled_adjacency):
+        for organization_id in sorted(adjacency):
             visit(organization_id)
         self.organization_lateral_edges.sort(
             key=lambda item: (item["priority"], item["id"], item["from_node_id"])
@@ -2504,6 +2503,8 @@ class AircraftSupportV1Model:
                 path[0],
                 resource_kind,
                 "",
+                supply_mode=candidate["supply_mode"],
+                relation_id=candidate["relation_id"],
             ):
                 continue
             available = int(source_node[capacity_key]) - int(source_node[in_use_key])
@@ -2838,26 +2839,85 @@ class AircraftSupportV1Model:
         source_organization_id: str,
         resource_kind: str,
         product_id: str,
+        *,
+        supply_mode: str = "local",
+        relation_id: str = "",
     ) -> bool:
         if not self.lateral_organization_enabled:
             return True
+        mismatch = self._organization_candidate_scope_mismatch(
+            job,
+            destination_node,
+            source_organization_id,
+            resource_kind,
+            product_id,
+        )
+        if mismatch is None:
+            return True
+        scope_dimension, requested_value, allowed_values = mismatch
+        source_resource_id = self.runtime_node_by_organization_id.get(source_organization_id, "")
+        details = {
+            "job_id": job.job_id,
+            "task_index": job.task_index,
+            "resource_kind": resource_kind,
+            "product_id": product_id,
+            "source_resource_id": source_resource_id,
+            "source_organization_node_id": source_organization_id,
+            "destination_resource_id": destination_node["id"],
+            "destination_organization_node_id": destination_node["organization_node_id"],
+            "supply_mode": supply_mode,
+            "relation_id": relation_id,
+            "reason": "scope_mismatch",
+            "scope_dimension": scope_dimension,
+            "requested_value": requested_value,
+            "allowed_values": list(allowed_values),
+        }
+        self._organization_event_once(
+            (
+                "organization_candidate_rejected",
+                job.job_id,
+                job.task_index,
+                resource_kind,
+                product_id,
+                source_organization_id,
+                destination_node["organization_node_id"],
+                supply_mode,
+                relation_id,
+                scope_dimension,
+                requested_value,
+                allowed_values,
+            ),
+            "organization_candidate_rejected",
+            f"rejected {supply_mode} organization candidate {source_organization_id} for scope mismatch",
+            details,
+        )
+        return False
+
+    def _organization_candidate_scope_mismatch(
+        self,
+        job: JobState,
+        destination_node: dict[str, Any],
+        source_organization_id: str,
+        resource_kind: str,
+        product_id: str,
+    ) -> tuple[str, str, tuple[str, ...]] | None:
         scope = self.organization_nodes[source_organization_id]["service_scope"]
         if scope["resource_types"] and resource_kind not in scope["resource_types"]:
-            return False
+            return "resource_types", resource_kind, scope["resource_types"]
         if resource_kind == "spare" and scope["product_ids"] and product_id not in scope["product_ids"]:
-            return False
+            return "product_ids", product_id, scope["product_ids"]
         aircraft = self._aircraft_by_tail(job.tail_number)
         aircraft_model = ""
         if aircraft is not None:
             aircraft_model = str(aircraft.model or aircraft.aircraft_type or "").strip()
         if scope["aircraft_models"] and aircraft_model not in scope["aircraft_models"]:
-            return False
+            return "aircraft_models", aircraft_model, scope["aircraft_models"]
         destination_airport = str(
             destination_node.get("airport_id") or destination_node.get("airport") or ""
         ).strip()
         if scope["airport_ids"] and destination_airport not in scope["airport_ids"]:
-            return False
-        return True
+            return "airport_ids", destination_airport, scope["airport_ids"]
+        return None
 
     def _organization_policy_for_edge(
         self,
@@ -2923,6 +2983,8 @@ class AircraftSupportV1Model:
                 path[0],
                 "spare",
                 spare_type,
+                supply_mode=candidate["supply_mode"],
+                relation_id=candidate["relation_id"],
             ):
                 continue
             available = int(source_node["inventory"].get(spare_type, 0))

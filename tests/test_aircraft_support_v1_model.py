@@ -2235,24 +2235,91 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
     def test_lateral_scope_mismatch_skips_relation_and_uses_vertical_parent(self) -> None:
         mismatches = {
-            "resource_types": ["personnel"],
-            "product_ids": ["other-spare"],
-            "aircraft_models": ["J-20"],
-            "airport_ids": ["airport-b"],
+            "resource_types": (["personnel"], "spare"),
+            "product_ids": (["other-spare"], "shared-spare"),
+            "aircraft_models": (["J-20"], "J-15"),
+            "airport_ids": (["airport-b"], "airport-a"),
         }
-        for field, value in mismatches.items():
+        for field, (allowed_values, requested_value) in mismatches.items():
             with self.subTest(field=field):
                 inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=1)
                 inputs["support_network"]["nodes"][0]["airport_id"] = "airport-a"
                 lateral_node = inputs["support_network"]["organization_graph"]["nodes"][-1]
-                lateral_node["service_scope"][field] = value
+                lateral_node["service_scope"][field] = allowed_values
                 model = AircraftSupportV1Model(inputs)
                 model._create_job(model.aircraft[0], model.activities[1], kind="repair")
 
                 model._start_waiting_jobs()
+                model._start_waiting_jobs()
 
                 self.assertEqual(model.transport_shipments[0].source_node_id, "stock")
                 self.assertEqual(model.transport_shipments[0].supply_mode, "vertical")
+                rejected = [
+                    event for event in model.event_log
+                    if event["event"] == "organization_candidate_rejected"
+                    and event["details"]["source_organization_node_id"] == "org-lateral"
+                ]
+                self.assertEqual(len(rejected), 1)
+                self.assertEqual(rejected[0]["details"], {
+                    "job_id": model.jobs[-1].job_id,
+                    "task_index": 0,
+                    "resource_kind": "spare",
+                    "product_id": "shared-spare",
+                    "source_resource_id": "lateral-stock",
+                    "source_organization_node_id": "org-lateral",
+                    "destination_resource_id": "deck",
+                    "destination_organization_node_id": "org-leaf",
+                    "supply_mode": "lateral",
+                    "relation_id": "lateral-to-leaf",
+                    "reason": "scope_mismatch",
+                    "scope_dimension": field,
+                    "requested_value": requested_value,
+                    "allowed_values": allowed_values,
+                })
+                event_names = [event["event"] for event in model.event_log]
+                self.assertLess(
+                    event_names.index("organization_candidate_rejected"),
+                    event_names.index("organization_supply_selected"),
+                )
+                self.assertLess(
+                    event_names.index("organization_supply_selected"),
+                    event_names.index("organization_transport_dispatched"),
+                )
+
+    def test_disabled_lateral_edge_still_participates_in_runtime_cycle_validation(self) -> None:
+        inputs = _lateral_organization_inputs()
+        inputs["support_network"]["organization_graph"]["lateral_edges"].append({
+            "id": "disabled-reverse",
+            "from_node_id": "org-leaf",
+            "to_node_id": "org-lateral",
+            "priority": 2,
+            "enabled": False,
+        })
+
+        with self.assertRaisesRegex(ValueError, "acyclic"):
+            AircraftSupportV1Model(inputs)
+
+    def test_scope_rejection_remains_auditable_when_no_candidate_can_fulfill(self) -> None:
+        inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=0)
+        lateral_node = inputs["support_network"]["organization_graph"]["nodes"][-1]
+        lateral_node["service_scope"]["product_ids"] = ["other-spare"]
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        model._start_waiting_jobs()
+
+        event_names = [event["event"] for event in model.event_log]
+        self.assertIn("organization_candidate_rejected", event_names)
+        self.assertIn("organization_dispatch_failed", event_names)
+        self.assertLess(
+            event_names.index("organization_candidate_rejected"),
+            event_names.index("organization_dispatch_failed"),
+        )
+        failure = next(
+            event for event in model.event_log
+            if event["event"] == "organization_dispatch_failed"
+        )
+        self.assertEqual(failure["details"]["reason"], "no_available_supplier")
 
     def test_lateral_mode_checks_local_scope_before_using_local_inventory(self) -> None:
         inputs = _lateral_organization_inputs(local_quantity=1, parent_quantity=0)

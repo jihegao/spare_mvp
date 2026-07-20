@@ -266,6 +266,34 @@ class SupportOrganizationContractTest(unittest.TestCase):
             result["provenance"]["runtime_deferred_fields"],
         )
 
+    def test_vertical_lateral_relation_endpoints_require_unique_runtime_node_mappings(self) -> None:
+        for mapping_count in (0, 2):
+            with self.subTest(mapping_count=mapping_count):
+                project = self._project()
+                project["supportOrganization"]["runtimeMode"] = "vertical_lateral"
+                support_b = next(
+                    node for node in project["supportNodes"]
+                    if node["organizationNodeId"] == "org-b"
+                )
+                if mapping_count == 0:
+                    project["supportNodes"].remove(support_b)
+                else:
+                    duplicate = copy.deepcopy(support_b)
+                    duplicate.update({"id": "support-b-copy", "name": "node B copy"})
+                    project["supportNodes"].append(duplicate)
+
+                result = self.adapter.compile_scenario_with_gate(project)
+
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(
+                    result["issues"][0]["code"],
+                    "unreachable_lateral_relation_endpoint",
+                )
+                self.assertEqual(
+                    result["issues"][0]["field_path"],
+                    "supportOrganization.relations[0].toOrganizationNodeId",
+                )
+
     def test_missing_lateral_enabled_defaults_true_but_invalid_value_blocks(self) -> None:
         # Arrange / Act: the historical relation omits enabled.
         defaulted = self.adapter.compile_scenario_with_gate(self._project())
@@ -449,6 +477,7 @@ class SupportOrganizationContractTest(unittest.TestCase):
                 "fromOrganizationNodeId": "org-b",
                 "toOrganizationNodeId": "org-a",
                 "priority": 4,
+                "enabled": False,
             }
         )
         cases.append((cycle, "supportOrganization.relations[1].toOrganizationNodeId"))

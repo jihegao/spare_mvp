@@ -483,6 +483,11 @@ def normalize_support_organization_contract(
 
     policies = _canonical_top_level_transport_policies(project, aliases, node_ids, nodes, changes)
     _canonicalize_support_node_ownership(project.get("supportNodes"), aliases, node_ids)
+    _validate_lateral_runtime_endpoints(
+        relations,
+        project.get("supportNodes"),
+        runtime_mode=str(runtime_mode or "vertical"),
+    )
     _canonicalize_support_resource_ownership(project.get("supportResources"), aliases, node_ids, nodes, changes)
 
     _strip_organization_internal_paths(canonical_tree)
@@ -866,6 +871,33 @@ def _canonicalize_support_node_ownership(value: Any, aliases: dict[str, str], no
         node["organizationNodeId"] = next(iter(resolved))
         node.pop("lateralSupportNodes", None)
         node.pop("transportPolicies", None)
+
+
+def _validate_lateral_runtime_endpoints(
+    relations: list[dict[str, Any]],
+    support_nodes: Any,
+    *,
+    runtime_mode: str,
+) -> None:
+    if runtime_mode != "vertical_lateral":
+        return
+    mapping_counts: dict[str, int] = {}
+    for node in support_nodes if isinstance(support_nodes, list) else []:
+        if not isinstance(node, dict):
+            continue
+        organization_id = _clean_text(node.get("organizationNodeId"))
+        if organization_id:
+            mapping_counts[organization_id] = mapping_counts.get(organization_id, 0) + 1
+    for index, relation in enumerate(relations):
+        for field in ("fromOrganizationNodeId", "toOrganizationNodeId"):
+            organization_id = relation[field]
+            count = mapping_counts.get(organization_id, 0)
+            if count != 1:
+                raise OrganizationContractError(
+                    "unreachable_lateral_relation_endpoint",
+                    f"supportOrganization.relations[{index}].{field}",
+                    f"vertical_lateral relation endpoint {organization_id} must map to exactly one runtime support node; found {count}",
+                )
 
 
 def _canonicalize_support_resource_ownership(
