@@ -390,6 +390,33 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
             ],
         )
 
+    def test_compiles_canonical_organization_ownership_and_transport_endpoints(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        project["supportNodes"].append(
+            {"id": "node-b", "name": "node B", "organizationNodeId": "org-b"}
+        )
+        project["supportNodes"][0]["organizationNodeId"] = "org-a"
+        project["supportResources"][0].pop("supportNodeName", None)
+        project["supportResources"][0]["organizationNodeId"] = "org-a"
+        project["transportPolicies"] = [
+            {
+                "id": "tp-canonical",
+                "fromOrganizationNodeId": "org-a",
+                "toOrganizationNodeId": "org-b",
+                "capacity": 2,
+                "priority": 1,
+                "transportTimeHours": 3,
+            }
+        ]
+
+        inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
+        nodes = {node["name"]: node for node in inputs["support_network"]["nodes"]}
+
+        self.assertEqual(nodes["node A"]["personnel_capacity"], 2)
+        self.assertEqual(nodes["node B"]["transport_policies"][0]["from"], "node A")
+        self.assertEqual(nodes["node B"]["transport_policies"][0]["to"], "node B")
+
     def test_compiles_project_json_and_runs_aircraft_support_v1_without_simulation_adapter(self) -> None:
         skill = _load_skill_module()
         project = self._project()

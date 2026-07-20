@@ -68,6 +68,7 @@ def minimal_clean_project() -> dict[str, Any]:
             {
                 "id": "node-a",
                 "name": "node A",
+                "organizationNodeId": "node-a",
                 "personnelCapacity": 1,
                 "equipmentCapacity": 1,
                 "inventory": {"product-whole-aircraft": 2},
@@ -76,12 +77,27 @@ def minimal_clean_project() -> dict[str, Any]:
         "supportResources": [
             {
                 "id": "node-a-personnel",
+                "organizationNodeId": "node-a",
                 "supportNodeName": "node A",
                 "type": "personnel",
                 "name": "crew",
                 "quantity": 1,
             }
         ],
+        "supportOrganization": {
+            "tree": {
+                "id": "node-a",
+                "name": "node A",
+                "children": [],
+                "serviceScope": {
+                    "airportIds": [],
+                    "aircraftModels": [],
+                    "productIds": [],
+                    "resourceTypes": [],
+                },
+            },
+            "relations": [],
+        },
         "transportPolicies": [],
         "supportActivities": [
             {

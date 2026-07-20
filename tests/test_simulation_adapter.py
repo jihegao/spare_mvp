@@ -616,7 +616,11 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("components[].failureDistribution", provenance["consumed_fields"])
         self.assertIn("components[].productId", provenance["consumed_fields"])
         self.assertNotIn("components[].spareType", provenance["consumed_fields"])
-        self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
+        self.assertIn("supportOrganization.tree[].id", provenance["consumed_fields"])
+        self.assertIn(
+            "simulation_inputs.support_network.organization_graph",
+            provenance["runtime_deferred_fields"],
+        )
         self.assertIn("supportActivityJobs[]", provenance["consumed_fields"])
         self.assertIn("supportActivities[].activityCodes", provenance["consumed_fields"])
         self.assertIn("supportActivities[].predecessors", provenance["consumed_fields"])
@@ -1345,19 +1349,32 @@ class SimulationAdapterTest(unittest.TestCase):
     def test_compile_aircraft_support_v1_aggregates_slim_support_resources_and_transport_policies(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportNodes"] = [
-            {"id": "support-node-1", "name": "基地"},
-            {"id": "support-node-2", "name": "基层"},
+            {"id": "support-node-1", "name": "基地", "organizationNodeId": "support-node-1"},
+            {"id": "support-node-2", "name": "基层", "organizationNodeId": "support-node-2"},
         ]
+        project["supportOrganization"] = {
+            "tree": {
+                "id": "support-root",
+                "name": "保障组织",
+                "children": [
+                    {"id": "support-node-1", "name": "基地", "children": []},
+                    {"id": "support-node-2", "name": "基层", "children": []},
+                ],
+            },
+            "relations": [],
+        }
         project["supportResources"] = [
-            {"id": "personnel-1", "supportNodeName": "基地", "type": "personnel", "name": "航电人员", "quantity": 5},
-            {"id": "equipment-1", "supportNodeName": "基地", "type": "equipment", "name": "电源车", "quantity": 3},
-            {"id": "spare-1", "supportNodeName": "基地", "type": "spare", "name": "航电模块", "productId": "product-j15-avionics", "quantity": 6},
-            {"id": "personnel-2", "supportNodeName": "基层", "type": "personnel", "name": "库房人员", "quantity": 2},
-            {"id": "equipment-2", "supportNodeName": "基层", "type": "equipment", "name": "转运车", "quantity": 1},
-            {"id": "spare-2", "supportNodeName": "基层", "type": "spare", "name": "航电模块", "productId": "product-j15-avionics", "quantity": 9},
+            {"id": "personnel-1", "supportNodeName": "基地", "organizationNodeId": "support-node-1", "type": "personnel", "name": "航电人员", "quantity": 5},
+            {"id": "equipment-1", "supportNodeName": "基地", "organizationNodeId": "support-node-1", "type": "equipment", "name": "电源车", "quantity": 3},
+            {"id": "spare-1", "supportNodeName": "基地", "organizationNodeId": "support-node-1", "type": "spare", "name": "航电模块", "productId": "product-j15-avionics", "quantity": 6},
+            {"id": "personnel-2", "supportNodeName": "基层", "organizationNodeId": "support-node-2", "type": "personnel", "name": "库房人员", "quantity": 2},
+            {"id": "equipment-2", "supportNodeName": "基层", "organizationNodeId": "support-node-2", "type": "equipment", "name": "转运车", "quantity": 1},
+            {"id": "spare-2", "supportNodeName": "基层", "organizationNodeId": "support-node-2", "type": "spare", "name": "航电模块", "productId": "product-j15-avionics", "quantity": 9},
         ]
         project["transportPolicies"] = [{
             "id": "transport-1",
+            "fromOrganizationNodeId": "support-node-2",
+            "toOrganizationNodeId": "support-node-1",
             "fromSupportNodeName": "基层",
             "toSupportNodeName": "基地",
             "productId": "product-j15-avionics",
@@ -1387,9 +1404,8 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(nodes["基地"]["transport_policies"][0]["to"], "基地")
         self.assertEqual(nodes["基地"]["transport_policies"][0]["product_id"], avionics_product_id)
 
-    def test_aircraft_support_v1_treats_support_organization_as_governance_only(self) -> None:
+    def test_aircraft_support_v1_compiles_organization_graph_as_runtime_deferred(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
-        project["supportOrganization"] = {"tree": [{"id": "carrier-wing-support"}]}
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
         provenance = scenario["compiled_from"]["mapping_provenance"]
 
@@ -1397,11 +1413,15 @@ class SimulationAdapterTest(unittest.TestCase):
             bundle = self.adapter.run_scenario(
                 scenario,
                 output_dir=Path(tmp),
-                run_id="run-aircraft-v1-governance-only",
+                run_id="run-aircraft-v1-organization-deferred",
             )
 
         self.assertEqual(provenance["unsupported_fields"], [])
-        self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
+        self.assertIn("supportOrganization.tree[].id", provenance["consumed_fields"])
+        self.assertIn(
+            "simulation_inputs.support_network.organization_graph",
+            provenance["runtime_deferred_fields"],
+        )
         self.assertEqual(bundle["run"]["status"], "succeeded")
 
     def test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts(self) -> None:

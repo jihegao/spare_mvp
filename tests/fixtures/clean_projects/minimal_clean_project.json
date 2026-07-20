@@ -1,109 +1,80 @@
 {
-  "schema_version": "project-v0",
-  "project_id": "project-clean-aircraft-support-v1",
-  "project_version": "project-v0.1",
-  "scenarioId": "scenario-clean-aircraft-support-v1",
   "activeModule": "sparePlanning",
   "airports": [
     "A"
   ],
-  "missionProfile": {
-    "name": "clean mission",
-    "durationHours": 1,
-    "compositeTasks": [],
-    "periodicTasks": []
-  },
   "basicMissions": [
     {
-      "id": "basic-small",
-      "name": "small sortie",
-      "missionId": "basic-small",
-      "taskDurationMinutes": 30,
       "equipmentType": "J-15",
+      "id": "basic-small",
+      "missionId": "basic-small",
       "missionPhases": [
         {
+          "durationMinutes": 30,
           "id": "phase-sortie",
           "name": "sortie",
-          "sequence": 1,
-          "durationMinutes": 30
+          "sequence": 1
         }
-      ]
+      ],
+      "name": "small sortie",
+      "taskDurationMinutes": 30
     }
   ],
   "combatUnit": {
     "members": [
       {
         "aircraftNo": "J15-001",
+        "airport": "A",
         "model": "J-15",
-        "status": "ready",
-        "airport": "A"
+        "status": "ready"
       }
     ]
   },
-  "products": [
-    {
-      "id": "product-whole-aircraft",
-      "name": "whole aircraft",
-      "model": "whole-aircraft",
-      "kind": "whole"
-    }
-  ],
   "components": [
     {
-      "id": "whole-aircraft",
-      "name": "whole aircraft",
-      "productId": "product-whole-aircraft",
       "aircraftModel": "J-15",
-      "productType": "whole",
-      "quantity": 1,
       "failureDistribution": {
         "distributionType": "指数分布",
         "parameters": "lambda=0.01"
       },
+      "id": "whole-aircraft",
       "kOutOfN": {
         "k": 1,
         "n": 1
-      }
-    }
-  ],
-  "supportNodes": [
-    {
-      "id": "node-a",
-      "name": "node A",
-      "personnelCapacity": 1,
-      "equipmentCapacity": 1,
-      "inventory": {
-        "product-whole-aircraft": 2
-      }
-    }
-  ],
-  "supportResources": [
-    {
-      "id": "node-a-personnel",
-      "supportNodeName": "node A",
-      "type": "personnel",
-      "name": "crew",
+      },
+      "name": "whole aircraft",
+      "productId": "product-whole-aircraft",
+      "productType": "whole",
       "quantity": 1
     }
   ],
-  "transportPolicies": [
+  "missionProfile": {
+    "compositeTasks": [],
+    "durationHours": 1,
+    "name": "clean mission",
+    "periodicTasks": []
+  },
+  "products": [
     {
-      "id": "tp-1",
-      "fromSupportNodeName": "node A",
-      "toSupportNodeName": "node A",
-      "productId": "product-whole-aircraft",
-      "capacity": 1
+      "id": "product-whole-aircraft",
+      "kind": "whole",
+      "model": "whole-aircraft",
+      "name": "whole aircraft"
     }
   ],
+  "project_id": "project-clean-aircraft-support-v1",
+  "project_version": "project-v0.1",
+  "scenarioId": "scenario-clean-aircraft-support-v1",
+  "schema_version": "project-v0",
   "supportActivities": [
     {
-      "id": "corrective",
-      "activityType": "corrective",
-      "planType": "修复性维修方案",
-      "durationHours": 1,
       "activityCodes": [
         "job-1"
       ],
+      "activityType": "corrective",
+      "durationHours": 1,
+      "id": "corrective",
+      "planType": "修复性维修方案",
       "predecessors": {
         "job-1": []
       }
@@ -113,5 +84,42 @@
     {
       "activityCode": "job-1"
     }
-  ]
+  ],
+  "supportNodes": [
+    {
+      "equipmentCapacity": 1,
+      "id": "node-a",
+      "inventory": {
+        "product-whole-aircraft": 2
+      },
+      "name": "node A",
+      "organizationNodeId": "node-a",
+      "personnelCapacity": 1
+    }
+  ],
+  "supportOrganization": {
+    "relations": [],
+    "tree": {
+      "children": [],
+      "id": "node-a",
+      "name": "node A",
+      "serviceScope": {
+        "aircraftModels": [],
+        "airportIds": [],
+        "productIds": [],
+        "resourceTypes": []
+      }
+    }
+  },
+  "supportResources": [
+    {
+      "id": "node-a-personnel",
+      "name": "crew",
+      "organizationNodeId": "node-a",
+      "quantity": 1,
+      "supportNodeName": "node A",
+      "type": "personnel"
+    }
+  ],
+  "transportPolicies": []
 }

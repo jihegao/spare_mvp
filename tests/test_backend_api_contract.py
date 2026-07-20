@@ -3488,7 +3488,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(submitted["phase"], "completed")
         self.assertEqual(submitted["model_family"], "aircraft_support_v1")
         self.assertEqual(provenance["unsupported_fields"], [])
-        self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
+        self.assertIn("supportOrganization.tree[].id", provenance["consumed_fields"])
+        self.assertIn(
+            "simulation_inputs.support_network.organization_graph",
+            provenance["runtime_deferred_fields"],
+        )
         self.assertEqual(
             set(report_payload["m9_7_4_behavior_scope"]["fail_closed_fields"]),
             {
