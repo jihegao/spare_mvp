@@ -252,6 +252,7 @@ _ORGANIZATION_NODE_FIELDS = {"id", "name", "description", "serviceScope", "child
 _ORGANIZATION_RELATION_FIELDS = {
     "id",
     "type",
+    "enabled",
     "fromOrganizationNodeId",
     "toOrganizationNodeId",
     "priority",
@@ -410,11 +411,11 @@ def normalize_support_organization_contract(
             "invalid_organization_contract", "supportOrganization", "expected object; supportOrganization must be an object"
         )
     runtime_mode = organization.get("runtimeMode")
-    if runtime_mode not in (None, "legacy", "vertical"):
+    if runtime_mode not in (None, "legacy", "vertical", "vertical_lateral"):
         raise OrganizationContractError(
             "invalid_organization_runtime_mode",
             "supportOrganization.runtimeMode",
-            "runtimeMode must be either legacy or vertical",
+            "runtimeMode must be legacy, vertical, or vertical_lateral",
         )
 
     raw_tree = organization.get("tree")
@@ -470,11 +471,14 @@ def normalize_support_organization_contract(
     _validate_organization_service_scope(nodes, project)
     aliases = _organization_aliases(nodes, project.get("supportNodes"), name_ids)
 
-    relations = _canonical_lateral_relations(organization.get("relations"), aliases, node_ids)
+    relations = _canonical_lateral_relations(
+        organization.get("relations"), aliases, node_ids, changes
+    )
     if not relations:
         relations = _legacy_lateral_relations(project.get("supportNodes"), aliases, node_ids)
         if relations:
             changes.append("supportNodes[].lateralSupportNodes->supportOrganization.relations[]")
+    _validate_lateral_relation_siblings(relations, canonical_tree)
     _validate_lateral_relation_dag(relations)
 
     policies = _canonical_top_level_transport_policies(project, aliases, node_ids, nodes, changes)
@@ -694,7 +698,12 @@ def _resolve_organization_ref(
     )
 
 
-def _canonical_lateral_relations(value: Any, aliases: dict[str, str], node_ids: set[str]) -> list[dict[str, Any]]:
+def _canonical_lateral_relations(
+    value: Any,
+    aliases: dict[str, str],
+    node_ids: set[str],
+    changes: list[str],
+) -> list[dict[str, Any]]:
     if value in (None, []):
         return []
     if not isinstance(value, list):
@@ -727,9 +736,19 @@ def _canonical_lateral_relations(value: Any, aliases: dict[str, str], node_ids: 
         target = _resolve_organization_ref(
             raw.get("toOrganizationNodeId"), aliases, node_ids, f"{path}.toOrganizationNodeId", "missing_organization_relation_endpoint"
         )
+        enabled = raw.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise OrganizationContractError(
+                "invalid_organization_relation_enabled",
+                f"{path}.enabled",
+                "lateral relation enabled must be a boolean",
+            )
+        if "enabled" not in raw:
+            changes.append(f"{path}.enabled=true")
         result.append({
             "id": relation_id,
             "type": "lateral",
+            "enabled": enabled,
             "fromOrganizationNodeId": source,
             "toOrganizationNodeId": target,
             "priority": _positive_int(raw.get("priority"), 1),
@@ -760,6 +779,7 @@ def _legacy_lateral_relations(value: Any, aliases: dict[str, str], node_ids: set
             result.append({
                 "id": f"migrated-lateral-{source}-{target}",
                 "type": "lateral",
+                "enabled": True,
                 "fromOrganizationNodeId": source,
                 "toOrganizationNodeId": target,
                 "priority": relation_index + 1,
@@ -800,6 +820,31 @@ def _validate_lateral_relation_dag(relations: list[dict[str, Any]]) -> None:
 
     for node_id in sorted(graph):
         visit(node_id)
+
+
+def _validate_lateral_relation_siblings(
+    relations: list[dict[str, Any]],
+    tree: dict[str, Any],
+) -> None:
+    parent_by_id: dict[str, str | None] = {}
+
+    def visit(node: dict[str, Any], parent_id: str | None) -> None:
+        node_id = str(node.get("id") or "")
+        parent_by_id[node_id] = parent_id
+        for child in node.get("children", []):
+            if isinstance(child, dict):
+                visit(child, node_id)
+
+    visit(tree, None)
+    for index, relation in enumerate(relations):
+        source = relation["fromOrganizationNodeId"]
+        target = relation["toOrganizationNodeId"]
+        if parent_by_id.get(source) != parent_by_id.get(target):
+            raise OrganizationContractError(
+                "non_sibling_lateral_relation",
+                f"supportOrganization.relations[{index}].toOrganizationNodeId",
+                "lateral relation endpoints must be sibling organizations with the same parent",
+            )
 
 
 def _canonicalize_support_node_ownership(value: Any, aliases: dict[str, str], node_ids: set[str]) -> None:
@@ -2158,9 +2203,9 @@ def _validate_clean_support_organization(value: Any, target: str) -> None:
         raise ValueError(
             f"clean Project JSON failed {target} schema at supportOrganization: runtimeMode, tree and relations are required"
         )
-    if value["runtimeMode"] not in {"legacy", "vertical"}:
+    if value["runtimeMode"] not in {"legacy", "vertical", "vertical_lateral"}:
         raise ValueError(
-            f"clean Project JSON failed {target} schema at supportOrganization.runtimeMode: expected legacy or vertical"
+            f"clean Project JSON failed {target} schema at supportOrganization.runtimeMode: expected legacy, vertical, or vertical_lateral"
         )
     tree = value["tree"]
     if tree is not None:
@@ -2180,6 +2225,8 @@ def _validate_clean_support_organization(value: Any, target: str) -> None:
         if relation["type"] != "lateral":
             raise ValueError(f"clean Project JSON failed {target} schema at {path}.type: expected lateral")
         _require_clean_integer(relation, "priority", f"{path}.priority", target, minimum=1)
+        if not isinstance(relation.get("enabled"), bool):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.enabled: expected boolean")
 
 
 def _validate_clean_support_organization_node(value: Any, path: str, target: str) -> None:

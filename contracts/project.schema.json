@@ -39,7 +39,7 @@
     "supportOrganization": {
       "type": "object",
       "properties": {
-        "runtimeMode": { "enum": ["legacy", "vertical"] }
+        "runtimeMode": { "enum": ["legacy", "vertical", "vertical_lateral"] }
       }
     },
     "created_at": { "type": "string" },

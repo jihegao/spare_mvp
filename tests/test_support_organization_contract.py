@@ -204,12 +204,14 @@ class SupportOrganizationContractTest(unittest.TestCase):
             [
                 {
                     "id": "lateral-a-b",
+                    "enabled": True,
                     "from_node_id": "org-a",
                     "to_node_id": "org-b",
                     "priority": 2,
                 }
             ],
         )
+
         self.assertEqual(
             graph["resource_ownership"],
             [
@@ -243,6 +245,76 @@ class SupportOrganizationContractTest(unittest.TestCase):
                     "transport_time_hours": 1.5,
                 }
             ],
+        )
+
+    def test_vertical_lateral_mode_consumes_enabled_edges_and_removes_runtime_deferment(self) -> None:
+        # Arrange.
+        project = self._project()
+        project["supportOrganization"]["runtimeMode"] = "vertical_lateral"
+        project["supportOrganization"]["relations"][0]["enabled"] = False
+
+        # Act.
+        result = self.adapter.compile_scenario_with_gate(project)
+
+        # Assert.
+        self.assertEqual(result["status"], "compiled")
+        graph = result["scenario"]["simulation_inputs"]["support_network"]["organization_graph"]
+        self.assertEqual(graph["runtime_mode"], "vertical_lateral")
+        self.assertEqual(graph["lateral_edges"][0]["enabled"], False)
+        self.assertNotIn(
+            "simulation_inputs.support_network.organization_graph.lateral_edges",
+            result["provenance"]["runtime_deferred_fields"],
+        )
+
+    def test_missing_lateral_enabled_defaults_true_but_invalid_value_blocks(self) -> None:
+        # Arrange / Act: the historical relation omits enabled.
+        defaulted = self.adapter.compile_scenario_with_gate(self._project())
+
+        # Assert.
+        self.assertEqual(defaulted["status"], "compiled")
+        self.assertTrue(
+            defaulted["scenario"]["simulation_inputs"]["support_network"]["organization_graph"]
+            ["lateral_edges"][0]["enabled"]
+        )
+        self.assertIn(
+            "supportOrganization.relations[0].enabled=true",
+            defaulted["provenance"]["defaults_applied"],
+        )
+
+        # Arrange / Act: a non-boolean cannot silently enable or disable an edge.
+        invalid = self._project()
+        invalid["supportOrganization"]["relations"][0]["enabled"] = "false"
+        blocked = self.adapter.compile_scenario_with_gate(invalid)
+
+        # Assert.
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertEqual(blocked["issues"][0]["field_path"], "supportOrganization.relations[0].enabled")
+
+    def test_lateral_relation_between_different_levels_fails_closed(self) -> None:
+        # Arrange.
+        project = self._project()
+        project["supportOrganization"]["tree"]["children"][0]["children"] = [{
+            "id": "org-a-child",
+            "name": "甲保障站下级",
+            "serviceScope": {
+                "airportIds": [],
+                "aircraftModels": [],
+                "productIds": [],
+                "resourceTypes": [],
+            },
+            "children": [],
+        }]
+        project["supportOrganization"]["relations"][0]["toOrganizationNodeId"] = "org-a-child"
+
+        # Act.
+        result = self.adapter.compile_scenario_with_gate(project)
+
+        # Assert.
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["issues"][0]["code"], "non_sibling_lateral_relation")
+        self.assertEqual(
+            result["issues"][0]["field_path"],
+            "supportOrganization.relations[0].toOrganizationNodeId",
         )
 
     def test_empty_support_resource_ids_block_in_either_input_order(self) -> None:

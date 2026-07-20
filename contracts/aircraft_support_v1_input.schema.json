@@ -166,7 +166,7 @@
           "additionalProperties": false,
           "required": ["runtime_mode", "nodes", "parent_edges", "lateral_edges", "resource_ownership", "transport_policies"],
           "properties": {
-            "runtime_mode": { "enum": ["legacy", "vertical"] },
+            "runtime_mode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
             "nodes": { "type": "array", "items": { "$ref": "#/$defs/organizationGraphNode" } },
             "parent_edges": { "type": "array", "items": { "$ref": "#/$defs/organizationParentEdge" } },
             "lateral_edges": { "type": "array", "items": { "$ref": "#/$defs/organizationLateralEdge" } },
@@ -335,9 +335,9 @@
     },
     "organizationLateralEdge": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "from_node_id", "to_node_id", "priority"],
+      "required": ["id", "enabled", "from_node_id", "to_node_id", "priority"],
       "properties": {
-        "id": { "type": "string" }, "from_node_id": { "type": "string" }, "to_node_id": { "type": "string" },
+        "id": { "type": "string" }, "enabled": { "type": "boolean" }, "from_node_id": { "type": "string" }, "to_node_id": { "type": "string" },
         "priority": { "type": "integer", "minimum": 1 }
       }
     },
