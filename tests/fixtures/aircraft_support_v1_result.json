@@ -5,6 +5,29 @@
   "run_id": "run-aircraft-support-contract-001",
   "scenario_id": "scenario-aircraft-support-contract-001",
   "scenario_version": "scenario-v0.1",
+  "lifecycle_trace": [
+    {
+      "tail_number": "J15-001",
+      "initial_life_state": {
+        "calendar_days": 0,
+        "flight_hours": 0,
+        "takeoff_landing_cycles": 0
+      },
+      "preventive_thresholds": {
+        "calendar_days": 0,
+        "flight_hours": 0,
+        "takeoff_landing_cycles": 0
+      },
+      "initial_due_dimensions": [],
+      "due_dimensions": [],
+      "current_life_state": {
+        "calendar_days": 0,
+        "flight_hours": 0,
+        "takeoff_landing_cycles": 0
+      },
+      "preventive_due": false
+    }
+  ],
   "metrics": {
     "sortie_completion_rate": 1,
     "available_aircraft": 1,

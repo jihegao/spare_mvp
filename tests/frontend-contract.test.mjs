@@ -1800,9 +1800,9 @@ test("combat unit page follows ship front basic unit modeling structure", async 
   assert.match(combatUnitSource, /<th rowspan="2" class="combat-unit-select-col"><\/th>/);
   assert.match(combatUnitSource, /<th rowspan="2">所属机场<\/th>/);
   assert.match(combatUnitSource, /class="combat-unit-prelife-heading">寿命初始状态<\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-column">日历寿命（天）<\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-column">剩余飞行小时<\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-column">剩余起落次数<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">已用日历天数<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">累计飞行小时<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">累计起落次数<\/th>/);
   assert.match(appSource, /飞机编号/);
   assert.match(combatUnitSource, /combatUnitMemberInput\(index, "aircraftNo", member\.aircraftNo\)/);
   assert.match(combatUnitSource, /combatUnitMemberInput\(index, "airport", combatUnitMemberAirport\(member\)\)/);
@@ -1817,7 +1817,14 @@ test("combat unit page follows ship front basic unit modeling structure", async 
   assert.match(combatUnitSource, /combatUnitMemberCalendarTime\(member\)/);
   assert.match(combatUnitSource, /combatUnitMemberFlightHours\(member\)/);
   assert.match(combatUnitSource, /combatUnitMemberTakeoffLandingCount\(member\)/);
-  assert.match(appSource, /function updateCombatUnitMemberField\(index, fieldName, value\)/);
+  assert.match(combatUnitSource, /step: "any"/);
+  assert.match(combatUnitSource, /function updateCombatUnitMemberField\(index, fieldName, value, input = null\)/);
+  assert.match(combatUnitSource, /Number\.isFinite\(numericValue\)/);
+  assert.match(combatUnitSource, /Number\.isInteger\(numericValue\)/);
+  assert.match(combatUnitSource, /return false/);
+  assert.doesNotMatch(combatUnitSource, /member\.preLifeRequirementHours\s*=/);
+  assert.doesNotMatch(combatUnitSource, /member\.remainingLifeHours\s*=/);
+  assert.doesNotMatch(combatUnitSource, /member\.takeoffLandingCount\s*=/);
   assert.match(appSource, /const combatUnitFieldSelect = event\.target\.closest\("\[data-combat-unit-field\]"\)/);
   assert.match(appSource, /function addCombatUnitMember\(\)/);
   assert.match(appSource, /function deleteSelectedCombatUnitMember\(\)/);

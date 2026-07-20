@@ -238,7 +238,10 @@
               "status": { "type": "string" },
               "airport": { "type": "string" },
               "airportId": { "type": "string" },
-              "baseAirportId": { "type": "string" }
+              "baseAirportId": { "type": "string" },
+              "preLifeCalendarDays": { "type": "integer", "minimum": 0 },
+              "preLifeFlightHours": { "type": "number", "minimum": 0 },
+              "preLifeTakeoffLandingCount": { "type": "integer", "minimum": 0 }
             }
           }
         }

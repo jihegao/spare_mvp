@@ -144,7 +144,16 @@ _COMBAT_UNIT_MEMBER_FIELDS = {
     "airport",
     "airportId",
     "baseAirportId",
+    "preLifeCalendarDays",
+    "preLifeFlightHours",
+    "preLifeTakeoffLandingCount",
 }
+
+_AIRCRAFT_PRE_LIFE_FIELDS = (
+    ("preLifeCalendarDays", None, "integer"),
+    ("preLifeFlightHours", None, "number"),
+    ("preLifeTakeoffLandingCount", None, "integer"),
+)
 _PRODUCT_FIELDS = {"id", "name", "model", "kind"}
 _COMPONENT_FIELDS = {
     "id",
@@ -297,6 +306,7 @@ class ProjectJsonExporter:
 
     def export(self, project_json: dict[str, Any]) -> dict[str, Any]:
         project = normalize_project_products(strip_project_sweep(project_json))
+        project, _pre_life_changes = normalize_aircraft_pre_life(project)
         _strip_pollution_keys(project)
         _prune_clean_project(project)
         _drop_none_values(project)
@@ -963,8 +973,23 @@ def _validate_clean_combat_unit(value: dict[str, Any], target: str, path: str = 
         extra_member = sorted(field for field in member if field not in _COMBAT_UNIT_MEMBER_FIELDS)
         if extra_member:
             raise ValueError(f"clean Project JSON failed {target} schema at {member_path}: unexpected field {extra_member[0]}")
-        for field in _COMBAT_UNIT_MEMBER_FIELDS:
+        for field in _COMBAT_UNIT_MEMBER_FIELDS - {
+            "preLifeCalendarDays", "preLifeFlightHours", "preLifeTakeoffLandingCount"
+        }:
             _validate_optional_clean_string(member, field, f"{member_path}.{field}", target)
+        _validate_optional_clean_integer(
+            member, "preLifeCalendarDays", f"{member_path}.preLifeCalendarDays", target, minimum=0
+        )
+        _validate_optional_clean_number(
+            member, "preLifeFlightHours", f"{member_path}.preLifeFlightHours", target, minimum=0
+        )
+        _validate_optional_clean_integer(
+            member,
+            "preLifeTakeoffLandingCount",
+            f"{member_path}.preLifeTakeoffLandingCount",
+            target,
+            minimum=0,
+        )
 
 
 def _validate_clean_components(components: list[Any], target: str) -> None:
@@ -2581,6 +2606,55 @@ def normalize_support_activity_maintenance_plans(project: dict[str, Any]) -> tup
     """Return a canonical copy for direct compiler paths plus migration provenance."""
     normalized = deepcopy(project)
     return normalized, _normalize_support_activity_maintenance_methods(normalized)
+
+
+def normalize_aircraft_pre_life(project: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Materialize canonical pre-life counters before clean-Project pruning.
+
+    The counters are cumulative consumption since the last preventive action.
+    Legacy required-life, remaining-life, and total-cycle fields are not
+    convertible to consumption since the last preventive action.
+    """
+    normalized = deepcopy(project)
+    changes: list[str] = []
+    containers: list[tuple[str, Any]] = [("combatUnit", normalized.get("combatUnit"))]
+    mission_profile = normalized.get("missionProfile")
+    if isinstance(mission_profile, dict):
+        containers.append(("missionProfile.combatUnit", mission_profile.get("combatUnit")))
+    for unit_path, combat_unit in containers:
+        if not isinstance(combat_unit, dict) or not isinstance(combat_unit.get("members"), list):
+            continue
+        for member_index, member in enumerate(combat_unit["members"]):
+            if not isinstance(member, dict):
+                continue
+            member_path = f"{unit_path}.members[{member_index}]"
+            for canonical, legacy, kind in _AIRCRAFT_PRE_LIFE_FIELDS:
+                canonical_present = canonical in member
+                legacy_present = legacy is not None and legacy in member
+                if canonical_present and legacy_present and member[canonical] != member[legacy]:
+                    raise ValueError(
+                        f"clean Project JSON failed aircraft_support_v1 schema at {member_path}.{legacy}: "
+                        f"legacy value conflicts with {canonical}"
+                    )
+                if not canonical_present:
+                    if legacy_present:
+                        member[canonical] = member[legacy]
+                        changes.append(f"{member_path}.{canonical}=legacy:{legacy}")
+                    else:
+                        member[canonical] = 0
+                        changes.append(f"{member_path}.{canonical}=historicalDefault:0")
+                value = member[canonical]
+                is_number = isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+                is_valid = is_number and value >= 0 and (kind != "integer" or isinstance(value, int))
+                if not is_valid:
+                    expected = "non-negative integer" if kind == "integer" else "non-negative finite number"
+                    raise ValueError(
+                        f"clean Project JSON failed aircraft_support_v1 schema at {member_path}.{canonical}: "
+                        f"expected {expected}"
+                    )
+                if legacy is not None:
+                    member.pop(legacy, None)
+    return normalized, changes
 
 
 def _validate_support_activity_maintenance_methods(activity: dict[str, Any], path: str, target: str) -> None:

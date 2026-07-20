@@ -59,10 +59,28 @@
         {
           "tail_number": "J15-001",
           "aircraft_type": "J-15",
-          "model": "J-15",
-          "initial_state": "available",
-          "airport": "A",
-          "airport_id": "airport-a"
+        "model": "J-15",
+        "initial_state": "available",
+        "source_initial_state": "available",
+        "airport": "A",
+        "airport_id": "airport-a",
+        "initial_life_state": {
+          "calendar_days": 0,
+          "flight_hours": 0,
+          "takeoff_landing_cycles": 0
+        },
+        "preventive_thresholds": {
+          "calendar_days": 0,
+          "flight_hours": 0,
+          "takeoff_landing_cycles": 0
+        },
+        "preventive_threshold_sources": {
+          "calendar_days": [],
+          "flight_hours": [],
+          "takeoff_landing_cycles": []
+        },
+        "initial_due_dimensions": [],
+        "initial_preventive_due": false
         }
       ]
     },

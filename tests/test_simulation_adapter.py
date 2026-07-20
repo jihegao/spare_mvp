@@ -128,6 +128,132 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(result["project_schema_version"], "project-v0")
         self.assertEqual(result["errors"], [])
 
+    def _project_with_pre_life(self) -> dict:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        project["combatUnit"]["members"][0].update({
+            "preLifeCalendarDays": 1,
+            "preLifeFlightHours": 2.5,
+            "preLifeTakeoffLandingCount": 3,
+        })
+        project["supportActivities"].append({
+            "id": "preventive",
+            "activityName": "preventive",
+            "activityType": "preventive",
+            "planType": "预防性维修方案",
+            "aircraftModel": "J-15",
+            "equipmentId": "whole-aircraft",
+            "calendarDayInterval": 2,
+            "runHourInterval": 4,
+            "takeoffLandingInterval": 6,
+            "activityCodes": ["job-1"],
+            "predecessors": {"job-1": []},
+        })
+        return project
+
+    def test_compile_maps_aircraft_pre_life_and_provenance_to_initial_life_state(self) -> None:
+        scenario = self.adapter.compile_scenario(self._project_with_pre_life())
+
+        asset = scenario["simulation_inputs"]["aircraft"]["assets"][0]
+        self.assertEqual(asset["initial_life_state"], {
+            "calendar_days": 1,
+            "flight_hours": 2.5,
+            "takeoff_landing_cycles": 3,
+        })
+        provenance = scenario["compiled_from"]["mapping_provenance"]
+        self.assertIn("combatUnit.members[].preLifeFlightHours", provenance["consumed_fields"])
+        self.assertIn("simulation_inputs.aircraft.assets[].initial_life_state", provenance["derived_fields"])
+
+    def test_compile_and_model_share_minute_zero_preventive_due_and_initial_ready(self) -> None:
+        project = self._project_with_pre_life()
+        project["combatUnit"]["members"][0].update({
+            "preLifeCalendarDays": 2,
+            "preLifeFlightHours": 4,
+            "preLifeTakeoffLandingCount": 6,
+        })
+
+        scenario = self.adapter.compile_scenario(project)
+        inputs = scenario["simulation_inputs"]
+        asset = inputs["aircraft"]["assets"][0]
+
+        self.assertEqual(inputs["aircraft"]["initial_ready"], 0)
+        self.assertEqual(asset["source_initial_state"], "available")
+        self.assertEqual(asset["initial_state"], "maintenance")
+        self.assertTrue(asset["initial_preventive_due"])
+        self.assertEqual(
+            asset["initial_due_dimensions"],
+            ["calendar_days", "flight_hours", "takeoff_landing_cycles"],
+        )
+        model = AircraftSupportV1Model(inputs)
+        preventive_jobs = [job for job in model.jobs if job.kind == "preventive"]
+        self.assertEqual(len(preventive_jobs), 1)
+        self.assertEqual(preventive_jobs[0].due_dimensions, asset["initial_due_dimensions"])
+
+    def test_compile_merges_unique_threshold_dimensions_across_applicable_preventive_plans(self) -> None:
+        project = self._project_with_pre_life()
+        project["combatUnit"]["members"][0].update({
+            "preLifeCalendarDays": 0,
+            "preLifeFlightHours": 8,
+            "preLifeTakeoffLandingCount": 0,
+        })
+        first = project["supportActivities"][-1]
+        first.update({"calendarDayInterval": 0, "runHourInterval": 0, "takeoffLandingInterval": 0})
+        second = copy.deepcopy(first)
+        second.update({"id": "preventive-flight", "activityName": "preventive flight", "runHourInterval": 8})
+        project["supportActivities"].append(second)
+        project["supportActivityJobs"][0]["durationMinutes"] = 1
+
+        scenario = self.adapter.compile_scenario(project)
+        inputs = scenario["simulation_inputs"]
+        asset = inputs["aircraft"]["assets"][0]
+
+        self.assertEqual(asset["preventive_thresholds"]["flight_hours"], 8.0)
+        self.assertEqual(
+            asset["preventive_threshold_sources"]["flight_hours"],
+            [{"activity_id": "preventive-flight", "equipment_id": "whole-aircraft"}],
+        )
+        self.assertEqual(asset["initial_due_dimensions"], ["flight_hours"])
+        model = AircraftSupportV1Model(inputs)
+        preventive_jobs = [job for job in model.jobs if job.kind == "preventive"]
+        self.assertEqual(len(preventive_jobs), 1)
+        self.assertEqual(preventive_jobs[0].due_dimensions, ["flight_hours"])
+        self.assertEqual(preventive_jobs[0].activity_id, "preventive-flight")
+        execution = model.run()
+        self.assertTrue(any(event["event"] == "preventive_completed" for event in execution["events"]))
+        self.assertEqual(execution["lifecycle_trace"][0]["current_life_state"]["flight_hours"], 0.0)
+
+    def test_compile_blocks_positive_pre_life_without_dimension_threshold_at_exact_field(self) -> None:
+        project = self._project_with_pre_life()
+        project["supportActivities"][-1]["runHourInterval"] = 0
+
+        result = self.adapter.compile_scenario_with_gate(project)
+
+        self.assertEqual(result["status"], "blocked")
+        issue = next(issue for issue in result["issues"] if issue["code"] == "missing_preventive_threshold")
+        self.assertEqual(issue["field_path"], "combatUnit.members[0].preLifeFlightHours")
+
+    def test_compile_blocks_conflicting_or_unknown_preventive_threshold_scope(self) -> None:
+        project = self._project_with_pre_life()
+        conflict = copy.deepcopy(project["supportActivities"][-1])
+        conflict["id"] = "preventive-conflict"
+        conflict["activityName"] = "preventive conflict"
+        conflict["runHourInterval"] = 5
+        project["supportActivities"].append(conflict)
+        project["combatUnit"]["members"][0].update({
+            "preLifeCalendarDays": 0,
+            "preLifeFlightHours": 0,
+            "preLifeTakeoffLandingCount": 0,
+        })
+
+        result = self.adapter.compile_scenario_with_gate(project)
+        conflict_issue = next(issue for issue in result["issues"] if issue["code"] == "conflicting_preventive_threshold")
+        self.assertEqual(conflict_issue["field_path"], "supportActivities[2].runHourInterval")
+
+        project = self._project_with_pre_life()
+        project["supportActivities"][-1]["aircraftModel"] = "UNKNOWN"
+        result = self.adapter.compile_scenario_with_gate(project)
+        unknown_issue = next(issue for issue in result["issues"] if issue["code"] == "unknown_preventive_aircraft_model")
+        self.assertEqual(unknown_issue["field_path"], "supportActivities[1].aircraftModel")
+
     def test_validate_project_reports_missing_contract_roots(self) -> None:
         project = self._load_fixture("aircraft_support_v1_project.json")
         del project["components"]
@@ -1040,6 +1166,10 @@ class SimulationAdapterTest(unittest.TestCase):
             jsonschema.validate(instance=missing_compact_status_payload, schema=state_series_schema)
         self.assertEqual(run["status"], "succeeded")
         self.assertEqual(run["model_family"], "aircraft_support_v1")
+        self.assertEqual(result["lifecycle_trace"][0]["initial_life_state"]["takeoff_landing_cycles"], 0)
+        j35_trace = next(item for item in result["lifecycle_trace"] if item["tail_number"] == "J35-201")
+        self.assertEqual(j35_trace["initial_life_state"]["takeoff_landing_cycles"], 0)
+        self.assertEqual(j35_trace["initial_due_dimensions"], [])
         self.assertEqual(run["model_id"], "AircraftSupportV1Model")
         self.assertEqual(result["model_family"], "aircraft_support_v1")
         self.assertEqual(result["metrics"], second["result"]["metrics"])
@@ -1156,7 +1286,19 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("supportActivities[].maintenanceMethods", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].replacementRatio", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
-        self.assertEqual(scope["fail_closed_fields"], [])
+        self.assertEqual(
+            set(scope["fail_closed_fields"]),
+            {
+                "combatUnit.members[].preLifeCalendarDays",
+                "combatUnit.members[].preLifeFlightHours",
+                "combatUnit.members[].preLifeTakeoffLandingCount",
+                "supportActivities[].aircraftModel",
+                "supportActivities[].equipmentId",
+                "supportActivities[].calendarDayInterval",
+                "supportActivities[].runHourInterval",
+                "supportActivities[].takeoffLandingInterval",
+            },
+        )
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
         self.assertTrue(
             any(event.get("event") == "m9_7_4_behavior_scope_declared" for event in log_payload["events"])
@@ -1347,6 +1489,8 @@ class SimulationAdapterTest(unittest.TestCase):
         )
         self.assertEqual(base_payload["aggregate_metrics"], second_base_payload["aggregate_metrics"])
         self.assertEqual(base_payload["samples"], second_base_payload["samples"])
+        self.assertEqual(base_payload["initial_life_state"][0]["initial_life_state"]["takeoff_landing_cycles"], 0)
+        self.assertTrue(base_payload["samples"][0]["lifecycle_trace"])
         self.assertEqual([sample["sample_index"] for sample in second_base_payload["samples"]], [0, 1, 2, 3])
         self.assertEqual(base_payload["logs_summary"]["worker_count"], 1)
         self.assertEqual(second_base_payload["logs_summary"]["worker_count"], 2)

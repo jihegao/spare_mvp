@@ -337,7 +337,9 @@ export function buildBackendProjectJson(scenario, project = {}) {
 }
 
 export function normalizeProjectJsonForClientDraft(projectJson) {
+  validateCombatUnitPreLife(projectJson);
   const normalized = cloneJson(projectJson);
+  normalizeCombatUnitPreLife(normalized);
   normalizeProjectProducts(normalized);
   normalizeProjectJsonBasicMissions(normalized);
   normalizeBasicMissionSupportActivityNames(normalized);
@@ -355,6 +357,61 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   stripDeprecatedSupportActivityStrategyFields(normalized);
   normalizeProjectProducts(normalized);
   return normalized;
+}
+
+function validateCombatUnitPreLife(projectJson) {
+  const members = Array.isArray(projectJson?.combatUnit?.members) ? projectJson.combatUnit.members : [];
+  members.forEach((member, index) => {
+    if (!member || typeof member !== "object" || Array.isArray(member)) return;
+    const path = `combatUnit.members.${index}`;
+    const canonicalFields = [
+      ["preLifeCalendarDays", true],
+      ["preLifeFlightHours", false],
+      ["preLifeTakeoffLandingCount", true]
+    ];
+    for (const [fieldName, integer] of canonicalFields) {
+      if (!hasProjectFieldValue(member, fieldName)) continue;
+      normalizedPreLifeNumber(member[fieldName], `${path}.${fieldName}`, { integer });
+    }
+  });
+}
+
+function normalizeCombatUnitPreLife(projectJson) {
+  const members = Array.isArray(projectJson?.combatUnit?.members) ? projectJson.combatUnit.members : [];
+  members.forEach((member, index) => {
+    if (!member || typeof member !== "object" || Array.isArray(member)) return;
+    const path = `combatUnit.members.${index}`;
+    member.preLifeCalendarDays = normalizedPreLifeNumber(
+      member.preLifeCalendarDays,
+      `${path}.preLifeCalendarDays`,
+      { integer: true }
+    );
+    member.preLifeFlightHours = normalizedPreLifeNumber(
+      member.preLifeFlightHours,
+      `${path}.preLifeFlightHours`
+    );
+
+    member.preLifeTakeoffLandingCount = normalizedPreLifeNumber(
+      member.preLifeTakeoffLandingCount,
+      `${path}.preLifeTakeoffLandingCount`,
+      { integer: true }
+    );
+  });
+}
+
+function hasProjectFieldValue(value, fieldName) {
+  if (!Object.hasOwn(value, fieldName)) return false;
+  const fieldValue = value[fieldName];
+  return fieldValue !== undefined && fieldValue !== null && !(typeof fieldValue === "string" && fieldValue.trim() === "");
+}
+
+function normalizedPreLifeNumber(value, path, { integer = false } = {}) {
+  if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) return 0;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || (integer && !Number.isInteger(value))) {
+    const expected = integer ? "a non-negative integer" : "a non-negative finite number";
+    throw new Error(`${path}: expected ${expected}`);
+  }
+  return value;
 }
 
 function normalizeBasicMissionSupportActivityNames(projectJson) {

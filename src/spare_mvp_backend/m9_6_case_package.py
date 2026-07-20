@@ -256,6 +256,10 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "importId",
         "projectId",
         "objects.missionProfiles[].durationHours",
+        "objects.missionProfiles[].combatUnit.members[].model",
+        "objects.missionProfiles[].combatUnit.members[].preLifeCalendarDays",
+        "objects.missionProfiles[].combatUnit.members[].preLifeFlightHours",
+        "objects.missionProfiles[].combatUnit.members[].preLifeTakeoffLandingCount",
         "objects.missionProfiles[].basicMissions[].equipmentQuantity",
         "objects.missionProfiles[].experiment.seed",
         "objects.supportResources[].personnelCapacity",
@@ -284,6 +288,11 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "objects.supportActivities[].jobs[].predecessors[]",
         "objects.supportActivities[].jobs[].spare",
         "objects.supportActivities[].jobs[].workName",
+        "objects.supportActivities[].aircraftModel",
+        "objects.supportActivities[].equipmentId",
+        "objects.supportActivities[].calendarDayInterval",
+        "objects.supportActivities[].runHourInterval",
+        "objects.supportActivities[].takeoffLandingInterval",
     )
     derived_prefixes = (
         "objects.missionProfiles[].id",

@@ -35,7 +35,7 @@ Sources:
 
 Interpretation:
 
-- Combat-unit members are aircraft assets and initial states.
+- Combat-unit members are aircraft assets and initial states. Their canonical `preLifeCalendarDays`, `preLifeFlightHours`, and `preLifeTakeoffLandingCount` values are cumulative consumption since the last preventive action and compile to `aircraft.assets[].initial_life_state`; missing values default to zero. Legacy total-cycle, required-life, and remaining-life fields are retained only as source data and never converted into these counters.
 - Products are shared identities maintained independently from their use in an equipment hierarchy or spare inventory.
 - Components are the primary equipment hierarchy and reliability semantics; `components[].productId` binds each row to a product.
 - Clean Project JSON uses `failureDistribution`, `repairDistribution`, `kOutOfN`, and `productType`; legacy scalar failure, life-limit, RMS, spare type, and RBD fields should not be reintroduced to make clean data run.
@@ -71,6 +71,7 @@ Sources:
 Interpretation:
 
 - Support activities are plan-reference rows such as use support, repair, preventive maintenance, or logistics support.
+- Preventive activities are the only threshold source for aircraft pre-life: `calendarDayInterval`, `runHourInterval`, and `takeoffLandingInterval` map to days, flight hours, and takeoff/landing cycles. Zero/null disables that dimension; model/equipment scope must resolve exactly and conflicting applicable thresholds fail closed.
 - Top-level `supportActivityJobs[]` contains reusable work steps keyed by `activityCode`; each activity selects steps via `activityCodes`, and each structured spare requirement references `products[]` through `spare[].productId`.
 - `supportActivities[].predecessors` encodes DAG ordering and must be preserved when compiling or explaining.
 - Corrective and preventive activities own the canonical pair `maintenanceMethods` (`non_replacement`, `replacement`) and `replacementRatio` (0-1, at most four decimal places). Corrective `non_replacement` is `原位维修`; preventive `non_replacement` is `检查/保养`. A historical activity missing both fields means non-replacement only with ratio 0; legacy `repairType` is accepted only on corrective activities for exact `原位维修` / `换件维修` migration and must not coexist with conflicting canonical values.

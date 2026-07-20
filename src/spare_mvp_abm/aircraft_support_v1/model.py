@@ -16,7 +16,13 @@ from typing import Any
 
 BEHAVIOR_DRIVING_FIELDS = [
     "combatUnit.members",
+    "combatUnit.members[].preLifeCalendarDays",
+    "combatUnit.members[].preLifeFlightHours",
+    "combatUnit.members[].preLifeTakeoffLandingCount",
     "missionProfile.combatUnit.members",
+    "missionProfile.combatUnit.members[].preLifeCalendarDays",
+    "missionProfile.combatUnit.members[].preLifeFlightHours",
+    "missionProfile.combatUnit.members[].preLifeTakeoffLandingCount",
     "missionProfile.durationHours",
     "missionProfile.compositeTasks",
     "missionProfile.periodicTasks",
@@ -37,6 +43,9 @@ BEHAVIOR_DRIVING_FIELDS = [
     "supportActivityJobs[]",
     "supportActivities[].aircraftModel",
     "supportActivities[].equipmentId",
+    "supportActivities[].calendarDayInterval",
+    "supportActivities[].runHourInterval",
+    "supportActivities[].takeoffLandingInterval",
     "supportActivities[].activityCodes",
     "supportActivities[].predecessors",
     "supportActivities[].maintenanceMethods",
@@ -49,7 +58,16 @@ BEHAVIOR_DRIVING_FIELDS = [
     "monteCarlo.supportCapacities",
 ]
 
-FAIL_CLOSED_FIELDS: list[str] = []
+FAIL_CLOSED_FIELDS: list[str] = [
+    "combatUnit.members[].preLifeCalendarDays",
+    "combatUnit.members[].preLifeFlightHours",
+    "combatUnit.members[].preLifeTakeoffLandingCount",
+    "supportActivities[].aircraftModel",
+    "supportActivities[].equipmentId",
+    "supportActivities[].calendarDayInterval",
+    "supportActivities[].runHourInterval",
+    "supportActivities[].takeoffLandingInterval",
+]
 
 M9_7_4_COVERAGE_HARDENING_FIELDS: list[str] = []
 
@@ -78,6 +96,13 @@ class AircraftState:
     last_preventive_minute: int = 0
     prepared_mission_ids: set[str] = field(default_factory=set)
     lru_failure_remaining_minutes: dict[str, float] = field(default_factory=dict)
+    initial_life_state: dict[str, int | float] = field(default_factory=dict)
+    preventive_thresholds: dict[str, int | float] = field(default_factory=dict)
+    preventive_threshold_sources: dict[str, list[dict[str, str]]] = field(default_factory=dict)
+    initial_due_dimensions: list[str] = field(default_factory=list)
+    preventive_due_dimensions: list[str] = field(default_factory=list)
+    source_initial_state: str = "available"
+    initial_preventive_due: bool = False
 
 
 @dataclass
@@ -147,6 +172,7 @@ class JobState:
     maintenance_occurrence: int | None = None
     consumed_spare_task_indexes: set[int] = field(default_factory=set)
     spare_shortage_signature: tuple[tuple[str, int, int, str], ...] | None = None
+    due_dimensions: list[str] = field(default_factory=list)
 
     @property
     def current_task(self) -> dict[str, Any] | None:
@@ -238,6 +264,10 @@ class AircraftSupportV1Model:
         self._daily_readiness_sample_days: set[int] = set()
         self.running = True
         self.steps = 0
+        # Pre-life is an initial condition, so an already-due aircraft must be
+        # unavailable in the minute-zero frame rather than waiting for step 1.
+        self._initialize_preventive_lifecycle()
+        self._generate_preventive_jobs()
 
     @staticmethod
     def behavior_scope() -> dict[str, list[str]]:
@@ -271,6 +301,7 @@ class AircraftSupportV1Model:
             "frames": frames,
             "events": copy.deepcopy(self.event_log),
             "downtime_events": copy.deepcopy(self.downtime_events),
+            "lifecycle_trace": [self._lifecycle_trace_payload(item) for item in self.aircraft],
         }
 
     def step(self) -> bool:
@@ -359,6 +390,7 @@ class AircraftSupportV1Model:
             "sortie_count": sum(1 for aircraft in self.aircraft if aircraft.state == "flying"),
             "postflight_count": sum(1 for aircraft in self.aircraft if aircraft.postflight_required),
             "preventive_count": sum(1 for aircraft in self.aircraft if aircraft.preventive_due),
+            "preventive_maintenance_events": self.preventive_maintenance_events,
             "downtime_preventive_events": downtime_summary["preventive"]["event_count"],
             "planned_sorties": planned_sorties,
             "planned_mission_waves": len(executable_missions),
@@ -532,17 +564,18 @@ class AircraftSupportV1Model:
             }
         else:
             activity = self._activity_by_id(job.activity_id) if job is not None else self._select_activity("preventive", aircraft=aircraft)
-            trigger_types = []
-            if self._preventive_interval_days(activity) > 0 and self.minute - aircraft.last_preventive_minute >= self._preventive_interval_days(activity) * 1440:
-                trigger_types.append("calendar_time")
-            if self._preventive_interval_hours(activity) > 0 and aircraft.flight_hours >= self._preventive_interval_hours(activity):
-                trigger_types.append("flight_hours")
-            if self._preventive_interval_landings(activity) > 0 and aircraft.landing_count >= self._preventive_interval_landings(activity):
-                trigger_types.append("landings")
+            trigger_types = (
+                list(job.due_dimensions)
+                if job is not None and job.due_dimensions
+                else self._preventive_due_dimensions(aircraft, activity)
+            )
             details = {
                 "maintenance_type": job.activity_name if job is not None else activity.get("name"),
                 "maintenance_method": job.maintenance_method if job is not None else None,
                 "trigger_type": ",".join(trigger_types) if trigger_types else None,
+                "due_dimensions": trigger_types,
+                "initial_life_state": copy.deepcopy(aircraft.initial_life_state),
+                "preventive_thresholds": copy.deepcopy(aircraft.preventive_thresholds),
                 "trigger_condition": None,
                 "planned_start_minute": start_minute,
                 "completed_minute": None,
@@ -785,6 +818,7 @@ class AircraftSupportV1Model:
                 state = str(item.get("initialState") or item.get("initial_state") or item.get("state") or "available")
                 if state not in {"available", "maintenance", "flying"}:
                     state = "available"
+                initial_life_state = self._initial_life_state(item)
                 aircraft.append(
                     AircraftState(
                         tail_number=tail_number,
@@ -795,6 +829,15 @@ class AircraftSupportV1Model:
                         state=state,
                         x=index % 6,
                         y=index // 6,
+                        flight_hours=float(initial_life_state["flight_hours"]),
+                        takeoff_count=int(initial_life_state["takeoff_landing_cycles"]),
+                        landing_count=int(initial_life_state["takeoff_landing_cycles"]),
+                        last_preventive_minute=-int(initial_life_state["calendar_days"]) * 1440,
+                        initial_life_state=initial_life_state,
+                        preventive_thresholds=copy.deepcopy(item.get("preventive_thresholds") or {}),
+                        preventive_threshold_sources=copy.deepcopy(item.get("preventive_threshold_sources") or {}),
+                        source_initial_state=str(item.get("source_initial_state") or state),
+                        initial_preventive_due=bool(item.get("initial_preventive_due")),
                     )
                 )
             used_tail_numbers = {item.tail_number for item in aircraft}
@@ -827,6 +870,16 @@ class AircraftSupportV1Model:
             )
             for index in range(fleet_count)
         ]
+
+    @staticmethod
+    def _initial_life_state(asset: dict[str, Any]) -> dict[str, int | float]:
+        raw = asset.get("initial_life_state")
+        raw = raw if isinstance(raw, dict) else {}
+        return {
+            "calendar_days": _non_negative_int(raw.get("calendar_days"), 0),
+            "flight_hours": _non_negative_float(raw.get("flight_hours"), 0.0),
+            "takeoff_landing_cycles": _non_negative_int(raw.get("takeoff_landing_cycles"), 0),
+        }
 
     def _behavior_components(self) -> list[dict[str, Any]]:
         components = []
@@ -1536,44 +1589,124 @@ class AircraftSupportV1Model:
 
     def _generate_preventive_jobs(self) -> None:
         for aircraft in self.aircraft:
-            if aircraft.state != "available" or aircraft.preventive_due:
+            minute_zero_due = (
+                self.minute == 0
+                and aircraft.initial_preventive_due
+                and bool(aircraft.initial_due_dimensions)
+            )
+            if (aircraft.state != "available" and not minute_zero_due) or aircraft.preventive_due:
                 continue
             if any(job.kind == "preventive" and job.tail_number == aircraft.tail_number and job.state != "completed" for job in self.jobs):
                 continue
             activity = self._select_activity("preventive", aircraft=aircraft)
-            interval_days = self._preventive_interval_days(activity)
-            interval_hours = self._preventive_interval_hours(activity)
-            interval_landings = self._preventive_interval_landings(activity)
-            if interval_days <= 0 and interval_hours <= 0 and interval_landings <= 0:
+            thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
+            if not any(value > 0 for value in thresholds.values()):
                 continue
-            due_by_day = interval_days > 0 and self.minute - aircraft.last_preventive_minute >= interval_days * 1440
-            due_by_hours = interval_hours > 0 and aircraft.flight_hours >= interval_hours
-            due_by_landings = interval_landings > 0 and aircraft.landing_count >= interval_landings
-            if due_by_day or due_by_hours or due_by_landings:
+            due_dimensions = self._preventive_due_dimensions(aircraft, activity)
+            if due_dimensions:
+                activity = self._preventive_activity_for_due(aircraft, activity, due_dimensions)
                 aircraft.state = "maintenance"
                 aircraft.preventive_due = True
+                aircraft.preventive_due_dimensions = list(due_dimensions)
                 self.preventive_maintenance_events += 1
-                self._create_job(aircraft, activity, kind="preventive")
-                self._event("preventive_created", f"{aircraft.tail_number} preventive maintenance created")
+                self._create_job(
+                    aircraft,
+                    activity,
+                    kind="preventive",
+                    due_dimensions=due_dimensions,
+                )
+                self._event(
+                    "preventive_created",
+                    f"{aircraft.tail_number} preventive maintenance created",
+                    {
+                        "tail_number": aircraft.tail_number,
+                        "activity_id": str(activity.get("id") or "preventive"),
+                        "initial_life_state": copy.deepcopy(aircraft.initial_life_state),
+                        "preventive_thresholds": copy.deepcopy(aircraft.preventive_thresholds),
+                        "preventive_threshold_sources": copy.deepcopy(aircraft.preventive_threshold_sources),
+                        "due_dimensions": list(due_dimensions),
+                    },
+                )
+
+    def _preventive_activity_for_due(
+        self,
+        aircraft: AircraftState,
+        fallback: dict[str, Any],
+        due_dimensions: list[str],
+    ) -> dict[str, Any]:
+        activity_ids = sorted({
+            str(source.get("activity_id") or "")
+            for dimension in due_dimensions
+            for source in aircraft.preventive_threshold_sources.get(dimension, [])
+            if isinstance(source, dict) and str(source.get("activity_id") or "")
+        })
+        for activity_id in activity_ids:
+            activity = self._activity_by_id(activity_id)
+            if activity:
+                return activity
+        return fallback
+
+    def _initialize_preventive_lifecycle(self) -> None:
+        for aircraft in self.aircraft:
+            if not aircraft.initial_life_state:
+                aircraft.initial_life_state = {
+                    "calendar_days": 0,
+                    "flight_hours": 0.0,
+                    "takeoff_landing_cycles": 0,
+                }
+            activity = self._select_activity("preventive", aircraft=aircraft)
+            if not aircraft.preventive_thresholds:
+                aircraft.preventive_thresholds = self._preventive_thresholds(activity)
+            aircraft.initial_due_dimensions = self._preventive_due_dimensions(aircraft, activity)
+
+    def _preventive_thresholds(self, activity: dict[str, Any]) -> dict[str, int | float]:
+        return {
+            "calendar_days": self._preventive_interval_days(activity),
+            "flight_hours": self._preventive_interval_hours(activity),
+            "takeoff_landing_cycles": self._preventive_interval_landings(activity),
+        }
+
+    def _preventive_due_dimensions(
+        self,
+        aircraft: AircraftState,
+        activity: dict[str, Any],
+    ) -> list[str]:
+        thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
+        due_dimensions = []
+        if (
+            thresholds["calendar_days"] > 0
+            and self.minute - aircraft.last_preventive_minute >= thresholds["calendar_days"] * 1440
+        ):
+            due_dimensions.append("calendar_days")
+        if thresholds["flight_hours"] > 0 and aircraft.flight_hours >= thresholds["flight_hours"]:
+            due_dimensions.append("flight_hours")
+        if (
+            thresholds["takeoff_landing_cycles"] > 0
+            and aircraft.landing_count >= thresholds["takeoff_landing_cycles"]
+        ):
+            due_dimensions.append("takeoff_landing_cycles")
+        return due_dimensions
 
     def _preventive_interval_days(self, activity: dict[str, Any] | None = None) -> int:
         activity = activity if isinstance(activity, dict) else self.preventive_activity
-        value = (
-            activity.get("calendarDayInterval")
-            or activity.get("calendar_day_interval")
-            or activity.get("intervalDays")
-        )
-        return _positive_int(value, 0)
+        for field_name in ("calendarDayInterval", "calendar_day_interval", "intervalDays"):
+            if field_name in activity:
+                return _positive_int(activity.get(field_name), 0)
+        return 0
 
-    def _preventive_interval_hours(self, activity: dict[str, Any] | None = None) -> int:
+    def _preventive_interval_hours(self, activity: dict[str, Any] | None = None) -> float:
         activity = activity if isinstance(activity, dict) else self.preventive_activity
-        value = activity.get("runHourInterval") or activity.get("run_hour_interval")
-        return _positive_int(value, 0)
+        for field_name in ("runHourInterval", "run_hour_interval"):
+            if field_name in activity:
+                return _positive_float(activity.get(field_name), 0.0)
+        return 0.0
 
     def _preventive_interval_landings(self, activity: dict[str, Any] | None = None) -> int:
         activity = activity if isinstance(activity, dict) else self.preventive_activity
-        value = activity.get("takeoffLandingInterval") or activity.get("takeoff_landing_interval")
-        return _positive_int(value, 0)
+        for field_name in ("takeoffLandingInterval", "takeoff_landing_interval"):
+            if field_name in activity:
+                return _positive_int(activity.get(field_name), 0)
+        return 0
 
     def _create_due_preflight_jobs(self) -> None:
         for mission in self.missions:
@@ -1737,6 +1870,7 @@ class AircraftSupportV1Model:
         kind: str,
         mission_id: str | None = None,
         component: dict[str, Any] | None = None,
+        due_dimensions: list[str] | None = None,
     ) -> None:
         self._job_sequence += 1
         job_id = f"job-{self._job_sequence:04d}"
@@ -1789,6 +1923,7 @@ class AircraftSupportV1Model:
             maintenance_decision_roll=decision_roll,
             maintenance_rng_stream=rng_stream,
             maintenance_occurrence=maintenance_occurrence,
+            due_dimensions=list(due_dimensions or []),
         )
         self.jobs.append(job)
         if maintenance_method is not None:
@@ -2070,6 +2205,7 @@ class AircraftSupportV1Model:
         elif job.kind == "preventive":
             aircraft.state = "available"
             aircraft.preventive_due = False
+            aircraft.preventive_due_dimensions = []
             aircraft.last_preventive_minute = self.minute
             aircraft.flight_hours = 0.0
             aircraft.takeoff_count = 0
@@ -2126,8 +2262,33 @@ class AircraftSupportV1Model:
             "landing_count": item.landing_count,
             "postflight_required": item.postflight_required,
             "preventive_due": item.preventive_due,
+            "initial_life_state": copy.deepcopy(item.initial_life_state),
+            "preventive_thresholds": copy.deepcopy(item.preventive_thresholds),
+            "preventive_threshold_sources": copy.deepcopy(item.preventive_threshold_sources),
+            "initial_due_dimensions": list(item.initial_due_dimensions),
+            "due_dimensions": list(item.preventive_due_dimensions),
+            "calendar_days": self._calendar_days_since_preventive(item),
             "in_flight_failure": item.in_flight_failure,
             "failure_tree": self._aircraft_failure_tree_payload(item),
+        }
+
+    def _calendar_days_since_preventive(self, item: AircraftState) -> float:
+        return max(0.0, (self.minute - item.last_preventive_minute) / 1440.0)
+
+    def _lifecycle_trace_payload(self, item: AircraftState) -> dict[str, Any]:
+        return {
+            "tail_number": item.tail_number,
+            "initial_life_state": copy.deepcopy(item.initial_life_state),
+            "preventive_thresholds": copy.deepcopy(item.preventive_thresholds),
+            "preventive_threshold_sources": copy.deepcopy(item.preventive_threshold_sources),
+            "initial_due_dimensions": list(item.initial_due_dimensions),
+            "due_dimensions": list(item.preventive_due_dimensions),
+            "current_life_state": {
+                "calendar_days": self._calendar_days_since_preventive(item),
+                "flight_hours": item.flight_hours,
+                "takeoff_landing_cycles": item.landing_count,
+            },
+            "preventive_due": item.preventive_due,
         }
 
     def _aircraft_failure_tree_payload(self, item: AircraftState) -> dict[str, Any]:
@@ -2380,6 +2541,7 @@ class AircraftSupportV1Model:
             "maintenance_decision_roll": job.maintenance_decision_roll,
             "maintenance_rng_stream": job.maintenance_rng_stream,
             "maintenance_occurrence": job.maintenance_occurrence,
+            "due_dimensions": list(job.due_dimensions),
         }
 
     def _events_for_frame(self) -> list[dict[str, Any]]:
@@ -2451,6 +2613,12 @@ class AircraftSupportV1Model:
             "landing_count": item.landing_count,
             "postflight_required": item.postflight_required,
             "preventive_due": item.preventive_due,
+            "initial_life_state": copy.deepcopy(item.initial_life_state),
+            "preventive_thresholds": copy.deepcopy(item.preventive_thresholds),
+            "preventive_threshold_sources": copy.deepcopy(item.preventive_threshold_sources),
+            "initial_due_dimensions": list(item.initial_due_dimensions),
+            "due_dimensions": list(item.preventive_due_dimensions),
+            "calendar_days": self._calendar_days_since_preventive(item),
             "in_flight_failure": item.in_flight_failure,
         }
 
@@ -2641,6 +2809,14 @@ def _positive_int(value: Any, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return parsed if parsed > 0 else fallback
+
+
+def _positive_float(value: Any, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return parsed if math.isfinite(parsed) and parsed > 0 else fallback
 
 
 def _is_no_spare_value(value: Any) -> bool:
