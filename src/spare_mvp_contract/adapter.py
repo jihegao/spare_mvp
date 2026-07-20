@@ -1184,10 +1184,16 @@ class SimulationAdapter:
         resource_id = str(activity.get("resourceId") or "")
         if support_node_aliases:
             resource_id = support_node_aliases.get(resource_id, resource_id)
+        maintenance_kind = self._support_activity_maintenance_kind(activity)
+        raw_activity_type = str(activity.get("activityType") or activity.get("planType") or "support activity")
+        activity_type = {
+            "repair": "corrective",
+            "preventive": "preventive",
+        }.get(maintenance_kind, raw_activity_type)
         compiled = {
             "id": str(activity.get("id") or "support-activity"),
             "name": str(activity.get("name") or activity.get("activityName") or activity.get("id") or "support activity"),
-            "activity_type": str(activity.get("activityType") or activity.get("planType") or "support activity"),
+            "activity_type": activity_type,
             "aircraft_model": str(activity.get("aircraftModel") or ""),
             "equipment_id": str(activity.get("equipmentId") or ""),
             "resource_id": resource_id,
@@ -1205,7 +1211,7 @@ class SimulationAdapter:
             "floatRatio": activity.get("floatRatio"),
             "jobs": self._support_activity_jobs_for_activity(activity, job_definitions or {}),
         }
-        if self._support_activity_maintenance_kind(activity):
+        if maintenance_kind:
             methods, replacement_ratio = self._support_activity_maintenance_policy(activity)
             compiled["maintenance_methods"] = methods
             compiled["replacement_ratio"] = replacement_ratio
@@ -1214,9 +1220,13 @@ class SimulationAdapter:
     def _support_activity_maintenance_kind(self, activity: dict[str, Any]) -> str:
         plan_type = str(activity.get("planType") or "").strip()
         activity_type = str(activity.get("activityType") or "").strip().lower()
-        if plan_type == "预防性维修方案" or "preventive" in activity_type or "预防性维修" in activity_type:
+        if plan_type == "修复性维修方案":
+            return "repair"
+        if plan_type == "预防性维修方案":
             return "preventive"
-        if plan_type == "修复性维修方案" or "corrective" in activity_type or "修复性维修" in activity_type:
+        if "preventive" in activity_type or "预防性维修" in activity_type:
+            return "preventive"
+        if "corrective" in activity_type or "修复性维修" in activity_type:
             return "repair"
         return ""
 

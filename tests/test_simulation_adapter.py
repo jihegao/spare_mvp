@@ -706,19 +706,27 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(compiled_jobs[1]["predecessors"], activity["predecessors"][compiled_jobs[1]["activityCode"]])
 
     def test_aircraft_support_v1_compiles_maintenance_policy_scope_and_provenance(self) -> None:
-        project = self._load_fixture("aircraft_support_v1_project.json")
-        activity = project["supportActivities"][0]
-        activity["aircraftModel"] = "J-15"
-        activity["maintenanceMethods"] = ["non_replacement", "replacement"]
-        activity["replacementRatio"] = 0.37
+        for replacement_ratio in (0.3, 0.7):
+            project = self._load_fixture("aircraft_support_v1_project.json")
+            activity = project["supportActivities"][0]
+            activity["aircraftModel"] = "J-15"
+            activity["maintenanceMethods"] = ["non_replacement", "replacement"]
+            activity["replacementRatio"] = replacement_ratio
 
-        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+            scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+            compiled = scenario["simulation_inputs"]["support_activities"]["activities"][0]
+            self.assertEqual(compiled["replacement_ratio"], replacement_ratio)
+            input_schema = json.loads(
+                (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
+            )
+            jsonschema.validate(instance=scenario["simulation_inputs"], schema=input_schema)
 
         compiled = scenario["simulation_inputs"]["support_activities"]["activities"][0]
         self.assertEqual(compiled["aircraft_model"], "J-15")
         self.assertEqual(compiled["equipment_id"], "")
         self.assertEqual(compiled["maintenance_methods"], ["non_replacement", "replacement"])
-        self.assertEqual(compiled["replacement_ratio"], 0.37)
+        self.assertEqual(compiled["replacement_ratio"], 0.7)
         self.assertNotIn("maintenanceMethods", compiled)
         self.assertNotIn("replacementRatio", compiled)
         consumed = scenario["compiled_from"]["mapping_provenance"]["consumed_fields"]
@@ -731,16 +739,24 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("simulation_inputs.support_activities.activities[].equipment_id", derived)
         self.assertIn("simulation_inputs.support_activities.activities[].maintenance_methods", derived)
         self.assertIn("simulation_inputs.support_activities.activities[].replacement_ratio", derived)
+        invalid_inputs = copy.deepcopy(scenario["simulation_inputs"])
+        invalid_inputs["support_activities"]["activities"][0]["maintenance_methods"] = ["replacement"]
+        invalid_inputs["support_activities"]["activities"][0]["replacement_ratio"] = 0.7
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(instance=invalid_inputs, schema=input_schema)
+
+    def test_aircraft_support_v1_plan_type_only_compiles_to_canonical_activity_type(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        project["supportActivities"][0].pop("activityType", None)
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        compiled = scenario["simulation_inputs"]["support_activities"]["activities"][0]
+        self.assertEqual(compiled["activity_type"], "corrective")
         input_schema = json.loads(
             (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
         )
         jsonschema.validate(instance=scenario["simulation_inputs"], schema=input_schema)
-
-        invalid_inputs = copy.deepcopy(scenario["simulation_inputs"])
-        invalid_inputs["support_activities"]["activities"][0]["maintenance_methods"] = ["replacement"]
-        invalid_inputs["support_activities"]["activities"][0]["replacement_ratio"] = 0.37
-        with self.assertRaises(jsonschema.ValidationError):
-            jsonschema.validate(instance=invalid_inputs, schema=input_schema)
 
     def test_aircraft_support_v1_direct_compile_normalizes_only_valid_maintenance_history(self) -> None:
         project = self._load_fixture("aircraft_support_v1_project.json")

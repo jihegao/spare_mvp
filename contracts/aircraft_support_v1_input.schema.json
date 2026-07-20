@@ -149,7 +149,7 @@
                 "uniqueItems": true,
                 "items": { "enum": ["non_replacement", "replacement"] }
               },
-              "replacement_ratio": { "type": "number", "minimum": 0, "maximum": 1, "multipleOf": 0.0001 },
+              "replacement_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
               "jobs": { "type": "array", "items": { "type": "object" } }
             },
             "dependentRequired": {

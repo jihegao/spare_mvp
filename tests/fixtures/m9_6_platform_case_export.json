@@ -744,7 +744,7 @@
             "takeoffLandingInterval": null
           },
           {
-            "activity_type": "修复性维修",
+            "activity_type": "corrective",
             "aircraft_model": "",
             "calendarDayInterval": null,
             "duration_minutes": 180,
@@ -839,7 +839,7 @@
             "takeoffLandingInterval": null
           },
           {
-            "activity_type": "预防性维修",
+            "activity_type": "preventive",
             "aircraft_model": "",
             "calendarDayInterval": 1,
             "duration_minutes": 120,

@@ -435,7 +435,7 @@
           "uniqueItems": true,
           "items": { "type": "string", "enum": ["non_replacement", "replacement"] }
         },
-        "replacementRatio": { "type": "number", "minimum": 0, "maximum": 1, "multipleOf": 0.0001 },
+        "replacementRatio": { "type": "number", "minimum": 0, "maximum": 1 },
         "activityCodes": { "type": "array", "items": { "type": "string" } },
         "predecessors": {
           "type": "object",
