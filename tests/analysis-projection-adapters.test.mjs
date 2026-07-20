@@ -115,13 +115,14 @@ test("normalizes carry list projection payload for formal KPI and table renderin
     run_id: "run-ui",
     model_family: "aircraft_support_v1",
     data: [
-      { product_id: "product-engine", spare_type: "engine", recommended_multiplier: 1.4, utilization: 2, risk_level: "high" },
-      { product_id: "product-hydraulic", spare_type: "hydraulic", recommended_multiplier: 1.1, utilization: null, risk_level: "medium" }
+      { product_id: "product-engine", spare_type: "engine", recommended_quantity: 2, recommended_multiplier: 1.4, used_quantity: 1, carried_quantity: 1, utilization: 0, risk_level: "high" },
+      { product_id: "product-hydraulic", spare_type: "hydraulic", recommended_quantity: 1, recommended_multiplier: 1.1, used_quantity: 1, carried_quantity: 9, utilization: 0, risk_level: "medium" }
     ]
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.deepEqual(view.metrics.slice(1), [
     ["携行备件数量", "3 件"],
+    ["总体备件利用率", "20.00%"],
     ["最高携行倍率", "1.40"],
     ["高优先级备件", "engine"]
   ]);
@@ -130,8 +131,47 @@ test("normalizes carry list projection payload for formal KPI and table renderin
   assert.equal(view.rows[0].priority, "高");
   assert.equal(view.rows[0].productId, "product-engine");
   assert.equal(view.rows[0].qty, 2);
-  assert.equal(view.rows[0].utilization, 2);
-  assert.equal(view.rows[1].utilization, null);
+  assert.equal(view.rows[0].utilization, 1);
+  assert.equal(view.rows[1].utilization, 1 / 9);
+
+  const legacyView = normalizeAnalysisProjectionPayload("carry_list", {
+    projection_type: "carry_list",
+    run_id: "run-ui",
+    model_family: "aircraft_support_v1",
+    data: [
+      { product_id: "legacy", spare_type: "legacy", recommended_multiplier: 1, utilization: 0.5, risk_level: "low" }
+    ]
+  }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
+  assert.deepEqual(legacyView.metrics.find(([label]) => label === "总体备件利用率"), ["总体备件利用率", "数据不可用"]);
+});
+
+test("formal carry utilization distinguishes unavailable raw data from a true zero denominator", () => {
+  const normalize = (data) => normalizeAnalysisProjectionPayload("carry_list", {
+    projection_type: "carry_list",
+    run_id: "run-carry-edge",
+    model_family: "aircraft_support_v1",
+    data
+  }, { runId: "run-carry-edge", modelFamily: "aircraft_support_v1" });
+  const row = (raw = {}) => ({
+    product_id: "spare-a",
+    spare_type: "spare-a",
+    recommended_multiplier: 1,
+    utilization: null,
+    risk_level: "low",
+    ...raw
+  });
+  const overall = (view) => view.metrics.find(([label]) => label === "总体备件利用率");
+
+  assert.deepEqual(overall(normalize([])), ["总体备件利用率", "数据不可用"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: 1 })])), ["总体备件利用率", "数据不可用"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: "invalid", carried_quantity: 2 })])), ["总体备件利用率", "数据不可用"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: "   ", carried_quantity: 2 })])), ["总体备件利用率", "数据不可用"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: 0, carried_quantity: "\t" })])), ["总体备件利用率", "数据不可用"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: false, carried_quantity: 2 })])), ["总体备件利用率", "数据不可用"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: 0, carried_quantity: true })])), ["总体备件利用率", "数据不可用"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: -1, carried_quantity: 2 })])), ["总体备件利用率", "数据不可用"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: 0, carried_quantity: 0 })])), ["总体备件利用率", "--"]);
+  assert.deepEqual(overall(normalize([row({ used_quantity: 3, carried_quantity: 1 })])), ["总体备件利用率", "300.00%"]);
 });
 
 test("normalizes mission reliability projection payload as per-sample wave rows for formal KPI and trend rendering", () => {

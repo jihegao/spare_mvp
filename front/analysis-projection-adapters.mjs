@@ -179,6 +179,12 @@ function normalizeCarryList(payload) {
       const utilization = row.utilization === null || row.utilization === undefined
         ? null
         : Math.max(0, requireFiniteNumber(row.utilization, "utilization"));
+      const qty = row.recommended_quantity === null || row.recommended_quantity === undefined
+        ? Math.max(1, priority === "高" ? Math.ceil(multiplier) : Math.round(multiplier))
+        : Math.max(0, Math.round(requireFiniteNumber(row.recommended_quantity, "recommended_quantity")));
+      const carriedQuantity = optionalNonnegativeFiniteNumber(row.carried_quantity);
+      const usedQuantity = optionalNonnegativeFiniteNumber(row.used_quantity);
+      const hasRawQuantities = carriedQuantity !== null && usedQuantity !== null;
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         productId: stringValue(row.product_id, ""),
@@ -186,10 +192,12 @@ function normalizeCarryList(payload) {
         multiplier,
         satisfy: Math.min(1, multiplier / Math.max(multiplier, 1)),
         delay: Math.max(0, Math.round((multiplier - 1) * 24)),
-        qty: Math.max(1, priority === "高" ? Math.ceil(multiplier) : Math.round(multiplier)),
+        qty,
+        usedQuantity,
+        carriedQuantity,
         priority,
         demand: Math.max(0, Math.round(numberOrZero(row.demand_count))),
-        utilization,
+        utilization: hasRawQuantities ? (carriedQuantity > 0 ? usedQuantity / carriedQuantity : null) : utilization,
         minimumSatisfactionRate: clamp01(numberOrZero(row.minimum_satisfaction_rate) || 0.9),
         hideZeroDemand: row.hide_zero_demand !== false,
         lifeLimited: Boolean(row.life_limited),
@@ -199,6 +207,15 @@ function normalizeCarryList(payload) {
     })
     .sort((left, right) => right.qty - left.qty);
   const highPriority = rows.filter((row) => row.priority === "高");
+  const hasCompleteRawQuantities = rows.length > 0 && rows.every((row) => (
+    row.usedQuantity !== null && row.carriedQuantity !== null
+  ));
+  const usedTotal = hasCompleteRawQuantities ? rows.reduce((sum, row) => sum + row.usedQuantity, 0) : null;
+  const carriedTotal = hasCompleteRawQuantities ? rows.reduce((sum, row) => sum + row.carriedQuantity, 0) : null;
+  const overallUtilization = carriedTotal !== null && carriedTotal > 0 ? usedTotal / carriedTotal : null;
+  const overallUtilizationDisplay = !hasCompleteRawQuantities
+    ? "数据不可用"
+    : carriedTotal === 0 ? "--" : `${(overallUtilization * 100).toFixed(2)}%`;
   return {
     analysisType: "carry_list",
     formal: true,
@@ -208,6 +225,7 @@ function normalizeCarryList(payload) {
     metrics: [
       ["默认目标", "携行备件越少越好"],
       ["携行备件数量", `${rows.reduce((sum, row) => sum + row.qty, 0)} 件`],
+      ["总体备件利用率", overallUtilizationDisplay],
       ["最高携行倍率", fixed(max(rows.map((row) => row.multiplier), 0), 2)],
       ["高优先级备件", highPriority.map((row) => row.name).slice(0, 2).join(" / ") || "-"]
     ]
@@ -380,6 +398,17 @@ function requireObject(value, message) {
 function requireFiniteNumber(value, fieldName) {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${fieldName} must be a finite number`);
   return value;
+}
+
+function optionalNonnegativeFiniteNumber(value) {
+  if (
+    value === null
+    || value === undefined
+    || typeof value === "boolean"
+    || (typeof value === "string" && value.trim() === "")
+  ) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
 }
 
 function optionalNonNegativeInteger(value, fieldName) {
