@@ -461,13 +461,18 @@ class SupportOrganizationContractTest(unittest.TestCase):
         project = json.loads(
             (REPO_ROOT / "tests" / "fixtures" / "aircraft_support_v1_project.json").read_text(encoding="utf-8")
         )
-        project.pop("supportOrganization", None)
         project["transportPolicies"] = []
         project["supportResources"] = []
-        for node in project["supportNodes"]:
-            node.pop("organizationNodeId", None)
-        for resource in project["supportResources"]:
-            resource.pop("organizationNodeId", None)
+        project["supportNodes"] = [
+            {
+                "id": "node-a",
+                "name": "node A",
+                "organizationNodeId": "node-a",
+                "personnelCapacity": 9,
+                "equipmentCapacity": 8,
+                "inventory": {"product-whole-aircraft": 7},
+            }
+        ]
 
         direct = self.adapter.compile_scenario(project)["simulation_inputs"]["support_network"]["nodes"]
         saved = ProjectJsonExporter(repo_root=REPO_ROOT).export(project)
@@ -475,7 +480,10 @@ class SupportOrganizationContractTest(unittest.TestCase):
         after_reload = self.adapter.compile_scenario(reloaded)["simulation_inputs"]["support_network"]["nodes"]
 
         self.assertEqual(after_reload, direct)
-        self.assertTrue(after_reload)
+        self.assertEqual(len(after_reload), 1)
+        self.assertEqual(after_reload[0]["personnel_capacity"], 9)
+        self.assertEqual(after_reload[0]["equipment_capacity"], 8)
+        self.assertEqual(after_reload[0]["inventory"], {"product-whole-aircraft": 7})
 
     def test_no_support_data_exports_and_compiles_as_explicit_empty_graph(self) -> None:
         project = json.loads(

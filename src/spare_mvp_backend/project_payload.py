@@ -3090,7 +3090,6 @@ def _is_legacy_support_resource_row(node: dict[str, Any]) -> bool:
     node_id = str(node.get("id") or "")
     return bool(
         node.get("importedResourceType")
-        or node.get("organizationNodeId")
         or re.search(r"(^|[-_])(personnel|equipment|spare|stock)([-_]|$)", node_id, re.IGNORECASE)
     )
 
