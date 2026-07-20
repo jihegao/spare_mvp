@@ -2364,21 +2364,36 @@ def _lite_mesa_carry_list_result(
     for item in projection.get("data") or []:
         multiplier = max(1.0, _metric_float(item.get("recommended_multiplier"), default=1.0))
         baseline_quantity = max(0, _metric_int(item.get("baseline_quantity"), default=0))
+        recommended = max(
+            0,
+            _metric_int(
+                item.get("recommended_quantity"),
+                default=int(math.ceil((baseline_quantity or base_quantity) * multiplier)),
+            ),
+        )
+        carried_quantity = _optional_nonnegative_metric_float(item.get("carried_quantity"))
+        used_quantity = _optional_nonnegative_metric_float(item.get("used_quantity"))
+        has_raw_quantities = carried_quantity is not None and used_quantity is not None
+        legacy_utilization = (
+            max(0.0, _metric_float(item.get("utilization"), default=0))
+            if item.get("utilization") is not None
+            else None
+        )
         rows.append(
             {
                 "aircraftModel": str(item.get("aircraft_model") or item.get("aircraftModel") or "全部机型"),
                 "productId": str(item.get("product_id") or item.get("productId") or ""),
                 "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
-                "recommended": max(
-                    0,
-                    _metric_int(
-                        item.get("recommended_quantity"),
-                        default=int(math.ceil((baseline_quantity or base_quantity) * multiplier)),
-                    ),
-                ),
+                "recommended": recommended,
+                "usedQuantity": used_quantity,
+                "carriedQuantity": carried_quantity,
                 "demand": max(0, _metric_int(item.get("demand_count"), default=planned)),
                 "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
-                "utilization": max(0.0, _metric_float(item.get("utilization"), default=0)) if item.get("utilization") is not None else None,
+                "utilization": (
+                    used_quantity / carried_quantity
+                    if has_raw_quantities and carried_quantity > 0
+                    else legacy_utilization if not has_raw_quantities else None
+                ),
                 "riskLevel": _risk_label(item.get("risk_level")),
                 "confidenceTarget": settings["missionConfidenceTarget"],
                 "minimumSatisfactionRate": settings["missionConfidenceTarget"],
@@ -2388,29 +2403,39 @@ def _lite_mesa_carry_list_result(
                 "lifeHours": _metric_int(item.get("life_hours", item.get("lifeHours")), default=0),
             }
         )
-    if not rows:
-        rows.append(
-            {
-                "aircraftModel": "全部机型",
-                "productId": "aircraft-support-v1-spares",
-                "spareType": "aircraft_support_v1_spares",
-                "recommended": base_quantity,
-                "demand": planned,
-                "shortage": max(0, _metric_int(aggregate.get("shortage_events"), default=0)),
-                "riskLevel": _risk_label("low"),
-                "confidenceTarget": settings["missionConfidenceTarget"],
-                "minimumSatisfactionRate": settings["missionConfidenceTarget"],
-                "hideZeroDemand": True,
-                "lifeLimited": False,
-                "lifeLandings": 0,
-                "lifeHours": 0,
-            }
-        )
+    has_complete_raw_quantities = bool(rows) and all(
+        row.get("usedQuantity") is not None and row.get("carriedQuantity") is not None
+        for row in rows
+    )
+    used_total = sum(float(row["usedQuantity"]) for row in rows) if has_complete_raw_quantities else None
+    carried_total = sum(float(row["carriedQuantity"]) for row in rows) if has_complete_raw_quantities else None
+    overall_utilization = (
+        used_total / carried_total
+        if has_complete_raw_quantities and carried_total is not None and carried_total > 0
+        else None
+    )
+    overall_utilization_status = (
+        "data_unavailable"
+        if not has_complete_raw_quantities
+        else "zero_carried" if carried_total == 0
+        else "available"
+    )
+    overall_utilization_display = (
+        f"{overall_utilization * 100:.2f}%"
+        if overall_utilization_status == "available"
+        else "--" if overall_utilization_status == "zero_carried"
+        else "数据不可用"
+    )
     return {
         "experiment_id": "minimum_carry_list_search",
+        "spare_used_total": used_total,
+        "spare_carried_total": carried_total,
+        "overall_spare_utilization": overall_utilization,
+        "overall_spare_utilization_status": overall_utilization_status,
         "metrics": [
             ["建议携行总数", str(sum(int(row["recommended"]) for row in rows))],
             ["高优先级备件", str(sum(1 for row in rows if row["riskLevel"] == "高"))],
+            ["总体备件利用率", overall_utilization_display],
             ["备件满足率下限", f"{settings['missionConfidenceTarget']:.2f}"],
             ["样本数", str(len(samples))],
         ],
@@ -2935,6 +2960,16 @@ def _metric_float(value: Any, *, default: Any) -> float:
             return float(default)
         except (TypeError, ValueError):
             return 0.0
+
+
+def _optional_nonnegative_metric_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
 
 
 def _clamp01(value: Any) -> float:

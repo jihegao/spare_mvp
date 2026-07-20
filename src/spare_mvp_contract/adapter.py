@@ -2647,6 +2647,8 @@ class SimulationAdapter:
                     "spare_type": product_names.get(product_id, product_id),
                     "baseline_quantity": baseline_quantity,
                     "recommended_quantity": recommended_quantity,
+                    "used_quantity": consumed_quantity,
+                    "carried_quantity": carry_capacity,
                     "demand_count": demand_count,
                     "filled_count": filled_count,
                     "shortage_count": shortage_count,
@@ -3018,6 +3020,8 @@ class SimulationAdapter:
                         "spare_type": row["spare_type"],
                         "baseline_quantity": row["baseline_quantity"],
                         "recommended_quantity": row["recommended_quantity"],
+                        "used_quantity": row["used_quantity"],
+                        "carried_quantity": row["carried_quantity"],
                         "recommended_multiplier": (
                             row["recommended_quantity"] / row["baseline_quantity"]
                             if row["baseline_quantity"] > 0

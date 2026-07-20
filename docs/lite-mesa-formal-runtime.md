@@ -18,6 +18,7 @@
 - 父页不提供额外“刷新推演”按钮；Solara 页面不渲染重复的默认标题，运行控制在内容区顶部且保持重置、推演/暂停和单步语义。
 - 时间线、提示、详情、图例、状态和日志等用户可见表面只显示任务名称与天/波次/要求机型等业务上下文；缺少任务名称时统一显示“未命名任务”。任务、波次实例和保障作业内部 ID 只保留在数据关联与调试字段中。
 - `aircraft_support_v1` 是当前正式模型核心。
+- 携行清单会话与 formal projection 均传递逐行 `used_quantity` / `carried_quantity`；后端、页面和 XLSX summary 按未筛选全集的总量比计算总体备件利用率。分母只计成功样本的携行量；不得平均行级百分比、不得钳制超过 100% 的结果。raw 完整且真实零总分母时显示 `--`；空 projection 或 raw 缺失/非法时显示“数据不可用”，不得从 aggregate、推荐量或旧行百分比反推。
 - 旧 `/api/runs` 运行账本路径、RunService、SimulationRun、ResultSummary 和 ArtifactManifest 后续只作为历史实现、内部治理能力或后续持久化运行治理候选。
 
 ## 后续切片

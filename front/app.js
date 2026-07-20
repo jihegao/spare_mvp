@@ -196,7 +196,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     subtitle: "按产品独立变化的最小携行清单搜索",
     settingSubject: "产品独立变化",
     settingMethod: "最小携行清单搜索",
-    metricLabels: ["建议携行总数", "高优先级备件"]
+    metricLabels: ["建议携行总数", "高优先级备件", "总体备件利用率"]
   },
   mission_reliability: {
     experimentId: "project_baseline_at_current_granularity",
@@ -19167,11 +19167,13 @@ function analysisXlsxPayloadForPage(page, result) {
       summary: liteMesaAnalysisVisibleMetrics(definition, result.metrics || []).map(([label, value]) => [label, value, ""]),
       detail_sections: [{
         title: "携行清单明细",
-        columns: ["机型", "产品", "建议携行数量", "需求次数", "短缺次数", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
+        columns: ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "需求次数", "短缺次数", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
         rows: rows.map((row) => [
           row.aircraftModel || "未指定机型",
           carryListProductDisplayName(row, productsById),
           row.recommended,
+          row.usedQuantity,
+          row.carriedQuantity,
           row.demand,
           row.shortage,
           carryUtilizationDisplay(row.utilization),
@@ -19752,6 +19754,66 @@ async function runLiteMesaAnalysisPage(page) {
   }
 }
 
+function nonnegativeFiniteAnalysisNumber(value) {
+  if (
+    value === null
+    || value === undefined
+    || typeof value === "boolean"
+    || (typeof value === "string" && value.trim() === "")
+  ) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+}
+
+function normalizeCarryListAnalysisRows(rows) {
+  return rows.map((row) => {
+    const carriedQuantity = nonnegativeFiniteAnalysisNumber(row.carriedQuantity ?? row.carried_quantity);
+    const usedQuantity = nonnegativeFiniteAnalysisNumber(row.usedQuantity ?? row.used_quantity);
+    const legacyUtilization = nonnegativeFiniteAnalysisNumber(row.utilization);
+    const hasRawQuantities = usedQuantity !== null && carriedQuantity !== null;
+    return {
+      ...row,
+      usedQuantity,
+      carriedQuantity,
+      utilization: hasRawQuantities
+        ? (carriedQuantity > 0 ? usedQuantity / carriedQuantity : null)
+        : legacyUtilization
+    };
+  });
+}
+
+function carryListOverallUtilization(rows) {
+  const hasCompleteRawQuantities = rows.length > 0 && rows.every((row) => (
+    nonnegativeFiniteAnalysisNumber(row.usedQuantity) !== null
+    && nonnegativeFiniteAnalysisNumber(row.carriedQuantity) !== null
+  ));
+  if (!hasCompleteRawQuantities) {
+    return { usedQuantity: null, carriedQuantity: null, utilization: null, status: "data_unavailable" };
+  }
+  const totals = rows.reduce((current, row) => ({
+    usedQuantity: current.usedQuantity + nonnegativeFiniteAnalysisNumber(row.usedQuantity),
+    carriedQuantity: current.carriedQuantity + nonnegativeFiniteAnalysisNumber(row.carriedQuantity)
+  }), { usedQuantity: 0, carriedQuantity: 0 });
+  return {
+    ...totals,
+    utilization: totals.carriedQuantity > 0 ? totals.usedQuantity / totals.carriedQuantity : null,
+    status: totals.carriedQuantity > 0 ? "available" : "zero_carried"
+  };
+}
+
+function carryListMetricsWithOverall(metrics, rows) {
+  const totals = carryListOverallUtilization(rows);
+  return {
+    metrics: [
+      ...metrics.filter(([label]) => label !== "总体备件利用率"),
+      ["总体备件利用率", totals.status === "available"
+        ? `${(totals.utilization * 100).toFixed(2)}%`
+        : totals.status === "zero_carried" ? "--" : "数据不可用"]
+    ],
+    totals
+  };
+}
+
 function normalizeLiteMesaAnalysisResult(definition, payload) {
   if (!payload || payload.status === "blocked") {
     return {
@@ -19777,19 +19839,29 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     : Array.isArray(payload.mission_wave_rows)
       ? payload.mission_wave_rows
       : [];
-  const rows = Array.isArray(payload.rows) ? payload.rows : waveRows;
+  const sampleCount = Number(payload.sample_count || payload.sampleCount || 0);
+  const sourceRows = Array.isArray(payload.rows) ? payload.rows : waveRows;
+  const rows = definition.analysisType === "carry_list"
+    ? normalizeCarryListAnalysisRows(sourceRows)
+    : sourceRows;
   const taskReliabilityResultFields = definition.analysisType === "mission_reliability"
     ? normalizeTaskReliabilityResultFields(payload)
     : [];
   const taskReliabilityValue = (key) => taskReliabilityResultFields.find((field) => field.key === key)?.value ?? null;
   const periodTotalSamples = optionalAnalysisCount(payload.period_total_samples);
   const periodSuccessfulSamples = optionalAnalysisCount(payload.successful_samples);
+  const sourceMetrics = Array.isArray(payload.metrics)
+    ? payload.metrics
+    : definition.metricLabels.map((label) => [label, "无"]);
+  const carryListSummary = definition.analysisType === "carry_list"
+    ? carryListMetricsWithOverall(sourceMetrics, rows)
+    : null;
   return {
     status: payload.status === "session_complete" ? "session_complete" : "blocked",
     source: payload.source || "lite_mesa_aircraft_support_v1",
     analysisType: payload.analysis_type || definition.analysisType,
     experimentId: payload.experiment_id || definition.experimentId,
-    sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
+    sampleCount,
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
     metrics: definition.analysisType === "mission_reliability"
       ? [
@@ -19797,7 +19869,11 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
           ["仿真总次数", periodTotalSamples === null ? "不可用" : String(periodTotalSamples)],
           ["成功次数", periodSuccessfulSamples === null ? "不可用" : String(periodSuccessfulSamples)]
         ]
-      : Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
+      : carryListSummary?.metrics || sourceMetrics,
+    spareUsedTotal: carryListSummary?.totals.usedQuantity ?? null,
+    spareCarriedTotal: carryListSummary?.totals.carriedQuantity ?? null,
+    overallSpareUtilization: carryListSummary?.totals.utilization ?? null,
+    overallSpareUtilizationStatus: carryListSummary?.totals.status ?? null,
     resultFields: taskReliabilityResultFields,
     rows,
     waveRows: waveRows.length ? waveRows : rows,
