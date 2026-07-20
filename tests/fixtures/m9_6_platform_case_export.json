@@ -577,6 +577,11 @@
           }
         ],
         "name": "舰载机昼夜混合出动任务剖面",
+        "periodic_source": {
+          "configured_slots": 1,
+          "label": "周剖面",
+          "level": "week"
+        },
         "periodic_tasks": [
           {
             "compositeTaskIds": [
