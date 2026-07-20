@@ -85,6 +85,20 @@
       "activityCode": "job-1"
     }
   ],
+  "supportOrganization": {
+    "relations": [],
+    "tree": {
+      "children": [],
+      "id": "node-a",
+      "name": "node A",
+      "serviceScope": {
+        "aircraftModels": [],
+        "airportIds": [],
+        "productIds": [],
+        "resourceTypes": []
+      }
+    }
+  },
   "supportNodes": [
     {
       "equipmentCapacity": 1,
@@ -93,6 +107,7 @@
         "product-whole-aircraft": 2
       },
       "name": "node A",
+      "organizationNodeId": "node-a",
       "personnelCapacity": 1
     }
   ],
@@ -100,17 +115,11 @@
     {
       "id": "node-a-personnel",
       "name": "crew",
+      "organizationNodeId": "node-a",
       "quantity": 1,
       "supportNodeName": "node A",
       "type": "personnel"
     }
   ],
-  "transportPolicies": [
-    {
-      "capacity": 1,
-      "fromSupportNodeName": "node A",
-      "id": "tp-1",
-      "toSupportNodeName": "node A"
-    }
-  ]
+  "transportPolicies": []
 }

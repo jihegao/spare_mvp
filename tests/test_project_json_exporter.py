@@ -115,6 +115,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "id": "support-node-1",
             "name": "基层",
             "airport": "Airport A",
+            "organizationNodeId": "org-line",
         }])
 
     def _polluted_project(self) -> dict:
@@ -273,14 +274,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "personnelCapacity": 1,
                     "equipmentCapacity": 1,
                     "inventory": {"aircraft_support_v1_spares": 2},
-                    "transportPolicies": [
-                        {
-                            "from": "node-a",
-                            "to": "node-a",
-                            "spareType": "aircraft_support_v1_spares",
-                            "capacity": 1,
-                        }
-                    ],
+                    "transportPolicies": [{}],
                 }
             ],
             "supportResources": [
@@ -881,6 +875,15 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         invalid_support_organization["supportOrganization"] = "bad"
         with self.assertRaisesRegex(ValueError, "supportOrganization: expected object"):
             self._export_with_old_jsonschema(invalid_support_organization)
+
+        for field in ("serviceScope", "children"):
+            with self.subTest(field=field):
+                canonical = ProjectJsonExporter(target="aircraft_support_v1").export(self._polluted_project())
+                canonical["supportOrganization"]["tree"].pop(field)
+                with self.assertRaisesRegex(ValueError, rf"supportOrganization\.tree\.{field}"):
+                    from src.spare_mvp_backend.project_payload import _validate_clean_project_fallback
+
+                    _validate_clean_project_fallback(canonical, "aircraft_support_v1")
 
     def test_aircraft_support_v1_exporter_accepts_full_platform_case(self) -> None:
         package = json.loads((REPO_ROOT / "tests" / "fixtures" / "m9_6_platform_case_export.json").read_text(encoding="utf-8"))

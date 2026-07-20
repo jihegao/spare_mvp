@@ -68,6 +68,7 @@ def minimal_clean_project() -> dict[str, Any]:
             {
                 "id": "node-a",
                 "name": "node A",
+                "organizationNodeId": "node-a",
                 "personnelCapacity": 1,
                 "equipmentCapacity": 1,
                 "inventory": {"product-whole-aircraft": 2},
@@ -76,21 +77,28 @@ def minimal_clean_project() -> dict[str, Any]:
         "supportResources": [
             {
                 "id": "node-a-personnel",
+                "organizationNodeId": "node-a",
                 "supportNodeName": "node A",
                 "type": "personnel",
                 "name": "crew",
                 "quantity": 1,
             }
         ],
-        "transportPolicies": [
-            {
-                "id": "tp-1",
-                "fromSupportNodeName": "node A",
-                "toSupportNodeName": "node A",
-                "productId": "product-whole-aircraft",
-                "capacity": 1,
-            }
-        ],
+        "supportOrganization": {
+            "tree": {
+                "id": "node-a",
+                "name": "node A",
+                "children": [],
+                "serviceScope": {
+                    "airportIds": [],
+                    "aircraftModels": [],
+                    "productIds": [],
+                    "resourceTypes": [],
+                },
+            },
+            "relations": [],
+        },
+        "transportPolicies": [],
         "supportActivities": [
             {
                 "id": "corrective",
@@ -183,14 +191,7 @@ def legacy_polluted_project() -> dict[str, Any]:
                 "personnelCapacity": 1,
                 "equipmentCapacity": 1,
                 "inventory": {"aircraft_support_v1_spares": 2},
-                "transportPolicies": [
-                    {
-                        "from": "node-a",
-                        "to": "node-a",
-                        "spareType": "aircraft_support_v1_spares",
-                        "capacity": 1,
-                    }
-                ],
+                "transportPolicies": [{}],
             }
         ],
         "supportActivities": [

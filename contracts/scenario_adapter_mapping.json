@@ -28,8 +28,9 @@
           "constructor_param": "equipment_tree"
         },
         "support_network": {
-          "source": "project.supportNodes[] for support-point names, project.supportResources[] for personnel/equipment/spare quantities, and project.transportPolicies[] for transfer rules",
-          "constructor_param": "support_network"
+          "source": "project.supportNodes[] for the unchanged runtime support-point projection; canonical project.supportOrganization, supportNodes[].organizationNodeId, supportResources[].organizationNodeId, and project.transportPolicies[] organization endpoints compile to support_network.organization_graph",
+          "constructor_param": "support_network",
+          "runtime_deferred": "support_network.organization_graph is validated and preserved for later behavior activation; it does not change current resource selection or metrics"
         },
         "support_activities": {
           "source": "project.supportActivityJobs[] definitions plus project.supportActivities[] activityCodes/predecessors DAG",

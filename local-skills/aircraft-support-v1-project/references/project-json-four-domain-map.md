@@ -55,8 +55,9 @@ Interpretation:
 
 - Support nodes are resource scopes where work is performed.
 - Support resources add personnel, equipment, and spares to nodes; spare rows reference catalog entries with `productId`.
-- Top-level and node-scoped transport policies describe replenishment links and delays. An optional `productId` limits a policy to one product; omission means the policy can carry any product.
-- Organization fields should be explained as allocation/governance context.
+- `supportOrganization.tree` is one canonical root. Parent edges derive from `children[]`; `relations[]` contains only lateral DAG edges. Each node has a complete `serviceScope`, where an empty dimension means unrestricted.
+- Support nodes and all resources declare `organizationNodeId`; top-level transport policies use organization-node endpoints. An optional `productId` limits a policy to one product; omission means the policy can carry any product.
+- Organization fields should be explained as a validated allocation graph whose runtime behavior remains deferred in #314. Node-scoped policies and name aliases are migration-only.
 
 ## 保障活动
 

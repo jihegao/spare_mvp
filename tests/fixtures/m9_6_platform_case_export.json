@@ -29,7 +29,14 @@
           "supportResources[].type",
           "supportResources[].productId",
           "supportResources[].supportNodeName",
+          "supportResources[].organizationNodeId",
+          "supportNodes[].organizationNodeId",
+          "supportOrganization.tree[].id",
+          "supportOrganization.tree[].serviceScope",
+          "supportOrganization.relations[]",
           "transportPolicies[]",
+          "transportPolicies[].fromOrganizationNodeId",
+          "transportPolicies[].toOrganizationNodeId",
           "supportActivityJobs[]",
           "supportActivities[].aircraftModel",
           "supportActivities[].equipmentId",
@@ -73,6 +80,11 @@
           "simulation_inputs.support_activities.activities[].equipment_id",
           "simulation_inputs.support_activities.activities[].maintenance_methods",
           "simulation_inputs.support_activities.activities[].replacement_ratio",
+          "simulation_inputs.support_network.organization_graph.nodes",
+          "simulation_inputs.support_network.organization_graph.parent_edges",
+          "simulation_inputs.support_network.organization_graph.lateral_edges",
+          "simulation_inputs.support_network.organization_graph.resource_ownership",
+          "simulation_inputs.support_network.organization_graph.transport_policies",
           "simulation_inputs.time.duration_minutes",
           "simulation_inputs.time.requested_steps",
           "ExperimentPlan.config.steps"
@@ -84,8 +96,7 @@
           "missionProfile.combatUnit",
           "scenarioId",
           "project_id",
-          "project_version",
-          "supportOrganization.tree"
+          "project_version"
         ],
         "ignored_fields": [
           "combatUnit.members[].calendarDays",
@@ -101,6 +112,9 @@
         "model_family": "aircraft_support_v1",
         "modeling_snapshot_id": "snapshot-m9-6-platform-case",
         "project_id": "project-carrier-day-night",
+        "runtime_deferred_fields": [
+          "simulation_inputs.support_network.organization_graph"
+        ],
         "unsupported_fields": [],
         "used_tables": {
           "equipmentAssets": true,
@@ -1248,7 +1262,7 @@
             "support_level": null,
             "transport_policies": [
               {
-                "capacity": 4,
+                "capacity": 1,
                 "from": "基层1",
                 "priority": 1,
                 "product_id": "",
@@ -1256,7 +1270,7 @@
                 "transportTimeHours": 1.0
               },
               {
-                "capacity": 1,
+                "capacity": 4,
                 "from": "基层1",
                 "priority": 1,
                 "product_id": "",
@@ -1299,7 +1313,7 @@
             "support_level": null,
             "transport_policies": [
               {
-                "capacity": 2,
+                "capacity": 1,
                 "from": "基地",
                 "priority": 1,
                 "product_id": "",
@@ -1307,7 +1321,7 @@
                 "transportTimeHours": 2.0
               },
               {
-                "capacity": 1,
+                "capacity": 2,
                 "from": "基地",
                 "priority": 1,
                 "product_id": "",
@@ -1359,7 +1373,189 @@
               }
             ]
           }
-        ]
+        ],
+        "organization_graph": {
+          "lateral_edges": [],
+          "nodes": [
+            {
+              "id": "carrier-deck",
+              "name": "基地",
+              "parent_id": "support-org-root",
+              "service_scope": {
+                "aircraft_models": [],
+                "airport_ids": [],
+                "product_ids": [],
+                "resource_types": []
+              }
+            },
+            {
+              "id": "carrier-stock",
+              "name": "基层1",
+              "parent_id": "support-org-root",
+              "service_scope": {
+                "aircraft_models": [],
+                "airport_ids": [],
+                "product_ids": [],
+                "resource_types": []
+              }
+            },
+            {
+              "id": "forward-sea-base",
+              "name": "中继",
+              "parent_id": "support-org-root",
+              "service_scope": {
+                "aircraft_models": [],
+                "airport_ids": [],
+                "product_ids": [],
+                "resource_types": []
+              }
+            },
+            {
+              "id": "support-org-root",
+              "name": "保障组织",
+              "parent_id": null,
+              "service_scope": {
+                "aircraft_models": [],
+                "airport_ids": [],
+                "product_ids": [],
+                "resource_types": []
+              }
+            }
+          ],
+          "parent_edges": [
+            {
+              "from_node_id": "support-org-root",
+              "to_node_id": "carrier-deck"
+            },
+            {
+              "from_node_id": "support-org-root",
+              "to_node_id": "carrier-stock"
+            },
+            {
+              "from_node_id": "support-org-root",
+              "to_node_id": "forward-sea-base"
+            }
+          ],
+          "resource_ownership": [
+            {
+              "organization_node_id": "carrier-stock",
+              "resource_id": "support-resource-equipment-8e051f1445",
+              "resource_type": "equipment"
+            },
+            {
+              "organization_node_id": "carrier-deck",
+              "resource_id": "support-resource-equipment-a1a5ec2fef",
+              "resource_type": "equipment"
+            },
+            {
+              "organization_node_id": "forward-sea-base",
+              "resource_id": "support-resource-equipment-b6c153116d",
+              "resource_type": "equipment"
+            },
+            {
+              "organization_node_id": "carrier-stock",
+              "resource_id": "support-resource-personnel-8e051f1445",
+              "resource_type": "personnel"
+            },
+            {
+              "organization_node_id": "carrier-deck",
+              "resource_id": "support-resource-personnel-a1a5ec2fef",
+              "resource_type": "personnel"
+            },
+            {
+              "organization_node_id": "forward-sea-base",
+              "resource_id": "support-resource-personnel-b6c153116d",
+              "resource_type": "personnel"
+            },
+            {
+              "organization_node_id": "carrier-deck",
+              "resource_id": "support-resource-spare-17fde32d23",
+              "resource_type": "spare"
+            },
+            {
+              "organization_node_id": "forward-sea-base",
+              "resource_id": "support-resource-spare-18b536c487",
+              "resource_type": "spare"
+            },
+            {
+              "organization_node_id": "carrier-stock",
+              "resource_id": "support-resource-spare-1e6d61dc33",
+              "resource_type": "spare"
+            },
+            {
+              "organization_node_id": "forward-sea-base",
+              "resource_id": "support-resource-spare-23e10ec846",
+              "resource_type": "spare"
+            },
+            {
+              "organization_node_id": "carrier-deck",
+              "resource_id": "support-resource-spare-3c7d67e069",
+              "resource_type": "spare"
+            },
+            {
+              "organization_node_id": "forward-sea-base",
+              "resource_id": "support-resource-spare-5ec05a2507",
+              "resource_type": "spare"
+            },
+            {
+              "organization_node_id": "carrier-stock",
+              "resource_id": "support-resource-spare-9d11b8cda2",
+              "resource_type": "spare"
+            },
+            {
+              "organization_node_id": "carrier-stock",
+              "resource_id": "support-resource-spare-e4529c562d",
+              "resource_type": "spare"
+            },
+            {
+              "organization_node_id": "carrier-deck",
+              "resource_id": "support-resource-spare-f9224feeb0",
+              "resource_type": "spare"
+            }
+          ],
+          "transport_policies": [
+            {
+              "capacity": 1,
+              "from_organization_node_id": "carrier-stock",
+              "id": "logistics-support-transport-1",
+              "priority": 1,
+              "to_organization_node_id": "carrier-deck",
+              "transport_time_hours": 1.0
+            },
+            {
+              "capacity": 1,
+              "from_organization_node_id": "carrier-deck",
+              "id": "logistics-support-transport-2",
+              "priority": 1,
+              "to_organization_node_id": "forward-sea-base",
+              "transport_time_hours": 2.0
+            },
+            {
+              "capacity": 3,
+              "from_organization_node_id": "carrier-deck",
+              "id": "transport-policy-0b15cac048",
+              "priority": 2,
+              "to_organization_node_id": "carrier-stock",
+              "transport_time_hours": 3.0
+            },
+            {
+              "capacity": 4,
+              "from_organization_node_id": "carrier-stock",
+              "id": "transport-policy-21ae58b0d0",
+              "priority": 1,
+              "to_organization_node_id": "carrier-deck",
+              "transport_time_hours": 1.0
+            },
+            {
+              "capacity": 2,
+              "from_organization_node_id": "carrier-deck",
+              "id": "transport-policy-9bbb44d0c0",
+              "priority": 1,
+              "to_organization_node_id": "forward-sea-base",
+              "transport_time_hours": 2.0
+            }
+          ]
+        }
       },
       "time": {
         "duration_minutes": 20160,
@@ -2364,42 +2560,70 @@
         "supportNodes": [
           {
             "id": "support-node-1",
-            "name": "基地"
+            "name": "基地",
+            "organizationNodeId": "carrier-deck"
           },
           {
             "id": "support-node-2",
-            "name": "中继"
+            "name": "中继",
+            "organizationNodeId": "forward-sea-base"
           },
           {
             "id": "support-node-3",
-            "name": "基层1"
+            "name": "基层1",
+            "organizationNodeId": "carrier-stock"
           }
         ],
         "supportOrganization": {
+          "relations": [],
           "tree": {
             "children": [
               {
                 "children": [],
                 "description": "任务优先 + 备件安全库存",
                 "id": "carrier-deck",
-                "name": "基地"
+                "name": "基地",
+                "serviceScope": {
+                  "aircraftModels": [],
+                  "airportIds": [],
+                  "productIds": [],
+                  "resourceTypes": []
+                }
               },
               {
                 "children": [],
                 "description": "前置库存 + 横向支援",
                 "id": "forward-sea-base",
-                "name": "中继"
+                "name": "中继",
+                "serviceScope": {
+                  "aircraftModels": [],
+                  "airportIds": [],
+                  "productIds": [],
+                  "resourceTypes": []
+                }
               },
               {
                 "children": [],
                 "description": "集中库存 + 垂直补给",
                 "id": "carrier-stock",
-                "name": "基层1"
+                "name": "基层1",
+                "serviceScope": {
+                  "aircraftModels": [],
+                  "airportIds": [],
+                  "productIds": [],
+                  "resourceTypes": []
+                }
               }
             ],
             "description": "由导入项目保障节点生成的初始组织树",
             "id": "support-org-root",
-            "name": "保障组织"
+            "name": "保障组织",
+            "serviceScope": {
+              "aircraftModels": [],
+              "airportIds": [],
+              "productIds": [],
+              "resourceTypes": []
+            }
           }
         },
         "supportResources": [
@@ -2407,6 +2631,7 @@
             "id": "support-resource-personnel-a1a5ec2fef",
             "model": "",
             "name": "基地",
+            "organizationNodeId": "carrier-deck",
             "quantity": 5,
             "supportNodeName": "基地",
             "type": "personnel"
@@ -2415,6 +2640,7 @@
             "id": "support-resource-equipment-a1a5ec2fef",
             "model": "甲板保障点",
             "name": "基地",
+            "organizationNodeId": "carrier-deck",
             "quantity": 3,
             "supportNodeName": "基地",
             "type": "equipment"
@@ -2423,6 +2649,7 @@
             "id": "support-resource-spare-f9224feeb0",
             "model": "发动机备件",
             "name": "发动机备件",
+            "organizationNodeId": "carrier-deck",
             "productId": "product-support-resource-spare-f9224feeb0",
             "quantity": 4,
             "supportNodeName": "基地",
@@ -2432,6 +2659,7 @@
             "id": "support-resource-spare-17fde32d23",
             "model": "液压备件",
             "name": "液压备件",
+            "organizationNodeId": "carrier-deck",
             "productId": "product-support-resource-spare-17fde32d23",
             "quantity": 5,
             "supportNodeName": "基地",
@@ -2441,6 +2669,7 @@
             "id": "support-resource-spare-3c7d67e069",
             "model": "航电模块",
             "name": "航电模块",
+            "organizationNodeId": "carrier-deck",
             "productId": "product-support-resource-spare-3c7d67e069",
             "quantity": 6,
             "supportNodeName": "基地",
@@ -2450,6 +2679,7 @@
             "id": "support-resource-personnel-b6c153116d",
             "model": "",
             "name": "中继",
+            "organizationNodeId": "forward-sea-base",
             "quantity": 4,
             "supportNodeName": "中继",
             "type": "personnel"
@@ -2458,6 +2688,7 @@
             "id": "support-resource-equipment-b6c153116d",
             "model": "海上保障点",
             "name": "中继",
+            "organizationNodeId": "forward-sea-base",
             "quantity": 2,
             "supportNodeName": "中继",
             "type": "equipment"
@@ -2466,6 +2697,7 @@
             "id": "support-resource-spare-23e10ec846",
             "model": "发动机备件",
             "name": "发动机备件",
+            "organizationNodeId": "forward-sea-base",
             "productId": "product-support-resource-spare-f9224feeb0",
             "quantity": 2,
             "supportNodeName": "中继",
@@ -2475,6 +2707,7 @@
             "id": "support-resource-spare-18b536c487",
             "model": "液压备件",
             "name": "液压备件",
+            "organizationNodeId": "forward-sea-base",
             "productId": "product-support-resource-spare-17fde32d23",
             "quantity": 2,
             "supportNodeName": "中继",
@@ -2484,6 +2717,7 @@
             "id": "support-resource-spare-5ec05a2507",
             "model": "航电模块",
             "name": "航电模块",
+            "organizationNodeId": "forward-sea-base",
             "productId": "product-support-resource-spare-3c7d67e069",
             "quantity": 3,
             "supportNodeName": "中继",
@@ -2493,6 +2727,7 @@
             "id": "support-resource-personnel-8e051f1445",
             "model": "",
             "name": "基层1",
+            "organizationNodeId": "carrier-stock",
             "quantity": 3,
             "supportNodeName": "基层1",
             "type": "personnel"
@@ -2501,6 +2736,7 @@
             "id": "support-resource-equipment-8e051f1445",
             "model": "备件库",
             "name": "基层1",
+            "organizationNodeId": "carrier-stock",
             "quantity": 2,
             "supportNodeName": "基层1",
             "type": "equipment"
@@ -2509,6 +2745,7 @@
             "id": "support-resource-spare-9d11b8cda2",
             "model": "发动机备件",
             "name": "发动机备件",
+            "organizationNodeId": "carrier-stock",
             "productId": "product-support-resource-spare-f9224feeb0",
             "quantity": 6,
             "supportNodeName": "基层1",
@@ -2518,6 +2755,7 @@
             "id": "support-resource-spare-1e6d61dc33",
             "model": "液压备件",
             "name": "液压备件",
+            "organizationNodeId": "carrier-stock",
             "productId": "product-support-resource-spare-17fde32d23",
             "quantity": 6,
             "supportNodeName": "基层1",
@@ -2527,6 +2765,7 @@
             "id": "support-resource-spare-e4529c562d",
             "model": "航电模块",
             "name": "航电模块",
+            "organizationNodeId": "carrier-stock",
             "productId": "product-support-resource-spare-3c7d67e069",
             "quantity": 8,
             "supportNodeName": "基层1",
@@ -2535,45 +2774,14 @@
         ],
         "transportPolicies": [
           {
-            "capacity": 4,
-            "fromSupportNodeName": "基层1",
-            "id": "transport-policy-21ae58b0d0",
-            "priority": 1,
-            "spareName": "",
-            "toSupportNodeName": "基地",
-            "transportMode": "升降机转运",
-            "transportTimeHours": 1.0
-          },
-          {
-            "capacity": 2,
-            "fromSupportNodeName": "基地",
-            "id": "transport-policy-9bbb44d0c0",
-            "priority": 1,
-            "spareName": "",
-            "toSupportNodeName": "中继",
-            "transportMode": "补给艇转运",
-            "transportTimeHours": 2.0
-          },
-          {
-            "capacity": 3,
-            "fromSupportNodeName": "基地",
-            "id": "transport-policy-0b15cac048",
-            "priority": 2,
-            "spareName": "",
-            "toSupportNodeName": "基层1",
-            "transportMode": "返修转运",
-            "transportTimeHours": 3.0
-          },
-          {
             "capacity": 1,
             "criticalInventory": 2,
             "direction": "纵向运输",
-            "fromSupportNodeName": "基层1",
+            "fromOrganizationNodeId": "carrier-stock",
             "id": "logistics-support-transport-1",
             "name": "1",
             "priority": 1,
-            "spareName": "",
-            "toSupportNodeName": "基地",
+            "toOrganizationNodeId": "carrier-deck",
             "transportMode": "纵向运输",
             "transportTimeHours": 1.0,
             "triggerMode": "临界库存"
@@ -2581,16 +2789,42 @@
           {
             "capacity": 1,
             "direction": "横向运输",
-            "fromSupportNodeName": "基地",
+            "fromOrganizationNodeId": "carrier-deck",
             "id": "logistics-support-transport-2",
             "name": "2",
             "priority": 1,
-            "spareName": "",
-            "toSupportNodeName": "中继",
+            "toOrganizationNodeId": "forward-sea-base",
             "transferCycleHours": 24,
             "transportMode": "横向运输",
             "transportTimeHours": 2.0,
             "triggerMode": "周期性调运"
+          },
+          {
+            "capacity": 3,
+            "fromOrganizationNodeId": "carrier-deck",
+            "id": "transport-policy-0b15cac048",
+            "priority": 2,
+            "toOrganizationNodeId": "carrier-stock",
+            "transportMode": "返修转运",
+            "transportTimeHours": 3.0
+          },
+          {
+            "capacity": 4,
+            "fromOrganizationNodeId": "carrier-stock",
+            "id": "transport-policy-21ae58b0d0",
+            "priority": 1,
+            "toOrganizationNodeId": "carrier-deck",
+            "transportMode": "升降机转运",
+            "transportTimeHours": 1.0
+          },
+          {
+            "capacity": 2,
+            "fromOrganizationNodeId": "carrier-deck",
+            "id": "transport-policy-9bbb44d0c0",
+            "priority": 1,
+            "toOrganizationNodeId": "forward-sea-base",
+            "transportMode": "补给艇转运",
+            "transportTimeHours": 2.0
           }
         ]
       },
@@ -3572,42 +3806,70 @@
       "supportNodes": [
         {
           "id": "support-node-1",
-          "name": "基地"
+          "name": "基地",
+          "organizationNodeId": "carrier-deck"
         },
         {
           "id": "support-node-2",
-          "name": "中继"
+          "name": "中继",
+          "organizationNodeId": "forward-sea-base"
         },
         {
           "id": "support-node-3",
-          "name": "基层1"
+          "name": "基层1",
+          "organizationNodeId": "carrier-stock"
         }
       ],
       "supportOrganization": {
+        "relations": [],
         "tree": {
           "children": [
             {
               "children": [],
               "description": "任务优先 + 备件安全库存",
               "id": "carrier-deck",
-              "name": "基地"
+              "name": "基地",
+              "serviceScope": {
+                "aircraftModels": [],
+                "airportIds": [],
+                "productIds": [],
+                "resourceTypes": []
+              }
             },
             {
               "children": [],
               "description": "前置库存 + 横向支援",
               "id": "forward-sea-base",
-              "name": "中继"
+              "name": "中继",
+              "serviceScope": {
+                "aircraftModels": [],
+                "airportIds": [],
+                "productIds": [],
+                "resourceTypes": []
+              }
             },
             {
               "children": [],
               "description": "集中库存 + 垂直补给",
               "id": "carrier-stock",
-              "name": "基层1"
+              "name": "基层1",
+              "serviceScope": {
+                "aircraftModels": [],
+                "airportIds": [],
+                "productIds": [],
+                "resourceTypes": []
+              }
             }
           ],
           "description": "由导入项目保障节点生成的初始组织树",
           "id": "support-org-root",
-          "name": "保障组织"
+          "name": "保障组织",
+          "serviceScope": {
+            "aircraftModels": [],
+            "airportIds": [],
+            "productIds": [],
+            "resourceTypes": []
+          }
         }
       },
       "supportResources": [
@@ -3615,6 +3877,7 @@
           "id": "support-resource-personnel-a1a5ec2fef",
           "model": "",
           "name": "基地",
+          "organizationNodeId": "carrier-deck",
           "quantity": 5,
           "supportNodeName": "基地",
           "type": "personnel"
@@ -3623,6 +3886,7 @@
           "id": "support-resource-equipment-a1a5ec2fef",
           "model": "甲板保障点",
           "name": "基地",
+          "organizationNodeId": "carrier-deck",
           "quantity": 3,
           "supportNodeName": "基地",
           "type": "equipment"
@@ -3631,6 +3895,7 @@
           "id": "support-resource-spare-f9224feeb0",
           "model": "发动机备件",
           "name": "发动机备件",
+          "organizationNodeId": "carrier-deck",
           "productId": "product-support-resource-spare-f9224feeb0",
           "quantity": 4,
           "supportNodeName": "基地",
@@ -3640,6 +3905,7 @@
           "id": "support-resource-spare-17fde32d23",
           "model": "液压备件",
           "name": "液压备件",
+          "organizationNodeId": "carrier-deck",
           "productId": "product-support-resource-spare-17fde32d23",
           "quantity": 5,
           "supportNodeName": "基地",
@@ -3649,6 +3915,7 @@
           "id": "support-resource-spare-3c7d67e069",
           "model": "航电模块",
           "name": "航电模块",
+          "organizationNodeId": "carrier-deck",
           "productId": "product-support-resource-spare-3c7d67e069",
           "quantity": 6,
           "supportNodeName": "基地",
@@ -3658,6 +3925,7 @@
           "id": "support-resource-personnel-b6c153116d",
           "model": "",
           "name": "中继",
+          "organizationNodeId": "forward-sea-base",
           "quantity": 4,
           "supportNodeName": "中继",
           "type": "personnel"
@@ -3666,6 +3934,7 @@
           "id": "support-resource-equipment-b6c153116d",
           "model": "海上保障点",
           "name": "中继",
+          "organizationNodeId": "forward-sea-base",
           "quantity": 2,
           "supportNodeName": "中继",
           "type": "equipment"
@@ -3674,6 +3943,7 @@
           "id": "support-resource-spare-23e10ec846",
           "model": "发动机备件",
           "name": "发动机备件",
+          "organizationNodeId": "forward-sea-base",
           "productId": "product-support-resource-spare-f9224feeb0",
           "quantity": 2,
           "supportNodeName": "中继",
@@ -3683,6 +3953,7 @@
           "id": "support-resource-spare-18b536c487",
           "model": "液压备件",
           "name": "液压备件",
+          "organizationNodeId": "forward-sea-base",
           "productId": "product-support-resource-spare-17fde32d23",
           "quantity": 2,
           "supportNodeName": "中继",
@@ -3692,6 +3963,7 @@
           "id": "support-resource-spare-5ec05a2507",
           "model": "航电模块",
           "name": "航电模块",
+          "organizationNodeId": "forward-sea-base",
           "productId": "product-support-resource-spare-3c7d67e069",
           "quantity": 3,
           "supportNodeName": "中继",
@@ -3701,6 +3973,7 @@
           "id": "support-resource-personnel-8e051f1445",
           "model": "",
           "name": "基层1",
+          "organizationNodeId": "carrier-stock",
           "quantity": 3,
           "supportNodeName": "基层1",
           "type": "personnel"
@@ -3709,6 +3982,7 @@
           "id": "support-resource-equipment-8e051f1445",
           "model": "备件库",
           "name": "基层1",
+          "organizationNodeId": "carrier-stock",
           "quantity": 2,
           "supportNodeName": "基层1",
           "type": "equipment"
@@ -3717,6 +3991,7 @@
           "id": "support-resource-spare-9d11b8cda2",
           "model": "发动机备件",
           "name": "发动机备件",
+          "organizationNodeId": "carrier-stock",
           "productId": "product-support-resource-spare-f9224feeb0",
           "quantity": 6,
           "supportNodeName": "基层1",
@@ -3726,6 +4001,7 @@
           "id": "support-resource-spare-1e6d61dc33",
           "model": "液压备件",
           "name": "液压备件",
+          "organizationNodeId": "carrier-stock",
           "productId": "product-support-resource-spare-17fde32d23",
           "quantity": 6,
           "supportNodeName": "基层1",
@@ -3735,6 +4011,7 @@
           "id": "support-resource-spare-e4529c562d",
           "model": "航电模块",
           "name": "航电模块",
+          "organizationNodeId": "carrier-stock",
           "productId": "product-support-resource-spare-3c7d67e069",
           "quantity": 8,
           "supportNodeName": "基层1",
@@ -3743,45 +4020,14 @@
       ],
       "transportPolicies": [
         {
-          "capacity": 4,
-          "fromSupportNodeName": "基层1",
-          "id": "transport-policy-21ae58b0d0",
-          "priority": 1,
-          "spareName": "",
-          "toSupportNodeName": "基地",
-          "transportMode": "升降机转运",
-          "transportTimeHours": 1.0
-        },
-        {
-          "capacity": 2,
-          "fromSupportNodeName": "基地",
-          "id": "transport-policy-9bbb44d0c0",
-          "priority": 1,
-          "spareName": "",
-          "toSupportNodeName": "中继",
-          "transportMode": "补给艇转运",
-          "transportTimeHours": 2.0
-        },
-        {
-          "capacity": 3,
-          "fromSupportNodeName": "基地",
-          "id": "transport-policy-0b15cac048",
-          "priority": 2,
-          "spareName": "",
-          "toSupportNodeName": "基层1",
-          "transportMode": "返修转运",
-          "transportTimeHours": 3.0
-        },
-        {
           "capacity": 1,
           "criticalInventory": 2,
           "direction": "纵向运输",
-          "fromSupportNodeName": "基层1",
+          "fromOrganizationNodeId": "carrier-stock",
           "id": "logistics-support-transport-1",
           "name": "1",
           "priority": 1,
-          "spareName": "",
-          "toSupportNodeName": "基地",
+          "toOrganizationNodeId": "carrier-deck",
           "transportMode": "纵向运输",
           "transportTimeHours": 1.0,
           "triggerMode": "临界库存"
@@ -3789,16 +4035,42 @@
         {
           "capacity": 1,
           "direction": "横向运输",
-          "fromSupportNodeName": "基地",
+          "fromOrganizationNodeId": "carrier-deck",
           "id": "logistics-support-transport-2",
           "name": "2",
           "priority": 1,
-          "spareName": "",
-          "toSupportNodeName": "中继",
+          "toOrganizationNodeId": "forward-sea-base",
           "transferCycleHours": 24,
           "transportMode": "横向运输",
           "transportTimeHours": 2.0,
           "triggerMode": "周期性调运"
+        },
+        {
+          "capacity": 3,
+          "fromOrganizationNodeId": "carrier-deck",
+          "id": "transport-policy-0b15cac048",
+          "priority": 2,
+          "toOrganizationNodeId": "carrier-stock",
+          "transportMode": "返修转运",
+          "transportTimeHours": 3.0
+        },
+        {
+          "capacity": 4,
+          "fromOrganizationNodeId": "carrier-stock",
+          "id": "transport-policy-21ae58b0d0",
+          "priority": 1,
+          "toOrganizationNodeId": "carrier-deck",
+          "transportMode": "升降机转运",
+          "transportTimeHours": 1.0
+        },
+        {
+          "capacity": 2,
+          "fromOrganizationNodeId": "carrier-deck",
+          "id": "transport-policy-9bbb44d0c0",
+          "priority": 1,
+          "toOrganizationNodeId": "forward-sea-base",
+          "transportMode": "补给艇转运",
+          "transportTimeHours": 2.0
         }
       ]
     },
@@ -4794,42 +5066,70 @@
     "supportNodes": [
       {
         "id": "support-node-1",
-        "name": "基地"
+        "name": "基地",
+        "organizationNodeId": "carrier-deck"
       },
       {
         "id": "support-node-2",
-        "name": "中继"
+        "name": "中继",
+        "organizationNodeId": "forward-sea-base"
       },
       {
         "id": "support-node-3",
-        "name": "基层1"
+        "name": "基层1",
+        "organizationNodeId": "carrier-stock"
       }
     ],
     "supportOrganization": {
+      "relations": [],
       "tree": {
         "children": [
           {
             "children": [],
             "description": "任务优先 + 备件安全库存",
             "id": "carrier-deck",
-            "name": "基地"
+            "name": "基地",
+            "serviceScope": {
+              "aircraftModels": [],
+              "airportIds": [],
+              "productIds": [],
+              "resourceTypes": []
+            }
           },
           {
             "children": [],
             "description": "前置库存 + 横向支援",
             "id": "forward-sea-base",
-            "name": "中继"
+            "name": "中继",
+            "serviceScope": {
+              "aircraftModels": [],
+              "airportIds": [],
+              "productIds": [],
+              "resourceTypes": []
+            }
           },
           {
             "children": [],
             "description": "集中库存 + 垂直补给",
             "id": "carrier-stock",
-            "name": "基层1"
+            "name": "基层1",
+            "serviceScope": {
+              "aircraftModels": [],
+              "airportIds": [],
+              "productIds": [],
+              "resourceTypes": []
+            }
           }
         ],
         "description": "由导入项目保障节点生成的初始组织树",
         "id": "support-org-root",
-        "name": "保障组织"
+        "name": "保障组织",
+        "serviceScope": {
+          "aircraftModels": [],
+          "airportIds": [],
+          "productIds": [],
+          "resourceTypes": []
+        }
       }
     },
     "supportResources": [
@@ -4837,6 +5137,7 @@
         "id": "support-resource-personnel-a1a5ec2fef",
         "model": "",
         "name": "基地",
+        "organizationNodeId": "carrier-deck",
         "quantity": 5,
         "supportNodeName": "基地",
         "type": "personnel"
@@ -4845,6 +5146,7 @@
         "id": "support-resource-equipment-a1a5ec2fef",
         "model": "甲板保障点",
         "name": "基地",
+        "organizationNodeId": "carrier-deck",
         "quantity": 3,
         "supportNodeName": "基地",
         "type": "equipment"
@@ -4853,6 +5155,7 @@
         "id": "support-resource-spare-f9224feeb0",
         "model": "发动机备件",
         "name": "发动机备件",
+        "organizationNodeId": "carrier-deck",
         "productId": "product-support-resource-spare-f9224feeb0",
         "quantity": 4,
         "supportNodeName": "基地",
@@ -4862,6 +5165,7 @@
         "id": "support-resource-spare-17fde32d23",
         "model": "液压备件",
         "name": "液压备件",
+        "organizationNodeId": "carrier-deck",
         "productId": "product-support-resource-spare-17fde32d23",
         "quantity": 5,
         "supportNodeName": "基地",
@@ -4871,6 +5175,7 @@
         "id": "support-resource-spare-3c7d67e069",
         "model": "航电模块",
         "name": "航电模块",
+        "organizationNodeId": "carrier-deck",
         "productId": "product-support-resource-spare-3c7d67e069",
         "quantity": 6,
         "supportNodeName": "基地",
@@ -4880,6 +5185,7 @@
         "id": "support-resource-personnel-b6c153116d",
         "model": "",
         "name": "中继",
+        "organizationNodeId": "forward-sea-base",
         "quantity": 4,
         "supportNodeName": "中继",
         "type": "personnel"
@@ -4888,6 +5194,7 @@
         "id": "support-resource-equipment-b6c153116d",
         "model": "海上保障点",
         "name": "中继",
+        "organizationNodeId": "forward-sea-base",
         "quantity": 2,
         "supportNodeName": "中继",
         "type": "equipment"
@@ -4896,6 +5203,7 @@
         "id": "support-resource-spare-23e10ec846",
         "model": "发动机备件",
         "name": "发动机备件",
+        "organizationNodeId": "forward-sea-base",
         "productId": "product-support-resource-spare-f9224feeb0",
         "quantity": 2,
         "supportNodeName": "中继",
@@ -4905,6 +5213,7 @@
         "id": "support-resource-spare-18b536c487",
         "model": "液压备件",
         "name": "液压备件",
+        "organizationNodeId": "forward-sea-base",
         "productId": "product-support-resource-spare-17fde32d23",
         "quantity": 2,
         "supportNodeName": "中继",
@@ -4914,6 +5223,7 @@
         "id": "support-resource-spare-5ec05a2507",
         "model": "航电模块",
         "name": "航电模块",
+        "organizationNodeId": "forward-sea-base",
         "productId": "product-support-resource-spare-3c7d67e069",
         "quantity": 3,
         "supportNodeName": "中继",
@@ -4923,6 +5233,7 @@
         "id": "support-resource-personnel-8e051f1445",
         "model": "",
         "name": "基层1",
+        "organizationNodeId": "carrier-stock",
         "quantity": 3,
         "supportNodeName": "基层1",
         "type": "personnel"
@@ -4931,6 +5242,7 @@
         "id": "support-resource-equipment-8e051f1445",
         "model": "备件库",
         "name": "基层1",
+        "organizationNodeId": "carrier-stock",
         "quantity": 2,
         "supportNodeName": "基层1",
         "type": "equipment"
@@ -4939,6 +5251,7 @@
         "id": "support-resource-spare-9d11b8cda2",
         "model": "发动机备件",
         "name": "发动机备件",
+        "organizationNodeId": "carrier-stock",
         "productId": "product-support-resource-spare-f9224feeb0",
         "quantity": 6,
         "supportNodeName": "基层1",
@@ -4948,6 +5261,7 @@
         "id": "support-resource-spare-1e6d61dc33",
         "model": "液压备件",
         "name": "液压备件",
+        "organizationNodeId": "carrier-stock",
         "productId": "product-support-resource-spare-17fde32d23",
         "quantity": 6,
         "supportNodeName": "基层1",
@@ -4957,6 +5271,7 @@
         "id": "support-resource-spare-e4529c562d",
         "model": "航电模块",
         "name": "航电模块",
+        "organizationNodeId": "carrier-stock",
         "productId": "product-support-resource-spare-3c7d67e069",
         "quantity": 8,
         "supportNodeName": "基层1",
@@ -4965,45 +5280,14 @@
     ],
     "transportPolicies": [
       {
-        "capacity": 4,
-        "fromSupportNodeName": "基层1",
-        "id": "transport-policy-21ae58b0d0",
-        "priority": 1,
-        "spareName": "",
-        "toSupportNodeName": "基地",
-        "transportMode": "升降机转运",
-        "transportTimeHours": 1.0
-      },
-      {
-        "capacity": 2,
-        "fromSupportNodeName": "基地",
-        "id": "transport-policy-9bbb44d0c0",
-        "priority": 1,
-        "spareName": "",
-        "toSupportNodeName": "中继",
-        "transportMode": "补给艇转运",
-        "transportTimeHours": 2.0
-      },
-      {
-        "capacity": 3,
-        "fromSupportNodeName": "基地",
-        "id": "transport-policy-0b15cac048",
-        "priority": 2,
-        "spareName": "",
-        "toSupportNodeName": "基层1",
-        "transportMode": "返修转运",
-        "transportTimeHours": 3.0
-      },
-      {
         "capacity": 1,
         "criticalInventory": 2,
         "direction": "纵向运输",
-        "fromSupportNodeName": "基层1",
+        "fromOrganizationNodeId": "carrier-stock",
         "id": "logistics-support-transport-1",
         "name": "1",
         "priority": 1,
-        "spareName": "",
-        "toSupportNodeName": "基地",
+        "toOrganizationNodeId": "carrier-deck",
         "transportMode": "纵向运输",
         "transportTimeHours": 1.0,
         "triggerMode": "临界库存"
@@ -5011,16 +5295,42 @@
       {
         "capacity": 1,
         "direction": "横向运输",
-        "fromSupportNodeName": "基地",
+        "fromOrganizationNodeId": "carrier-deck",
         "id": "logistics-support-transport-2",
         "name": "2",
         "priority": 1,
-        "spareName": "",
-        "toSupportNodeName": "中继",
+        "toOrganizationNodeId": "forward-sea-base",
         "transferCycleHours": 24,
         "transportMode": "横向运输",
         "transportTimeHours": 2.0,
         "triggerMode": "周期性调运"
+      },
+      {
+        "capacity": 3,
+        "fromOrganizationNodeId": "carrier-deck",
+        "id": "transport-policy-0b15cac048",
+        "priority": 2,
+        "toOrganizationNodeId": "carrier-stock",
+        "transportMode": "返修转运",
+        "transportTimeHours": 3.0
+      },
+      {
+        "capacity": 4,
+        "fromOrganizationNodeId": "carrier-stock",
+        "id": "transport-policy-21ae58b0d0",
+        "priority": 1,
+        "toOrganizationNodeId": "carrier-deck",
+        "transportMode": "升降机转运",
+        "transportTimeHours": 1.0
+      },
+      {
+        "capacity": 2,
+        "fromOrganizationNodeId": "carrier-deck",
+        "id": "transport-policy-9bbb44d0c0",
+        "priority": 1,
+        "toOrganizationNodeId": "forward-sea-base",
+        "transportMode": "补给艇转运",
+        "transportTimeHours": 2.0
       }
     ]
   },

@@ -678,7 +678,15 @@ def _support_nodes(
             "transport_policies": [],
         }
     for resource in _list(project.get("supportResources")):
-        node_name = aliases.get(str(resource.get("supportNodeName") or resource.get("supportNodeId") or ""), "")
+        node_name = aliases.get(
+            str(
+                resource.get("organizationNodeId")
+                or resource.get("supportNodeName")
+                or resource.get("supportNodeId")
+                or ""
+            ),
+            "",
+        )
         if not node_name:
             continue
         node = nodes_by_name.setdefault(node_name, {"id": node_name, "name": node_name, "personnel_capacity": 0, "equipment_capacity": 0, "inventory": {}, "product_names": copy.deepcopy(product_names), "transport_policies": []})
@@ -727,8 +735,20 @@ def _support_node_name(node: dict[str, Any]) -> str:
 
 
 def _transport_policy(policy: dict[str, Any], aliases: dict[str, str], default_node: str = "") -> dict[str, Any]:
-    from_value = str(policy.get("fromSupportNodeName") or policy.get("fromSupportNodeId") or policy.get("from") or default_node)
-    to_value = str(policy.get("toSupportNodeName") or policy.get("toSupportNodeId") or policy.get("to") or default_node)
+    from_value = str(
+        policy.get("fromOrganizationNodeId")
+        or policy.get("fromSupportNodeName")
+        or policy.get("fromSupportNodeId")
+        or policy.get("from")
+        or default_node
+    )
+    to_value = str(
+        policy.get("toOrganizationNodeId")
+        or policy.get("toSupportNodeName")
+        or policy.get("toSupportNodeId")
+        or policy.get("to")
+        or default_node
+    )
     return {
         "from": aliases.get(from_value, from_value),
         "to": aliases.get(to_value, to_value),

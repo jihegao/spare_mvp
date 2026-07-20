@@ -45,7 +45,12 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertNotIn("missionAreas", export["project"])
         self.assertNotIn("missionAreas", export["project"]["missionProfile"])
         self.assertNotIn("mission_areas", export["compiled_scenario"]["simulation_inputs"]["mission_profile"])
-        self.assertEqual(export["project"]["supportOrganization"], fixture["objects"]["supportOrganization"])
+        self.assertEqual(
+            export["project"]["supportOrganization"]["tree"]["id"],
+            fixture["objects"]["supportOrganization"]["tree"]["id"],
+        )
+        self.assertEqual(export["project"]["supportOrganization"]["relations"], [])
+        self.assertIn("serviceScope", export["project"]["supportOrganization"]["tree"])
         self.assertEqual(export["published_modeling_import"]["objects"]["supportOrganization"], fixture["objects"]["supportOrganization"])
         self.assertEqual(export["run_intents"]["single"]["run_type"], "single")
         self.assertEqual(export["run_intents"]["single"]["model_family"], "aircraft_support_v1")

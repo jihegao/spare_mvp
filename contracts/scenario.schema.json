@@ -104,6 +104,7 @@
             "derived_fields": { "type": "array", "items": { "type": "string" } },
             "ignored_fields": { "type": "array", "items": { "type": "string" } },
             "governance_only_fields": { "type": "array", "items": { "type": "string" } },
+            "runtime_deferred_fields": { "type": "array", "items": { "type": "string" } },
             "unsupported_fields": { "type": "array", "items": { "type": "string" } },
             "used_tables": {
               "type": "object",

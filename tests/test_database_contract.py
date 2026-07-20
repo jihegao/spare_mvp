@@ -204,7 +204,7 @@ class DatabaseContractTest(unittest.TestCase):
                 "project_version": "project-v0.1",
                 "project_schema_version": "project-v0",
                 "experiment_plan_id": "experiment-plan-aircraft-support-001",
-                "scenario_id": "scenario-aircraft-support-contract-001",
+                "scenario_id": "scenario-aircraft-support-contract-demo",
                 "scenario_version": "scenario-v0.1",
                 "scenario_schema_version": "scenario-v0",
                 "run_id": "run-aircraft-support-contract-001",

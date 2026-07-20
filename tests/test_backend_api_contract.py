@@ -3094,6 +3094,7 @@ class BackendApiContractTest(unittest.TestCase):
                 "inventory": {"product-stock-spare": 12},
             },
         ]
+        project["supportOrganization"] = {}
         project["components"].extend([
             {"id": "engine-spare", "name": "发动机控制模块", "productId": "product-engine-spare", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
             {"id": "hydraulic-spare", "name": "液压执行器", "productId": "product-hydraulic-spare", "parentId": "whole-aircraft", "aircraftModel": "J-15", "productType": "LRU", "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"}},
@@ -3456,52 +3457,15 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.monte_carlo_run_calls), 1)
         self.assertEqual(self.adapter.monte_carlo_run_calls[0]["scenario"]["simulation_model"]["family"], "aircraft_support_v1")
 
-    def test_run_service_aircraft_support_v1_accepts_support_organization_as_governance_only(self) -> None:
+    def test_run_service_blocks_invalid_legacy_support_organization_tree(self) -> None:
         created = self._create_imported_sample_project()
         project = copy.deepcopy(created["project"])
         project["supportOrganization"] = {"tree": [{"id": "carrier-wing-support"}]}
-        saved = self.api.save_project(project)
-        self.api.create_modeling_snapshot(saved["project_id"])
-        plan = self.api.create_experiment_plan(
-            saved["project_id"],
-            {"name": "m9.7.4 aircraft support governance", "projectJson": copy.deepcopy(project)},
-        )
-        service = RunService(self.repository, self.adapter, self.api.output_dir)
 
-        submitted = service.submit_run(
-            {
-                "project_id": saved["project_id"],
-                "experiment_plan_id": plan["experiment_plan_id"],
-                "model_family": "aircraft_support_v1",
-                "run_type": "single",
-                "formal_run": True,
-            }
-        )
-        manifest = self.api.get_run_artifacts(submitted["run_id"])
-        compiled_artifact = self._artifact_by_kind(manifest, "compiled_scenario")
-        report_artifact = self._artifact_by_kind(manifest, "report")
-        compiled_payload = json.loads((Path(self.api.output_dir) / compiled_artifact["path"]).read_text(encoding="utf-8"))
-        report_payload = json.loads((Path(self.api.output_dir) / report_artifact["path"]).read_text(encoding="utf-8"))
-        provenance = compiled_payload["compiled_from"]["mapping_provenance"]
+        with self.assertRaises(BackendApiError) as raised:
+            self.api.save_project(project)
 
-        self.assertEqual(submitted["status"], "succeeded")
-        self.assertEqual(submitted["phase"], "completed")
-        self.assertEqual(submitted["model_family"], "aircraft_support_v1")
-        self.assertEqual(provenance["unsupported_fields"], [])
-        self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
-        self.assertEqual(
-            set(report_payload["m9_7_4_behavior_scope"]["fail_closed_fields"]),
-            {
-                "combatUnit.members[].preLifeCalendarDays",
-                "combatUnit.members[].preLifeFlightHours",
-                "combatUnit.members[].preLifeTakeoffLandingCount",
-                "supportActivities[].aircraftModel",
-                "supportActivities[].equipmentId",
-                "supportActivities[].calendarDayInterval",
-                "supportActivities[].runHourInterval",
-                "supportActivities[].takeoffLandingInterval",
-            },
-        )
+        self.assertEqual(raised.exception.code, "invalid_project")
 
     def test_formal_run_persists_modeling_import_validation_scope_in_scenario_provenance(self) -> None:
         import_package = self._reduced_scope_import_package_without_support_domain()
@@ -4573,7 +4537,7 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual([node["name"] for node in project["supportNodes"]], ["基地", "中继", "基层1"])
         for node in project["supportNodes"]:
-            self.assertEqual(set(node), {"id", "name"})
+            self.assertEqual(set(node), {"id", "name", "organizationNodeId"})
             self.assertTrue(str(node["id"]).startswith("support-node-"))
 
         resource_types = {resource["type"] for resource in project["supportResources"]}
@@ -4596,13 +4560,13 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertGreaterEqual(len(project["transportPolicies"]), 3)
         first_policy = project["transportPolicies"][0]
-        self.assertIn("fromSupportNodeName", first_policy)
-        self.assertIn("toSupportNodeName", first_policy)
+        self.assertIn("fromOrganizationNodeId", first_policy)
+        self.assertIn("toOrganizationNodeId", first_policy)
         self.assertNotIn("transportPolicies", project["supportResources"][0])
         self.assertIsInstance(project["supportOrganization"]["tree"], dict)
         self.assertIn("children", project["supportOrganization"]["tree"])
 
-    def test_modeling_import_to_project_promotes_legacy_activity_transport_strategies(self) -> None:
+    def test_modeling_import_to_project_blocks_self_legacy_activity_transport_strategy(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         import_package["objects"] = copy.deepcopy(import_package["objects"])
         import_package["objects"].pop("transportPolicies", None)
@@ -4635,19 +4599,9 @@ class BackendApiContractTest(unittest.TestCase):
         ]
 
         validation = validate_modeling_import_package(import_package)
-        project = modeling_import_to_project(import_package, validation=validation)
-
         self.assertTrue(validation["ok"])
-        self.assertEqual(project["transportPolicies"][0]["name"], "旧调运策略")
-        product_id = project["transportPolicies"][0]["productId"]
-        self.assertEqual(next(product["name"] for product in project["products"] if product["id"] == product_id), "航电模块")
-        self.assertNotIn("spareName", project["transportPolicies"][0])
-        self.assertNotIn("spareType", project["transportPolicies"][0])
-        self.assertEqual(project["transportPolicies"][0]["direction"], "横向运输")
-        self.assertEqual(project["transportPolicies"][0]["transportMode"], "横向运输")
-        self.assertEqual(project["transportPolicies"][0]["transferCycleHours"], 6)
-        self.assertNotIn("transportStrategies", project["supportActivities"][0])
-        self.assertNotIn("organizationStrategies", project["supportActivities"][0])
+        with self.assertRaisesRegex(Exception, "endpoints must be different"):
+            modeling_import_to_project(import_package, validation=validation)
 
     def test_strip_project_sweep_removes_support_node_resource_rows_and_preserves_resources(self) -> None:
         project = {
@@ -4744,7 +4698,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("modelingDictionaries", slim_project)
         self.assertNotIn("validationLevel", slim_project["modelingImportValidation"])
         self.assertEqual([node["name"] for node in slim_project["supportNodes"]], ["基地", "中继", "基层"])
-        self.assertTrue(all(set(node) == {"id", "name"} for node in slim_project["supportNodes"]))
+        self.assertTrue(all("organizationNodeId" in node for node in slim_project["supportNodes"]))
         self.assertFalse(any(node.get("id") == "carrier-stock-personnel-mech" for node in slim_project["supportNodes"]))
         self.assertEqual(slim_project["supportResources"], [
             {
@@ -4754,14 +4708,14 @@ class BackendApiContractTest(unittest.TestCase):
                 "name": "机械保障人员",
                 "model": "机械",
                 "quantity": 3,
+                "organizationNodeId": "line-team",
             }
         ])
         self.assertEqual(slim_project["transportPolicies"], [
             {
                 "id": "transport-1",
-                "fromSupportNodeName": "基层",
-                "toSupportNodeName": "基地",
-                "spareName": "航电模块",
+                "fromOrganizationNodeId": "line-team",
+                "toOrganizationNodeId": "carrier-deck",
                 "capacity": 2,
             }
         ])
@@ -4805,10 +4759,9 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(slim_project["transportPolicies"], [
             {
-                "id": "logistics-plan-transport-0",
-                "fromSupportNodeName": "基地",
-                "toSupportNodeName": "甲板",
-                "spareName": "航电模块",
+                "id": "migrated-transport-b8e701a8c223",
+                "fromOrganizationNodeId": "support-node-1",
+                "toOrganizationNodeId": "support-node-2",
                 "name": "旧调运策略",
                 "direction": "横向运输",
                 "triggerMode": "临界库存",

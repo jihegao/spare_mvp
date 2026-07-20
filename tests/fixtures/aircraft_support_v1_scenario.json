@@ -1,136 +1,234 @@
 {
-  "schema_version": "scenario-v0",
-  "scenario_id": "scenario-aircraft-support-contract-001",
-  "project_id": "project-aircraft-support-contract-001",
-  "scenario_version": "scenario-v0.1",
-  "simulation_model": {
-    "family": "aircraft_support_v1",
-    "model_id": "AircraftSupportV1Model",
-    "contract_version": "1.0.0"
-  },
   "compiled_by": "Simulation Adapter Agent",
   "compiled_from": {
-    "project_id": "project-aircraft-support-contract-001",
-    "project_version": "project-v0.1",
-    "project_schema_version": "project-v0",
-    "mesa_contract_version": "1.0.0"
-  },
-  "simulation_inputs": {
-    "schema_version": "aircraft-support-v1-input-v0",
-    "project_identity": {
+    "mapping_provenance": {
+      "consumed_fields": [
+        "combatUnit.members",
+        "combatUnit.members[].preLifeCalendarDays",
+        "combatUnit.members[].preLifeFlightHours",
+        "combatUnit.members[].preLifeTakeoffLandingCount",
+        "missionProfile.combatUnit.members",
+        "missionProfile.combatUnit.members[].preLifeCalendarDays",
+        "missionProfile.combatUnit.members[].preLifeFlightHours",
+        "missionProfile.combatUnit.members[].preLifeTakeoffLandingCount",
+        "missionProfile.durationHours",
+        "missionProfile.compositeTasks",
+        "missionProfile.periodicTasks",
+        "basicMissions",
+        "basicMissions[].missionPhases",
+        "airports",
+        "products[]",
+        "components[].productId",
+        "components[].aircraftModel",
+        "components[].failureDistribution",
+        "components[].kOutOfN",
+        "components[].specialRepairProfile",
+        "supportResources[].quantity",
+        "supportResources[].type",
+        "supportResources[].productId",
+        "supportResources[].supportNodeName",
+        "supportResources[].organizationNodeId",
+        "supportNodes[].organizationNodeId",
+        "supportOrganization.tree[].id",
+        "supportOrganization.tree[].serviceScope",
+        "supportOrganization.relations[]",
+        "transportPolicies[]",
+        "transportPolicies[].fromOrganizationNodeId",
+        "transportPolicies[].toOrganizationNodeId",
+        "supportActivityJobs[]",
+        "supportActivities[].aircraftModel",
+        "supportActivities[].equipmentId",
+        "supportActivities[].calendarDayInterval",
+        "supportActivities[].runHourInterval",
+        "supportActivities[].takeoffLandingInterval",
+        "supportActivities[].activityCodes",
+        "supportActivities[].predecessors",
+        "supportActivities[].maintenanceMethods",
+        "supportActivities[].replacementRatio",
+        "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
+        "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
+        "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
+        "ExperimentPlan.config.seed",
+        "ExperimentPlan.config.samples",
+        "ExperimentPlan.config.stopPolicy"
+      ],
+      "defaults_applied": [
+        "time.tick_minutes=1",
+        "time.sample_every_minutes=30",
+        "time.max_state_frames_single=2000",
+        "ExperimentPlan.config.steps=durationMinutes/sampleEveryMinutes",
+        "ExperimentPlan.config.samples=1",
+        "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates=[1.0]",
+        "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers=[1.0]",
+        "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities=[1]",
+        "ExperimentPlan.config.seed=0",
+        "ExperimentPlan.config.stopPolicy=duration",
+        "combatUnit.members[0].preLifeCalendarDays=historicalDefault:0",
+        "combatUnit.members[0].preLifeFlightHours=historicalDefault:0",
+        "combatUnit.members[0].preLifeTakeoffLandingCount=historicalDefault:0",
+        "supportActivities.0.maintenanceMethods=historicalDefault",
+        "supportActivities.0.replacementRatio=historicalDefault"
+      ],
+      "derived_fields": [
+        "simulation_inputs.project_identity",
+        "simulation_inputs.aircraft.initial_ready",
+        "simulation_inputs.aircraft.assets[].initial_life_state",
+        "simulation_inputs.support_activities.activities[].aircraft_model",
+        "simulation_inputs.support_activities.activities[].equipment_id",
+        "simulation_inputs.support_activities.activities[].maintenance_methods",
+        "simulation_inputs.support_activities.activities[].replacement_ratio",
+        "simulation_inputs.support_network.organization_graph.nodes",
+        "simulation_inputs.support_network.organization_graph.parent_edges",
+        "simulation_inputs.support_network.organization_graph.lateral_edges",
+        "simulation_inputs.support_network.organization_graph.resource_ownership",
+        "simulation_inputs.support_network.organization_graph.transport_policies",
+        "simulation_inputs.time.duration_minutes",
+        "simulation_inputs.time.requested_steps",
+        "ExperimentPlan.config.steps"
+      ],
+      "experiment_plan_id": null,
+      "governance_only_fields": [
+        "projectInfo",
+        "missionProfile.combatUnit",
+        "scenarioId",
+        "project_id",
+        "project_version"
+      ],
+      "ignored_fields": [
+        "combatUnit.members[].calendarDays",
+        "combatUnit.members[].preLifeRequirementHours",
+        "combatUnit.members[].remainingLifeHours",
+        "combatUnit.members[].takeoffLandingCount",
+        "missionProfile.combatUnit.members[].calendarDays",
+        "missionProfile.combatUnit.members[].preLifeRequirementHours",
+        "missionProfile.combatUnit.members[].remainingLifeHours",
+        "missionProfile.combatUnit.members[].takeoffLandingCount"
+      ],
+      "mapping_version": "aircraft-support-v1-input-v0",
+      "model_family": "aircraft_support_v1",
+      "modeling_snapshot_id": null,
       "project_id": "project-aircraft-support-contract-001",
-      "project_version": "project-v0.1",
-      "scenario_id": "aircraft-support-contract-demo",
-      "source_import_id": null
-    },
-    "mission_profile": {
-      "profile_id": "mission-profile-current-001",
-      "name": "current aircraft support mission",
-      "duration_minutes": 60,
-      "basic_missions": [
-        {
-          "id": "basic-small",
-          "name": "small sortie"
-        }
+      "runtime_deferred_fields": [
+        "simulation_inputs.support_network.organization_graph"
       ],
-      "composite_tasks": [],
-      "periodic_tasks": [],
-      "mission_phases": [
-        {
-          "id": "phase-sortie",
-          "name": "sortie",
-          "durationMinutes": 30
-        }
-      ],
-      "airports": [
-        {
-          "id": "airport-a",
-          "name": "A"
-        }
-      ]
+      "unsupported_fields": []
     },
+    "mesa_contract_version": "1.0.0",
+    "project_id": "project-aircraft-support-contract-001",
+    "project_schema_version": "project-v0",
+    "project_version": "project-v0.1"
+  },
+  "project_id": "project-aircraft-support-contract-001",
+  "scenario_id": "scenario-aircraft-support-contract-demo",
+  "scenario_version": "scenario-v0.1",
+  "schema_version": "scenario-v0",
+  "simulation_inputs": {
     "aircraft": {
+      "assets": [
+        {
+          "aircraft_type": "J-15",
+          "airport": "A",
+          "airport_id": "",
+          "initial_due_dimensions": [],
+          "initial_life_state": {
+            "calendar_days": 0,
+            "flight_hours": 0,
+            "takeoff_landing_cycles": 0
+          },
+          "initial_preventive_due": false,
+          "initial_state": "available",
+          "model": "J-15",
+          "preventive_threshold_sources": {
+            "calendar_days": [],
+            "flight_hours": [],
+            "takeoff_landing_cycles": []
+          },
+          "preventive_thresholds": {
+            "calendar_days": 0,
+            "flight_hours": 0.0,
+            "takeoff_landing_cycles": 0
+          },
+          "source_initial_state": "available",
+          "tail_number": "J15-001"
+        }
+      ],
       "fleet_count": 1,
       "initial_ready": 1,
       "models": [
         "J-15"
-      ],
-      "assets": [
-        {
-          "tail_number": "J15-001",
-          "aircraft_type": "J-15",
-        "model": "J-15",
-        "initial_state": "available",
-        "source_initial_state": "available",
-        "airport": "A",
-        "airport_id": "airport-a",
-        "initial_life_state": {
-          "calendar_days": 0,
-          "flight_hours": 0,
-          "takeoff_landing_cycles": 0
-        },
-        "preventive_thresholds": {
-          "calendar_days": 0,
-          "flight_hours": 0,
-          "takeoff_landing_cycles": 0
-        },
-        "preventive_threshold_sources": {
-          "calendar_days": [],
-          "flight_hours": [],
-          "takeoff_landing_cycles": []
-        },
-        "initial_due_dimensions": [],
-        "initial_preventive_due": false
-        }
       ]
     },
     "equipment_tree": {
-      "root_component_id": "whole-aircraft",
       "components": [
         {
-          "id": "whole-aircraft",
-          "name": "whole aircraft",
-          "quantity": 1,
-          "failure_rate": 0.01
-        }
-      ]
-    },
-    "support_network": {
-      "nodes": [
-        {
-          "id": "node-a",
-          "name": "node A",
-          "personnel_capacity": 1,
-          "equipment_capacity": 1,
-          "inventory": {
-            "aircraft_support_v1_spares": 2
+          "aircraft_model": "J-15",
+          "failure_distribution": {
+            "distributionType": "指数分布",
+            "parameters": "lambda=0.01"
           },
-          "transport_policies": []
+          "failure_rate": 0.01,
+          "id": "whole-aircraft",
+          "k_out_of_n": {
+            "k": 1,
+            "n": 1
+          },
+          "name": "whole aircraft",
+          "parent_id": null,
+          "product_id": "product-whole-aircraft",
+          "product_name": "whole aircraft",
+          "product_type": "whole",
+          "quantity": 1,
+          "repair_distribution": {},
+          "special_repair_profile": {}
         }
-      ]
+      ],
+      "root_component_id": "whole-aircraft"
     },
-    "support_activities": {
-      "activities": [
+    "mission_profile": {
+      "airports": [
         {
-          "id": "corrective",
-          "name": "corrective",
-          "activity_type": "corrective",
-          "equipment_id": "whole-aircraft",
-          "resource_id": "node-a-personnel",
-          "jobs": [
-            {
-              "activityCode": "job-1"
-            }
-          ]
+          "id": "airport-a",
+          "location": "A",
+          "name": "A",
+          "supportNodeId": "airport-a"
         }
-      ]
-    },
-    "time": {
+      ],
+      "basic_missions": [
+        {
+          "equipmentType": "J-15",
+          "id": "basic-small",
+          "missionId": "basic-small",
+          "missionPhases": [
+            {
+              "durationMinutes": 30,
+              "id": "phase-sortie",
+              "name": "sortie",
+              "sequence": 1
+            }
+          ],
+          "name": "small sortie",
+          "taskDurationMinutes": 30
+        }
+      ],
+      "composite_tasks": [],
       "duration_minutes": 60,
-      "tick_minutes": 1,
-      "sample_every_minutes": 30,
-      "max_state_frames_single": 120,
-      "requested_steps": 2
+      "mission_phases": [
+        {
+          "basicMissionId": "basic-small",
+          "durationMinutes": 30,
+          "id": "phase-sortie",
+          "name": "sortie",
+          "sequence": 1
+        }
+      ],
+      "name": "current aircraft support mission",
+      "periodic_source": {
+        "configured_slots": 0,
+        "label": "周剖面",
+        "level": "week"
+      },
+      "periodic_tasks": [],
+      "profile_id": "mission-profile"
     },
     "monte_carlo": {
       "sample_count": 1,
@@ -146,16 +244,116 @@
         ]
       }
     },
-    "seed": 20260716,
+    "project_identity": {
+      "project_id": "project-aircraft-support-contract-001",
+      "project_version": "project-v0.1",
+      "scenario_id": "aircraft-support-contract-demo",
+      "source_import_id": null
+    },
+    "schema_version": "aircraft-support-v1-input-v0",
+    "seed": 0,
     "stop_policy": {
-      "schema_version": "stop-policy-v0",
-      "mode": "or",
       "conditions": [
         {
-          "type": "duration",
-          "duration_minutes": 60
+          "duration_minutes": 60,
+          "type": "duration"
+        }
+      ],
+      "defaulted": true,
+      "mode": "or",
+      "schema_version": "stop-policy-v0"
+    },
+    "support_activities": {
+      "activities": [
+        {
+          "activity_type": "corrective",
+          "aircraft_model": "",
+          "calendarDayInterval": null,
+          "duration_minutes": 60,
+          "equipment_id": "",
+          "floatRatio": null,
+          "id": "corrective",
+          "jobs": [
+            {
+              "activityCode": "job-1",
+              "predecessors": []
+            }
+          ],
+          "maintenance_methods": [
+            "non_replacement"
+          ],
+          "name": "corrective",
+          "priority": 1,
+          "replacement_ratio": 0.0,
+          "required_devices": 1,
+          "required_personnel": 1,
+          "resource_id": "",
+          "runHourInterval": null,
+          "spare_quantity": 0,
+          "takeoffLandingInterval": null
         }
       ]
+    },
+    "support_network": {
+      "nodes": [
+        {
+          "airport": "",
+          "airport_id": "",
+          "equipment_capacity": 1,
+          "id": "node A",
+          "inventory": {
+            "product-whole-aircraft": 2
+          },
+          "lateral_support_nodes": [],
+          "name": "node A",
+          "node_type": null,
+          "organization_strategy": null,
+          "personnel_capacity": 2,
+          "policy": null,
+          "product_names": {
+            "product-whole-aircraft": "whole aircraft"
+          },
+          "support_level": null,
+          "transport_policies": []
+        }
+      ],
+      "organization_graph": {
+        "lateral_edges": [],
+        "nodes": [
+          {
+            "id": "node-a",
+            "name": "node A",
+            "parent_id": null,
+            "service_scope": {
+              "aircraft_models": [],
+              "airport_ids": [],
+              "product_ids": [],
+              "resource_types": []
+            }
+          }
+        ],
+        "parent_edges": [],
+        "resource_ownership": [
+          {
+            "organization_node_id": "node-a",
+            "resource_id": "node-a-personnel",
+            "resource_type": "personnel"
+          }
+        ],
+        "transport_policies": []
+      }
+    },
+    "time": {
+      "duration_minutes": 60,
+      "max_state_frames_single": 2000,
+      "requested_steps": 2,
+      "sample_every_minutes": 30,
+      "tick_minutes": 1
     }
+  },
+  "simulation_model": {
+    "contract_version": "1.0.0",
+    "family": "aircraft_support_v1",
+    "model_id": "AircraftSupportV1Model"
   }
 }
