@@ -13,7 +13,7 @@
 
 ## 当前开发面
 
-截至 2026-07-08，当前实现的主干边界如下：
+截至 2026-07-21，当前实现的主干边界如下：
 
 1. 项目数据管理页已收敛为 Project 数据层入口：左侧显示项目列表，`projectInfo.isTemplate` 为真的项目显示【模板】；右侧只保留模板管理和数据概览，不展示 Project JSON 原始数据。经校验的 JSON 文件选择、覆盖预览、确认覆盖、并发版本冲突和审计能力继续保留。
    后端 Project 持久化边界会剥离当前 `aircraft_support_v1` 不消费的草稿/预览字段和运行配置：根 `experiment`、根 `analysisRequests`、`monteCarlo`、`seedPolicy`、`scenarioComposition`、`missionProfile.profileType`、`missionProfile.endCondition`、`missionProfile.repeatCycleHours`、`missionProfile.analysisRequests`、`supportResourceOverrides`、`deletedSupportResourceKeys`、拼写错误的 `supportActivities[].requireDevices` 以及保障活动/作业项内的 MTTR 草稿字段。基本保障活动定义持久化在顶层 `supportActivityJobs[]`，`supportActivities[]` 保存 `activityCodes[]` 引用、方案内 `predecessors` DAG，以及修复性/预防性方案成对的 `maintenanceMethods` / `replacementRatio`；修复性非换件为“原位维修”，预防性非换件为“检查/保养”。页面换件比例采用 0–100% 且最多两位小数，内部契约采用 0–1 且最多四位小数。历史缺失对规范化为仅非换件和 0，旧 `repairType` 仅在修复性方案精确迁移“原位维修”/“换件维修”，预防性、未知或与 canonical 字段冲突时失败关闭。维修方式不复用 `repairTypes` 或 `components[].specialRepairProfile` 比例；修复性维修 MTTR 仍以装备系统建模 `components[].repairDistribution` 为来源。lite Mesa 会话的 samples / seed、固定/随机 base seed 策略、Project JSON path 覆盖记录和 Monte Carlo 数值配置归 `ExperimentPlan.config` 与页面设置；`requiredDevices` 是实际消费字段，不属于删除项。
@@ -34,6 +34,7 @@
 13. 任务字段按单一归属保存：`basicMissions[].minRequiredSorties` 是最小装备数量唯一来源，复合任务项只读继承；`compositeTasks[].priority` 是任务优先级唯一来源。基本任务与复合任务项中的旧 `priority`、以及 task item 的旧 `minRequiredSystems` 都只在迁移时读取后删除。修改该边界时必须同步更新 contract、后台 Project 迁移、canonical/M9.6/clean Project 导出 JSON，并运行两条 fixture drift check；已发布 import 和历史 run/snapshot 不得原地覆盖，应发布新版本后创建新 Project。
 14. 周期性任务的月、年剖面组合保存在 `missionProfile.periodicProfileLists`。月剖面的 4 个固定周坑位和可选第 5 周、年剖面的 12 个月均允许以空字符串表示“未配置”，新建时默认全空；保存、重新打开、删除被引用剖面和汇总时不得静默回退为首个周/月剖面。编译按“有年用年、有月用月、否则用周”选择最高已配置来源，更高层全空不阻断有效周/月任务；页面显示当前来源。非空悬空引用和零有效实例仍失败关闭。
 15. 基本保障活动基础库只保留一个真实本地 CSV 文件入口，活动类型由行内字段决定，同批可混合使用保障、预防性维修和修复性维修。表头、必填字段、分布参数、整机引用、全局活动编号和紧前作业 DAG 在 detached staging 中一次校验；错误按行和字段聚合且整批不落地，成功后刷新列表、反馈数量并沿既有 Project draft 边界保存。模板列、别名和兼容策略见 [`basic-support-activity-csv-import-design.md`](basic-support-activity-csv-import-design.md)。
+16. 保障组织按 #314 收敛为单根组织树、横向 DAG、节点/资源唯一归属、作用域和组织端点运输策略，并编译为稳定排序的 `support_network.organization_graph`。该图当前标记为 runtime-deferred，不能改变既有 `support_network.nodes`、资源选择和模型指标；规范、迁移与失败关闭规则见 [`support-organization-contract.md`](support-organization-contract.md)。
 
 ## 文档地图
 
@@ -43,6 +44,7 @@
 | [`product-roadmap.md`](product-roadmap.md) | 总路线图：产品里程碑、阶段依赖、主干运行路径和验收口径。 |
 | [`spare_mvp_rms_allocation_design.md`](spare_mvp_rms_allocation_design.md) | 当前 RMS 指标分配工作台的实现说明、算法口径、UI 边界和非目标。 |
 | [`basic-support-activity-csv-import-design.md`](basic-support-activity-csv-import-design.md) | 基本保障活动统一 CSV 模板、引用校验、原子落地和兼容策略。 |
+| [`support-organization-contract.md`](support-organization-contract.md) | 保障组织树、横向关系、资源归属、作用域、运输策略与 Scenario 图编译契约。 |
 | [`reliability-block-diagram-contract.md`](reliability-block-diagram-contract.md) | 当前可靠性框图绘图契约。 |
 | [`lite-mesa-formal-runtime.md`](lite-mesa-formal-runtime.md) | lite Mesa 作为当前用户可见运行路径的边界说明。 |
 | [`archive/deprecated/README.md`](archive/deprecated/README.md) | 过期文档归档入口，包含历史计划、阶段规格、原始概要设计和运行边界审计。 |
