@@ -1280,6 +1280,11 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivitySource, /function selectSupportActivityJobForEdit/);
   assert.match(supportActivitySource, /function deleteSelectedSupportActivityJobs/);
   assert.match(supportActivitySource, /function deleteSupportActivityJob/);
+  const supportActivityJobLookupSource = supportActivitySource.slice(
+    supportActivitySource.indexOf("function findSupportActivityByJobTabKey"),
+    supportActivitySource.indexOf("function toggleSupportActivityJobSelection")
+  );
+  assert.match(supportActivityJobLookupSource, /\|\| baseActivity/);
   assert.match(supportActivitySource, /data-support-activity-plan-add/);
   assert.match(supportActivitySource, /data-support-activity-plan-delete/);
   assert.match(supportActivitySource, /data-select-support-activity-plan/);

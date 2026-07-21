@@ -8959,6 +8959,10 @@ function findSupportActivityByJobTabKey(tabKey) {
     const phaseActivities = findOperationsSupportPhaseActivities(baseActivity);
     return operationsSupportPhaseActivity(baseActivity, operationsPlanType)
       || phaseActivities.find((activity) => String(activity.planType || "") === operationsPlanType)
+      // Legacy projects may have a single generic `使用保障方案` row.  The
+      // editor renders that row when no phase-specific activity exists, so
+      // selection and batch deletion must resolve to the same fallback.
+      || baseActivity
       || null;
   }
   if (tabKey === "prev_repair") {

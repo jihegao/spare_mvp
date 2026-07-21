@@ -159,6 +159,34 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         self.assertLess(layout_index, left_rail_index)
         self.assertEqual(page_source.count("ControlPanel(model_state, inputs)"), 1)
 
+    def test_reset_restores_model_state_without_replacing_its_reactive_reference(self) -> None:
+        inputs = copy.deepcopy(self.default_inputs)
+        inputs["time"] = {**inputs.get("time", {}), "duration_minutes": 3, "tick_minutes": 1}
+        model = AircraftSupportV1Model(inputs)
+        original_model = model
+        model.step()
+
+        solara_app._reset_model_in_place(model, inputs)
+
+        self.assertIs(model, original_model)
+        self.assertEqual(model.minute, 0)
+        self.assertEqual(model.steps, 0)
+        self.assertTrue(model.running)
+
+    def test_play_loop_rechecks_pause_before_advancing_after_sleep(self) -> None:
+        source = Path(solara_app.__file__).read_text(encoding="utf-8")
+        play_loop_source = source[
+            source.index("    def play_loop() -> None:"):
+            source.index("    solara.lab.use_task", source.index("    def play_loop() -> None:"))
+        ]
+
+        self.assertIn("time.sleep", play_loop_source)
+        self.assertIn("if not playing.value or not model_state.value.running:", play_loop_source)
+        self.assertLess(
+            play_loop_source.index("if not playing.value or not model_state.value.running:"),
+            play_loop_source.index("step_once()"),
+        )
+
     def test_visible_metrics_and_model_parameters_hide_project_metadata(self) -> None:
         model = AircraftSupportV1Model(self.default_inputs)
 

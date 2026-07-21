@@ -590,6 +590,13 @@ def _new_model(inputs: dict[str, Any]) -> AircraftSupportV1Model:
     return AircraftSupportV1Model(copy.deepcopy(inputs))
 
 
+def _reset_model_in_place(model: AircraftSupportV1Model, inputs: dict[str, Any]) -> None:
+    """Restore model state without replacing Solara's subscribed object reference."""
+    replacement = _new_model(inputs)
+    model.__dict__.clear()
+    model.__dict__.update(replacement.__dict__)
+
+
 def _notify_model_changed() -> None:
     update_counter.set(update_counter.get() + 1)
 
@@ -614,7 +621,7 @@ def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: d
 
     def reset_model() -> None:
         playing.set(False)
-        model_state.set(_new_model(inputs))
+        _reset_model_in_place(model_state.value, inputs)
         _notify_model_changed()
 
     def toggle_playing() -> None:
@@ -623,6 +630,11 @@ def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: d
     def play_loop() -> None:
         while playing.value and model_state.value.running:
             time.sleep(max(1, int(play_interval.value or 1)) / 1000)
+            # Reset/pause may occur while this worker is sleeping.  Recheck
+            # before advancing so an already-scheduled iteration cannot step
+            # the freshly reset model.
+            if not playing.value or not model_state.value.running:
+                break
             step_once()
 
     solara.lab.use_task(play_loop, dependencies=[playing.value], prefer_threaded=True)
