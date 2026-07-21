@@ -1411,7 +1411,7 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
   assert.equal(projectJson.supportNodes.some((node) => node.id === "carrier-stock-personnel-mech" || node.name === "机械保障人员"), false);
   assert.deepEqual(projectJson.supportResources, scenario.supportResources);
   assert.deepEqual(projectJson.transportPolicies, [
-    { id: "transport-1", fromSupportNodeName: "基层", toSupportNodeName: "基地", capacity: 2 }
+    { id: "transport-1", fromOrganizationNodeId: "line-team", toOrganizationNodeId: "carrier-deck", capacity: 2 }
   ]);
 });
 
@@ -1638,7 +1638,7 @@ test("buildBackendProjectJson derives spare resources from equipment hardware tr
   assert.equal(projectJson.supportResources.some((resource) => ["发动机备件", "液压备件", "航电模块"].includes(resource.name)), false);
 });
 
-test("support spare migration moves a unique ancestor stock to its only leaf and rewrites job references", () => {
+test("support spare normalization preserves relay stock and rewrites job references to its stable identity", () => {
   const loaded = normalizeProjectJsonForClientDraft({
     supportOrganization: {
       tree: {
@@ -1673,11 +1673,14 @@ test("support spare migration moves a unique ancestor stock to its only leaf and
     id: resource.id,
     organization: resource.organizationNodeName,
     quantity: resource.quantity
-  })), [{ id: "support-spare:leaf:product-pump", organization: "leaf", quantity: 9 }]);
-  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:leaf:product-pump");
+  })), [
+    { id: "support-spare:leaf:product-pump", organization: "leaf", quantity: 0 },
+    { id: "support-spare:relay:product-pump", organization: "relay", quantity: 9 }
+  ]);
+  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:relay:product-pump");
 });
 
-test("support spare migration never distributes an ancestor quantity across multiple leaves", () => {
+test("support spare normalization keeps relay quantity separate from descendant leaves", () => {
   const loaded = normalizeProjectJsonForClientDraft({
     supportOrganization: {
       tree: {
@@ -1708,12 +1711,12 @@ test("support spare migration never distributes an ancestor quantity across mult
   });
 
   const quantities = new Map(loaded.supportResources.map((resource) => [resource.organizationNodeName, resource.quantity]));
-  assert.equal(loaded.supportResources.find((resource) => resource.id === "legacy-relay-stock").quantity, 12);
+  assert.equal(loaded.supportResources.find((resource) => resource.id === "support-spare:relay:product-pump").quantity, 12);
   assert.equal(quantities.get("leaf-a"), 0);
   assert.equal(quantities.get("leaf-b"), 0);
 });
 
-test("support spare migration preserves ancestor and leaf non-zero conflict for backend rejection", () => {
+test("support spare normalization preserves independent relay and leaf stock", () => {
   const loaded = normalizeProjectJsonForClientDraft({
     supportOrganization: {
       tree: {
@@ -1737,7 +1740,7 @@ test("support spare migration preserves ancestor and leaf non-zero conflict for 
   const live = loaded.supportResources.filter((resource) => resource.type === "spare");
   assert.equal(live.length, 2);
   assert.deepEqual(live.map((resource) => resource.quantity).sort((a, b) => a - b), [4, 5]);
-  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:leaf:product-pump");
+  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:relay:product-pump");
 });
 
 test("same-name leaf tombstone suppresses only its stable organization and product identity", () => {
