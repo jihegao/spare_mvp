@@ -276,7 +276,7 @@ class AircraftSupportV1Model:
         self._initialize_aircraft_lru_failure_timers()
         self.nodes = self._build_support_nodes()
         self._initialize_organization_graph()
-        self.organization_identity = organization_graph_identity(
+        self.organization_graph_identity = organization_graph_identity(
             self.inputs.get("support_network", {}).get("organization_graph")
         )
         self.activities = self._build_activities()
@@ -354,10 +354,10 @@ class AircraftSupportV1Model:
             "metrics": self.snapshot(),
             "frames": frames,
             "events": copy.deepcopy(self.event_log),
-            "organization_identity": copy.deepcopy(self.organization_identity),
+            "organization_graph_identity": copy.deepcopy(self.organization_graph_identity),
             "organization_dispatch_summary": organization_dispatch_summary(
                 self.event_log,
-                identity=self.organization_identity,
+                identity=self.organization_graph_identity,
             ),
             "downtime_events": copy.deepcopy(self.downtime_events),
             "lifecycle_trace": [self._lifecycle_trace_payload(item) for item in self.aircraft],
@@ -854,10 +854,10 @@ class AircraftSupportV1Model:
                 "downtime_spare_shortage_hours": metrics["downtime_spare_shortage_hours"],
                 "downtime_preventive_hours": metrics["downtime_preventive_hours"],
             },
-            "organization_identity": copy.deepcopy(self.organization_identity),
+            "organization_graph_identity": copy.deepcopy(self.organization_graph_identity),
             "organization_dispatch_summary": organization_dispatch_summary(
                 self.event_log,
-                identity=self.organization_identity,
+                identity=self.organization_graph_identity,
             ),
             "aircraft": [self._aircraft_payload(item) for item in self.aircraft],
             "missions": [self._mission_payload(item) for item in self.missions],
@@ -3612,7 +3612,7 @@ class AircraftSupportV1Model:
                 event,
                 details,
                 minute=self.minute,
-                identity=self.organization_identity,
+                identity=self.organization_graph_identity,
             )
         item: dict[str, Any] = {"time": self.minute, "event": event, "message": message}
         if details:

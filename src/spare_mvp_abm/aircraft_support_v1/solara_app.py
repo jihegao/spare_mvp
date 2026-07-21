@@ -265,7 +265,7 @@ def _metrics_rows(model: AircraftSupportV1Model, metrics: dict[str, Any] | None 
     values = metrics or model.snapshot()
     organization = organization_dispatch_summary(
         model.event_log,
-        identity=model.organization_identity,
+        identity=model.organization_graph_identity,
     )
     fulfillment_rate = organization.get("observed_fulfillment_rate")
     return [
@@ -684,8 +684,8 @@ def InformationPanel(model: AircraftSupportV1Model) -> None:
             [
                 f"- 当前步数：{model.steps}",
                 f"- 运行状态：{'运行中' if model.running else '已结束'}",
-                f"- 组织运行模式：{model.organization_identity['runtime_mode']}",
-                f"- 组织图摘要：{model.organization_identity['graph_hash'][:12]}",
+                f"- 组织运行模式：{model.organization_graph_identity['runtime_mode']}",
+                f"- 组织图摘要：{model.organization_graph_identity['graph_hash'][:12]}",
             ]
         )
     )

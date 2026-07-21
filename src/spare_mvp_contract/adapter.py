@@ -2348,7 +2348,7 @@ class SimulationAdapter:
                 sample_every_minutes=inputs.get("time", {}).get("sample_every_minutes"),
             ) from exc
         snapshot = execution["metrics"]
-        organization_identity = copy.deepcopy(execution["organization_identity"])
+        organization_identity = copy.deepcopy(execution["organization_graph_identity"])
         organization_summary = copy.deepcopy(execution["organization_dispatch_summary"])
         state_series_frames = []
         for frame in execution["frames"]:
@@ -2964,7 +2964,7 @@ class SimulationAdapter:
             "events": copy.deepcopy(execution.get("events") or []),
             "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
             "lifecycle_trace": copy.deepcopy(execution.get("lifecycle_trace") or []),
-            "organization_graph_identity": copy.deepcopy(execution["organization_identity"]),
+            "organization_graph_identity": copy.deepcopy(execution["organization_graph_identity"]),
             "organization_dispatch_summary": copy.deepcopy(execution["organization_dispatch_summary"]),
         }
 
