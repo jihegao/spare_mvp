@@ -126,7 +126,7 @@ start_system() {
 
   if [[ "$SOLARA_ENABLED" == "1" ]]; then
     echo "Starting Solara Mesa visualization on http://$HOST:$SOLARA_PORT/"
-    SOLARA_PID="$(start_detached "$APP_PY" "$RUN_DIR/solara.log" "$SOLARA_BIN" run src.spare_mvp_abm.aircraft_support_v1.solara_app --host "$HOST" --port "$SOLARA_PORT" --production --no-open)"
+    SOLARA_PID="$(start_detached "$APP_PY" "$RUN_DIR/solara.log" env SOLARA_THEME_SHOW_BANNER=false "$SOLARA_BIN" run src.spare_mvp_abm.aircraft_support_v1.solara_app --host "$HOST" --port "$SOLARA_PORT" --production --no-open)"
     echo "$SOLARA_PID" >"$RUN_DIR/solara.pid"
   fi
 

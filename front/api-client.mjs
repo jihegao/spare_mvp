@@ -697,14 +697,20 @@ function normalizeSupportModelTables(projectJson) {
     ? organization.supportNodeNames
     : supportNodeNamesFromSupportNodes(projectJson.supportNodes);
   normalizeSupportResourcePersonnelModels(projectJson);
-  normalizeSupportResourceSpareRows(projectJson, organization.leafNodes, organization.nodes, organization.nameByRef);
+  normalizeSupportResourceSpareRows(
+    projectJson,
+    organization.nodes.filter((node) => !node.isRoot),
+    organization.nodes,
+    organization.nameByRef
+  );
   projectJson.supportNodes = supportNodeNames.map((name, index) => ({
     id: `support-node-${index + 1}`,
     name,
+    ...(organization.idByRef.get(name) ? { organizationNodeId: organization.idByRef.get(name) } : {}),
     ...(nodeScopeByName.get(name) || {})
   }));
-  normalizeTopLevelTransportPolicies(projectJson, nameByRef);
-  normalizeSupportNodeRefsInProject(projectJson, nameByRef);
+  normalizeTopLevelTransportPolicies(projectJson, nameByRef, organization.idByRef);
+  normalizeSupportNodeRefsInProject(projectJson, nameByRef, organization.idByRef);
 }
 
 function supportNodeScopeByRef(supportNodes) {
@@ -875,10 +881,10 @@ function isPersonnelSupportResource(resource) {
     && cleanText(resource.type).toLowerCase() === "personnel";
 }
 
-function normalizeSupportResourceSpareRows(projectJson, leafNodes, organizationNodes, organizationNameByRef = new Map()) {
+function normalizeSupportResourceSpareRows(projectJson, resourceNodes, organizationNodes, organizationNameByRef = new Map()) {
   if (!Array.isArray(projectJson.supportResources)) return;
   const hardwareSpares = projectHardwareSpareRows(projectJson);
-  if (!hardwareSpares.length || !Array.isArray(leafNodes) || !leafNodes.length) return;
+  if (!hardwareSpares.length || !Array.isArray(resourceNodes) || !resourceNodes.length) return;
   const tombstones = projectJson.supportResources
     .filter((resource) => isDeletedSupportSpareResource(resource))
     .map((resource) => {
@@ -891,27 +897,18 @@ function normalizeSupportResourceSpareRows(projectJson, leafNodes, organizationN
     });
   const existingSpareByKey = new Map();
   const resourceIdAliases = new Map();
-  const leafIds = new Set(leafNodes.map((node) => cleanText(node.id)));
+  const resourceNodeIds = new Set(resourceNodes.map((node) => cleanText(node.id)));
   const nodeById = new Map((Array.isArray(organizationNodes) ? organizationNodes : []).map((node) => [cleanText(node.id), node]));
-  const hardwareProductIds = new Set(hardwareSpares.map((spare) => cleanText(spare.productId)).filter(Boolean));
-  const legacyAncestorOrUnresolved = [];
+  const unresolvedResources = [];
   for (const resource of projectJson.supportResources) {
     if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
     const organizationId = cleanText(resource.organizationNodeName);
     const productId = cleanText(resource.productId);
     const node = nodeById.get(organizationId);
-    let targetOrganizationId = leafIds.has(organizationId) ? organizationId : "";
-    if (!targetOrganizationId && node?.descendantLeafIds?.length === 1 && hardwareProductIds.has(productId)) {
-      const candidateLeafId = cleanText(node.descendantLeafIds[0]);
-      const blockedByTombstone = tombstones.some((item) => (
-        supportSpareTombstoneOrganizationId(item) === candidateLeafId
-        && cleanText(item.productId) === productId
-      ));
-      if (!blockedByTombstone) targetOrganizationId = candidateLeafId;
-    }
+    const targetOrganizationId = resourceNodeIds.has(organizationId) ? organizationId : "";
     if (!targetOrganizationId || !productId) {
-      if (!node || !node.descendantLeafIds?.length || nonNegativeInteger(resource.quantity) > 0) {
-        legacyAncestorOrUnresolved.push(resource);
+      if (!node || node.isRoot || nonNegativeInteger(resource.quantity) > 0) {
+        unresolvedResources.push(resource);
       }
       continue;
     }
@@ -921,7 +918,7 @@ function normalizeSupportResourceSpareRows(projectJson, leafNodes, organizationN
     existingSpareByKey.set(key, matches);
   }
   const nonSpareResources = projectJson.supportResources.filter((resource) => !isSpareSupportResource(resource));
-  const nextSpareResources = leafNodes.flatMap((node) => {
+  const nextSpareResources = resourceNodes.flatMap((node) => {
     const organizationId = cleanText(node.id);
     const nodeName = cleanText(node.name);
     return hardwareSpares.flatMap((spare) => {
@@ -958,11 +955,11 @@ function normalizeSupportResourceSpareRows(projectJson, leafNodes, organizationN
   });
   projectJson.supportResources = [
     ...nonSpareResources,
-    ...legacyAncestorOrUnresolved,
+    ...unresolvedResources,
     ...tombstones,
     ...nextSpareResources
   ];
-  rewriteSupportActivitySpareResourceKeys(projectJson, resourceIdAliases, leafNodes);
+  rewriteSupportActivitySpareResourceKeys(projectJson, resourceIdAliases, resourceNodes);
 }
 
 function setUniqueResourceIdAlias(aliases, oldId, newId) {
@@ -970,20 +967,24 @@ function setUniqueResourceIdAlias(aliases, oldId, newId) {
   else if (aliases.get(oldId) !== newId) aliases.set(oldId, "");
 }
 
-function rewriteSupportActivitySpareResourceKeys(projectJson, aliases, leafNodes = []) {
+function rewriteSupportActivitySpareResourceKeys(projectJson, aliases, resourceNodes = []) {
   if (!Array.isArray(projectJson.supportActivityJobs)) return;
-  const soleLeafId = leafNodes.length === 1 ? cleanText(leafNodes[0]?.id) : "";
-  const soleLeafResourceIdsByProduct = new Map();
-  if (soleLeafId) {
-    for (const resource of projectJson.supportResources || []) {
-      if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
-      if (cleanText(resource.organizationNodeName) !== soleLeafId) continue;
-      const productId = cleanText(resource.productId);
-      if (!productId) continue;
-      const ids = soleLeafResourceIdsByProduct.get(productId) || [];
-      ids.push(cleanText(resource.id));
-      soleLeafResourceIdsByProduct.set(productId, ids);
-    }
+  const resourceNodeIds = new Set(resourceNodes.map((node) => cleanText(node?.id)).filter(Boolean));
+  const resourceIdsByProduct = new Map();
+  const tombstonedProductIds = new Set(
+    (projectJson.supportResources || [])
+      .filter((resource) => isDeletedSupportSpareResource(resource))
+      .map((resource) => cleanText(resource.productId))
+      .filter(Boolean)
+  );
+  for (const resource of projectJson.supportResources || []) {
+    if (!isSpareSupportResource(resource) || isDeletedSupportSpareResource(resource)) continue;
+    if (!resourceNodeIds.has(cleanText(resource.organizationNodeName))) continue;
+    const productId = cleanText(resource.productId);
+    if (!productId) continue;
+    const rows = resourceIdsByProduct.get(productId) || [];
+    rows.push({ id: cleanText(resource.id), quantity: nonNegativeInteger(resource.quantity) });
+    resourceIdsByProduct.set(productId, rows);
   }
   for (const job of projectJson.supportActivityJobs) {
     if (!job || typeof job !== "object" || !Array.isArray(job.spare)) continue;
@@ -997,9 +998,13 @@ function rewriteSupportActivitySpareResourceKeys(projectJson, aliases, leafNodes
       }
       const replacement = aliases.get(oldKey);
       if (replacement) requirement.key = replacement;
-      else if (oldKey && !aliases.has(oldKey) && soleLeafId) {
-        const productMatches = soleLeafResourceIdsByProduct.get(cleanText(requirement.productId)) || [];
-        if (productMatches.length === 1) requirement.key = productMatches[0];
+      else if (oldKey && !aliases.has(oldKey) && !tombstonedProductIds.has(cleanText(requirement.productId))) {
+        const productMatches = resourceIdsByProduct.get(cleanText(requirement.productId)) || [];
+        const nonZeroMatches = productMatches.filter((item) => item.quantity > 0);
+        const uniqueMatch = nonZeroMatches.length === 1
+          ? nonZeroMatches[0]
+          : productMatches.length === 1 ? productMatches[0] : null;
+        if (uniqueMatch) requirement.key = uniqueMatch.id;
       }
     }
   }
@@ -1117,16 +1122,28 @@ function isLegacySupportResourceRow(node) {
   );
 }
 
-function normalizeTopLevelTransportPolicies(projectJson, nameByRef) {
+function normalizeTopLevelTransportPolicies(projectJson, nameByRef, organizationIdByRef = new Map()) {
   if (!Array.isArray(projectJson.transportPolicies)) return;
   projectJson.transportPolicies = projectJson.transportPolicies
     .filter((policy) => policy && typeof policy === "object" && !Array.isArray(policy))
     .map((policy, index) => {
+      const fromRef = cleanText(policy.fromOrganizationNodeId || policy.fromSupportNodeName || policy.from);
+      const toRef = cleanText(policy.toOrganizationNodeId || policy.toSupportNodeName || policy.to);
+      const fromOrganizationNodeId = cleanText(
+        organizationIdByRef.get(fromRef)
+        || (policy.fromOrganizationNodeId ? fromRef : "")
+      );
+      const toOrganizationNodeId = cleanText(
+        organizationIdByRef.get(toRef)
+        || (policy.toOrganizationNodeId ? toRef : "")
+      );
       const normalized = {
-        id: cleanText(policy.id) || `transport-policy-${index + 1}`,
-        fromSupportNodeName: supportNodeNameForRef(policy.fromSupportNodeName || policy.from, nameByRef),
-        toSupportNodeName: supportNodeNameForRef(policy.toSupportNodeName || policy.to, nameByRef)
+        id: cleanText(policy.id) || `transport-policy-${index + 1}`
       };
+      if (fromOrganizationNodeId) normalized.fromOrganizationNodeId = fromOrganizationNodeId;
+      else normalized.fromSupportNodeName = supportNodeNameForRef(fromRef, nameByRef);
+      if (toOrganizationNodeId) normalized.toOrganizationNodeId = toOrganizationNodeId;
+      else normalized.toSupportNodeName = supportNodeNameForRef(toRef, nameByRef);
       for (const field of ["name", "direction", "triggerMode", "criticalInventory", "transferCycleHours", "capacity", "priority", "transportMode", "transportTimeHours"]) {
         if (policy[field] !== undefined) normalized[field] = policy[field];
       }
@@ -1135,30 +1152,32 @@ function normalizeTopLevelTransportPolicies(projectJson, nameByRef) {
     });
 }
 
-function normalizeSupportNodeRefsInProject(projectJson, nameByRef) {
+function normalizeSupportNodeRefsInProject(projectJson, nameByRef, organizationIdByRef = new Map()) {
   for (const airport of Array.isArray(projectJson.airports) ? projectJson.airports : []) {
     if (airport && typeof airport === "object" && !Array.isArray(airport) && airport.supportNodeId !== undefined) {
       airport.supportNodeId = supportNodeNameForRef(airport.supportNodeId, nameByRef);
     }
   }
   for (const activity of Array.isArray(projectJson.supportActivities) ? projectJson.supportActivities : []) {
-    normalizeSupportActivityNodeRefs(activity, nameByRef);
+    normalizeSupportActivityNodeRefs(activity, nameByRef, organizationIdByRef);
   }
 }
 
-function normalizeSupportActivityNodeRefs(value, nameByRef) {
+function normalizeSupportActivityNodeRefs(value, nameByRef, organizationIdByRef = new Map()) {
   if (Array.isArray(value)) {
-    for (const item of value) normalizeSupportActivityNodeRefs(item, nameByRef);
+    for (const item of value) normalizeSupportActivityNodeRefs(item, nameByRef, organizationIdByRef);
     return;
   }
   if (!value || typeof value !== "object") return;
-  for (const field of ["supportNodeId", "resourceId"]) {
-    if (value[field] !== undefined) value[field] = supportNodeNameForRef(value[field], nameByRef);
+  if (value.supportNodeId !== undefined) value.supportNodeId = supportNodeNameForRef(value.supportNodeId, nameByRef);
+  if (value.resourceId !== undefined) {
+    const resourceRef = cleanText(value.resourceId);
+    value.resourceId = organizationIdByRef.get(resourceRef) || supportNodeNameForRef(resourceRef, nameByRef);
   }
   for (const field of ["lateralSupportNodes"]) {
     if (Array.isArray(value[field])) value[field] = value[field].map((ref) => supportNodeNameForRef(ref, nameByRef));
   }
-  for (const child of Object.values(value)) normalizeSupportActivityNodeRefs(child, nameByRef);
+  for (const child of Object.values(value)) normalizeSupportActivityNodeRefs(child, nameByRef, organizationIdByRef);
 }
 
 function supportNodeNameForRef(value, nameByRef) {
@@ -1184,7 +1203,6 @@ function stripLegacySupportNodeResourceFields(projectJson) {
     "policy",
     "supportLevel",
     "transportPolicies",
-    "organizationNodeId",
     "importedResourceType",
     "personnelModel",
     "personnelType",
@@ -1532,7 +1550,6 @@ function normalizeSupportActivityReferenceFields(projectJson) {
     activity.planType = canonicalSupportActivityPlanType(activity);
     delete activity.name;
     delete activity.planGroupId;
-    delete activity.resourceId;
     delete activity.supportNodeId;
     delete activity.requiredDevices;
     delete activity.requiredPersonnel;

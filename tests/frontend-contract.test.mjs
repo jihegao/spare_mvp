@@ -1020,8 +1020,9 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.doesNotMatch(supportOrgSource, /保障策略/);
   assert.doesNotMatch(supportOrgSource, /横向保障组织/);
   assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(/);
-  assert.match(supportOrgSource, /spareSelection \? \{ orgNodes: spareSelection\.resourceOrgNodes \} : undefined/);
-  assert.match(supportOrgSource, /function resolveSpareSupportOrganizationSelection/);
+  assert.match(supportOrgSource, /resourceSelection \? \{ orgNodes: resourceSelection\.resourceOrgNodes \} : undefined/);
+  assert.match(supportOrgSource, /function resolveSupportResourceOrganizationSelection/);
+  assert.match(supportOrgSource, /selectedIsEditableNode \? "当前保障点可编辑" : "汇总视图只读"/);
   assert.doesNotMatch(supportOrgSource, /if \(!orgTree\.length\)/);
   assert.match(supportOrgSource, /function buildSupportResourceRows/);
   assert.match(supportOrgSource, /scope: orgNode\.name/);
@@ -1060,16 +1061,16 @@ test("support organization and activity pages follow ship_front tree table edito
     appSource.indexOf("function findSupportOrgTreeNode")
   );
   assert.match(spareDeleteSource, /supportResourceTypeLabel\(resource\.type\) === activeResourceType/);
-  assert.match(spareDeleteSource, /supportResourceBelongsToOrg\(resource, selectedSpareOrgNode\)/);
-  assert.match(spareDeleteSource, /createDeletedSupportSpareResource\(resource, selectedSpareOrgNode\)/);
+  assert.match(spareDeleteSource, /supportResourceBelongsToOrg\(resource, selectedResourceOrgNode\)/);
+  assert.match(spareDeleteSource, /createDeletedSupportSpareResource\(resource, selectedResourceOrgNode\)/);
   assert.match(spareDeleteSource, /currentModelingPageLocked\(page\)/);
 
   const spareImportSource = appSource.slice(
     appSource.indexOf("async function importSupportResourceTableFile"),
     appSource.indexOf("function normalizeSupportResourceImportType")
   );
-  assert.match(spareImportSource, /selectedEditableSpareSupportOrgNode\(\)/);
-  assert.match(spareImportSource, /targetOrgNodes: \[selectedSpareOrgNode\]/);
+  assert.match(spareImportSource, /selectedEditableSupportResourceOrgNode\(resourceType\)/);
+  assert.match(spareImportSource, /targetOrgNodes: \[selectedResourceOrgNode\]/);
   assert.match(appSource, /const matched = targetOrgNodes\.find/);
   assert.match(supportOrgSource, /data-support-org-field="airport"/);
   assert.doesNotMatch(supportOrgSource, /data-support-org-field="airportId"/);
@@ -1100,6 +1101,11 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.doesNotMatch(operationsSource, /\u4eff\u771f\u8fd0\u884c\u89c4\u5219/);
   assert.doesNotMatch(operationsSource, /\u52a0\u6cb9\u65b9\u6848/);
   assert.doesNotMatch(operationsSource, /\u6302\u8f7d\u65b9\u6848/);
+  assert.match(appSource, /function supportActivityRuntimeNodeOptions\(activity\)/);
+  assert.match(appSource, /function supportActivityRuntimeNodeField\(activity, activityIndex\)/);
+  assert.match(appSource, /supportActivities\.\$\{activityIndex\}\.resourceId/);
+  assert.match(appSource, /请选择运行保障点/);
+  assert.match(operationsSource, /supportActivityRuntimeNodeField\(activePhaseActivity, activePhaseActivityIndex\)/);
 
   const logisticsSource = appSource.slice(
     appSource.indexOf("function renderLogisticsSupportActivity"),
@@ -1117,6 +1123,7 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(logisticsSource, /\\u89e6\\u53d1\\u53c2\\u6570/);
   assert.match(logisticsSource, /\\u4e34\\u754c\\u5e93\\u5b58\\u6570/);
   assert.match(logisticsSource, /\\u8c03\\u8fd0\\u5468\\u671f\(h\)/);
+  assert.match(logisticsSource, /supportActivityRuntimeNodeField\(activity, activityIndex\)/);
   assert.match(logisticsSource, /criticalInventory/);
   assert.match(logisticsSource, /transferCycleHours/);
   assert.match(logisticsSource, /\\u8fd0\\u8f93\\u8d77\\u70b9/);
@@ -1128,8 +1135,8 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(logisticsSource, /const basePath = `transportPolicies\.\$\{index\}`/);
   assert.match(logisticsSource, /valueInput\(`\$\{basePath\}\.name`, "text"\)/);
   assert.doesNotMatch(logisticsSource, /valueSelect\(`\$\{basePath\}\.spareName`/);
-  assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.fromSupportNodeName`/);
-  assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.toSupportNodeName`/);
+  assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.fromOrganizationNodeId`/);
+  assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.toOrganizationNodeId`/);
   assert.match(logisticsSource, /data-logistics-transport-select/);
   assert.match(logisticsSource, /data-logistics-transport-delete/);
   assert.doesNotMatch(logisticsSource, /supportActivities\.\$\{activityIndex\}\.transportStrategies/);
@@ -1172,7 +1179,7 @@ test("support organization fourth-level pages render matching resource panels", 
   );
   assert.match(supportOrgSource, /const activeResourceType =/);
   assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(/);
-  assert.match(supportOrgSource, /spareSelection \? \{ orgNodes: spareSelection\.resourceOrgNodes \} : undefined/);
+  assert.match(supportOrgSource, /resourceSelection \? \{ orgNodes: resourceSelection\.resourceOrgNodes \} : undefined/);
   assert.match(supportOrgSource, /page\.name\.includes\("人员"\) \? "保障人员"/);
   assert.match(supportOrgSource, /page\.name\.includes\("设备"\) \? "保障设备"/);
   assert.match(supportOrgSource, /page\.name\.includes\("备件"\) \? "备件"/);
@@ -1230,9 +1237,9 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivitySource, /renderCorrectiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderLogisticsSupportActivity/);
   assert.doesNotMatch(supportActivitySource, /renderSupportActivityJobTable\(activity, "logistics"\)/);
-  assert.match(supportActivitySource, /const supportNodeOptions = uniqueSelectOptions\(\(scenario\.supportNodes \|\| \[\]\)/);
-  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.fromSupportNodeName`, supportNodeOptions\)/);
-  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.toSupportNodeName`, supportNodeOptions\)/);
+  assert.match(supportActivitySource, /const supportNodeOptions = logisticsSupportNodeOptions\(\)/);
+  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.fromOrganizationNodeId`, fromSupportNodeOptions\)/);
+  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.toOrganizationNodeId`, toSupportNodeOptions\)/);
   const supportActivityJobSource = supportActivitySource.slice(
     supportActivitySource.indexOf("function renderSupportActivityJobRows"),
     supportActivitySource.indexOf("function renderBasicActivityLibrary")
@@ -3269,6 +3276,8 @@ test("visible simulation embeds Solara while Monte Carlo and analysis launches u
   assert.match(analysisLaunchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*definition\.analysisType/);
   assert.doesNotMatch(monteCarloLaunchSource + analysisLaunchSource, /startSingleRunThroughApi|startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
   assert.match(solaraSource, /DEFAULT_SOLARA_VISUALIZATION_URL = "http:\/\/127\.0\.0\.1:8765"/);
+  assert.match(solaraSource, /managedSolaraVisualizationUrl\(locationRef\)/);
+  assert.match(solaraSource, /`\$\{protocol\}\/{2}\$\{host\}:8765`/);
   assert.match(visualSource, /data-solara-visualization-frame/);
   assert.match(visualSource, /title="Solara 可视化推演"/);
   assert.match(visualSource, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);

@@ -7830,19 +7830,19 @@ function renderSupportOrganizationWorkbench(page) {
   const locked = currentModelingPageLocked(page);
   const lockedAttr = modelingLockDisabledAttr(locked);
   const orgTree = supportOrganizationTree();
-  const spareSelection = activeResourceType === "备件"
-    ? resolveSpareSupportOrganizationSelection(orgTree, locked)
+  const resourceSelection = activeResourceType
+    ? resolveSupportResourceOrganizationSelection(orgTree, locked)
     : null;
-  const selectedSupportOrgNode = spareSelection?.selectedNode
+  const selectedSupportOrgNode = resourceSelection?.selectedNode
     || findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree)
     || orgTree[0];
-  const selectedIsLeaf = spareSelection
-    ? spareSelection.selectedIsEditableLeaf
-    : !(selectedSupportOrgNode?.children || []).length;
+  const selectedIsEditableNode = resourceSelection
+    ? resourceSelection.selectedIsEditableNode
+    : selectedSupportOrgNode !== orgTree[0];
   const visibleResourceRows = buildSupportResourceRows(
     activeResourceType,
     selectedSupportOrgNode,
-    spareSelection ? { orgNodes: spareSelection.resourceOrgNodes } : undefined
+    resourceSelection ? { orgNodes: resourceSelection.resourceOrgNodes } : undefined
   ).filter((row) => !supportResourceDeletedKeySet().has(row.key));
   const supportResourceConflictMessage = visibleResourceRows.some((row) => row.conflict)
     ? "检测到同一组织和产品的多条备件记录；为防止覆盖，冲突行已禁用，请先清理重复记录。"
@@ -7850,10 +7850,9 @@ function renderSupportOrganizationWorkbench(page) {
   const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
   const resourceColumns = supportResourceDataColumns(activeResourceType);
-  const spareSummaryReadOnly = activeResourceType === "备件" && !selectedIsLeaf;
-  const resourceControlsDisabled = locked || spareSummaryReadOnly;
+  const resourceControlsDisabled = locked || !selectedIsEditableNode;
   const resourceControlsDisabledAttr = resourceControlsDisabled
-    ? ` disabled title="${htmlEscape(locked ? MODELING_PAGE_LOCK_MESSAGE : "请选择具体叶子组织节点后编辑备件资源。")}"`
+    ? ` disabled title="${htmlEscape(locked ? MODELING_PAGE_LOCK_MESSAGE : "请选择具体保障点后编辑资源。")}"`
     : "";
   return `
     <div class="ship-front-workbench">
@@ -7881,19 +7880,19 @@ function renderSupportOrganizationWorkbench(page) {
               </div>
             ` : `
               <div class="toolbar-row">
-                <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}" ${selectedIsLeaf && !locked ? "" : "disabled"}>新增</button>
-                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></label>
-                <button type="button" class="btn-danger" data-support-resource-batch-delete="${htmlEscape(activeResourceType)}"${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}>批量删除</button>
+                <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}"${resourceControlsDisabledAttr}>新增</button>
+                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"${resourceControlsDisabledAttr}></label>
+                <button type="button" class="btn-danger" data-support-resource-batch-delete="${htmlEscape(activeResourceType)}"${resourceControlsDisabledAttr}>批量删除</button>
                 <input value="" placeholder="请输入关键词进行搜索"${lockedAttr}>
-                <span class="badge">${locked ? "当前颗粒度只读" : selectedIsLeaf ? "叶子节点可编辑" : "汇总视图只读"}</span>
+                <span class="badge">${locked ? "当前颗粒度只读" : selectedIsEditableNode ? "当前保障点可编辑" : "汇总视图只读"}</span>
               </div>
-              ${spareSelection ? renderSpareSupportOrganizationGuidance(spareSelection, locked) : ""}
+              ${activeResourceType === "备件" && resourceSelection ? renderSpareSupportOrganizationGuidance(resourceSelection, locked) : ""}
               <p class="rms-import-status">${htmlEscape(supportResourceConflictMessage || supportResourceImportStatus)}</p>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
+                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${resourceControlsDisabledAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
                   <tbody>${visibleResourceRows.map((row, index) => `
-                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${activeResourceType === "备件" ? resourceControlsDisabledAttr : lockedAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, !selectedIsLeaf || locked)}</td>`).join("")}</tr>
+                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${resourceControlsDisabledAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, resourceControlsDisabled)}</td>`).join("")}</tr>
                   `).join("") || `<tr><td colspan="${resourceColumns.length + 3}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
@@ -7905,28 +7904,25 @@ function renderSupportOrganizationWorkbench(page) {
   `;
 }
 
-function resolveSpareSupportOrganizationSelection(orgTree, locked) {
+function resolveSupportResourceOrganizationSelection(orgTree, locked) {
   const root = orgTree[0] || null;
-  const editableLeafNodes = flattenSupportOrgTreeNodes(orgTree)
-    .filter((node) => node !== root && !(node.children || []).length);
+  const editableOrgNodes = flattenSupportOrgTreeNodes(orgTree)
+    .filter((node) => node !== root);
   let selectedNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree);
-  if (!locked && editableLeafNodes.length === 1 && (!selectedNode || selectedNode === root)) {
-    selectedNode = editableLeafNodes[0];
+  if (!locked && editableOrgNodes.length === 1 && (!selectedNode || selectedNode === root)) {
+    selectedNode = editableOrgNodes[0];
     selectedSupportOrgNodeId = selectedNode.id || "";
   } else if (!selectedNode) {
     selectedNode = root;
     selectedSupportOrgNodeId = selectedNode?.id || "";
   }
-  const selectedIsEditableLeaf = editableLeafNodes.some((node) => node === selectedNode);
-  const selectedDescendants = selectedNode
-    ? flattenSupportOrgTreeNodes([selectedNode]).filter((node) => editableLeafNodes.includes(node))
-    : [];
+  const selectedIsEditableNode = editableOrgNodes.some((node) => node === selectedNode);
   return {
     root,
-    editableLeafNodes,
+    editableOrgNodes,
     selectedNode,
-    selectedIsEditableLeaf,
-    resourceOrgNodes: selectedIsEditableLeaf ? [selectedNode] : selectedDescendants
+    selectedIsEditableNode,
+    resourceOrgNodes: selectedIsEditableNode ? [selectedNode] : editableOrgNodes
   };
 }
 
@@ -7934,12 +7930,12 @@ function renderSpareSupportOrganizationGuidance(selection, locked) {
   let message = "";
   if (locked) {
     message = "当前建模颗粒度为只读，备件数量不可编辑。";
-  } else if (selection.selectedIsEditableLeaf) {
-    message = `正在编辑叶子组织节点“${selection.selectedNode?.name || "未命名节点"}”的备件数量。`;
-  } else if (!selection.editableLeafNodes.length) {
-    message = "当前保障组织没有可编辑叶子节点；请先在保障组织结构建模中创建具体叶节点。";
+  } else if (selection.selectedIsEditableNode) {
+    message = `正在编辑保障点“${selection.selectedNode?.name || "未命名节点"}”的备件数量。`;
+  } else if (!selection.editableOrgNodes.length) {
+    message = "当前保障组织没有可编辑保障点；请先在保障组织结构建模中创建具体节点。";
   } else {
-    message = "请选择具体叶子组织节点后编辑备件数量；当前为汇总视图，所有资源字段只读。";
+    message = "请选择具体保障点后编辑备件数量；当前根节点为汇总视图，所有资源字段只读。";
   }
   return `<p class="inline-status support-spare-edit-guidance" role="status">${htmlEscape(message)}</p>`;
 }
@@ -7960,10 +7956,12 @@ function orgTreeNode(node, depth = 0) {
 
 function buildSupportResourceRows(activeResourceType, selectedOrgNode, options = {}) {
   const orgTree = supportOrganizationTree();
-  const leafNodes = flattenSupportOrgTreeNodes(selectedOrgNode ? [selectedOrgNode] : orgTree).filter((node) => !(node.children || []).length);
+  const root = orgTree[0] || null;
   const orgNodes = Array.isArray(options.orgNodes)
     ? options.orgNodes
-    : (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
+    : selectedOrgNode && selectedOrgNode !== root
+      ? [selectedOrgNode]
+      : flattenSupportOrgTreeNodes(orgTree).filter((node) => node !== root);
   const supportResources = Array.isArray(scenario.supportResources) ? scenario.supportResources : [];
   if (!supportResources.length && Array.isArray(scenario.supportNodes)) {
     return supportResourceRowsFromSupportNodes(scenario.supportNodes, activeResourceType);
@@ -8214,7 +8212,7 @@ function supportNodeForOrgNode(orgNode, createIfMissing = false) {
 
 function addSupportResource(activeResourceType) {
   const orgNode = selectedSupportOrgTreeNode();
-  if (!orgNode || (orgNode.children || []).length) return;
+  if (!orgNode || orgNode === supportOrganizationTree()[0]) return;
   supportNodeForOrgNode(orgNode, true);
   const resource = createSupportResourceImportNode(orgNode, activeResourceType, supportResourceRowsForOrg(activeResourceType, orgNode).length);
   if (activeResourceType === "保障人员") {
@@ -8320,8 +8318,8 @@ function supportEquipmentOwnerOptions(currentValue = "") {
 }
 
 function supportOrganizationSelect(key, selectedNodeId, disabled = false) {
-  const leafNodes = flattenSupportOrgTreeNodes().filter((node) => !(node.children || []).length);
-  const selectableNodes = leafNodes.length ? leafNodes : flattenSupportOrgTreeNodes();
+  const root = supportOrganizationTree()[0] || null;
+  const selectableNodes = flattenSupportOrgTreeNodes().filter((node) => node !== root);
   const selectedNode = findSupportOrgTreeNode(selectedNodeId);
   const options = selectedNode && !selectableNodes.some((node) => node.id === selectedNode.id)
     ? [selectedNode, ...selectableNodes]
@@ -8351,7 +8349,7 @@ function updateSupportResourceOverride(key, fieldName, value) {
     if (!selectedNode || !spare || matches.length > 1) {
       supportResourceImportStatus = matches.length > 1
         ? "备件编辑失败：当前组织和产品存在多条资源记录，请先消除身份冲突。"
-        : "备件编辑失败：当前行与所选叶子组织不匹配。";
+        : "备件编辑失败：当前行与所选保障点不匹配。";
       return false;
     }
     resource = matches[0] || {
@@ -8379,9 +8377,14 @@ function updateSupportResourceOverride(key, fieldName, value) {
       return false;
     }
     resource = matches[0];
+    const selectedNode = selectedEditableSupportResourceOrgNode(supportResourceTypeLabel(resource.type));
+    if (!selectedNode || !supportResourceBelongsToOrg(resource, selectedNode)) {
+      supportResourceImportStatus = "资源编辑失败：资源不属于当前选中的保障点。";
+      return false;
+    }
   }
   if (isSpareSupportResource(resource) && !selectedSpareResourceIsEditable(resource)) {
-    supportResourceImportStatus = "备件编辑失败：资源不属于当前选中的叶子组织。";
+    supportResourceImportStatus = "备件编辑失败：资源不属于当前选中的保障点。";
     return false;
   }
   const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : value;
@@ -8408,12 +8411,18 @@ function selectedSpareResourceIsEditable(resource) {
 }
 
 function selectedEditableSpareSupportOrgNode() {
+  return selectedEditableSupportResourceOrgNode("备件");
+}
+
+function selectedEditableSupportResourceOrgNode(expectedResourceType = "") {
   const page = getFeaturePageById(selectedFeatureId);
-  if (supportResourceTypeForPage(page) !== "备件" || currentModelingPageLocked(page)) return null;
+  const activeResourceType = supportResourceTypeForPage(page);
+  if (!activeResourceType || currentModelingPageLocked(page)) return null;
+  if (expectedResourceType && activeResourceType !== expectedResourceType) return null;
   const orgTree = supportOrganizationTree();
   const root = orgTree[0] || null;
   const selectedNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree);
-  return selectedNode && selectedNode !== root && !(selectedNode.children || []).length
+  return selectedNode && selectedNode !== root
     ? selectedNode
     : null;
 }
@@ -8453,10 +8462,8 @@ function deleteSelectedSupportResources() {
     selectedSupportResourceKeys = new Set();
     return false;
   }
-  const selectedSpareOrgNode = activeResourceType === "备件"
-    ? selectedEditableSpareSupportOrgNode()
-    : null;
-  if (activeResourceType === "备件" && !selectedSpareOrgNode) {
+  const selectedResourceOrgNode = selectedEditableSupportResourceOrgNode(activeResourceType);
+  if (!selectedResourceOrgNode) {
     selectedSupportResourceKeys = new Set();
     return false;
   }
@@ -8466,12 +8473,11 @@ function deleteSelectedSupportResources() {
     scenario.supportResources = scenario.supportResources.filter((resource) => {
       const selected = selectedSupportResourceKeys.has(resource.id);
       const matchingType = supportResourceTypeLabel(resource.type) === activeResourceType;
-      const matchingSpareOrg = activeResourceType !== "备件"
-        || supportResourceBelongsToOrg(resource, selectedSpareOrgNode);
-      if (selected && matchingType && matchingSpareOrg) {
+      const matchingOrg = supportResourceBelongsToOrg(resource, selectedResourceOrgNode);
+      if (selected && matchingType && matchingOrg) {
         deleted = true;
         if (activeResourceType === "备件") {
-          deletedSpareTombstones.push(createDeletedSupportSpareResource(resource, selectedSpareOrgNode));
+          deletedSpareTombstones.push(createDeletedSupportSpareResource(resource, selectedResourceOrgNode));
         }
         return false;
       }
@@ -8561,9 +8567,17 @@ function findSupportOrgParentNode(id, nodes = supportOrganizationTree(), parent 
 function updateSupportOrgField(id, fieldName, value) {
   const node = findSupportOrgTreeNode(id);
   if (!node || !fieldName) return;
-  node[fieldName] = value;
   const supportNode = supportNodeForOrgNode(node, fieldName === "airport");
-  if (supportNode && fieldName === "name") supportNode.name = value;
+  const previousName = String(node.name || "").trim();
+  node[fieldName] = value;
+  if (supportNode && fieldName === "name") {
+    supportNode.name = value;
+    supportNode.organizationNodeId = node.id;
+    for (const activity of scenario.supportActivities || []) {
+      const resourceRef = String(activity?.resourceId || "").trim();
+      if ([previousName, supportNode.id, node.id].includes(resourceRef)) activity.resourceId = node.id;
+    }
+  }
   if (supportNode && fieldName === "description") supportNode.organizationStrategy = value;
   if (supportNode && fieldName === "airport") {
     supportNode.airport = value;
@@ -8717,6 +8731,42 @@ function supportActivityAircraftModel(activity) {
   if (activity.equipmentType) return activity.equipmentType;
   const component = (scenario.components || []).find((item) => String(item.id || "") === String(activity.equipmentId || ""));
   return component?.aircraftModel || scenarioEquipmentModel() || "";
+}
+
+function supportActivityRuntimeNodeOptions(activity) {
+  const options = uniqueSelectOptions((scenario.supportNodes || []).map((node) => {
+    const value = String(node?.organizationNodeId || node?.id || node?.name || node?.supportNodeName || "").trim();
+    const label = String(node?.name || node?.supportNodeName || node?.id || value).trim();
+    return { value, label };
+  }).filter((option) => option.value));
+  const current = String(activity?.resourceId || "").trim();
+  const canonicalCurrent = supportActivityRuntimeNodeRef(activity);
+  const withPlaceholder = [{ value: "", label: "请选择运行保障点" }, ...options];
+  if (!current || options.some((option) => option.value === canonicalCurrent)) return withPlaceholder;
+  return [...withPlaceholder, { value: current, label: `未解析保障点（${current}）` }];
+}
+
+function supportActivityRuntimeNodeRef(activity) {
+  const current = String(activity?.resourceId || "").trim();
+  if (!current) return "";
+  const matches = (scenario.supportNodes || []).filter((node) => (
+    [node?.organizationNodeId, node?.id, node?.name, node?.supportNodeName]
+      .some((candidate) => String(candidate || "").trim() === current)
+  ));
+  if (matches.length !== 1) return current;
+  return String(matches[0]?.organizationNodeId || matches[0]?.id || current).trim();
+}
+
+function supportActivityRuntimeNodeField(activity, activityIndex) {
+  const selectedRef = supportActivityRuntimeNodeRef(activity);
+  const attrText = Object.entries(withModelingLockAttrs({ required: "required", "aria-label": "运行保障点" }))
+    .map(([key, value]) => ` ${key}="${htmlEscape(value)}"`)
+    .join("");
+  const options = supportActivityRuntimeNodeOptions(activity).map((option) => {
+    const value = String(option.value);
+    return `<option value="${htmlEscape(value)}" ${value === selectedRef ? "selected" : ""}>${htmlEscape(option.label)}</option>`;
+  }).join("");
+  return `<label>运行保障点<select data-path="supportActivities.${activityIndex}.resourceId"${attrText}>${options}</select></label>`;
 }
 
 function operationsSupportPlanTypeConfigs() {
@@ -11029,6 +11079,7 @@ function renderOperationsSupportActivity(activePlan, activity) {
   const activePhaseActivity = phaseActivities.find((item) => String(item.planType || "") === activePlanType) || phaseActivities[0] || activity;
   const planNameActivity = operationsSupportPlanNameActivity(activity, phaseActivities);
   const planNameActivityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(planNameActivity));
+  const activePhaseActivityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activePhaseActivity));
   const tabs = operationsSupportPlanTypeConfigs().map((config) => `
     <button type="button" class="tab-btn ${activePlanType === config.planType ? "active" : ""}" data-ops-support-plan-type="${htmlEscape(config.planType)}">${htmlEscape(config.label)}</button>
   `).join("");
@@ -11037,6 +11088,7 @@ function renderOperationsSupportActivity(activePlan, activity) {
       ${modelingLockNotice()}
       <div class="form-table-grid">
         ${field("方案名称", `supportActivities.${planNameActivityIndex}.activityName`)}
+        ${supportActivityRuntimeNodeField(activePhaseActivity, activePhaseActivityIndex)}
       </div>
       <div class="section-head">
         <h3>使用保障活动编辑</h3>
@@ -11154,6 +11206,7 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
       </div>
       <div class="form-table-grid">
         ${field("方案名称", `supportActivities.${activityIndex}.activityName`)}
+        ${supportActivityRuntimeNodeField(activity, activityIndex)}
         ${field("计划停机小时", `supportActivities.${activityIndex}.plannedDowntimeHours`, "number", { min: "0", step: "0.1" })}
         ${renderMaintenanceMethodControls(activity, activityIndex)}
         ${renderRuleRow({
@@ -11347,6 +11400,7 @@ function renderCorrectiveMaintenanceActivity(activity) {
           </div>
           <div class="form-table-grid">
             <label>MTTR<input readonly value="${htmlEscape(mttrText)}"></label>
+            ${supportActivityRuntimeNodeField(componentActivity, activityIndex)}
             ${renderMaintenanceMethodControls(componentActivity, activityIndex)}
           </div>
           ${renderSupportActivityJobTable(componentActivity, "corr_repair")}
@@ -11433,13 +11487,18 @@ function coalesceTransportPolicies(policies) {
   const byRoute = new Map();
   for (const source of policies || []) {
     const policy = { ...source };
+    canonicalizeLogisticsTransportPolicyEndpoints(policy);
     delete policy.spareName;
     delete policy.spareType;
     delete policy.spare_type;
-    const key = [policy.fromSupportNodeName || policy.from, policy.toSupportNodeName || policy.to, policy.transportMode || policy.direction].join("|");
+    const key = [
+      policy.fromOrganizationNodeId || policy.fromSupportNodeName || policy.from,
+      policy.toOrganizationNodeId || policy.toSupportNodeName || policy.to,
+      policy.transportMode || policy.direction
+    ].join("|");
     if (!byRoute.has(key)) byRoute.set(key, policy);
     else if (Number(byRoute.get(key).transportTimeHours) !== Number(policy.transportTimeHours)) {
-      projectDraftStatus = `运输策略 ${key} 存在多个旧运输时间，已采用第一条；请确认后保存。`;
+      projectDraftHydrateStatus = `运输策略 ${key} 存在多个旧运输时间，已采用第一条；请确认后保存。`;
     }
   }
   return [...byRoute.values()];
@@ -11455,37 +11514,75 @@ function legacyTransportPoliciesFromSupportActivities() {
 }
 
 function normalizedLogisticsTransportPolicy(policy, activity, activityIndex, policyIndex) {
-  const fromRef = policy.fromSupportNodeName || policy.from || "";
-  const toRef = policy.toSupportNodeName || policy.to || "";
-  return {
+  const normalized = {
     ...policy,
     id: policy.id || `${activity?.id || `logistics-${activityIndex + 1}`}-transport-${policyIndex + 1}`,
     name: policy.name || `运输策略${policyIndex + 1}`,
-    fromSupportNodeName: supportNodeDisplayNameForRef(fromRef),
-    toSupportNodeName: supportNodeDisplayNameForRef(toRef),
     transportMode: policy.transportMode || policy.direction || ""
   };
+  canonicalizeLogisticsTransportPolicyEndpoints(normalized);
+  return normalized;
 }
 
-function supportNodeDisplayNameForRef(ref) {
-  const value = String(ref || "");
+function logisticsSupportNodeOptions() {
+  const organizationNodes = flattenSupportOrgTreeNodes();
+  const rootId = String(organizationNodes[0]?.id || "");
+  const canonicalOptions = organizationNodes
+    .filter((node) => String(node?.id || "") && String(node?.id || "") !== rootId)
+    .map((node) => ({ value: String(node.id), label: String(node.name || node.id) }));
+  if (canonicalOptions.length) return uniqueSelectOptions(canonicalOptions);
+  return uniqueSelectOptions((scenario.supportNodes || []).map((supportNode) => {
+    const value = String(supportNode?.organizationNodeId || supportNode?.id || supportNode?.name || "").trim();
+    const label = String(supportNode?.name || supportNode?.supportNodeName || supportNode?.id || value).trim();
+    return { value, label };
+  }).filter((option) => option.value));
+}
+
+function logisticsOrganizationNodeIdForRef(ref) {
+  const value = String(ref || "").trim();
   if (!value) return "";
-  const matched = (scenario.supportNodes || []).find((node) => (
-    String(node?.name || "") === value
-    || String(node?.supportNodeName || "") === value
-    || String(node?.id || "") === value
+  const options = logisticsSupportNodeOptions();
+  const exactValue = options.find((option) => String(option.value) === value);
+  if (exactValue) return String(exactValue.value);
+  const nameMatches = options.filter((option) => String(option.label) === value);
+  if (nameMatches.length === 1) return String(nameMatches[0].value);
+  if (nameMatches.length > 1) return "";
+  const supportNodeMatches = (scenario.supportNodes || []).filter((node) => (
+    [node?.id, node?.name, node?.supportNodeName, node?.organizationNodeId]
+      .some((candidate) => String(candidate || "").trim() === value)
   ));
-  return String(matched?.name || matched?.supportNodeName || matched?.id || value);
+  if (supportNodeMatches.length !== 1) return "";
+  const matched = supportNodeMatches[0];
+  const matchedOption = options.find((option) => (
+    String(option.value) === String(matched?.organizationNodeId || "")
+    || String(option.value) === String(matched?.id || "")
+    || String(option.label) === String(matched?.name || matched?.supportNodeName || "")
+  ));
+  return String(matchedOption?.value || "");
 }
 
-function defaultSupportNodeName(index) {
-  const node = (scenario.supportNodes || [])[index];
-  return String(node?.name || node?.supportNodeName || node?.id || "");
+function logisticsSupportNodeOptionsWithCurrent(options, value) {
+  const current = String(value || "").trim();
+  if (!current || options.some((option) => String(option.value) === current)) return options;
+  return [...options, { value: current, label: `未解析保障点（${current}）` }];
+}
+
+function canonicalizeLogisticsTransportPolicyEndpoints(policy) {
+  for (const endpoint of ["from", "to"]) {
+    const idField = `${endpoint}OrganizationNodeId`;
+    const nameField = `${endpoint}SupportNodeName`;
+    const authoredRef = String(policy?.[idField] || policy?.[nameField] || policy?.[endpoint] || "").trim();
+    if (!authoredRef) continue;
+    policy[idField] = logisticsOrganizationNodeIdForRef(authoredRef) || authoredRef;
+    delete policy[nameField];
+    delete policy[endpoint];
+  }
 }
 
 function defaultLogisticsTransportPolicy(index) {
-  const fromSupportNodeName = defaultSupportNodeName(0);
-  const toSupportNodeName = defaultSupportNodeName(1) || fromSupportNodeName;
+  const supportNodeOptions = logisticsSupportNodeOptions();
+  const fromOrganizationNodeId = String(supportNodeOptions[0]?.value || "");
+  const toOrganizationNodeId = String(supportNodeOptions[1]?.value || fromOrganizationNodeId);
   const direction = "\u6a2a\u5411\u8fd0\u8f93";
   return {
     id: nextTransportPolicyId(),
@@ -11494,8 +11591,8 @@ function defaultLogisticsTransportPolicy(index) {
     transportMode: direction,
     triggerMode: "\u4e34\u754c\u5e93\u5b58",
     criticalInventory: 1,
-    fromSupportNodeName,
-    toSupportNodeName,
+    fromOrganizationNodeId,
+    toOrganizationNodeId,
     transportTimeHours: 1
   };
 }
@@ -11513,12 +11610,8 @@ function renderLogisticsSupportActivity(activePlan, activity) {
     Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportPolicies.length)
   );
   const lockedAttr = modelingLockDisabledAttr();
-  const supportNodeOptions = uniqueSelectOptions((scenario.supportNodes || [])
-    .map((node) => {
-      const name = String(node?.name || node?.supportNodeName || node?.id || "");
-      return { value: name, label: name };
-    })
-    .filter((option) => option.value));
+  const supportNodeOptions = logisticsSupportNodeOptions();
+  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
   const directionOptions = [
     { value: "\u6a2a\u5411\u8fd0\u8f93", label: "\u6a2a\u5411\u8fd0\u8f93" },
     { value: "\u7eb5\u5411\u8fd0\u8f93", label: "\u7eb5\u5411\u8fd0\u8f93" }
@@ -11537,11 +11630,16 @@ function renderLogisticsSupportActivity(activePlan, activity) {
           <button type="button" class="btn-danger" data-logistics-transport-delete ${selectedLogisticsTransportStrategyIndexes.size && !currentModelingPageLocked() ? "" : "disabled"}>\u5220\u9664</button>
         </div>
       </div>
+      <div class="form-table-grid">
+        ${supportActivityRuntimeNodeField(activity, activityIndex)}
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
           <tbody>${transportPolicies.map((row, index) => {
             const basePath = `transportPolicies.${index}`;
+            const fromSupportNodeOptions = logisticsSupportNodeOptionsWithCurrent(supportNodeOptions, row.fromOrganizationNodeId);
+            const toSupportNodeOptions = logisticsSupportNodeOptionsWithCurrent(supportNodeOptions, row.toOrganizationNodeId);
             const triggerControl = row.triggerMode === "\u5468\u671f\u6027\u8c03\u8fd0"
               ? `<label class="inline-field">\u8c03\u8fd0\u5468\u671f(h)${valueInput(`${basePath}.transferCycleHours`, "number", { min: "1", step: "1" })}</label>`
               : `<label class="inline-field">\u4e34\u754c\u5e93\u5b58\u6570${valueInput(`${basePath}.criticalInventory`, "number", { min: "0", step: "1" })}</label>`;
@@ -11552,8 +11650,8 @@ function renderLogisticsSupportActivity(activePlan, activity) {
                 <td>${valueSelect(`${basePath}.direction`, directionOptions)}</td>
                 <td>${valueSelect(`${basePath}.triggerMode`, triggerModeOptions)}</td>
                 <td>${triggerControl}</td>
-                <td>${valueSelect(`${basePath}.fromSupportNodeName`, supportNodeOptions)}</td>
-                <td>${valueSelect(`${basePath}.toSupportNodeName`, supportNodeOptions)}</td>
+                <td>${valueSelect(`${basePath}.fromOrganizationNodeId`, fromSupportNodeOptions)}</td>
+                <td>${valueSelect(`${basePath}.toOrganizationNodeId`, toSupportNodeOptions)}</td>
                 <td>${valueInput(`${basePath}.transportTimeHours`, "number", { min: "0", step: "0.1" })}</td>
               </tr>
             `;
@@ -14950,10 +15048,10 @@ async function importSupportActivityJobsFile(tabKey, file) {
     const invalidPredecessor = jobs.flatMap((job) => job.predecessors).find((code) => !codes.has(code));
     if (invalidPredecessor) throw new Error(`紧前作业不存在：${invalidPredecessor}`);
     setSupportActivityJobs(activity, jobs);
-    projectDraftStatus = `已导入 ${file.name}：${jobs.length} 个工作项目`;
+    basicActivityImportStatus = `已导入 ${file.name}：${jobs.length} 个工作项目`;
     updatePreviewResultsThroughApiClient();
   } catch (err) {
-    projectDraftStatus = `工作项目导入失败：${err?.message || "文件无法解析"}`;
+    basicActivityImportStatus = `工作项目导入失败：${err?.message || "文件无法解析"}`;
   }
 }
 
@@ -15078,13 +15176,11 @@ async function importSupportResourceTableFile(file, activeResourceType) {
     supportResourceImportStatus = "请在备件、保障人员或保障设备页面导入资源表格。";
     return false;
   }
-  const selectedSpareOrgNode = resourceType === "备件"
-    ? selectedEditableSpareSupportOrgNode()
-    : null;
-  if (resourceType === "备件" && !selectedSpareOrgNode) {
+  const selectedResourceOrgNode = selectedEditableSupportResourceOrgNode(resourceType);
+  if (!selectedResourceOrgNode) {
     supportResourceImportStatus = currentModelingPageLocked()
-      ? "当前建模颗粒度为只读，不能导入备件。"
-      : "请选择具体叶子组织节点后导入备件。";
+      ? `当前建模颗粒度为只读，不能导入${resourceType}。`
+      : `请选择具体保障点后导入${resourceType}。`;
     return false;
   }
   if (!file) {
@@ -15097,7 +15193,7 @@ async function importSupportResourceTableFile(file, activeResourceType) {
     const importedCount = applySupportResourceImportRows(
       resourceType,
       rows,
-      selectedSpareOrgNode ? { targetOrgNodes: [selectedSpareOrgNode] } : undefined
+      { targetOrgNodes: [selectedResourceOrgNode] }
     );
     supportResourceImportStatus = `已导入 ${file.name}：${resourceType} ${importedCount} 行。`;
     updatePreviewResultsThroughApiClient();
@@ -15283,9 +15379,9 @@ function resolveImportedHardwareSpare(row) {
 
 function selectedSupportImportOrgNodes() {
   const selected = selectedSupportOrgTreeNode();
-  const scopeNodes = selected ? [selected] : supportOrganizationTree();
-  const leafNodes = flattenSupportOrgTreeNodes(scopeNodes).filter((node) => !(node.children || []).length);
-  return leafNodes.length ? leafNodes : [selected].filter(Boolean);
+  const root = supportOrganizationTree()[0] || null;
+  if (selected && selected !== root) return [selected];
+  return flattenSupportOrgTreeNodes().filter((node) => node !== root);
 }
 
 function resolveSupportResourceImportOrgNode(row, targetOrgNodes, index) {

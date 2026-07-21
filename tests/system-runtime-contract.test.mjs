@@ -54,6 +54,7 @@ test("start-system defaults app backend to file SQLite and supports stop mode th
   assert.match(script, /MODE="\$\{1:-start\}"/);
   assert.match(script, /DATABASE_PATH="\$\{DATABASE_PATH:-\$RUN_DIR\/spare_mvp\.sqlite3\}"/);
   assert.match(script, /--database "\$DATABASE_PATH"/);
+  assert.match(script, /env SOLARA_THEME_SHOW_BANNER=false "\$SOLARA_BIN" run/);
   assert.match(script, /case "\$MODE" in/);
   assert.match(script, /stop\)/);
   assert.match(script, /stop_system/);

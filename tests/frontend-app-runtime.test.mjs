@@ -288,6 +288,20 @@ test("support resource page imports a local personnel table", async () => {
         }]
       });
     }
+    if (url === "/api/projects/project-runtime") {
+      return jsonResponse(createRuntimeProjectJson({
+        project_id: "project-runtime",
+        supportOrganization: {
+          tree: {
+            id: "support-org-root",
+            name: "保障组织",
+            children: [{ id: "flight-deck", name: "航母飞行甲板", children: [] }]
+          }
+        },
+        supportNodes: [{ id: "support-node-flight-deck", name: "航母飞行甲板", organizationNodeId: "flight-deck" }],
+        supportResources: []
+      }));
+    }
     throw new Error(`unexpected fetch ${url}`);
   };
 
@@ -333,30 +347,34 @@ test("support resource page imports a local personnel table", async () => {
   }
 });
 
-test("support resource add creates a new editable row for the selected leaf organization", async () => {
+test("support personnel resource add persists on a selected relay organization", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
       supportOrganization: {
         tree: {
           id: "support-org-root",
           name: "保障组织",
-          children: [
-            { id: "base-1", name: "基层1", children: [] }
-          ]
+          children: [{
+            id: "relay-1",
+            name: "中继1",
+            children: [{ id: "base-1", name: "基层1", children: [] }]
+          }]
         }
       },
       supportNodes: [{
-        id: "support-node-base-1",
-        name: "基层1"
+        id: "support-node-relay-1",
+        name: "中继1",
+        organizationNodeId: "relay-1"
       }],
       modelingDictionaries: {
         personnelSpecialties: ["航电", "机械"]
       },
       supportResources: [{
-        id: "support-resource-base-1-personnel",
-        supportNodeName: "基层1",
+        id: "support-resource-relay-1-personnel",
+        organizationNodeId: "relay-1",
+        supportNodeName: "中继1",
         type: "personnel",
-        name: "基层1人员",
+        name: "中继1人员",
         model: "机械",
         quantity: 1
       }]
@@ -365,7 +383,8 @@ test("support resource add creates a new editable row for the selected leaf orga
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-support-personnel");
-    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-1" });
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "relay-1" });
+    assert.match(runtime.appNode.innerHTML, /当前保障点可编辑/);
     const before = (runtime.appNode.innerHTML.match(/data-support-resource-field="model"/g) || []).length;
 
     await runtime.click("[data-support-resource-add]", { supportResourceAdd: "保障人员" });
@@ -379,12 +398,12 @@ test("support resource add creates a new editable row for the selected leaf orga
     const savedProject = await waitForProjectSave(runtime, (body) => (
       (body.supportResources || []).some((resource) => (
         resource.type === "personnel"
-        && resource.supportNodeName === "基层1"
+        && resource.supportNodeName === "中继1"
         && resource.model === "航电"
       ))
     ), "expected added support personnel specialty to be persisted");
     const savedPersonnelModels = savedProject.supportResources
-      .filter((resource) => resource.type === "personnel" && resource.supportNodeName === "基层1")
+      .filter((resource) => resource.type === "personnel" && resource.supportNodeName === "中继1")
       .map((resource) => resource.model);
     assert.deepEqual(savedPersonnelModels.sort(), ["机械", "航电"].sort());
     assert.ok(savedPersonnelModels.every(Boolean));
@@ -393,25 +412,29 @@ test("support resource add creates a new editable row for the selected leaf orga
   }
 });
 
-test("support equipment resource name and model stay editable on the equipment page", async () => {
+test("support equipment resource stays editable on a relay organization", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
       supportOrganization: {
         tree: {
           id: "support-org-root",
           name: "保障组织",
-          children: [
-            { id: "base-1", name: "基层1", children: [] }
-          ]
+          children: [{
+            id: "relay-1",
+            name: "中继1",
+            children: [{ id: "base-1", name: "基层1", children: [] }]
+          }]
         }
       },
       supportNodes: [{
-        id: "support-node-base-1",
-        name: "基层1"
+        id: "support-node-relay-1",
+        name: "中继1",
+        organizationNodeId: "relay-1"
       }],
       supportResources: [{
-        id: "support-resource-base-1-equipment",
-        supportNodeName: "基层1",
+        id: "support-resource-relay-1-equipment",
+        organizationNodeId: "relay-1",
+        supportNodeName: "中继1",
         type: "equipment",
         name: "旧检测仪",
         model: "OLD-01",
@@ -422,19 +445,19 @@ test("support equipment resource name and model stay editable on the equipment p
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-support-equipment");
-    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-1" });
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "relay-1" });
 
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-field="name"[^>]*disabled/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-field="model"[^>]*disabled/);
 
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-base-1-equipment", supportResourceField: "name" },
+      { supportResourceKey: "support-resource-relay-1-equipment", supportResourceField: "name" },
       { value: "新检测仪" }
     );
     await runtime.change(
       "[data-support-resource-field]",
-      { supportResourceKey: "support-resource-base-1-equipment", supportResourceField: "model" },
+      { supportResourceKey: "support-resource-relay-1-equipment", supportResourceField: "model" },
       { value: "NEW-02" }
     );
 
@@ -499,7 +522,7 @@ test("support spare resource page derives default rows from equipment hardware t
   }
 });
 
-test("support spare page auto-selects its only leaf and preserves quantity through save and rehydrate", async () => {
+test("support spare page auto-selects its only保障点 and preserves quantity through save and rehydrate", async () => {
   const projectId = "support-spare-single-leaf-runtime";
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -544,7 +567,7 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
     await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-spare-part");
 
-    assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层1”的备件数量。/);
+    assert.match(runtime.appNode.innerHTML, /正在编辑保障点“基层1”的备件数量。/);
     assert.match(runtime.appNode.innerHTML, /class="tree-node-label selected"[^>]*data-select-support-org-node="base-1"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
 
@@ -564,7 +587,7 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
     await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-spare-part");
 
-    assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层1”的备件数量。/);
+    assert.match(runtime.appNode.innerHTML, /正在编辑保障点“基层1”的备件数量。/);
     assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity" type="number" value="11"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-1:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
   } finally {
@@ -572,7 +595,7 @@ test("support spare page auto-selects its only leaf and preserves quantity throu
   }
 });
 
-test("real Case-large spare edit survives save, display, and fresh runtime rehydrate", async () => {
+test("real Case-large relay spare edit survives save, display, and fresh runtime rehydrate", async () => {
   const caseLarge = JSON.parse(fs.readFileSync(new URL("../exports/project-case-large.json", import.meta.url), "utf8"));
   const projectId = caseLarge.project_id;
   const backendProjects = [{
@@ -583,14 +606,16 @@ test("real Case-large spare edit survives save, display, and fresh runtime rehyd
     source_import_id: "",
     updated_at: "2026-07-18 00:00:00"
   }];
-  const resourceKey = "support-spare:support-org-1783479792728:product-j16-part-0018";
+  const resourceKey = "support-spare:support-org-dadui:product-j16-part-0018";
   const runtime = await setupRuntimeApp({ projectJson: caseLarge, backendProjects });
   let savedProject;
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash(`feature=spare-planning-spare-part&project=${projectId}`);
-    assert.match(runtime.appNode.innerHTML, new RegExp(`data-support-resource-key="${resourceKey}"[^>]*value="4"`));
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "support-org-dadui" });
+    assert.match(runtime.appNode.innerHTML, /正在编辑保障点“中继”的备件数量。/);
+    assert.match(runtime.appNode.innerHTML, new RegExp(`data-support-resource-key="${resourceKey}"[^>]*value="0"`));
 
     await runtime.change(
       "[data-support-resource-field]",
@@ -611,6 +636,7 @@ test("real Case-large spare edit survives save, display, and fresh runtime rehyd
   try {
     await rehydrated.click("[data-enter-workbench]", { projectId });
     await rehydrated.setHash(`feature=spare-planning-spare-part&project=${projectId}`);
+    await rehydrated.click("[data-select-support-org-node]", { selectSupportOrgNode: "support-org-dadui" });
     assert.match(rehydrated.appNode.innerHTML, new RegExp(`data-support-resource-key="${resourceKey}"[^>]*value="13"`));
   } finally {
     rehydrated.restore();
@@ -931,7 +957,7 @@ test("support spare batch delete persists a leaf-scoped hardware tombstone throu
   }
 });
 
-test("support spare import rejects root and locked writes and binds cross-leaf rows to the selected leaf", async () => {
+test("support spare import rejects root and locked writes and binds rows to the selected保障点", async () => {
   const projectId = "support-spare-import-boundary-runtime";
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -991,7 +1017,7 @@ test("support spare import rejects root and locked writes and binds cross-leaf r
       { supportResourceImportFile: "备件" },
       { files: [spareImportFile(99)] }
     );
-    assert.match(runtime.appNode.innerHTML, /请选择具体叶子组织节点后导入备件。/);
+    assert.match(runtime.appNode.innerHTML, /请选择具体保障点后导入备件。/);
 
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-a" });
     await runtime.change(
@@ -1030,7 +1056,7 @@ test("support spare import rejects root and locked writes and binds cross-leaf r
   }
 });
 
-test("support spare summary stays read-only until a concrete leaf is selected", async () => {
+test("support spare root summary stays read-only until a concrete保障点 is selected", async () => {
   const projectId = "support-spare-multi-leaf-runtime";
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -1072,7 +1098,7 @@ test("support spare summary stays read-only until a concrete leaf is selected", 
     await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-spare-part");
 
-    assert.match(runtime.appNode.innerHTML, /请选择具体叶子组织节点后编辑备件数量；当前为汇总视图，所有资源字段只读。/);
+    assert.match(runtime.appNode.innerHTML, /请选择具体保障点后编辑备件数量；当前根节点为汇总视图，所有资源字段只读。/);
     assert.match(runtime.appNode.innerHTML, /class="tree-node-label selected"[^>]*data-select-support-org-node="support-org-root"/);
     assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
     assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-b:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
@@ -1083,7 +1109,7 @@ test("support spare summary stays read-only until a concrete leaf is selected", 
       { value: "99", type: "number" }
     );
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-a" });
-    assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层A”的备件数量。/);
+    assert.match(runtime.appNode.innerHTML, /正在编辑保障点“基层A”的备件数量。/);
     assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity" type="number" value="0"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru" data-support-resource-field="quantity"[^>]*disabled/);
 
@@ -1093,7 +1119,7 @@ test("support spare summary stays read-only until a concrete leaf is selected", 
       { value: "7", type: "number" }
     );
     await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-b" });
-    assert.match(runtime.appNode.innerHTML, /正在编辑叶子组织节点“基层B”的备件数量。/);
+    assert.match(runtime.appNode.innerHTML, /正在编辑保障点“基层B”的备件数量。/);
     assert.match(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-b:product-pump-lru" data-support-resource-field="quantity" type="number" value="0"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-key="support-spare:base-a:product-pump-lru"/);
 
@@ -1139,7 +1165,7 @@ test("support spare page explains empty and locked organization states", async (
     })
   });
   try {
-    assert.match(emptyRuntime.appNode.innerHTML, /当前保障组织没有可编辑叶子节点；请先在保障组织结构建模中创建具体叶节点。/);
+    assert.match(emptyRuntime.appNode.innerHTML, /当前保障组织没有可编辑保障点；请先在保障组织结构建模中创建具体节点。/);
     assert.doesNotMatch(emptyRuntime.appNode.innerHTML, /data-support-resource-field="quantity"/);
   } finally {
     emptyRuntime.restore();
@@ -5543,13 +5569,36 @@ test("basic support activity resource dialog selects resource requirements witho
 });
 
 test("logistics support activity page only renders transport strategy list", async () => {
-  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      transportPolicies: [
+        {
+          id: "transport-base-deck-primary",
+          name: "主运输策略",
+          fromSupportNodeName: "基地",
+          toSupportNodeName: "甲板",
+          transportMode: "纵向运输",
+          transportTimeHours: 2
+        },
+        {
+          id: "transport-base-deck-legacy-conflict",
+          name: "冲突旧运输策略",
+          fromSupportNodeName: "基地",
+          toSupportNodeName: "甲板",
+          transportMode: "纵向运输",
+          transportTimeHours: 3
+        }
+      ]
+    })
+  });
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-logistics-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /后勤保障运输策略配置/);
+    assert.match(runtime.appNode.innerHTML, /主运输策略/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /冲突旧运输策略/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /工作项目清单/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /保障活动图/);
   } finally {
@@ -5559,9 +5608,19 @@ test("logistics support activity page only renders transport strategy list", asy
 
 test("logistics transport editing writes top-level transport policies", async () => {
   const projectJson = createRuntimeProjectJson({
+    supportOrganization: {
+      tree: {
+        id: "support-org-root",
+        name: "保障组织",
+        children: [
+          { id: "org-base", name: "基地", children: [] },
+          { id: "org-deck", name: "甲板", children: [] }
+        ]
+      }
+    },
     supportNodes: [
-      { id: "base", name: "基地" },
-      { id: "deck", name: "甲板" }
+      { id: "base", name: "基地", organizationNodeId: "org-base" },
+      { id: "deck", name: "甲板", organizationNodeId: "org-deck" }
     ],
     transportPolicies: []
   });
@@ -5573,10 +5632,12 @@ test("logistics transport editing writes top-level transport policies", async ()
     await runtime.click("[data-logistics-transport-add]");
 
     assert.match(runtime.appNode.innerHTML, /data-path="transportPolicies\.0\.name"/);
-    assert.match(runtime.appNode.innerHTML, /data-path="transportPolicies\.0\.fromSupportNodeName"/);
+    assert.match(runtime.appNode.innerHTML, /data-path="transportPolicies\.0\.fromOrganizationNodeId"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /supportActivities\.\d+\.transportStrategies/);
 
     await runtime.change("[data-path]", { path: "transportPolicies.0.name" }, { value: "加急调运", type: "text" });
+    await runtime.change("[data-path]", { path: "transportPolicies.0.fromOrganizationNodeId" }, { value: "org-deck" });
+    await runtime.change("[data-path]", { path: "transportPolicies.0.toOrganizationNodeId" }, { value: "org-base" });
     await runtime.change("[data-path]", { path: "transportPolicies.0.transportTimeHours" }, { value: "2.5", type: "number" });
     await runtime.click("[data-project-draft-save]");
 
@@ -5585,11 +5646,128 @@ test("logistics transport editing writes top-level transport policies", async ()
       (body) => body.transportPolicies?.[0]?.name === "加急调运",
       "expected logistics save to persist top-level transport policy"
     );
-    assert.equal(saved.transportPolicies[0].fromSupportNodeName, "基地");
-    assert.equal(saved.transportPolicies[0].toSupportNodeName, "甲板");
+    assert.equal(saved.transportPolicies[0].fromOrganizationNodeId, "org-deck");
+    assert.equal(saved.transportPolicies[0].toOrganizationNodeId, "org-base");
+    assert.equal("fromSupportNodeName" in saved.transportPolicies[0], false);
+    assert.equal("toSupportNodeName" in saved.transportPolicies[0], false);
     assert.equal("spareName" in saved.transportPolicies[0], false);
     assert.equal(saved.transportPolicies[0].transportTimeHours, 2.5);
     assert.ok(saved.supportActivities.every((activity) => !("transportStrategies" in activity) && !("organizationStrategies" in activity)));
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("logistics transport endpoints render and survive organization renames by stable ID", async () => {
+  const projectJson = createRuntimeProjectJson({
+    supportOrganization: {
+      tree: {
+        id: "support-org-root",
+        name: "保障组织",
+        children: [{
+          id: "org-relay",
+          name: "中继",
+          children: [{ id: "org-line", name: "基层", children: [] }]
+        }]
+      }
+    },
+    supportNodes: [
+      { id: "support-node-relay", name: "中继", organizationNodeId: "org-relay" },
+      { id: "support-node-line", name: "基层", organizationNodeId: "org-line" }
+    ],
+    supportActivities: [{
+      id: "activity-line",
+      activityType: "使用保障",
+      planType: "直接准备方案",
+      activityName: "基层保障活动",
+      aircraftModel: "J16",
+      resourceId: "基层",
+      activityCodes: [],
+      predecessors: {}
+    }],
+    transportPolicies: [{
+      id: "transport-relay-line",
+      name: "纵向补给",
+      fromOrganizationNodeId: "org-relay",
+      toOrganizationNodeId: "org-line",
+      direction: "纵向运输",
+      transportMode: "纵向运输",
+      transportTimeHours: 2
+    }]
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-logistics-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /<option value="org-relay"[^>]*selected[^>]*>中继<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="org-line"[^>]*selected[^>]*>基层<\/option>/);
+
+    await runtime.setHash("feature=spare-planning-support-organization");
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "org-line" });
+    await runtime.change(
+      "[data-support-org-field]",
+      { supportOrgNode: "org-line", supportOrgField: "name" },
+      { value: "前沿基层点", type: "text" }
+    );
+    await runtime.setHash("feature=spare-planning-logistics-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /<option value="org-line"[^>]*selected[^>]*>前沿基层点<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="org-line"[^>]*selected[^>]*>基层<\/option>/);
+
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(
+      runtime,
+      (body) => body.transportPolicies?.[0]?.toOrganizationNodeId === "org-line",
+      "expected renamed logistics endpoint to preserve its stable organization ID"
+    );
+    assert.equal(saved.transportPolicies[0].fromOrganizationNodeId, "org-relay");
+    assert.equal(saved.transportPolicies[0].toOrganizationNodeId, "org-line");
+    assert.equal("fromSupportNodeName" in saved.transportPolicies[0], false);
+    assert.equal("toSupportNodeName" in saved.transportPolicies[0], false);
+    assert.equal(saved.supportActivities.find((activity) => activity.id === "activity-line")?.resourceId, "org-line");
+    assert.equal(saved.supportNodes.find((node) => node.organizationNodeId === "org-line")?.name, "前沿基层点");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("ambiguous legacy logistics endpoint names stay visibly unresolved", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "org-same-a", name: "同名保障点", children: [] },
+            { id: "org-same-b", name: "同名保障点", children: [] },
+            { id: "org-target", name: "目标保障点", children: [] }
+          ]
+        }
+      },
+      supportNodes: [
+        { id: "support-same-a", name: "同名保障点", organizationNodeId: "org-same-a" },
+        { id: "support-same-b", name: "同名保障点", organizationNodeId: "org-same-b" },
+        { id: "support-target", name: "目标保障点", organizationNodeId: "org-target" }
+      ],
+      transportPolicies: [{
+        id: "legacy-ambiguous-route",
+        fromSupportNodeName: "同名保障点",
+        toSupportNodeName: "目标保障点",
+        transportTimeHours: 1
+      }]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-logistics-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /<option value="同名保障点"[^>]*selected[^>]*>未解析保障点（同名保障点）<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="org-same-[ab]"[^>]*selected/);
+    assert.match(runtime.appNode.innerHTML, /<option value="org-target"[^>]*selected[^>]*>目标保障点<\/option>/);
   } finally {
     runtime.restore();
   }

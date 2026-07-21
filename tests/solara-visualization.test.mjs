@@ -15,6 +15,20 @@ import {
 
 test("Solara visualization URL defaults to the managed sidecar", () => {
   assert.equal(resolveSolaraVisualizationBaseUrl({ locationRef: {}, storage: null }), DEFAULT_SOLARA_VISUALIZATION_URL);
+  assert.equal(
+    resolveSolaraVisualizationBaseUrl({
+      locationRef: { protocol: "http:", hostname: "localhost", search: "", hash: "" },
+      storage: null
+    }),
+    "http://localhost:8765"
+  );
+  assert.equal(
+    resolveSolaraVisualizationBaseUrl({
+      locationRef: { protocol: "http:", hostname: "127.0.0.1", search: "", hash: "" },
+      storage: null
+    }),
+    "http://127.0.0.1:8765"
+  );
 });
 
 test("Solara visualization URL can be overridden from query or local storage", () => {

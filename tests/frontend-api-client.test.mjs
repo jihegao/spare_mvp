@@ -1191,7 +1191,7 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
   assert.ok("requireDevices" in scenario.supportActivities[0]);
 });
 
-test("buildBackendProjectJson strips support activity plan-layer legacy fields", () => {
+test("buildBackendProjectJson preserves support activity runtime resource references", () => {
   const scenario = {
     scenarioId: "support-activity-reference-boundary",
     supportActivities: [
@@ -1224,7 +1224,7 @@ test("buildBackendProjectJson strips support activity plan-layer legacy fields",
   assert.equal(projectJson.supportActivities[0].maxWorkTimeRefMinutes, 30);
   assert.equal("name" in projectJson.supportActivities[0], false);
   assert.equal("planGroupId" in projectJson.supportActivities[0], false);
-  assert.equal("resourceId" in projectJson.supportActivities[0], false);
+  assert.equal(projectJson.supportActivities[0].resourceId, "carrier-deck");
   assert.equal("requiredDevices" in projectJson.supportActivities[0], false);
   assert.equal("requiredPersonnel" in projectJson.supportActivities[0], false);
   assert.equal("jobs" in projectJson.supportActivities[0], false);
@@ -1397,6 +1397,9 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
     supportResources: [
       { id: "personnel-1", supportNodeName: "基层", type: "personnel", name: "机械保障人员", model: "机械", quantity: 3 }
     ],
+    supportActivities: [
+      { id: "activity-1", activityName: "基层保障", resourceId: "基层" }
+    ],
     transportPolicies: [
       { id: "transport-1", from: "line-team", to: "carrier-deck", fromSupportNodeName: "基层", toSupportNodeName: "基地", spareName: "航电模块", capacity: 2 }
     ]
@@ -1407,12 +1410,17 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
   assert.equal("supportResourceOverrides" in projectJson, false);
   assert.equal("deletedSupportResourceKeys" in projectJson, false);
   assert.deepEqual(projectJson.supportNodes.map((node) => node.name), ["基地", "中继", "基层"]);
-  assert.ok(projectJson.supportNodes.every((node) => Object.keys(node).sort().join(",") === "id,name"));
+  assert.deepEqual(projectJson.supportNodes.map((node) => node.organizationNodeId), ["carrier-deck", "forward-sea-base", "line-team"]);
   assert.equal(projectJson.supportNodes.some((node) => node.id === "carrier-stock-personnel-mech" || node.name === "机械保障人员"), false);
   assert.deepEqual(projectJson.supportResources, scenario.supportResources);
   assert.deepEqual(projectJson.transportPolicies, [
-    { id: "transport-1", fromSupportNodeName: "基层", toSupportNodeName: "基地", capacity: 2 }
+    { id: "transport-1", fromOrganizationNodeId: "line-team", toOrganizationNodeId: "carrier-deck", capacity: 2 }
   ]);
+  assert.equal(projectJson.supportActivities[0].resourceId, "line-team");
+  assert.ok(projectJson.transportPolicies.every((policy) => (
+    projectJson.supportNodes.some((node) => node.organizationNodeId === policy.fromOrganizationNodeId)
+    && projectJson.supportNodes.some((node) => node.organizationNodeId === policy.toOrganizationNodeId)
+  )));
 });
 
 test("buildBackendProjectJson retains organization-managed airport associations", () => {
@@ -1435,8 +1443,8 @@ test("buildBackendProjectJson retains organization-managed airport associations"
   }, { id: "support-node-airport-association" });
 
   assert.deepEqual(projectJson.supportNodes, [
-    { id: "support-node-1", name: "中继", airport: "前出基地" },
-    { id: "support-node-2", name: "基层", airport: "大队" }
+    { id: "support-node-1", name: "中继", organizationNodeId: "org-relay", airport: "前出基地" },
+    { id: "support-node-2", name: "基层", organizationNodeId: "org-line", airport: "大队" }
   ]);
 });
 
@@ -1638,7 +1646,7 @@ test("buildBackendProjectJson derives spare resources from equipment hardware tr
   assert.equal(projectJson.supportResources.some((resource) => ["发动机备件", "液压备件", "航电模块"].includes(resource.name)), false);
 });
 
-test("support spare migration moves a unique ancestor stock to its only leaf and rewrites job references", () => {
+test("support spare normalization preserves relay stock and rewrites job references to its stable identity", () => {
   const loaded = normalizeProjectJsonForClientDraft({
     supportOrganization: {
       tree: {
@@ -1673,11 +1681,14 @@ test("support spare migration moves a unique ancestor stock to its only leaf and
     id: resource.id,
     organization: resource.organizationNodeName,
     quantity: resource.quantity
-  })), [{ id: "support-spare:leaf:product-pump", organization: "leaf", quantity: 9 }]);
-  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:leaf:product-pump");
+  })), [
+    { id: "support-spare:leaf:product-pump", organization: "leaf", quantity: 0 },
+    { id: "support-spare:relay:product-pump", organization: "relay", quantity: 9 }
+  ]);
+  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:relay:product-pump");
 });
 
-test("support spare migration never distributes an ancestor quantity across multiple leaves", () => {
+test("support spare normalization keeps relay quantity separate from descendant leaves", () => {
   const loaded = normalizeProjectJsonForClientDraft({
     supportOrganization: {
       tree: {
@@ -1708,12 +1719,12 @@ test("support spare migration never distributes an ancestor quantity across mult
   });
 
   const quantities = new Map(loaded.supportResources.map((resource) => [resource.organizationNodeName, resource.quantity]));
-  assert.equal(loaded.supportResources.find((resource) => resource.id === "legacy-relay-stock").quantity, 12);
+  assert.equal(loaded.supportResources.find((resource) => resource.id === "support-spare:relay:product-pump").quantity, 12);
   assert.equal(quantities.get("leaf-a"), 0);
   assert.equal(quantities.get("leaf-b"), 0);
 });
 
-test("support spare migration preserves ancestor and leaf non-zero conflict for backend rejection", () => {
+test("support spare normalization preserves independent relay and leaf stock", () => {
   const loaded = normalizeProjectJsonForClientDraft({
     supportOrganization: {
       tree: {
@@ -1737,7 +1748,7 @@ test("support spare migration preserves ancestor and leaf non-zero conflict for 
   const live = loaded.supportResources.filter((resource) => resource.type === "spare");
   assert.equal(live.length, 2);
   assert.deepEqual(live.map((resource) => resource.quantity).sort((a, b) => a - b), [4, 5]);
-  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:leaf:product-pump");
+  assert.equal(loaded.supportActivityJobs[0].spare[0].key, "support-spare:relay:product-pump");
 });
 
 test("same-name leaf tombstone suppresses only its stable organization and product identity", () => {
