@@ -11439,7 +11439,7 @@ function coalesceTransportPolicies(policies) {
     const key = [policy.fromSupportNodeName || policy.from, policy.toSupportNodeName || policy.to, policy.transportMode || policy.direction].join("|");
     if (!byRoute.has(key)) byRoute.set(key, policy);
     else if (Number(byRoute.get(key).transportTimeHours) !== Number(policy.transportTimeHours)) {
-      projectDraftStatus = `运输策略 ${key} 存在多个旧运输时间，已采用第一条；请确认后保存。`;
+      projectDraftHydrateStatus = `运输策略 ${key} 存在多个旧运输时间，已采用第一条；请确认后保存。`;
     }
   }
   return [...byRoute.values()];
@@ -14950,10 +14950,10 @@ async function importSupportActivityJobsFile(tabKey, file) {
     const invalidPredecessor = jobs.flatMap((job) => job.predecessors).find((code) => !codes.has(code));
     if (invalidPredecessor) throw new Error(`紧前作业不存在：${invalidPredecessor}`);
     setSupportActivityJobs(activity, jobs);
-    projectDraftStatus = `已导入 ${file.name}：${jobs.length} 个工作项目`;
+    basicActivityImportStatus = `已导入 ${file.name}：${jobs.length} 个工作项目`;
     updatePreviewResultsThroughApiClient();
   } catch (err) {
-    projectDraftStatus = `工作项目导入失败：${err?.message || "文件无法解析"}`;
+    basicActivityImportStatus = `工作项目导入失败：${err?.message || "文件无法解析"}`;
   }
 }
 

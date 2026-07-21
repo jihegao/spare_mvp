@@ -1191,7 +1191,7 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
   assert.ok("requireDevices" in scenario.supportActivities[0]);
 });
 
-test("buildBackendProjectJson strips support activity plan-layer legacy fields", () => {
+test("buildBackendProjectJson preserves support activity runtime resource references", () => {
   const scenario = {
     scenarioId: "support-activity-reference-boundary",
     supportActivities: [
@@ -1224,7 +1224,7 @@ test("buildBackendProjectJson strips support activity plan-layer legacy fields",
   assert.equal(projectJson.supportActivities[0].maxWorkTimeRefMinutes, 30);
   assert.equal("name" in projectJson.supportActivities[0], false);
   assert.equal("planGroupId" in projectJson.supportActivities[0], false);
-  assert.equal("resourceId" in projectJson.supportActivities[0], false);
+  assert.equal(projectJson.supportActivities[0].resourceId, "carrier-deck");
   assert.equal("requiredDevices" in projectJson.supportActivities[0], false);
   assert.equal("requiredPersonnel" in projectJson.supportActivities[0], false);
   assert.equal("jobs" in projectJson.supportActivities[0], false);

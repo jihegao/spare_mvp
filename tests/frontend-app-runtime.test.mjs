@@ -5543,13 +5543,36 @@ test("basic support activity resource dialog selects resource requirements witho
 });
 
 test("logistics support activity page only renders transport strategy list", async () => {
-  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      transportPolicies: [
+        {
+          id: "transport-base-deck-primary",
+          name: "主运输策略",
+          fromSupportNodeName: "基地",
+          toSupportNodeName: "甲板",
+          transportMode: "纵向运输",
+          transportTimeHours: 2
+        },
+        {
+          id: "transport-base-deck-legacy-conflict",
+          name: "冲突旧运输策略",
+          fromSupportNodeName: "基地",
+          toSupportNodeName: "甲板",
+          transportMode: "纵向运输",
+          transportTimeHours: 3
+        }
+      ]
+    })
+  });
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-logistics-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /后勤保障运输策略配置/);
+    assert.match(runtime.appNode.innerHTML, /主运输策略/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /冲突旧运输策略/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /工作项目清单/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /保障活动图/);
   } finally {

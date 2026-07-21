@@ -1532,7 +1532,6 @@ function normalizeSupportActivityReferenceFields(projectJson) {
     activity.planType = canonicalSupportActivityPlanType(activity);
     delete activity.name;
     delete activity.planGroupId;
-    delete activity.resourceId;
     delete activity.supportNodeId;
     delete activity.requiredDevices;
     delete activity.requiredPersonnel;
