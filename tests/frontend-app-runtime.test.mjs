@@ -4716,6 +4716,34 @@ test("basic support activity UI reads and writes top-level job table references"
   }
 });
 
+test("operations support deletion only unlinks a job while basic activity deletion removes its definition", async () => {
+  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-operations-support-activity");
+    await runtime.change(
+      "[data-support-activity-job-select]",
+      { supportActivityJobSelect: "ops_preflight:0" },
+      { checked: true, type: "checkbox" }
+    );
+    await runtime.click("[data-support-activity-job-batch-delete]", { supportActivityJobBatchDelete: "ops_preflight" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /初始工作项目/);
+
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    assert.match(runtime.appNode.innerHTML, /初始工作项目/);
+    await runtime.change(
+      "[data-basic-activity-select]",
+      { basicActivitySelect: "unlinked:BA-001" },
+      { checked: true, type: "checkbox" }
+    );
+    await runtime.click("[data-basic-activity-batch-delete]");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /初始工作项目/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("basic support activity scope edits persist on the selected top-level job", async () => {
   const projectJson = createRuntimeProjectJson({
     equipment: { wholeMachineModels: ["J-15", "J-35"] }

@@ -9022,8 +9022,6 @@ function supportActivityJobDefinitionsEqual(left, right) {
   return stableSupportActivityJobStringify(left) === stableSupportActivityJobStringify(right);
 }
 
-let preserveSupportActivityJobDefinitionsDuringStaging = false;
-
 function stableSupportActivityJobStringify(value) {
   if (Array.isArray(value)) return `[${value.map((item) => stableSupportActivityJobStringify(item)).join(",")}]`;
   if (!value || typeof value !== "object") return JSON.stringify(value);
@@ -9092,24 +9090,28 @@ function setSupportActivityJobs(activity, jobs) {
   activity.activityCodes = activityCodes;
   activity.predecessors = predecessors;
   delete activity.jobs;
-  if (!preserveSupportActivityJobDefinitionsDuringStaging) pruneUnreferencedSupportActivityJobs(activity);
   return activity;
 }
 
-function pruneUnreferencedSupportActivityJobs(extraActivity = null) {
-  if (!Array.isArray(scenario.supportActivityJobs)) return;
-  const referenced = new Set();
-  const activities = [
-    ...(Array.isArray(scenario.supportActivities) ? scenario.supportActivities : []),
-    ...(extraActivity ? [extraActivity] : [])
-  ];
-  for (const activity of activities) {
-    for (const code of Array.isArray(activity?.activityCodes) ? activity.activityCodes : []) {
-      const normalized = supportActivityJobCode(code);
-      if (normalized) referenced.add(normalized);
+function permanentlyDeleteSupportActivityJobDefinitions(codes) {
+  const deletedCodes = new Set((codes || []).map(supportActivityJobCode).filter(Boolean));
+  if (!deletedCodes.size) return false;
+  const table = ensureSupportActivityJobTable();
+  const hasDefinition = table.some((job) => deletedCodes.has(supportActivityJobCode(job?.activityCode)));
+  if (!hasDefinition) return false;
+  scenario.supportActivityJobs = table.filter((job) => !deletedCodes.has(supportActivityJobCode(job?.activityCode)));
+  for (const activity of scenario.supportActivities || []) {
+    const remainingCodes = (activity.activityCodes || []).map(supportActivityJobCode)
+      .filter((code) => code && !deletedCodes.has(code));
+    const predecessors = {};
+    for (const code of remainingCodes) {
+      predecessors[code] = (activity.predecessors?.[code] || []).map(supportActivityJobCode)
+        .filter((predecessor) => predecessor && !deletedCodes.has(predecessor) && remainingCodes.includes(predecessor));
     }
+    activity.activityCodes = remainingCodes;
+    activity.predecessors = predecessors;
   }
-  scenario.supportActivityJobs = scenario.supportActivityJobs.filter((job) => referenced.has(supportActivityJobCode(job?.activityCode)));
+  return true;
 }
 
 function deleteSupportActivityJobAt(activity, index) {
@@ -10244,7 +10246,7 @@ function basicActivityApplicableAircraft(row) {
 }
 
 function basicActivityLibraryRows() {
-  return (scenario.supportActivities || []).flatMap((activity, activityIndex) =>
+  const referencedRows = (scenario.supportActivities || []).flatMap((activity, activityIndex) =>
     supportActivityJobs(activity).map((job, jobIndex) => ({
       key: `${activityIndex}:${jobIndex}`,
       activity,
@@ -10265,6 +10267,29 @@ function basicActivityLibraryRows() {
       predecessors: Array.isArray(job.predecessors) ? [...job.predecessors] : []
     }))
   );
+  const referencedCodes = new Set(referencedRows.map((row) => supportActivityJobCode(row.activityCode)));
+  const unlinkedRows = (scenario.supportActivityJobs || [])
+    .filter((job) => !referencedCodes.has(supportActivityJobCode(job?.activityCode)))
+    .map((job) => ({
+      key: `unlinked:${supportActivityJobCode(job.activityCode)}`,
+      activity: null,
+      activityIndex: -1,
+      jobIndex: -1,
+      type: "使用保障活动",
+      activityCode: supportActivityJobCode(job.activityCode),
+      workName: job.workName,
+      scope: basicActivityApplicableAircraft(job) || "未指定",
+      applicableAircraft: basicActivityApplicableAircraft(job),
+      durationProfile: normalizeSupportActivityDurationProfile(job.durationProfile || job.durationDistribution, job.durationMinutes),
+      durationMinutes: job.durationMinutes,
+      personnelProfessional: job.personnelProfessional || "",
+      equipmentModel: job.equipmentModel || "",
+      personnel: normalizeBasicActivityResourceRequirements(job, "personnel"),
+      equipment: normalizeBasicActivityResourceRequirements(job, "equipment"),
+      spare: normalizeBasicActivityResourceRequirements(job, "spare"),
+      predecessors: []
+    }));
+  return [...referencedRows, ...unlinkedRows];
 }
 
 function filteredBasicActivityLibraryRows() {
@@ -10708,6 +10733,19 @@ function basicActivityJobTarget(key) {
   if (key === BASIC_ACTIVITY_DRAFT_KEY && basicActivityDraft) {
     return { activity: null, jobs: [basicActivityDraft], jobIndex: 0, isDraft: true };
   }
+  if (String(key || "").startsWith("unlinked:")) {
+    const activityCode = supportActivityJobCode(String(key).slice("unlinked:".length));
+    const job = supportActivityJobDefinitionsByCode().get(activityCode);
+    if (!job) return null;
+    return {
+      activity: null,
+      jobs: [{ ...job, predecessors: [] }],
+      jobIndex: 0,
+      isDraft: false,
+      isUnlinkedDefinition: true,
+      definitionCode: activityCode
+    };
+  }
   const [activityIndex, jobIndex] = String(key || "").split(":").map(Number);
   const activity = (scenario.supportActivities || [])[activityIndex];
   const jobs = supportActivityJobs(activity).slice();
@@ -10719,6 +10757,18 @@ function setBasicActivityTargetJob(target, job) {
   target.jobs[target.jobIndex] = job;
   if (target.isDraft) {
     basicActivityDraft = { ...basicActivityDraft, ...job, key: BASIC_ACTIVITY_DRAFT_KEY };
+    return;
+  }
+  if (target.isUnlinkedDefinition) {
+    const definitionCode = supportActivityJobCode(target.definitionCode);
+    const table = ensureSupportActivityJobTable();
+    const index = table.findIndex((definition) => supportActivityJobCode(definition?.activityCode) === definitionCode);
+    if (index < 0) return;
+    const nextCode = supportActivityJobCode(job.activityCode);
+    if (!nextCode || (nextCode !== definitionCode && table.some((definition, itemIndex) => (
+      itemIndex !== index && supportActivityJobCode(definition?.activityCode) === nextCode
+    )))) return;
+    table[index] = supportActivityJobDefinition({ ...job, activityCode: nextCode });
     return;
   }
   setSupportActivityJobs(target.activity, target.jobs);
@@ -10805,23 +10855,17 @@ function basicActivityApplicableAircraftFromScope(value) {
 }
 
 function deleteBasicActivityJob(key) {
-  const [activityIndex, jobIndex] = String(key || "").split(":").map(Number);
-  const activity = (scenario.supportActivities || [])[activityIndex];
-  if (!activity) return;
-  deleteSupportActivityJobAt(activity, jobIndex);
+  const row = basicActivityLibraryRows().find((item) => item.key === key);
+  if (!row) return;
+  permanentlyDeleteSupportActivityJobDefinitions([row.activityCode]);
   selectedBasicActivityKeys.delete(key);
 }
 
 function deleteSelectedBasicActivityJobs() {
-  const byActivity = new Map();
-  for (const key of selectedBasicActivityKeys) {
-    const [activityIndex, jobIndex] = String(key).split(":").map(Number);
-    if (!Number.isInteger(activityIndex) || !Number.isInteger(jobIndex)) continue;
-    byActivity.set(activityIndex, [...(byActivity.get(activityIndex) || []), jobIndex]);
-  }
-  for (const [activityIndex, indexes] of byActivity.entries()) {
-    deleteSupportActivityJobsAtIndexes((scenario.supportActivities || [])[activityIndex], indexes);
-  }
+  const codes = Array.from(selectedBasicActivityKeys)
+    .map((key) => basicActivityLibraryRows().find((row) => row.key === key)?.activityCode)
+    .filter(Boolean);
+  permanentlyDeleteSupportActivityJobDefinitions(codes);
   selectedBasicActivityKeys = new Set();
 }
 
@@ -10898,8 +10942,6 @@ function stageBasicSupportActivityImport(rows) {
   for (const row of rows) groups.set(row.type, [...(groups.get(row.type) || []), row]);
   const selectedKeys = [];
   scenario = stagedScenario;
-  const previousPreserveDefinitions = preserveSupportActivityJobDefinitionsDuringStaging;
-  preserveSupportActivityJobDefinitionsDuringStaging = true;
   try {
     for (const [type, importedRows] of groups.entries()) {
       const activity = ensureBasicActivityDraftHostActivity(type);
@@ -10930,7 +10972,6 @@ function stageBasicSupportActivityImport(rows) {
       selectedPreventiveMaintenanceAircraftModel
     };
   } finally {
-    preserveSupportActivityJobDefinitionsDuringStaging = previousPreserveDefinitions;
     scenario = original.scenario;
     selectedOperationsSupportActivityKey = original.selectedOperationsSupportActivityKey;
     selectedOperationsSupportAircraftModel = original.selectedOperationsSupportAircraftModel;
