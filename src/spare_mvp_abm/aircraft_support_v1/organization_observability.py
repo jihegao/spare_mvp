@@ -76,7 +76,7 @@ def normalize_organization_event(
     wait_minutes = payload.get("wait_minutes")
     if wait_minutes is None and isinstance(arrival_minute, (int, float)) and isinstance(requested_minute, (int, float)):
         wait_minutes = max(0, arrival_minute - requested_minute)
-    payload.update({
+    stable = {
         "fact_type": ORGANIZATION_EVENT_FACT_TYPES.get(event, "organization_fact"),
         "runtime_mode": identity["runtime_mode"],
         "organization_graph_hash": identity["graph_hash"],
@@ -107,8 +107,17 @@ def normalize_organization_event(
             or payload.get("organization_node_id")
             or "organization"
         ),
-    })
-    return payload
+    }
+    existing_context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    stable["context"] = {
+        **copy.deepcopy(existing_context),
+        **{
+            key: copy.deepcopy(value)
+            for key, value in payload.items()
+            if key not in stable and key != "context"
+        },
+    }
+    return stable
 
 
 def organization_dispatch_summary(
@@ -128,23 +137,28 @@ def organization_dispatch_summary(
         if source_event_id:
             seen_source_ids.add(source_event_id)
         facts.append(event)
-    selected = [event for event in facts if (event.get("details") or {}).get("fact_type") == "selection_made"]
+    def values(event: dict[str, Any]) -> dict[str, Any]:
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        context = details.get("context") if isinstance(details.get("context"), dict) else {}
+        return {**context, **details}
+
+    selected = [event for event in facts if values(event).get("fact_type") == "selection_made"]
     local_fulfilled = [
-        event for event in facts if (event.get("details") or {}).get("fact_type") == "local_fulfilled"
+        event for event in facts if values(event).get("fact_type") == "local_fulfilled"
     ]
-    blocked = [event for event in facts if (event.get("details") or {}).get("fact_type") == "supply_blocked"]
-    arrived = [event for event in facts if (event.get("details") or {}).get("fact_type") == "dispatch_arrived"]
-    dispatched = [event for event in facts if (event.get("details") or {}).get("fact_type") == "dispatch_started"]
+    blocked = [event for event in facts if values(event).get("fact_type") == "supply_blocked"]
+    arrived = [event for event in facts if values(event).get("fact_type") == "dispatch_arrived"]
+    dispatched = [event for event in facts if values(event).get("fact_type") == "dispatch_started"]
 
     def counts(items: list[dict[str, Any]], field: str) -> dict[str, int]:
         result: dict[str, int] = {}
         for item in items:
-            value = str((item.get("details") or {}).get(field) or "unspecified")
+            value = str(values(item).get(field) or "unspecified")
             result[value] = result.get(value, 0) + 1
         return dict(sorted(result.items()))
 
     def fact_keys(event: dict[str, Any]) -> set[tuple[str, int, str]]:
-        details = event.get("details") or {}
+        details = values(event)
         job_id = str(details.get("job_id") or "")
         task_index = int(details.get("task_index") or 0)
         requirement_type = str(details.get("requirement_type") or "organization")
@@ -170,13 +184,13 @@ def organization_dispatch_summary(
         "selection_counts_by_source_mode": counts(selected + local_fulfilled, "source_mode"),
         "blocked_counts_by_reason": counts(blocked, "reason"),
         "candidate_rejection_counts_by_reason": counts(
-            [event for event in facts if (event.get("details") or {}).get("fact_type") == "candidate_rejected"],
+            [event for event in facts if values(event).get("fact_type") == "candidate_rejected"],
             "reason",
         ),
         "transport_batch_count": len(dispatched),
         "transport_arrival_count": len(arrived),
         "observed_transport_wait_minutes": sum(
-            max(0.0, float((event.get("details") or {}).get("wait_minutes") or 0)) for event in arrived
+            max(0.0, float(values(event).get("wait_minutes") or 0)) for event in arrived
         ),
         "interpretation": "descriptive_observed_dispatch_facts_only_no_causal_attribution",
     }

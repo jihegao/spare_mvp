@@ -11,12 +11,11 @@
     "run_id",
     "scenario_id",
     "metrics",
-    "lifecycle_trace",
-    "organization_graph_identity",
-    "organization_dispatch_summary"
+    "lifecycle_trace"
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "result-v0" },
+    "organization_observability_version": { "const": "organization-observability-v1" },
     "model_family": { "type": "string", "const": "aircraft_support_v1" },
     "result_id": { "type": "string" },
     "run_id": { "type": "string" },
@@ -111,13 +110,25 @@
         "transport_arrival_count": { "type": "integer", "minimum": 0 },
         "observed_transport_wait_minutes": { "type": "number", "minimum": 0 },
         "interpretation": { "const": "descriptive_observed_dispatch_facts_only_no_causal_attribution" }
-      }
+      },
+      "allOf": [{
+        "if": { "properties": { "summary_scope": { "const": "representative_sample" } }, "required": ["summary_scope"] },
+        "then": { "required": ["representative_sample_index", "representative_seed"] },
+        "else": { "not": { "anyOf": [{ "required": ["representative_sample_index"] }, { "required": ["representative_seed"] }] } }
+      }]
     },
     "nonNegativeIntegerMap": {
       "type": "object",
       "additionalProperties": { "type": "integer", "minimum": 0 }
     }
   },
+  "allOf": [{
+    "if": {
+      "properties": { "organization_observability_version": { "const": "organization-observability-v1" } },
+      "required": ["organization_observability_version"]
+    },
+    "then": { "required": ["organization_graph_identity", "organization_dispatch_summary"] }
+  }],
   "oneOf": [
     {
       "type": "object",

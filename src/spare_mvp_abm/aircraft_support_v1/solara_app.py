@@ -422,6 +422,8 @@ def _event_type_label(event_type: Any) -> str:
 def _event_display(event: dict[str, Any]) -> tuple[str, str, str]:
     event_type = str(event.get("event") or event.get("type") or "")
     details = event.get("details") if isinstance(event.get("details"), dict) else {}
+    context = details.get("context") if isinstance(details.get("context"), dict) else {}
+    details = {**context, **details}
     raw_message = str(event.get("message") or "")
     tokens = raw_message.split()
     first = tokens[0] if tokens else ""

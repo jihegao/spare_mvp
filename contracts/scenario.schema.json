@@ -50,6 +50,7 @@
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "scenario-v0" },
+    "organization_observability_version": { "const": "organization-observability-v1" },
     "scenario_id": { "type": "string" },
     "project_id": { "type": "string" },
     "scenario_version": { "type": "string" },
@@ -91,9 +92,7 @@
             "defaults_applied",
             "derived_fields",
             "ignored_fields",
-            "unsupported_fields",
-            "organization_graph_identity",
-            "migration_notices"
+            "unsupported_fields"
           ],
           "properties": {
             "project_id": { "type": "string" },
@@ -153,6 +152,23 @@
     },
     "simulation_inputs": { "type": "object" }
   },
+  "allOf": [{
+    "if": {
+      "properties": { "organization_observability_version": { "const": "organization-observability-v1" } },
+      "required": ["organization_observability_version"]
+    },
+    "then": {
+      "properties": {
+        "compiled_from": {
+          "properties": {
+            "mapping_provenance": {
+              "required": ["organization_graph_identity", "migration_notices"]
+            }
+          }
+        }
+      }
+    }
+  }],
   "$defs": {
     "AircraftSupportV1ModelSelector": {
       "description": "Current formal runtime selector for /api/runs.",

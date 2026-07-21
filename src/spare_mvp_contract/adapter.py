@@ -53,6 +53,7 @@ RUN_SCHEMA_VERSION = "run-v0"
 RESULT_SCHEMA_VERSION = "result-v0"
 ARTIFACT_MANIFEST_SCHEMA_VERSION = "artifact-manifest-v0"
 VISUALIZATION_STATE_SERIES_SCHEMA_VERSION = "visualization-state-series-v0"
+ORGANIZATION_OBSERVABILITY_VERSION = "organization-observability-v1"
 MESA_CONTRACT_VERSION = "1.0.0"
 ADAPTER_NAME = "Simulation Adapter Agent"
 ACTIVE_MODEL_FAMILY = "aircraft_support_v1"
@@ -540,6 +541,11 @@ class SimulationAdapter:
                 scenario["simulation_inputs"].get("support_network", {}).get("organization_graph")
             )
             provenance["organization_graph_identity"] = copy.deepcopy(organization_identity)
+            provenance["derived_fields"] = list(provenance.get("derived_fields") or []) + [
+                "organization_observability_version",
+                "organization_graph_identity",
+                "organization_dispatch_summary",
+            ]
             transport_migrations = [change for change in normalization_changes if "transport" in change]
             migration_notices = ([{
                 "code": "legacy_transport_policies_migrated",
@@ -601,6 +607,7 @@ class SimulationAdapter:
 
         scenario = {
             "schema_version": SCENARIO_SCHEMA_VERSION,
+            "organization_observability_version": ORGANIZATION_OBSERVABILITY_VERSION,
             "scenario_id": f"scenario-{scenario_key}",
             "project_id": project_id,
             "scenario_version": "scenario-v0.1",
@@ -2362,6 +2369,7 @@ class SimulationAdapter:
         now = _utc_now()
         result = {
             "schema_version": RESULT_SCHEMA_VERSION,
+            "organization_observability_version": ORGANIZATION_OBSERVABILITY_VERSION,
             "model_family": "aircraft_support_v1",
             "result_id": result_id,
             "run_id": run_id,
@@ -2757,6 +2765,7 @@ class SimulationAdapter:
         )
         result = {
             "schema_version": RESULT_SCHEMA_VERSION,
+            "organization_observability_version": ORGANIZATION_OBSERVABILITY_VERSION,
             "model_family": "aircraft_support_v1",
             "result_id": result_id,
             "run_id": run_id,
@@ -4362,6 +4371,7 @@ class SimulationAdapter:
         failure_tree_templates = self._compact_failure_tree_frames(traced_frames)
         payload = {
             "schema_version": VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
+            "organization_observability_version": ORGANIZATION_OBSERVABILITY_VERSION,
             "run_id": run_id,
             "scenario_id": scenario["scenario_id"],
             "scenario_version": scenario["scenario_version"],

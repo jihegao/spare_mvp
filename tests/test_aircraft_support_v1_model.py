@@ -1622,7 +1622,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.nodes["lateral-stock"]["inventory"]["shared-spare"], 9)
         self.assertEqual(model.transport_shipments, [])
         local_events = [event for event in model.event_log if event["event"] == "organization_local_fulfilled"]
-        self.assertEqual(local_events[-1]["details"]["organization_node_id"], "org-leaf")
+        self.assertEqual(local_events[-1]["details"]["context"]["organization_node_id"], "org-leaf")
 
     def test_canonical_parent_supply_uses_policy_batch_capacity_time_and_atomic_reservation(self) -> None:
         # Arrange.
@@ -1990,7 +1990,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.nodes["stock"]["personnel_in_use"], 0)
         self.assertEqual(model.nodes["root-stock"]["equipment_in_use"], 0)
         blocked = [event for event in model.event_log if event["event"] == "organization_resource_blocked"]
-        self.assertEqual(blocked[-1]["details"]["resource_kind"], "equipment")
+        self.assertEqual(blocked[-1]["details"]["context"]["resource_kind"], "equipment")
 
     def test_canonical_zero_minute_resource_transport_arrives_on_next_tick(self) -> None:
         # Arrange.
@@ -2109,7 +2109,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             event for event in model.event_log
             if event["event"] == "organization_transport_dispatched"
         ][-1]
-        self.assertEqual(dispatched["details"]["supply_mode"], "lateral")
+        self.assertEqual(dispatched["details"]["source_mode"], "lateral")
         self.assertEqual(dispatched["details"]["relation_id"], "lateral-to-leaf")
 
         model.minute = 1
@@ -2308,7 +2308,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
                     "allowed_values": allowed_values,
                 }
                 self.assertEqual(
-                    {key: rejected[0]["details"][key] for key in expected_details},
+                    {key: {**rejected[0]["details"]["context"], **rejected[0]["details"]}[key] for key in expected_details},
                     expected_details,
                 )
                 self.assertEqual(rejected[0]["details"]["fact_type"], "candidate_rejected")
@@ -2441,7 +2441,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             event for event in model.event_log
             if event["event"] == "organization_resource_dispatched"
         ]
-        self.assertEqual({event["details"]["supply_mode"] for event in dispatched}, {"lateral"})
+        self.assertEqual({event["details"]["source_mode"] for event in dispatched}, {"lateral"})
         self.assertEqual({event["details"]["relation_id"] for event in dispatched}, {"lateral-to-leaf"})
 
         model.minute = 1

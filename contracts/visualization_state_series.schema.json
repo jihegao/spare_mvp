@@ -15,12 +15,11 @@
     "run_config_artifact_id",
     "input_project_artifact_id",
     "compiled_scenario_artifact_id",
-    "organization_graph_identity",
-    "organization_dispatch_summary",
     "frames"
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "visualization-state-series-v0" },
+    "organization_observability_version": { "const": "organization-observability-v1" },
     "run_id": { "type": "string" },
     "scenario_id": { "type": "string" },
     "scenario_version": { "type": "string" },
@@ -72,6 +71,35 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "organization_observability_version": { "const": "organization-observability-v1" } },
+        "required": ["organization_observability_version"]
+      },
+      "then": {
+        "required": ["organization_graph_identity", "organization_dispatch_summary"],
+        "properties": {
+          "frames": {
+            "items": {
+              "required": ["organization_graph_identity", "organization_dispatch_summary"],
+              "properties": {
+                "events": {
+                  "items": {
+                    "allOf": [{
+                      "if": { "properties": { "event": { "pattern": "^organization_" } }, "required": ["event"] },
+                      "then": {
+                        "required": ["source_event_id", "event_sequence", "details"],
+                        "properties": { "details": { "$ref": "#/$defs/organization_event_details" } }
+                      }
+                    }]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -87,8 +115,6 @@
         "mission_state",
         "resource_state",
         "event_summary",
-        "organization_graph_identity",
-        "organization_dispatch_summary",
         "aircraft",
         "missions",
         "resources",
@@ -272,14 +298,7 @@
         "source_event_id": { "type": "string", "minLength": 1 },
         "event_sequence": { "type": "integer", "minimum": 1 },
         "details": { "type": "object", "additionalProperties": true }
-      },
-      "allOf": [{
-        "if": { "properties": { "event": { "pattern": "^organization_" } }, "required": ["event"] },
-        "then": {
-          "required": ["source_event_id", "event_sequence", "details"],
-          "properties": { "details": { "$ref": "#/$defs/organization_event_details" } }
-        }
-      }]
+      }
     },
     "organization_graph_identity": {
       "type": "object",
@@ -319,7 +338,12 @@
         "transport_arrival_count": { "type": "integer", "minimum": 0 },
         "observed_transport_wait_minutes": { "type": "number", "minimum": 0 },
         "interpretation": { "const": "descriptive_observed_dispatch_facts_only_no_causal_attribution" }
-      }
+      },
+      "allOf": [{
+        "if": { "properties": { "summary_scope": { "const": "representative_sample" } }, "required": ["summary_scope"] },
+        "then": { "required": ["representative_sample_index", "representative_seed"] },
+        "else": { "not": { "anyOf": [{ "required": ["representative_sample_index"] }, { "required": ["representative_seed"] }] } }
+      }]
     },
     "non_negative_integer_map": {
       "type": "object",
@@ -350,7 +374,7 @@
         "requirement_id": { "type": "string", "minLength": 1 },
         "context": { "type": "object" }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     }
   }
 }

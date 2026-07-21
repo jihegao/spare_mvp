@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
+import subprocess
+import sys
 import unittest
+
+import jsonschema
 
 from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
     aggregate_organization_dispatch_summaries,
@@ -12,6 +18,67 @@ from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
 
 
 class OrganizationObservabilityTest(unittest.TestCase):
+    def test_strict_event_details_and_representative_scope_schema(self) -> None:
+        # Arrange.
+        repo_root = Path(__file__).resolve().parents[1]
+        schema = json.loads(
+            (repo_root / "contracts" / "visualization_state_series.schema.json").read_text(encoding="utf-8")
+        )
+        identity = organization_graph_identity({"runtime_mode": "vertical_lateral"})
+        details = normalize_organization_event(
+            "organization_supply_selected",
+            {"job_id": "job-1", "product_id": "spare-a"},
+            minute=1,
+            identity=identity,
+        )
+        representative = organization_dispatch_summary([], identity=identity)
+        representative.update({
+            "summary_scope": "representative_sample",
+            "representative_sample_index": 0,
+            "representative_seed": 317,
+        })
+
+        # Act / Assert.
+        jsonschema.validate(details, schema["$defs"]["organization_event_details"])
+        typo = copy.deepcopy(details)
+        typo["requirement_typo"] = "spare"
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(typo, schema["$defs"]["organization_event_details"])
+        summary_schema = {
+            "$schema": schema["$schema"],
+            "$ref": "#/$defs/organization_dispatch_summary",
+            "$defs": schema["$defs"],
+        }
+        jsonschema.validate(representative, summary_schema)
+        representative.pop("representative_seed")
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(representative, summary_schema)
+
+    def test_canonical_multilevel_lateral_cases_are_reproducible(self) -> None:
+        # Arrange.
+        repo_root = Path(__file__).resolve().parents[1]
+        fixture_path = repo_root / "tests" / "fixtures" / "organization_observability_cases.json"
+
+        # Act.
+        checked = subprocess.run(
+            [sys.executable, "scripts/export-organization-observability-cases.py", "--check"],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        cases = {
+            item["case_id"]: item
+            for item in json.loads(fixture_path.read_text(encoding="utf-8"))["cases"]
+        }
+
+        # Assert.
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertEqual(cases["lateral_success"]["selected_source_mode"], "lateral")
+        self.assertEqual(cases["vertical_fallback"]["selected_source_mode"], "vertical")
+        self.assertEqual(cases["fail_closed"]["outcome"], "blocked")
+        self.assertEqual(cases["fail_closed"]["organization_dispatch_summary"]["observed_fulfillment_rate"], 0.0)
+
     def test_graph_identity_is_order_independent_but_semantic_changes_are_visible(self) -> None:
         # Arrange.
         graph = {
