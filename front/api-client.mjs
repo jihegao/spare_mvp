@@ -706,10 +706,11 @@ function normalizeSupportModelTables(projectJson) {
   projectJson.supportNodes = supportNodeNames.map((name, index) => ({
     id: `support-node-${index + 1}`,
     name,
+    ...(organization.idByRef.get(name) ? { organizationNodeId: organization.idByRef.get(name) } : {}),
     ...(nodeScopeByName.get(name) || {})
   }));
   normalizeTopLevelTransportPolicies(projectJson, nameByRef, organization.idByRef);
-  normalizeSupportNodeRefsInProject(projectJson, nameByRef);
+  normalizeSupportNodeRefsInProject(projectJson, nameByRef, organization.idByRef);
 }
 
 function supportNodeScopeByRef(supportNodes) {
@@ -1151,30 +1152,32 @@ function normalizeTopLevelTransportPolicies(projectJson, nameByRef, organization
     });
 }
 
-function normalizeSupportNodeRefsInProject(projectJson, nameByRef) {
+function normalizeSupportNodeRefsInProject(projectJson, nameByRef, organizationIdByRef = new Map()) {
   for (const airport of Array.isArray(projectJson.airports) ? projectJson.airports : []) {
     if (airport && typeof airport === "object" && !Array.isArray(airport) && airport.supportNodeId !== undefined) {
       airport.supportNodeId = supportNodeNameForRef(airport.supportNodeId, nameByRef);
     }
   }
   for (const activity of Array.isArray(projectJson.supportActivities) ? projectJson.supportActivities : []) {
-    normalizeSupportActivityNodeRefs(activity, nameByRef);
+    normalizeSupportActivityNodeRefs(activity, nameByRef, organizationIdByRef);
   }
 }
 
-function normalizeSupportActivityNodeRefs(value, nameByRef) {
+function normalizeSupportActivityNodeRefs(value, nameByRef, organizationIdByRef = new Map()) {
   if (Array.isArray(value)) {
-    for (const item of value) normalizeSupportActivityNodeRefs(item, nameByRef);
+    for (const item of value) normalizeSupportActivityNodeRefs(item, nameByRef, organizationIdByRef);
     return;
   }
   if (!value || typeof value !== "object") return;
-  for (const field of ["supportNodeId", "resourceId"]) {
-    if (value[field] !== undefined) value[field] = supportNodeNameForRef(value[field], nameByRef);
+  if (value.supportNodeId !== undefined) value.supportNodeId = supportNodeNameForRef(value.supportNodeId, nameByRef);
+  if (value.resourceId !== undefined) {
+    const resourceRef = cleanText(value.resourceId);
+    value.resourceId = organizationIdByRef.get(resourceRef) || supportNodeNameForRef(resourceRef, nameByRef);
   }
   for (const field of ["lateralSupportNodes"]) {
     if (Array.isArray(value[field])) value[field] = value[field].map((ref) => supportNodeNameForRef(ref, nameByRef));
   }
-  for (const child of Object.values(value)) normalizeSupportActivityNodeRefs(child, nameByRef);
+  for (const child of Object.values(value)) normalizeSupportActivityNodeRefs(child, nameByRef, organizationIdByRef);
 }
 
 function supportNodeNameForRef(value, nameByRef) {
@@ -1200,7 +1203,6 @@ function stripLegacySupportNodeResourceFields(projectJson) {
     "policy",
     "supportLevel",
     "transportPolicies",
-    "organizationNodeId",
     "importedResourceType",
     "personnelModel",
     "personnelType",

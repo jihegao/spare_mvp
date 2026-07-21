@@ -8568,10 +8568,15 @@ function updateSupportOrgField(id, fieldName, value) {
   const node = findSupportOrgTreeNode(id);
   if (!node || !fieldName) return;
   const supportNode = supportNodeForOrgNode(node, fieldName === "airport");
+  const previousName = String(node.name || "").trim();
   node[fieldName] = value;
   if (supportNode && fieldName === "name") {
     supportNode.name = value;
     supportNode.organizationNodeId = node.id;
+    for (const activity of scenario.supportActivities || []) {
+      const resourceRef = String(activity?.resourceId || "").trim();
+      if ([previousName, supportNode.id, node.id].includes(resourceRef)) activity.resourceId = node.id;
+    }
   }
   if (supportNode && fieldName === "description") supportNode.organizationStrategy = value;
   if (supportNode && fieldName === "airport") {
@@ -8726,6 +8731,42 @@ function supportActivityAircraftModel(activity) {
   if (activity.equipmentType) return activity.equipmentType;
   const component = (scenario.components || []).find((item) => String(item.id || "") === String(activity.equipmentId || ""));
   return component?.aircraftModel || scenarioEquipmentModel() || "";
+}
+
+function supportActivityRuntimeNodeOptions(activity) {
+  const options = uniqueSelectOptions((scenario.supportNodes || []).map((node) => {
+    const value = String(node?.organizationNodeId || node?.id || node?.name || node?.supportNodeName || "").trim();
+    const label = String(node?.name || node?.supportNodeName || node?.id || value).trim();
+    return { value, label };
+  }).filter((option) => option.value));
+  const current = String(activity?.resourceId || "").trim();
+  const canonicalCurrent = supportActivityRuntimeNodeRef(activity);
+  const withPlaceholder = [{ value: "", label: "请选择运行保障点" }, ...options];
+  if (!current || options.some((option) => option.value === canonicalCurrent)) return withPlaceholder;
+  return [...withPlaceholder, { value: current, label: `未解析保障点（${current}）` }];
+}
+
+function supportActivityRuntimeNodeRef(activity) {
+  const current = String(activity?.resourceId || "").trim();
+  if (!current) return "";
+  const matches = (scenario.supportNodes || []).filter((node) => (
+    [node?.organizationNodeId, node?.id, node?.name, node?.supportNodeName]
+      .some((candidate) => String(candidate || "").trim() === current)
+  ));
+  if (matches.length !== 1) return current;
+  return String(matches[0]?.organizationNodeId || matches[0]?.id || current).trim();
+}
+
+function supportActivityRuntimeNodeField(activity, activityIndex) {
+  const selectedRef = supportActivityRuntimeNodeRef(activity);
+  const attrText = Object.entries(withModelingLockAttrs({ required: "required", "aria-label": "运行保障点" }))
+    .map(([key, value]) => ` ${key}="${htmlEscape(value)}"`)
+    .join("");
+  const options = supportActivityRuntimeNodeOptions(activity).map((option) => {
+    const value = String(option.value);
+    return `<option value="${htmlEscape(value)}" ${value === selectedRef ? "selected" : ""}>${htmlEscape(option.label)}</option>`;
+  }).join("");
+  return `<label>运行保障点<select data-path="supportActivities.${activityIndex}.resourceId"${attrText}>${options}</select></label>`;
 }
 
 function operationsSupportPlanTypeConfigs() {
@@ -11038,6 +11079,7 @@ function renderOperationsSupportActivity(activePlan, activity) {
   const activePhaseActivity = phaseActivities.find((item) => String(item.planType || "") === activePlanType) || phaseActivities[0] || activity;
   const planNameActivity = operationsSupportPlanNameActivity(activity, phaseActivities);
   const planNameActivityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(planNameActivity));
+  const activePhaseActivityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activePhaseActivity));
   const tabs = operationsSupportPlanTypeConfigs().map((config) => `
     <button type="button" class="tab-btn ${activePlanType === config.planType ? "active" : ""}" data-ops-support-plan-type="${htmlEscape(config.planType)}">${htmlEscape(config.label)}</button>
   `).join("");
@@ -11046,6 +11088,7 @@ function renderOperationsSupportActivity(activePlan, activity) {
       ${modelingLockNotice()}
       <div class="form-table-grid">
         ${field("方案名称", `supportActivities.${planNameActivityIndex}.activityName`)}
+        ${supportActivityRuntimeNodeField(activePhaseActivity, activePhaseActivityIndex)}
       </div>
       <div class="section-head">
         <h3>使用保障活动编辑</h3>
@@ -11163,6 +11206,7 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
       </div>
       <div class="form-table-grid">
         ${field("方案名称", `supportActivities.${activityIndex}.activityName`)}
+        ${supportActivityRuntimeNodeField(activity, activityIndex)}
         ${field("计划停机小时", `supportActivities.${activityIndex}.plannedDowntimeHours`, "number", { min: "0", step: "0.1" })}
         ${renderMaintenanceMethodControls(activity, activityIndex)}
         ${renderRuleRow({
@@ -11356,6 +11400,7 @@ function renderCorrectiveMaintenanceActivity(activity) {
           </div>
           <div class="form-table-grid">
             <label>MTTR<input readonly value="${htmlEscape(mttrText)}"></label>
+            ${supportActivityRuntimeNodeField(componentActivity, activityIndex)}
             ${renderMaintenanceMethodControls(componentActivity, activityIndex)}
           </div>
           ${renderSupportActivityJobTable(componentActivity, "corr_repair")}
@@ -11566,6 +11611,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
   );
   const lockedAttr = modelingLockDisabledAttr();
   const supportNodeOptions = logisticsSupportNodeOptions();
+  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
   const directionOptions = [
     { value: "\u6a2a\u5411\u8fd0\u8f93", label: "\u6a2a\u5411\u8fd0\u8f93" },
     { value: "\u7eb5\u5411\u8fd0\u8f93", label: "\u7eb5\u5411\u8fd0\u8f93" }
@@ -11583,6 +11629,9 @@ function renderLogisticsSupportActivity(activePlan, activity) {
           <button type="button" class="btn-primary"${lockedAttr} data-logistics-transport-add>\u65b0\u589e</button>
           <button type="button" class="btn-danger" data-logistics-transport-delete ${selectedLogisticsTransportStrategyIndexes.size && !currentModelingPageLocked() ? "" : "disabled"}>\u5220\u9664</button>
         </div>
+      </div>
+      <div class="form-table-grid">
+        ${supportActivityRuntimeNodeField(activity, activityIndex)}
       </div>
       <div class="table-wrap">
         <table>

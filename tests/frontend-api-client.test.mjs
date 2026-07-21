@@ -1397,6 +1397,9 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
     supportResources: [
       { id: "personnel-1", supportNodeName: "基层", type: "personnel", name: "机械保障人员", model: "机械", quantity: 3 }
     ],
+    supportActivities: [
+      { id: "activity-1", activityName: "基层保障", resourceId: "基层" }
+    ],
     transportPolicies: [
       { id: "transport-1", from: "line-team", to: "carrier-deck", fromSupportNodeName: "基层", toSupportNodeName: "基地", spareName: "航电模块", capacity: 2 }
     ]
@@ -1407,12 +1410,17 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
   assert.equal("supportResourceOverrides" in projectJson, false);
   assert.equal("deletedSupportResourceKeys" in projectJson, false);
   assert.deepEqual(projectJson.supportNodes.map((node) => node.name), ["基地", "中继", "基层"]);
-  assert.ok(projectJson.supportNodes.every((node) => Object.keys(node).sort().join(",") === "id,name"));
+  assert.deepEqual(projectJson.supportNodes.map((node) => node.organizationNodeId), ["carrier-deck", "forward-sea-base", "line-team"]);
   assert.equal(projectJson.supportNodes.some((node) => node.id === "carrier-stock-personnel-mech" || node.name === "机械保障人员"), false);
   assert.deepEqual(projectJson.supportResources, scenario.supportResources);
   assert.deepEqual(projectJson.transportPolicies, [
     { id: "transport-1", fromOrganizationNodeId: "line-team", toOrganizationNodeId: "carrier-deck", capacity: 2 }
   ]);
+  assert.equal(projectJson.supportActivities[0].resourceId, "line-team");
+  assert.ok(projectJson.transportPolicies.every((policy) => (
+    projectJson.supportNodes.some((node) => node.organizationNodeId === policy.fromOrganizationNodeId)
+    && projectJson.supportNodes.some((node) => node.organizationNodeId === policy.toOrganizationNodeId)
+  )));
 });
 
 test("buildBackendProjectJson retains organization-managed airport associations", () => {
@@ -1435,8 +1443,8 @@ test("buildBackendProjectJson retains organization-managed airport associations"
   }, { id: "support-node-airport-association" });
 
   assert.deepEqual(projectJson.supportNodes, [
-    { id: "support-node-1", name: "中继", airport: "前出基地" },
-    { id: "support-node-2", name: "基层", airport: "大队" }
+    { id: "support-node-1", name: "中继", organizationNodeId: "org-relay", airport: "前出基地" },
+    { id: "support-node-2", name: "基层", organizationNodeId: "org-line", airport: "大队" }
   ]);
 });
 

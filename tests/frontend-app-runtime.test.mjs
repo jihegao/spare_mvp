@@ -5675,6 +5675,16 @@ test("logistics transport endpoints render and survive organization renames by s
       { id: "support-node-relay", name: "中继", organizationNodeId: "org-relay" },
       { id: "support-node-line", name: "基层", organizationNodeId: "org-line" }
     ],
+    supportActivities: [{
+      id: "activity-line",
+      activityType: "使用保障",
+      planType: "直接准备方案",
+      activityName: "基层保障活动",
+      aircraftModel: "J16",
+      resourceId: "基层",
+      activityCodes: [],
+      predecessors: {}
+    }],
     transportPolicies: [{
       id: "transport-relay-line",
       name: "纵向补给",
@@ -5716,6 +5726,8 @@ test("logistics transport endpoints render and survive organization renames by s
     assert.equal(saved.transportPolicies[0].toOrganizationNodeId, "org-line");
     assert.equal("fromSupportNodeName" in saved.transportPolicies[0], false);
     assert.equal("toSupportNodeName" in saved.transportPolicies[0], false);
+    assert.equal(saved.supportActivities.find((activity) => activity.id === "activity-line")?.resourceId, "org-line");
+    assert.equal(saved.supportNodes.find((node) => node.organizationNodeId === "org-line")?.name, "前沿基层点");
   } finally {
     runtime.restore();
   }

@@ -85,7 +85,16 @@ export function resolveSolaraVisualizationBaseUrl({
   const fromSearch = queryValue(locationRef?.search || "", "solaraUrl");
   const fromHash = queryValue(hashQuery(locationRef?.hash || ""), "solaraUrl");
   const fromStorage = safeStorageGet(storage, SOLARA_VISUALIZATION_URL_STORAGE_KEY);
-  return normalizeSolaraVisualizationUrl(fromSearch || fromHash || fromStorage || DEFAULT_SOLARA_VISUALIZATION_URL);
+  const configuredUrl = fromSearch || fromHash || fromStorage;
+  return normalizeSolaraVisualizationUrl(configuredUrl || managedSolaraVisualizationUrl(locationRef));
+}
+
+function managedSolaraVisualizationUrl(locationRef) {
+  const hostname = String(locationRef?.hostname || "").trim();
+  if (!hostname) return DEFAULT_SOLARA_VISUALIZATION_URL;
+  const protocol = locationRef?.protocol === "https:" ? "https:" : "http:";
+  const host = hostname.includes(":") && !hostname.startsWith("[") ? `[${hostname}]` : hostname;
+  return `${protocol}//${host}:8765`;
 }
 
 export function buildSolaraVisualizationUrl(baseUrl, context = {}) {

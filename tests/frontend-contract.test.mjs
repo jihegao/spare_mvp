@@ -1101,6 +1101,11 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.doesNotMatch(operationsSource, /\u4eff\u771f\u8fd0\u884c\u89c4\u5219/);
   assert.doesNotMatch(operationsSource, /\u52a0\u6cb9\u65b9\u6848/);
   assert.doesNotMatch(operationsSource, /\u6302\u8f7d\u65b9\u6848/);
+  assert.match(appSource, /function supportActivityRuntimeNodeOptions\(activity\)/);
+  assert.match(appSource, /function supportActivityRuntimeNodeField\(activity, activityIndex\)/);
+  assert.match(appSource, /supportActivities\.\$\{activityIndex\}\.resourceId/);
+  assert.match(appSource, /请选择运行保障点/);
+  assert.match(operationsSource, /supportActivityRuntimeNodeField\(activePhaseActivity, activePhaseActivityIndex\)/);
 
   const logisticsSource = appSource.slice(
     appSource.indexOf("function renderLogisticsSupportActivity"),
@@ -1118,6 +1123,7 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(logisticsSource, /\\u89e6\\u53d1\\u53c2\\u6570/);
   assert.match(logisticsSource, /\\u4e34\\u754c\\u5e93\\u5b58\\u6570/);
   assert.match(logisticsSource, /\\u8c03\\u8fd0\\u5468\\u671f\(h\)/);
+  assert.match(logisticsSource, /supportActivityRuntimeNodeField\(activity, activityIndex\)/);
   assert.match(logisticsSource, /criticalInventory/);
   assert.match(logisticsSource, /transferCycleHours/);
   assert.match(logisticsSource, /\\u8fd0\\u8f93\\u8d77\\u70b9/);
@@ -3270,6 +3276,8 @@ test("visible simulation embeds Solara while Monte Carlo and analysis launches u
   assert.match(analysisLaunchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*definition\.analysisType/);
   assert.doesNotMatch(monteCarloLaunchSource + analysisLaunchSource, /startSingleRunThroughApi|startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
   assert.match(solaraSource, /DEFAULT_SOLARA_VISUALIZATION_URL = "http:\/\/127\.0\.0\.1:8765"/);
+  assert.match(solaraSource, /managedSolaraVisualizationUrl\(locationRef\)/);
+  assert.match(solaraSource, /`\$\{protocol\}\/{2}\$\{host\}:8765`/);
   assert.match(visualSource, /data-solara-visualization-frame/);
   assert.match(visualSource, /title="Solara 可视化推演"/);
   assert.match(visualSource, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
