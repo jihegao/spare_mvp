@@ -91,7 +91,9 @@
             "defaults_applied",
             "derived_fields",
             "ignored_fields",
-            "unsupported_fields"
+            "unsupported_fields",
+            "organization_graph_identity",
+            "migration_notices"
           ],
           "properties": {
             "project_id": { "type": "string" },
@@ -125,7 +127,24 @@
               },
               "additionalProperties": false
             },
-            "migration_notices": { "type": "array", "items": { "type": "object" } }
+            "migration_notices": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["code", "message", "changes"],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "legacy_transport_policies_migrated",
+                      "legacy_top_level_transport_policies_retained"
+                    ]
+                  },
+                  "message": { "type": "string", "minLength": 1 },
+                  "changes": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
           },
           "additionalProperties": false
         }

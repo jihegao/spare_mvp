@@ -275,7 +275,7 @@ def _metrics_rows(model: AircraftSupportV1Model, metrics: dict[str, Any] | None 
         ("可用飞机", values["available_aircraft"]),
         ("维修中", values["repairing_count"]),
         ("缺件事件", values["shortage_events"]),
-        ("组织满足率", "--" if fulfillment_rate is None else f"{fulfillment_rate:.1%}"),
+        ("组织已观察满足率", "--" if fulfillment_rate is None else f"{fulfillment_rate:.1%}"),
         ("组织调运批次", organization["transport_batch_count"]),
     ]
 

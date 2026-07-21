@@ -1604,6 +1604,8 @@ class SimulationAdapterTest(unittest.TestCase):
             "reason",
             "requested_minute",
             "wait_minutes",
+            "requirement_type",
+            "requirement_id",
         }
         self.assertEqual(set(single_dispatch["details"]), required_detail_fields)
         self.assertEqual(single_dispatch["details"], mc_dispatch["details"])

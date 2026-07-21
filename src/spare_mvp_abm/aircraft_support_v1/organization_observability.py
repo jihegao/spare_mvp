@@ -9,9 +9,9 @@ from typing import Any
 
 
 ORGANIZATION_EVENT_FACT_TYPES = {
-    "organization_local_fulfilled": "supply_selected",
-    "organization_resource_selected": "supply_selected",
-    "organization_supply_selected": "supply_selected",
+    "organization_local_fulfilled": "local_fulfilled",
+    "organization_resource_selected": "selection_made",
+    "organization_supply_selected": "selection_made",
     "organization_candidate_rejected": "candidate_rejected",
     "organization_resource_dispatched": "dispatch_started",
     "organization_transport_dispatched": "dispatch_started",
@@ -94,6 +94,19 @@ def normalize_organization_event(
         "relation_id": str(payload.get("relation_id") or ""),
         "requested_minute": requested_minute,
         "wait_minutes": max(0, float(wait_minutes or 0)),
+        "requirement_type": str(
+            payload.get("requirement_type")
+            or (payload.get("resource_kind") if payload.get("resource_kind") in {"personnel", "equipment"} else "")
+            or ("spare" if payload.get("product_id") else "organization")
+        ),
+        "requirement_id": str(
+            payload.get("requirement_id")
+            or payload.get("resource_kind")
+            or payload.get("product_id")
+            or payload.get("resource_id")
+            or payload.get("organization_node_id")
+            or "organization"
+        ),
     })
     return payload
 
@@ -103,10 +116,22 @@ def organization_dispatch_summary(
     *,
     identity: dict[str, str],
 ) -> dict[str, Any]:
-    facts = [
+    raw_facts = [
         event for event in events if isinstance(event, dict) and str(event.get("event") or "").startswith("organization_")
     ] if isinstance(events, list) else []
-    selected = [event for event in facts if (event.get("details") or {}).get("fact_type") == "supply_selected"]
+    facts: list[dict[str, Any]] = []
+    seen_source_ids: set[str] = set()
+    for event in raw_facts:
+        source_event_id = str(event.get("source_event_id") or "")
+        if source_event_id and source_event_id in seen_source_ids:
+            continue
+        if source_event_id:
+            seen_source_ids.add(source_event_id)
+        facts.append(event)
+    selected = [event for event in facts if (event.get("details") or {}).get("fact_type") == "selection_made"]
+    local_fulfilled = [
+        event for event in facts if (event.get("details") or {}).get("fact_type") == "local_fulfilled"
+    ]
     blocked = [event for event in facts if (event.get("details") or {}).get("fact_type") == "supply_blocked"]
     arrived = [event for event in facts if (event.get("details") or {}).get("fact_type") == "dispatch_arrived"]
     dispatched = [event for event in facts if (event.get("details") or {}).get("fact_type") == "dispatch_started"]
@@ -118,31 +143,31 @@ def organization_dispatch_summary(
             result[value] = result.get(value, 0) + 1
         return dict(sorted(result.items()))
 
-    request_keys = {
-        (
-            str((event.get("details") or {}).get("job_id") or ""),
-            int((event.get("details") or {}).get("task_index") or 0),
-            str((event.get("details") or {}).get("resource_kind") or (event.get("details") or {}).get("product_id") or "job_task"),
-        )
-        for event in selected + blocked
-    }
-    fulfilled_keys = {
-        (
-            str((event.get("details") or {}).get("job_id") or ""),
-            int((event.get("details") or {}).get("task_index") or 0),
-            str((event.get("details") or {}).get("resource_kind") or (event.get("details") or {}).get("product_id") or "job_task"),
-        )
-        for event in selected
-    }
+    def fact_keys(event: dict[str, Any]) -> set[tuple[str, int, str]]:
+        details = event.get("details") or {}
+        job_id = str(details.get("job_id") or "")
+        task_index = int(details.get("task_index") or 0)
+        requirement_type = str(details.get("requirement_type") or "organization")
+        requirement_id = str(details.get("requirement_id") or "organization")
+        return {(job_id, task_index, f"{requirement_type}:{requirement_id}")}
+
+    request_keys: set[tuple[str, int, str]] = set()
+    for event in selected + local_fulfilled + blocked:
+        request_keys.update(fact_keys(event))
+    fulfilled_keys: set[tuple[str, int, str]] = set()
+    for event in local_fulfilled + arrived:
+        fulfilled_keys.update(fact_keys(event))
     request_count = len(request_keys)
     fulfilled_count = len(fulfilled_keys)
     return {
         "schema_version": "organization-dispatch-summary-v0",
         **copy.deepcopy(identity),
+        "summary_scope": "single_run",
+        "sample_count": 1,
         "observed_request_count": request_count,
         "observed_fulfilled_count": fulfilled_count,
         "observed_fulfillment_rate": (fulfilled_count / request_count) if request_count else None,
-        "selection_counts_by_source_mode": counts(selected, "source_mode"),
+        "selection_counts_by_source_mode": counts(selected + local_fulfilled, "source_mode"),
         "blocked_counts_by_reason": counts(blocked, "reason"),
         "candidate_rejection_counts_by_reason": counts(
             [event for event in facts if (event.get("details") or {}).get("fact_type") == "candidate_rejected"],
@@ -152,6 +177,45 @@ def organization_dispatch_summary(
         "transport_arrival_count": len(arrived),
         "observed_transport_wait_minutes": sum(
             max(0.0, float((event.get("details") or {}).get("wait_minutes") or 0)) for event in arrived
+        ),
+        "interpretation": "descriptive_observed_dispatch_facts_only_no_causal_attribution",
+    }
+
+
+def aggregate_organization_dispatch_summaries(
+    summaries: Any,
+    *,
+    identity: dict[str, str],
+) -> dict[str, Any]:
+    """Aggregate already-isolated sample facts without merging sample-local request keys."""
+    items = [item for item in summaries if isinstance(item, dict)] if isinstance(summaries, list) else []
+
+    def sum_counts(field: str) -> dict[str, int]:
+        result: dict[str, int] = {}
+        for item in items:
+            values = item.get(field) if isinstance(item.get(field), dict) else {}
+            for key, value in values.items():
+                normalized_key = str(key)
+                result[normalized_key] = result.get(normalized_key, 0) + max(0, int(value or 0))
+        return dict(sorted(result.items()))
+
+    request_count = sum(max(0, int(item.get("observed_request_count") or 0)) for item in items)
+    fulfilled_count = sum(max(0, int(item.get("observed_fulfilled_count") or 0)) for item in items)
+    return {
+        "schema_version": "organization-dispatch-summary-v0",
+        **copy.deepcopy(identity),
+        "summary_scope": "all_samples",
+        "sample_count": len(items),
+        "observed_request_count": request_count,
+        "observed_fulfilled_count": fulfilled_count,
+        "observed_fulfillment_rate": (fulfilled_count / request_count) if request_count else None,
+        "selection_counts_by_source_mode": sum_counts("selection_counts_by_source_mode"),
+        "blocked_counts_by_reason": sum_counts("blocked_counts_by_reason"),
+        "candidate_rejection_counts_by_reason": sum_counts("candidate_rejection_counts_by_reason"),
+        "transport_batch_count": sum(max(0, int(item.get("transport_batch_count") or 0)) for item in items),
+        "transport_arrival_count": sum(max(0, int(item.get("transport_arrival_count") or 0)) for item in items),
+        "observed_transport_wait_minutes": sum(
+            max(0.0, float(item.get("observed_transport_wait_minutes") or 0)) for item in items
         ),
         "interpretation": "descriptive_observed_dispatch_facts_only_no_causal_attribution",
     }

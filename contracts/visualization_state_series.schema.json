@@ -15,6 +15,8 @@
     "run_config_artifact_id",
     "input_project_artifact_id",
     "compiled_scenario_artifact_id",
+    "organization_graph_identity",
+    "organization_dispatch_summary",
     "frames"
   ],
   "properties": {
@@ -29,7 +31,7 @@
     "input_project_artifact_id": { "type": "string" },
     "compiled_scenario_artifact_id": { "type": "string" },
     "organization_graph_identity": { "$ref": "#/$defs/organization_graph_identity" },
-    "organization_dispatch_summary": { "type": "object", "additionalProperties": true },
+    "organization_dispatch_summary": { "$ref": "#/$defs/organization_dispatch_summary" },
     "mission_templates": {
       "type": "object",
       "additionalProperties": { "type": "object" }
@@ -85,6 +87,8 @@
         "mission_state",
         "resource_state",
         "event_summary",
+        "organization_graph_identity",
+        "organization_dispatch_summary",
         "aircraft",
         "missions",
         "resources",
@@ -110,7 +114,7 @@
         "resource_state": { "$ref": "#/$defs/resource_state" },
         "event_summary": { "$ref": "#/$defs/event_summary" },
         "organization_graph_identity": { "$ref": "#/$defs/organization_graph_identity" },
-        "organization_dispatch_summary": { "type": "object", "additionalProperties": true },
+        "organization_dispatch_summary": { "$ref": "#/$defs/organization_dispatch_summary" },
         "aircraft": { "type": "array", "items": { "type": "object" } },
         "missions": { "type": "array", "items": { "type": "object" } },
         "resources": { "type": "array", "items": { "type": "object" } },
@@ -265,8 +269,17 @@
         "event_type": { "type": "string" },
         "message": { "type": "string" },
         "metric_refs": { "type": "array", "items": { "type": "string" } },
+        "source_event_id": { "type": "string", "minLength": 1 },
+        "event_sequence": { "type": "integer", "minimum": 1 },
         "details": { "type": "object", "additionalProperties": true }
-      }
+      },
+      "allOf": [{
+        "if": { "properties": { "event": { "pattern": "^organization_" } }, "required": ["event"] },
+        "then": {
+          "required": ["source_event_id", "event_sequence", "details"],
+          "properties": { "details": { "$ref": "#/$defs/organization_event_details" } }
+        }
+      }]
     },
     "organization_graph_identity": {
       "type": "object",
@@ -277,6 +290,67 @@
         "graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "hash_algorithm": { "const": "sha256" }
       }
+    },
+    "organization_dispatch_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "runtime_mode", "graph_hash", "hash_algorithm", "summary_scope", "sample_count",
+        "observed_request_count", "observed_fulfilled_count", "observed_fulfillment_rate",
+        "selection_counts_by_source_mode", "blocked_counts_by_reason", "candidate_rejection_counts_by_reason",
+        "transport_batch_count", "transport_arrival_count", "observed_transport_wait_minutes", "interpretation"
+      ],
+      "properties": {
+        "schema_version": { "const": "organization-dispatch-summary-v0" },
+        "runtime_mode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
+        "graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "hash_algorithm": { "const": "sha256" },
+        "summary_scope": { "enum": ["single_run", "all_samples", "representative_sample"] },
+        "sample_count": { "type": "integer", "minimum": 1 },
+        "representative_sample_index": { "type": "integer", "minimum": 0 },
+        "representative_seed": { "type": "integer" },
+        "observed_request_count": { "type": "integer", "minimum": 0 },
+        "observed_fulfilled_count": { "type": "integer", "minimum": 0 },
+        "observed_fulfillment_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "selection_counts_by_source_mode": { "$ref": "#/$defs/non_negative_integer_map" },
+        "blocked_counts_by_reason": { "$ref": "#/$defs/non_negative_integer_map" },
+        "candidate_rejection_counts_by_reason": { "$ref": "#/$defs/non_negative_integer_map" },
+        "transport_batch_count": { "type": "integer", "minimum": 0 },
+        "transport_arrival_count": { "type": "integer", "minimum": 0 },
+        "observed_transport_wait_minutes": { "type": "number", "minimum": 0 },
+        "interpretation": { "const": "descriptive_observed_dispatch_facts_only_no_causal_attribution" }
+      }
+    },
+    "non_negative_integer_map": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "organization_event_details": {
+      "type": "object",
+      "required": [
+        "fact_type", "runtime_mode", "organization_graph_hash", "source_mode",
+        "source_organization_node_id", "destination_organization_node_id", "destination_resource_id",
+        "reason", "relation_id", "requested_minute", "wait_minutes", "requirement_type", "requirement_id"
+      ],
+      "properties": {
+        "fact_type": {
+          "enum": ["local_fulfilled", "selection_made", "candidate_rejected", "dispatch_started", "dispatch_arrived", "supply_blocked", "resource_released", "organization_fact"]
+        },
+        "runtime_mode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
+        "organization_graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "source_mode": { "type": "string" },
+        "source_organization_node_id": { "type": "string" },
+        "destination_organization_node_id": { "type": "string" },
+        "destination_resource_id": { "type": "string" },
+        "reason": { "type": "string" },
+        "relation_id": { "type": "string" },
+        "requested_minute": { "type": "number", "minimum": 0 },
+        "wait_minutes": { "type": "number", "minimum": 0 },
+        "requirement_type": { "enum": ["spare", "personnel", "equipment", "organization"] },
+        "requirement_id": { "type": "string", "minLength": 1 },
+        "context": { "type": "object" }
+      },
+      "additionalProperties": true
     }
   }
 }

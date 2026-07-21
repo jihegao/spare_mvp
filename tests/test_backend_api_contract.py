@@ -2797,7 +2797,11 @@ class BackendApiContractTest(unittest.TestCase):
         ])
         self.assertNotIn("任务剖面可靠性", json.dumps(payload["metrics"], ensure_ascii=False))
         self.assertEqual(payload["visualization_state_series"]["run_id"], payload["run_id"])
-        self.assertEqual(payload["visualization_state_series"]["frames"], [])
+        self.assertEqual(len(payload["visualization_state_series"]["frames"]), 1)
+        self.assertEqual(
+            payload["visualization_state_series"]["organization_dispatch_summary"]["summary_scope"],
+            "representative_sample",
+        )
         self.assertEqual(self._run_side_effect_counts(), before)
 
     def test_lite_mesa_analysis_applies_scenario_composition_before_compile(self) -> None:

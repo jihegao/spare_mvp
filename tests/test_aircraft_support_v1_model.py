@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model, JobState, _resource_quantity
+from src.spare_mvp_abm.aircraft_support_v1.organization_observability import organization_dispatch_summary
 from src.spare_mvp_contract import SimulationAdapter
 
 
@@ -2116,8 +2117,38 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         model._start_waiting_jobs()
         self.assertEqual(model.jobs[-1].state, "running")
         self.assertFalse(any(
-            event["event"] == "organization_local_fulfilled" for event in model.event_log
+            event["event"] == "organization_local_fulfilled"
+            and event["details"]["requirement_type"] == "spare"
+            for event in model.event_log
         ))
+
+    def test_local_spare_personnel_and_equipment_emit_three_fulfilled_requirements(self) -> None:
+        # Arrange.
+        inputs = _lateral_organization_inputs(local_quantity=1, parent_quantity=0)
+        task = inputs["support_activities"]["activities"][1]["jobs"][0]
+        task.update({"requiredPersonnel": 1, "requiredDevices": 1})
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        # Act.
+        model._start_waiting_jobs()
+        summary = organization_dispatch_summary(
+            model.event_log,
+            identity=model.organization_graph_identity,
+        )
+
+        # Assert.
+        fulfilled = [
+            event for event in model.event_log
+            if event["event"] == "organization_local_fulfilled"
+        ]
+        self.assertEqual(
+            {(event["details"]["requirement_type"], event["details"]["requirement_id"]) for event in fulfilled},
+            {("spare", "shared-spare"), ("personnel", "personnel"), ("equipment", "equipment")},
+        )
+        self.assertEqual(summary["observed_request_count"], 3)
+        self.assertEqual(summary["observed_fulfilled_count"], 3)
+        self.assertEqual(summary["observed_fulfillment_rate"], 1.0)
 
     def test_vertical_mode_and_disabled_lateral_relation_do_not_use_lateral_supply(self) -> None:
         for mode, enabled in (("vertical", True), ("vertical_lateral", False)):

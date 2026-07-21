@@ -292,6 +292,7 @@ class AircraftSupportV1Model:
         self._transport_shipment_keys: set[tuple[str, int, str, tuple[str, ...], int]] = set()
         self._transport_batch_counts: dict[tuple[str, int, str], int] = {}
         self._organization_fact_keys: set[tuple[Any, ...]] = set()
+        self._organization_event_sequence = 0
         self._job_sequence = 0
         self._maintenance_occurrence_by_kind = {"repair": 0, "preventive": 0}
         self.completed_sorties = 0
@@ -1990,19 +1991,20 @@ class AircraftSupportV1Model:
                 for mode in job.spare_reservation_supply_modes.get((job.task_index, spare_type), set())
             }
             if self.canonical_organization_enabled and spare_requirements and spare_supply_modes <= {"local"}:
-                self._event(
-                    "organization_local_fulfilled",
-                    f"{job.job_id} spare requirements fulfilled at {node['id']}",
-                    {
-                        "job_id": job.job_id,
-                        "task_index": job.task_index,
-                        "organization_node_id": node["organization_node_id"],
-                        "resource_id": node["id"],
-                        "products": [item[0] for item in spare_requirements],
-                        "supply_mode": "local",
-                        "relation_id": "",
-                    },
-                )
+                for product_id, _quantity in spare_requirements:
+                    self._event(
+                        "organization_local_fulfilled",
+                        f"{job.job_id} {product_id} fulfilled at {node['id']}",
+                        {
+                            "job_id": job.job_id,
+                            "task_index": job.task_index,
+                            "organization_node_id": node["organization_node_id"],
+                            "resource_id": node["id"],
+                            "product_id": product_id,
+                            "supply_mode": "local",
+                            "relation_id": "",
+                        },
+                    )
             if not self._consume_task_spare(job, task):
                 continue
             if not self.canonical_organization_enabled:
@@ -2628,6 +2630,11 @@ class AircraftSupportV1Model:
                 details,
             )
             if not policies:
+                self._event(
+                    "organization_local_fulfilled",
+                    f"{resource_kind} fulfilled locally for {job.job_id}",
+                    details,
+                )
                 continue
             transport_minutes = sum(policy["transport_minutes"] for policy in policies)
             arrival_minute = self.minute + max(self.tick_minutes, transport_minutes)
@@ -3603,11 +3610,14 @@ class AircraftSupportV1Model:
                 }
             if str(event["event"]).startswith("organization_") and isinstance(event.get("details"), dict):
                 item["details"] = copy.deepcopy(event["details"])
+                item["source_event_id"] = str(event["source_event_id"])
+                item["event_sequence"] = int(event["event_sequence"])
             payload.append(item)
         return payload
 
     def _event(self, event: str, message: str, details: dict[str, Any] | None = None) -> None:
         if event.startswith("organization_"):
+            self._organization_event_sequence += 1
             details = normalize_organization_event(
                 event,
                 details,
@@ -3615,6 +3625,9 @@ class AircraftSupportV1Model:
                 identity=self.organization_graph_identity,
             )
         item: dict[str, Any] = {"time": self.minute, "event": event, "message": message}
+        if event.startswith("organization_"):
+            item["event_sequence"] = self._organization_event_sequence
+            item["source_event_id"] = f"organization-{self._organization_event_sequence:06d}"
         if details:
             item["details"] = copy.deepcopy(details)
         if (

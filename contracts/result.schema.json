@@ -11,7 +11,9 @@
     "run_id",
     "scenario_id",
     "metrics",
-    "lifecycle_trace"
+    "lifecycle_trace",
+    "organization_graph_identity",
+    "organization_dispatch_summary"
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "result-v0" },
@@ -58,7 +60,7 @@
       }
     },
     "organization_graph_identity": { "$ref": "#/$defs/organizationGraphIdentity" },
-    "organization_dispatch_summary": { "type": "object", "additionalProperties": true },
+    "organization_dispatch_summary": { "$ref": "#/$defs/organizationDispatchSummaryV0" },
     "analysis_outputs": {
       "type": "object",
       "properties": {
@@ -80,6 +82,40 @@
         "graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "hash_algorithm": { "const": "sha256" }
       }
+    },
+    "organizationDispatchSummaryV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "runtime_mode", "graph_hash", "hash_algorithm", "summary_scope", "sample_count",
+        "observed_request_count", "observed_fulfilled_count", "observed_fulfillment_rate",
+        "selection_counts_by_source_mode", "blocked_counts_by_reason", "candidate_rejection_counts_by_reason",
+        "transport_batch_count", "transport_arrival_count", "observed_transport_wait_minutes", "interpretation"
+      ],
+      "properties": {
+        "schema_version": { "const": "organization-dispatch-summary-v0" },
+        "runtime_mode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
+        "graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "hash_algorithm": { "const": "sha256" },
+        "summary_scope": { "enum": ["single_run", "all_samples", "representative_sample"] },
+        "sample_count": { "type": "integer", "minimum": 1 },
+        "representative_sample_index": { "type": "integer", "minimum": 0 },
+        "representative_seed": { "type": "integer" },
+        "observed_request_count": { "type": "integer", "minimum": 0 },
+        "observed_fulfilled_count": { "type": "integer", "minimum": 0 },
+        "observed_fulfillment_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "selection_counts_by_source_mode": { "$ref": "#/$defs/nonNegativeIntegerMap" },
+        "blocked_counts_by_reason": { "$ref": "#/$defs/nonNegativeIntegerMap" },
+        "candidate_rejection_counts_by_reason": { "$ref": "#/$defs/nonNegativeIntegerMap" },
+        "transport_batch_count": { "type": "integer", "minimum": 0 },
+        "transport_arrival_count": { "type": "integer", "minimum": 0 },
+        "observed_transport_wait_minutes": { "type": "number", "minimum": 0 },
+        "interpretation": { "const": "descriptive_observed_dispatch_facts_only_no_causal_attribution" }
+      }
+    },
+    "nonNegativeIntegerMap": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
     }
   },
   "oneOf": [

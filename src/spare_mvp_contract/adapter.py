@@ -41,6 +41,7 @@ from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     period_completion_summary,
 )
 from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
+    aggregate_organization_dispatch_summaries,
     organization_dispatch_summary,
     organization_graph_identity,
 )
@@ -2464,6 +2465,14 @@ class SimulationAdapter:
                             if isinstance(event.get("details"), dict)
                             else {}
                         ),
+                        **(
+                            {
+                                "source_event_id": str(event["source_event_id"]),
+                                "event_sequence": int(event["event_sequence"]),
+                            }
+                            if str(event.get("event") or "").startswith("organization_")
+                            else {}
+                        ),
                     }
                     for event in execution["events"][-40:]
                 ],
@@ -2477,6 +2486,8 @@ class SimulationAdapter:
             result_summary_id=result_id,
             artifact_manifest_id=manifest_id,
             frames=state_series_frames,
+            organization_identity=organization_identity,
+            organization_summary=organization_summary,
         )
         run = {
             "schema_version": RUN_SCHEMA_VERSION,
@@ -2584,8 +2595,8 @@ class SimulationAdapter:
         organization_identity = organization_graph_identity(
             inputs.get("support_network", {}).get("organization_graph")
         )
-        organization_summary = organization_dispatch_summary(
-            [event for sample in samples for event in sample.get("events", [])],
+        organization_summary = aggregate_organization_dispatch_summaries(
+            [sample.get("organization_dispatch_summary") or {} for sample in samples],
             identity=organization_identity,
         )
 
@@ -2739,6 +2750,10 @@ class SimulationAdapter:
             result_summary_id=result_id,
             artifact_manifest_id=manifest_id,
             frames=self._aircraft_support_v1_monte_carlo_visualization_frames(run_id, samples),
+            organization_identity=organization_identity,
+            organization_summary=samples[0]["organization_dispatch_summary"],
+            representative_sample_index=samples[0]["sample_index"],
+            representative_seed=samples[0]["seed"],
         )
         result = {
             "schema_version": RESULT_SCHEMA_VERSION,
@@ -4313,6 +4328,10 @@ class SimulationAdapter:
         result_summary_id: str,
         artifact_manifest_id: str,
         frames: list[dict[str, Any]],
+        organization_identity: dict[str, Any] | None = None,
+        organization_summary: dict[str, Any] | None = None,
+        representative_sample_index: int | None = None,
+        representative_seed: int | None = None,
     ) -> dict[str, Any]:
         trace = {
             "run_id": run_id,
@@ -4325,13 +4344,20 @@ class SimulationAdapter:
             "compiled_scenario_artifact_id": f"compiled_scenario-{run_id}",
         }
         traced_frames = [self._trace_visualization_frame(frame, trace) for frame in frames]
-        organization_identity = organization_graph_identity(
+        organization_identity = copy.deepcopy(organization_identity) if organization_identity else organization_graph_identity(
             scenario.get("simulation_inputs", {}).get("support_network", {}).get("organization_graph")
         )
-        organization_summary = copy.deepcopy(
+        organization_summary = copy.deepcopy(organization_summary) if organization_summary else copy.deepcopy(
             (traced_frames[-1].get("organization_dispatch_summary") if traced_frames else None)
             or organization_dispatch_summary([], identity=organization_identity)
         )
+        if representative_sample_index is not None or representative_seed is not None:
+            organization_summary["summary_scope"] = "representative_sample"
+            organization_summary["sample_count"] = 1
+            if representative_sample_index is not None:
+                organization_summary["representative_sample_index"] = representative_sample_index
+            if representative_seed is not None:
+                organization_summary["representative_seed"] = representative_seed
         mission_templates = self._compact_mission_frames(traced_frames)
         failure_tree_templates = self._compact_failure_tree_frames(traced_frames)
         payload = {
@@ -4476,7 +4502,11 @@ class SimulationAdapter:
         traced["events"] = [
             {
                 **event,
-                "event_id": event.get("event_id") or f"{trace['run_id']}-step-{step}-{index}-{event.get('event', 'event')}",
+                "event_id": event.get("event_id") or (
+                    f"{trace['run_id']}-sample-{traced.get('sample_index', 'single')}-{event['source_event_id']}"
+                    if event.get("source_event_id")
+                    else f"{trace['run_id']}-step-{step}-{index}-{event.get('event', 'event')}"
+                ),
                 "run_id": trace["run_id"],
                 "step": step,
                 "event_type": event.get("event_type") or event.get("event") or "event",
