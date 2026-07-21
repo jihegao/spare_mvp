@@ -114,7 +114,18 @@
             "validation_warnings": {
               "type": "array",
               "items": { "type": "object" }
-            }
+            },
+            "organization_graph_identity": {
+              "type": "object",
+              "required": ["runtime_mode", "graph_hash", "hash_algorithm"],
+              "properties": {
+                "runtime_mode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
+                "graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                "hash_algorithm": { "const": "sha256" }
+              },
+              "additionalProperties": false
+            },
+            "migration_notices": { "type": "array", "items": { "type": "object" } }
           },
           "additionalProperties": false
         }

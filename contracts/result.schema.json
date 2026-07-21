@@ -57,6 +57,8 @@
         }
       }
     },
+    "organization_graph_identity": { "$ref": "#/$defs/organizationGraphIdentity" },
+    "organization_dispatch_summary": { "type": "object", "additionalProperties": true },
     "analysis_outputs": {
       "type": "object",
       "properties": {
@@ -66,6 +68,18 @@
         "downtime_factors": { "type": "array", "items": { "type": "object" } }
       },
       "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "organizationGraphIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime_mode", "graph_hash", "hash_algorithm"],
+      "properties": {
+        "runtime_mode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
+        "graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "hash_algorithm": { "const": "sha256" }
+      }
     }
   },
   "oneOf": [

@@ -13,6 +13,12 @@ import math
 import random
 from typing import Any
 
+from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
+    normalize_organization_event,
+    organization_dispatch_summary,
+    organization_graph_identity,
+)
+
 
 BEHAVIOR_DRIVING_FIELDS = [
     "combatUnit.members",
@@ -270,6 +276,9 @@ class AircraftSupportV1Model:
         self._initialize_aircraft_lru_failure_timers()
         self.nodes = self._build_support_nodes()
         self._initialize_organization_graph()
+        self.organization_identity = organization_graph_identity(
+            self.inputs.get("support_network", {}).get("organization_graph")
+        )
         self.activities = self._build_activities()
         self.mission_context = self._mission_context()
         self.preflight_activity = self._select_activity("preflight")
@@ -345,6 +354,11 @@ class AircraftSupportV1Model:
             "metrics": self.snapshot(),
             "frames": frames,
             "events": copy.deepcopy(self.event_log),
+            "organization_identity": copy.deepcopy(self.organization_identity),
+            "organization_dispatch_summary": organization_dispatch_summary(
+                self.event_log,
+                identity=self.organization_identity,
+            ),
             "downtime_events": copy.deepcopy(self.downtime_events),
             "lifecycle_trace": [self._lifecycle_trace_payload(item) for item in self.aircraft],
         }
@@ -840,6 +854,11 @@ class AircraftSupportV1Model:
                 "downtime_spare_shortage_hours": metrics["downtime_spare_shortage_hours"],
                 "downtime_preventive_hours": metrics["downtime_preventive_hours"],
             },
+            "organization_identity": copy.deepcopy(self.organization_identity),
+            "organization_dispatch_summary": organization_dispatch_summary(
+                self.event_log,
+                identity=self.organization_identity,
+            ),
             "aircraft": [self._aircraft_payload(item) for item in self.aircraft],
             "missions": [self._mission_payload(item) for item in self.missions],
             "resources": [self._resource_payload(item) for item in self.nodes.values()],
@@ -1674,6 +1693,9 @@ class AircraftSupportV1Model:
                         "supply_mode": shipment.supply_mode,
                         "relation_id": shipment.relation_id,
                         "reserved_for_job": reserve_for_job,
+                        "requested_minute": shipment.requested_minute,
+                        "arrival_minute": shipment.arrival_minute,
+                        "wait_minutes": max(0, shipment.arrival_minute - shipment.requested_minute),
                     },
                 )
 
@@ -1704,6 +1726,9 @@ class AircraftSupportV1Model:
                     "batch_sequence": transit.batch_sequence,
                     "supply_mode": transit.supply_mode,
                     "relation_id": transit.relation_id,
+                    "requested_minute": transit.requested_minute,
+                    "arrival_minute": transit.arrival_minute,
+                    "wait_minutes": max(0, transit.arrival_minute - transit.requested_minute),
                 },
             )
         for job_id, task_index, resource_kind in arrived_resource_keys:
@@ -3569,18 +3594,26 @@ class AircraftSupportV1Model:
             recent = [{"time": self.minute, "event": "state_frame", "message": "state frame sampled"}]
         payload = []
         for event in recent[-10:]:
-            payload.append(
-                {
+            item = {
                     "time": float(event["time"]),
                     "event": str(event["event"]),
                     "event_type": str(event["event"]),
                     "message": str(event["message"]),
                     "metric_refs": self._metric_refs_for_event(str(event["event"])),
                 }
-            )
+            if str(event["event"]).startswith("organization_") and isinstance(event.get("details"), dict):
+                item["details"] = copy.deepcopy(event["details"])
+            payload.append(item)
         return payload
 
     def _event(self, event: str, message: str, details: dict[str, Any] | None = None) -> None:
+        if event.startswith("organization_"):
+            details = normalize_organization_event(
+                event,
+                details,
+                minute=self.minute,
+                identity=self.organization_identity,
+            )
         item: dict[str, Any] = {"time": self.minute, "event": event, "message": message}
         if details:
             item["details"] = copy.deepcopy(details)

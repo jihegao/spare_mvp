@@ -1594,6 +1594,16 @@ class SimulationAdapterTest(unittest.TestCase):
             "arrival_minute",
             "supply_mode",
             "relation_id",
+            "fact_type",
+            "runtime_mode",
+            "organization_graph_hash",
+            "source_mode",
+            "source_organization_node_id",
+            "destination_organization_node_id",
+            "destination_resource_id",
+            "reason",
+            "requested_minute",
+            "wait_minutes",
         }
         self.assertEqual(set(single_dispatch["details"]), required_detail_fields)
         self.assertEqual(single_dispatch["details"], mc_dispatch["details"])

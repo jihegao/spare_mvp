@@ -2260,7 +2260,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
                     and event["details"]["source_organization_node_id"] == "org-lateral"
                 ]
                 self.assertEqual(len(rejected), 1)
-                self.assertEqual(rejected[0]["details"], {
+                expected_details = {
                     "job_id": model.jobs[-1].job_id,
                     "task_index": 0,
                     "resource_kind": "spare",
@@ -2275,7 +2275,14 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
                     "scope_dimension": field,
                     "requested_value": requested_value,
                     "allowed_values": allowed_values,
-                })
+                }
+                self.assertEqual(
+                    {key: rejected[0]["details"][key] for key in expected_details},
+                    expected_details,
+                )
+                self.assertEqual(rejected[0]["details"]["fact_type"], "candidate_rejected")
+                self.assertEqual(rejected[0]["details"]["runtime_mode"], "vertical_lateral")
+                self.assertEqual(len(rejected[0]["details"]["organization_graph_hash"]), 64)
                 event_names = [event["event"] for event in model.event_log]
                 self.assertLess(
                     event_names.index("organization_candidate_rejected"),

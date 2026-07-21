@@ -28,6 +28,8 @@
     "run_config_artifact_id": { "type": "string" },
     "input_project_artifact_id": { "type": "string" },
     "compiled_scenario_artifact_id": { "type": "string" },
+    "organization_graph_identity": { "$ref": "#/$defs/organization_graph_identity" },
+    "organization_dispatch_summary": { "type": "object", "additionalProperties": true },
     "mission_templates": {
       "type": "object",
       "additionalProperties": { "type": "object" }
@@ -107,6 +109,8 @@
         "mission_state": { "$ref": "#/$defs/mission_state" },
         "resource_state": { "$ref": "#/$defs/resource_state" },
         "event_summary": { "$ref": "#/$defs/event_summary" },
+        "organization_graph_identity": { "$ref": "#/$defs/organization_graph_identity" },
+        "organization_dispatch_summary": { "type": "object", "additionalProperties": true },
         "aircraft": { "type": "array", "items": { "type": "object" } },
         "missions": { "type": "array", "items": { "type": "object" } },
         "resources": { "type": "array", "items": { "type": "object" } },
@@ -260,7 +264,18 @@
         "event": { "type": "string" },
         "event_type": { "type": "string" },
         "message": { "type": "string" },
-        "metric_refs": { "type": "array", "items": { "type": "string" } }
+        "metric_refs": { "type": "array", "items": { "type": "string" } },
+        "details": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "organization_graph_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime_mode", "graph_hash", "hash_algorithm"],
+      "properties": {
+        "runtime_mode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
+        "graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "hash_algorithm": { "const": "sha256" }
       }
     }
   }

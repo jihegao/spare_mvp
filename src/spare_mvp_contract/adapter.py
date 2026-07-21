@@ -40,6 +40,10 @@ from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     mission_period_outcome,
     period_completion_summary,
 )
+from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
+    organization_dispatch_summary,
+    organization_graph_identity,
+)
 from src.spare_mvp_contract.task_reliability import build_task_reliability_result_fields
 
 PROJECT_SCHEMA_VERSION = "project-v0"
@@ -531,6 +535,30 @@ class SimulationAdapter:
                     ],
                 }
             scenario = self._compile_aircraft_support_v1_scenario(project, validation, runtime_config=runtime_config)
+            organization_identity = organization_graph_identity(
+                scenario["simulation_inputs"].get("support_network", {}).get("organization_graph")
+            )
+            provenance["organization_graph_identity"] = copy.deepcopy(organization_identity)
+            transport_migrations = [change for change in normalization_changes if "transport" in change]
+            migration_notices = ([{
+                "code": "legacy_transport_policies_migrated",
+                "message": "历史运输策略已迁移到 canonical 顶层 transportPolicies；请核对组织端点后再运行。",
+                "changes": transport_migrations,
+            }] if transport_migrations else [])
+            if (
+                not migration_notices
+                and organization_identity["runtime_mode"] == "legacy"
+                and self._dict_list(project.get("transportPolicies"))
+            ):
+                migration_notices.append({
+                    "code": "legacy_top_level_transport_policies_retained",
+                    "message": (
+                        "历史顶层 transportPolicies 仍按 legacy 保障节点路由运行；"
+                        "启用多级或横向调运前，请补齐 canonical 组织端点并核对运行模式。"
+                    ),
+                    "changes": [],
+                })
+            provenance["migration_notices"] = migration_notices
             scenario = self._scenario_with_mapping_provenance(scenario, provenance)
             return {
                 "status": "compiled",
@@ -2320,6 +2348,8 @@ class SimulationAdapter:
                 sample_every_minutes=inputs.get("time", {}).get("sample_every_minutes"),
             ) from exc
         snapshot = execution["metrics"]
+        organization_identity = copy.deepcopy(execution["organization_identity"])
+        organization_summary = copy.deepcopy(execution["organization_dispatch_summary"])
         state_series_frames = []
         for frame in execution["frames"]:
             traced = copy.deepcopy(frame)
@@ -2338,6 +2368,8 @@ class SimulationAdapter:
             "scenario_version": scenario["scenario_version"],
             "metrics": snapshot,
             "lifecycle_trace": copy.deepcopy(execution.get("lifecycle_trace") or []),
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
         }
         result_summary_artifact_id = f"result_summary-{run_id}"
         projections = self._aircraft_support_v1_analysis_projections(
@@ -2362,6 +2394,7 @@ class SimulationAdapter:
             "carry_list": projections["carry_list"]["data"],
             "mission_reliability": projections["mission_reliability"]["data"],
             "downtime_factors": projections["downtime_factors"]["data"],
+            "organization_dispatch": organization_summary,
         }
         behavior_scope = AircraftSupportV1Model.behavior_scope()
         run_config = {
@@ -2380,6 +2413,7 @@ class SimulationAdapter:
             "sample_every_minutes": inputs.get("time", {}).get("sample_every_minutes"),
             "duration_minutes": inputs.get("time", {}).get("duration_minutes"),
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
+            "organization_graph_identity": organization_identity,
         }
         input_project = self._input_project_for_scenario(scenario)
         metrics = {
@@ -2402,10 +2436,14 @@ class SimulationAdapter:
                 "maintenance_backlog": snapshot.get("maintenance_backlog", 0),
             },
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
         }
         event_log = {
             "schema_version": "run-log-v0",
             "run_id": run_id,
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
             "events": [
                 {"event": "run_started", "at": now},
                 {
@@ -2543,6 +2581,14 @@ class SimulationAdapter:
                 failed_samples=failed_samples,
             )
 
+        organization_identity = organization_graph_identity(
+            inputs.get("support_network", {}).get("organization_graph")
+        )
+        organization_summary = organization_dispatch_summary(
+            [event for sample in samples for event in sample.get("events", [])],
+            identity=organization_identity,
+        )
+
         aggregate = self._aggregate_sample_metrics(samples)
         metric_moments = build_monte_carlo_metric_moments(
             samples,
@@ -2574,6 +2620,8 @@ class SimulationAdapter:
             "scenario_version": scenario["scenario_version"],
             "mapping_provenance": copy.deepcopy(scenario["compiled_from"]["mapping_provenance"]),
             "mapping_version": scenario["compiled_from"]["mapping_provenance"].get("mapping_version"),
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
             "sampling_contract": sampling_contract,
             "sample_count": profile["sample_count"],
             "seed": inputs["seed"],
@@ -2615,6 +2663,7 @@ class SimulationAdapter:
             "monte_carlo_config": copy.deepcopy(config),
             "sampling_contract": copy.deepcopy(sampling_contract),
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
+            "organization_graph_identity": organization_identity,
         }
         sample_results = {
             "schema_version": "sample-results-v0",
@@ -2623,6 +2672,8 @@ class SimulationAdapter:
             "model_family": "aircraft_support_v1",
             "samples": samples,
             "failed_samples": failed_samples,
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
         }
         aggregate_result = {
             "schema_version": "aggregate-result-v0",
@@ -2632,6 +2683,8 @@ class SimulationAdapter:
             "aggregate_metrics": aggregate,
             "metric_moments": metric_moments,
             "failed_sample_count": len(failed_samples),
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
         }
         metrics = {
             "schema_version": "metrics-v0",
@@ -2653,10 +2706,14 @@ class SimulationAdapter:
                 "available_aircraft": aggregate.get("available_aircraft", 0),
             },
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
         }
         event_log = {
             "schema_version": "run-log-v0",
             "run_id": run_id,
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
             "events": [
                 {"event": "run_started", "at": now},
                 {
@@ -2692,6 +2749,8 @@ class SimulationAdapter:
             "scenario_version": scenario["scenario_version"],
             "metrics": aggregate,
             "lifecycle_trace": copy.deepcopy(samples[0].get("lifecycle_trace") or []),
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
             "analysis_outputs": {
                 "large_sample_summary": projections["large_sample_summary"]["data"],
                 "spare_shortage": projections["spare_shortfall"]["data"],
@@ -2699,6 +2758,7 @@ class SimulationAdapter:
                 "mission_reliability": projections["mission_reliability"]["data"],
                 "downtime_factors": projections["downtime_factors"]["data"],
                 "monte_carlo_metric_moments": metric_moments,
+                "organization_dispatch": organization_summary,
             },
         }
         run = {
@@ -2904,6 +2964,8 @@ class SimulationAdapter:
             "events": copy.deepcopy(execution.get("events") or []),
             "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
             "lifecycle_trace": copy.deepcopy(execution.get("lifecycle_trace") or []),
+            "organization_graph_identity": copy.deepcopy(execution["organization_identity"]),
+            "organization_dispatch_summary": copy.deepcopy(execution["organization_dispatch_summary"]),
         }
 
     def _apply_aircraft_support_v1_failure_multiplier(self, inputs: dict[str, Any], multiplier: float) -> None:
@@ -4263,6 +4325,13 @@ class SimulationAdapter:
             "compiled_scenario_artifact_id": f"compiled_scenario-{run_id}",
         }
         traced_frames = [self._trace_visualization_frame(frame, trace) for frame in frames]
+        organization_identity = organization_graph_identity(
+            scenario.get("simulation_inputs", {}).get("support_network", {}).get("organization_graph")
+        )
+        organization_summary = copy.deepcopy(
+            (traced_frames[-1].get("organization_dispatch_summary") if traced_frames else None)
+            or organization_dispatch_summary([], identity=organization_identity)
+        )
         mission_templates = self._compact_mission_frames(traced_frames)
         failure_tree_templates = self._compact_failure_tree_frames(traced_frames)
         payload = {
@@ -4276,6 +4345,8 @@ class SimulationAdapter:
             "run_config_artifact_id": trace["run_config_artifact_id"],
             "input_project_artifact_id": trace["input_project_artifact_id"],
             "compiled_scenario_artifact_id": trace["compiled_scenario_artifact_id"],
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
             "frames": traced_frames,
         }
         if mission_templates:
