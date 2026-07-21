@@ -168,7 +168,10 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         self.assertNotIn("数据来源", metric_labels)
         self.assertNotIn("数据来源", parameter_labels)
         self.assertNotIn("项目编号", parameter_labels)
-        self.assertEqual(metric_labels, ["仿真分钟", "任务成功率", "战备完好率", "可用飞机", "维修中", "缺件事件"])
+        self.assertEqual(metric_labels, [
+            "仿真分钟", "任务成功率", "战备完好率", "可用飞机", "维修中", "缺件事件",
+            "组织已观察满足率", "组织调运批次",
+        ])
         self.assertEqual(parameter_labels, ["仿真时长", "随机种子"])
 
     def test_event_stream_localizes_types_statuses_and_shortage_reasons(self) -> None:

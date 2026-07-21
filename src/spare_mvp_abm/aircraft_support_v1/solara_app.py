@@ -18,6 +18,9 @@ import solara
 from mesa.visualization.solara_viz import update_counter
 
 from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
+from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
+    organization_dispatch_summary,
+)
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -59,6 +62,16 @@ EVENT_TYPE_LABELS = {
     "spare_consumed": "备件消耗",
     "transport_dispatched": "备件调运",
     "transport_replenished": "备件补充",
+    "organization_local_fulfilled": "本级满足",
+    "organization_resource_selected": "组织资源选择",
+    "organization_supply_selected": "组织供给选择",
+    "organization_candidate_rejected": "组织候选跳过",
+    "organization_resource_dispatched": "组织资源调运",
+    "organization_transport_dispatched": "组织备件调运",
+    "organization_resource_arrived": "组织资源到达",
+    "organization_transport_arrived": "组织备件到达",
+    "organization_resource_blocked": "组织资源受阻",
+    "organization_dispatch_failed": "组织供给失败",
     "preflight_completed": "飞行前保障完成",
     "repair_completed": "修复性维修完成",
     "postflight_completed": "航后保障完成",
@@ -250,6 +263,11 @@ def MetricsPanel(model: AircraftSupportV1Model) -> None:
 
 def _metrics_rows(model: AircraftSupportV1Model, metrics: dict[str, Any] | None = None) -> list[tuple[str, Any]]:
     values = metrics or model.snapshot()
+    organization = organization_dispatch_summary(
+        model.event_log,
+        identity=model.organization_graph_identity,
+    )
+    fulfillment_rate = organization.get("observed_fulfillment_rate")
     return [
         ("仿真分钟", model.minute),
         ("任务成功率", f"{values['mission_success_rate']:.1%}"),
@@ -257,6 +275,8 @@ def _metrics_rows(model: AircraftSupportV1Model, metrics: dict[str, Any] | None 
         ("可用飞机", values["available_aircraft"]),
         ("维修中", values["repairing_count"]),
         ("缺件事件", values["shortage_events"]),
+        ("组织已观察满足率", "--" if fulfillment_rate is None else f"{fulfillment_rate:.1%}"),
+        ("组织调运批次", organization["transport_batch_count"]),
     ]
 
 
@@ -402,6 +422,8 @@ def _event_type_label(event_type: Any) -> str:
 def _event_display(event: dict[str, Any]) -> tuple[str, str, str]:
     event_type = str(event.get("event") or event.get("type") or "")
     details = event.get("details") if isinstance(event.get("details"), dict) else {}
+    context = details.get("context") if isinstance(details.get("context"), dict) else {}
+    details = {**context, **details}
     raw_message = str(event.get("message") or "")
     tokens = raw_message.split()
     first = tokens[0] if tokens else ""
@@ -438,6 +460,21 @@ def _event_display(event: dict[str, Any]) -> tuple[str, str, str]:
         message = f"{quantity} 件{spare}已到达{resource}。"
     elif event_type == "transport_replenished":
         message = f"{quantity} 件{spare}已完成库存补充。"
+    elif event_type.startswith("organization_"):
+        mode_label = {"local": "本级", "vertical": "上级", "lateral": "横向"}.get(
+            str(details.get("source_mode") or details.get("supply_mode") or ""),
+            "组织",
+        )
+        if details.get("fact_type") == "candidate_rejected":
+            message = f"{mode_label}候选与服务范围不匹配，已继续检查下一候选。"
+        elif details.get("fact_type") == "supply_blocked":
+            message = f"{mode_label}保障未满足；原因：{details.get('reason') or '无可用供给'}。"
+        elif details.get("fact_type") == "dispatch_started":
+            message = f"{mode_label}保障已发起调运，预计等待 {details.get('wait_minutes', 0):g} 分钟。"
+        elif details.get("fact_type") == "dispatch_arrived":
+            message = f"{mode_label}保障已到达，实际调运等待 {details.get('wait_minutes', 0):g} 分钟。"
+        else:
+            message = f"已选择{mode_label}保障来源。"
     elif event_type == "component_failed":
         message = f"飞机发生部件故障：{_display_entity(last, '故障部件')}。"
     elif event_type == "aircraft_failed":
@@ -649,6 +686,8 @@ def InformationPanel(model: AircraftSupportV1Model) -> None:
             [
                 f"- 当前步数：{model.steps}",
                 f"- 运行状态：{'运行中' if model.running else '已结束'}",
+                f"- 组织运行模式：{model.organization_graph_identity['runtime_mode']}",
+                f"- 组织图摘要：{model.organization_graph_identity['graph_hash'][:12]}",
             ]
         )
     )

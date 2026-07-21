@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model, JobState, _resource_quantity
+from src.spare_mvp_abm.aircraft_support_v1.organization_observability import organization_dispatch_summary
 from src.spare_mvp_contract import SimulationAdapter
 
 
@@ -1621,7 +1622,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.nodes["lateral-stock"]["inventory"]["shared-spare"], 9)
         self.assertEqual(model.transport_shipments, [])
         local_events = [event for event in model.event_log if event["event"] == "organization_local_fulfilled"]
-        self.assertEqual(local_events[-1]["details"]["organization_node_id"], "org-leaf")
+        self.assertEqual(local_events[-1]["details"]["context"]["organization_node_id"], "org-leaf")
 
     def test_canonical_parent_supply_uses_policy_batch_capacity_time_and_atomic_reservation(self) -> None:
         # Arrange.
@@ -1989,7 +1990,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.nodes["stock"]["personnel_in_use"], 0)
         self.assertEqual(model.nodes["root-stock"]["equipment_in_use"], 0)
         blocked = [event for event in model.event_log if event["event"] == "organization_resource_blocked"]
-        self.assertEqual(blocked[-1]["details"]["resource_kind"], "equipment")
+        self.assertEqual(blocked[-1]["details"]["context"]["resource_kind"], "equipment")
 
     def test_canonical_zero_minute_resource_transport_arrives_on_next_tick(self) -> None:
         # Arrange.
@@ -2108,7 +2109,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             event for event in model.event_log
             if event["event"] == "organization_transport_dispatched"
         ][-1]
-        self.assertEqual(dispatched["details"]["supply_mode"], "lateral")
+        self.assertEqual(dispatched["details"]["source_mode"], "lateral")
         self.assertEqual(dispatched["details"]["relation_id"], "lateral-to-leaf")
 
         model.minute = 1
@@ -2116,8 +2117,38 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         model._start_waiting_jobs()
         self.assertEqual(model.jobs[-1].state, "running")
         self.assertFalse(any(
-            event["event"] == "organization_local_fulfilled" for event in model.event_log
+            event["event"] == "organization_local_fulfilled"
+            and event["details"]["requirement_type"] == "spare"
+            for event in model.event_log
         ))
+
+    def test_local_spare_personnel_and_equipment_emit_three_fulfilled_requirements(self) -> None:
+        # Arrange.
+        inputs = _lateral_organization_inputs(local_quantity=1, parent_quantity=0)
+        task = inputs["support_activities"]["activities"][1]["jobs"][0]
+        task.update({"requiredPersonnel": 1, "requiredDevices": 1})
+        model = AircraftSupportV1Model(inputs)
+        model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+
+        # Act.
+        model._start_waiting_jobs()
+        summary = organization_dispatch_summary(
+            model.event_log,
+            identity=model.organization_graph_identity,
+        )
+
+        # Assert.
+        fulfilled = [
+            event for event in model.event_log
+            if event["event"] == "organization_local_fulfilled"
+        ]
+        self.assertEqual(
+            {(event["details"]["requirement_type"], event["details"]["requirement_id"]) for event in fulfilled},
+            {("spare", "shared-spare"), ("personnel", "personnel"), ("equipment", "equipment")},
+        )
+        self.assertEqual(summary["observed_request_count"], 3)
+        self.assertEqual(summary["observed_fulfilled_count"], 3)
+        self.assertEqual(summary["observed_fulfillment_rate"], 1.0)
 
     def test_vertical_mode_and_disabled_lateral_relation_do_not_use_lateral_supply(self) -> None:
         for mode, enabled in (("vertical", True), ("vertical_lateral", False)):
@@ -2260,7 +2291,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
                     and event["details"]["source_organization_node_id"] == "org-lateral"
                 ]
                 self.assertEqual(len(rejected), 1)
-                self.assertEqual(rejected[0]["details"], {
+                expected_details = {
                     "job_id": model.jobs[-1].job_id,
                     "task_index": 0,
                     "resource_kind": "spare",
@@ -2275,7 +2306,14 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
                     "scope_dimension": field,
                     "requested_value": requested_value,
                     "allowed_values": allowed_values,
-                })
+                }
+                self.assertEqual(
+                    {key: {**rejected[0]["details"]["context"], **rejected[0]["details"]}[key] for key in expected_details},
+                    expected_details,
+                )
+                self.assertEqual(rejected[0]["details"]["fact_type"], "candidate_rejected")
+                self.assertEqual(rejected[0]["details"]["runtime_mode"], "vertical_lateral")
+                self.assertEqual(len(rejected[0]["details"]["organization_graph_hash"]), 64)
                 event_names = [event["event"] for event in model.event_log]
                 self.assertLess(
                     event_names.index("organization_candidate_rejected"),
@@ -2403,7 +2441,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             event for event in model.event_log
             if event["event"] == "organization_resource_dispatched"
         ]
-        self.assertEqual({event["details"]["supply_mode"] for event in dispatched}, {"lateral"})
+        self.assertEqual({event["details"]["source_mode"] for event in dispatched}, {"lateral"})
         self.assertEqual({event["details"]["relation_id"] for event in dispatched}, {"lateral-to-leaf"})
 
         model.minute = 1

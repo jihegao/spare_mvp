@@ -13,6 +13,12 @@ import math
 import random
 from typing import Any
 
+from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
+    normalize_organization_event,
+    organization_dispatch_summary,
+    organization_graph_identity,
+)
+
 
 BEHAVIOR_DRIVING_FIELDS = [
     "combatUnit.members",
@@ -270,6 +276,9 @@ class AircraftSupportV1Model:
         self._initialize_aircraft_lru_failure_timers()
         self.nodes = self._build_support_nodes()
         self._initialize_organization_graph()
+        self.organization_graph_identity = organization_graph_identity(
+            self.inputs.get("support_network", {}).get("organization_graph")
+        )
         self.activities = self._build_activities()
         self.mission_context = self._mission_context()
         self.preflight_activity = self._select_activity("preflight")
@@ -283,6 +292,7 @@ class AircraftSupportV1Model:
         self._transport_shipment_keys: set[tuple[str, int, str, tuple[str, ...], int]] = set()
         self._transport_batch_counts: dict[tuple[str, int, str], int] = {}
         self._organization_fact_keys: set[tuple[Any, ...]] = set()
+        self._organization_event_sequence = 0
         self._job_sequence = 0
         self._maintenance_occurrence_by_kind = {"repair": 0, "preventive": 0}
         self.completed_sorties = 0
@@ -345,6 +355,11 @@ class AircraftSupportV1Model:
             "metrics": self.snapshot(),
             "frames": frames,
             "events": copy.deepcopy(self.event_log),
+            "organization_graph_identity": copy.deepcopy(self.organization_graph_identity),
+            "organization_dispatch_summary": organization_dispatch_summary(
+                self.event_log,
+                identity=self.organization_graph_identity,
+            ),
             "downtime_events": copy.deepcopy(self.downtime_events),
             "lifecycle_trace": [self._lifecycle_trace_payload(item) for item in self.aircraft],
         }
@@ -840,6 +855,11 @@ class AircraftSupportV1Model:
                 "downtime_spare_shortage_hours": metrics["downtime_spare_shortage_hours"],
                 "downtime_preventive_hours": metrics["downtime_preventive_hours"],
             },
+            "organization_graph_identity": copy.deepcopy(self.organization_graph_identity),
+            "organization_dispatch_summary": organization_dispatch_summary(
+                self.event_log,
+                identity=self.organization_graph_identity,
+            ),
             "aircraft": [self._aircraft_payload(item) for item in self.aircraft],
             "missions": [self._mission_payload(item) for item in self.missions],
             "resources": [self._resource_payload(item) for item in self.nodes.values()],
@@ -1674,6 +1694,9 @@ class AircraftSupportV1Model:
                         "supply_mode": shipment.supply_mode,
                         "relation_id": shipment.relation_id,
                         "reserved_for_job": reserve_for_job,
+                        "requested_minute": shipment.requested_minute,
+                        "arrival_minute": shipment.arrival_minute,
+                        "wait_minutes": max(0, shipment.arrival_minute - shipment.requested_minute),
                     },
                 )
 
@@ -1704,6 +1727,9 @@ class AircraftSupportV1Model:
                     "batch_sequence": transit.batch_sequence,
                     "supply_mode": transit.supply_mode,
                     "relation_id": transit.relation_id,
+                    "requested_minute": transit.requested_minute,
+                    "arrival_minute": transit.arrival_minute,
+                    "wait_minutes": max(0, transit.arrival_minute - transit.requested_minute),
                 },
             )
         for job_id, task_index, resource_kind in arrived_resource_keys:
@@ -1965,19 +1991,20 @@ class AircraftSupportV1Model:
                 for mode in job.spare_reservation_supply_modes.get((job.task_index, spare_type), set())
             }
             if self.canonical_organization_enabled and spare_requirements and spare_supply_modes <= {"local"}:
-                self._event(
-                    "organization_local_fulfilled",
-                    f"{job.job_id} spare requirements fulfilled at {node['id']}",
-                    {
-                        "job_id": job.job_id,
-                        "task_index": job.task_index,
-                        "organization_node_id": node["organization_node_id"],
-                        "resource_id": node["id"],
-                        "products": [item[0] for item in spare_requirements],
-                        "supply_mode": "local",
-                        "relation_id": "",
-                    },
-                )
+                for product_id, _quantity in spare_requirements:
+                    self._event(
+                        "organization_local_fulfilled",
+                        f"{job.job_id} {product_id} fulfilled at {node['id']}",
+                        {
+                            "job_id": job.job_id,
+                            "task_index": job.task_index,
+                            "organization_node_id": node["organization_node_id"],
+                            "resource_id": node["id"],
+                            "product_id": product_id,
+                            "supply_mode": "local",
+                            "relation_id": "",
+                        },
+                    )
             if not self._consume_task_spare(job, task):
                 continue
             if not self.canonical_organization_enabled:
@@ -2603,6 +2630,11 @@ class AircraftSupportV1Model:
                 details,
             )
             if not policies:
+                self._event(
+                    "organization_local_fulfilled",
+                    f"{resource_kind} fulfilled locally for {job.job_id}",
+                    details,
+                )
                 continue
             transport_minutes = sum(policy["transport_minutes"] for policy in policies)
             arrival_minute = self.minute + max(self.tick_minutes, transport_minutes)
@@ -3569,19 +3601,33 @@ class AircraftSupportV1Model:
             recent = [{"time": self.minute, "event": "state_frame", "message": "state frame sampled"}]
         payload = []
         for event in recent[-10:]:
-            payload.append(
-                {
+            item = {
                     "time": float(event["time"]),
                     "event": str(event["event"]),
                     "event_type": str(event["event"]),
                     "message": str(event["message"]),
                     "metric_refs": self._metric_refs_for_event(str(event["event"])),
                 }
-            )
+            if str(event["event"]).startswith("organization_") and isinstance(event.get("details"), dict):
+                item["details"] = copy.deepcopy(event["details"])
+                item["source_event_id"] = str(event["source_event_id"])
+                item["event_sequence"] = int(event["event_sequence"])
+            payload.append(item)
         return payload
 
     def _event(self, event: str, message: str, details: dict[str, Any] | None = None) -> None:
+        if event.startswith("organization_"):
+            self._organization_event_sequence += 1
+            details = normalize_organization_event(
+                event,
+                details,
+                minute=self.minute,
+                identity=self.organization_graph_identity,
+            )
         item: dict[str, Any] = {"time": self.minute, "event": event, "message": message}
+        if event.startswith("organization_"):
+            item["event_sequence"] = self._organization_event_sequence
+            item["source_event_id"] = f"organization-{self._organization_event_sequence:06d}"
         if details:
             item["details"] = copy.deepcopy(details)
         if (

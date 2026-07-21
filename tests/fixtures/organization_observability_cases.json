@@ -1,0 +1,387 @@
+{
+  "cases": [
+    {
+      "blocked_reason": null,
+      "case_id": "lateral_success",
+      "events": [
+        {
+          "details": {
+            "context": {
+              "arrival_minute": 1,
+              "batch_sequence": 1,
+              "job_id": "job-0001",
+              "organization_path": [
+                "org-sibling",
+                "org-leaf"
+              ],
+              "product_id": "shared-spare",
+              "quantity": 1,
+              "resource_id": "deck",
+              "source_resource_id": "lateral-stock",
+              "supply_mode": "lateral",
+              "task_index": 0,
+              "transport_policy_ids": [
+                "lateral-policy"
+              ]
+            },
+            "destination_organization_node_id": "org-leaf",
+            "destination_resource_id": "deck",
+            "fact_type": "selection_made",
+            "organization_graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+            "reason": "",
+            "relation_id": "sibling-to-leaf",
+            "requested_minute": 0,
+            "requirement_id": "shared-spare",
+            "requirement_type": "spare",
+            "runtime_mode": "vertical_lateral",
+            "source_mode": "lateral",
+            "source_organization_node_id": "org-sibling",
+            "wait_minutes": 1.0
+          },
+          "event": "organization_supply_selected",
+          "event_sequence": 1,
+          "message": "selected lateral-stock for job-0001",
+          "source_event_id": "organization-000001",
+          "time": 0
+        },
+        {
+          "details": {
+            "context": {
+              "arrival_minute": 1,
+              "batch_sequence": 1,
+              "job_id": "job-0001",
+              "organization_path": [
+                "org-sibling",
+                "org-leaf"
+              ],
+              "product_id": "shared-spare",
+              "quantity": 1,
+              "resource_id": "deck",
+              "source_resource_id": "lateral-stock",
+              "supply_mode": "lateral",
+              "task_index": 0,
+              "transport_policy_ids": [
+                "lateral-policy"
+              ]
+            },
+            "destination_organization_node_id": "org-leaf",
+            "destination_resource_id": "deck",
+            "fact_type": "dispatch_started",
+            "organization_graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+            "reason": "",
+            "relation_id": "sibling-to-leaf",
+            "requested_minute": 0,
+            "requirement_id": "shared-spare",
+            "requirement_type": "spare",
+            "runtime_mode": "vertical_lateral",
+            "source_mode": "lateral",
+            "source_organization_node_id": "org-sibling",
+            "wait_minutes": 1.0
+          },
+          "event": "organization_transport_dispatched",
+          "event_sequence": 2,
+          "message": "dispatched 1 shared-spare from lateral-stock",
+          "source_event_id": "organization-000002",
+          "time": 0
+        },
+        {
+          "details": {
+            "context": {
+              "arrival_minute": 1,
+              "job_id": "job-0001",
+              "organization_path": [
+                "org-sibling",
+                "org-leaf"
+              ],
+              "product_id": "shared-spare",
+              "quantity": 1,
+              "reserved_for_job": true,
+              "resource_id": "deck",
+              "source_resource_id": "lateral-stock",
+              "supply_mode": "lateral",
+              "task_index": 0,
+              "transport_policy_ids": [
+                "lateral-policy"
+              ]
+            },
+            "destination_organization_node_id": "org-leaf",
+            "destination_resource_id": "deck",
+            "fact_type": "dispatch_arrived",
+            "organization_graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+            "reason": "",
+            "relation_id": "sibling-to-leaf",
+            "requested_minute": 0,
+            "requirement_id": "shared-spare",
+            "requirement_type": "spare",
+            "runtime_mode": "vertical_lateral",
+            "source_mode": "lateral",
+            "source_organization_node_id": "org-sibling",
+            "wait_minutes": 1.0
+          },
+          "event": "organization_transport_arrived",
+          "event_sequence": 3,
+          "message": "organization shipment arrived for job-0001",
+          "source_event_id": "organization-000003",
+          "time": 1
+        }
+      ],
+      "inventory": {
+        "lateral": 1,
+        "vertical_parent": 1
+      },
+      "organization_dispatch_summary": {
+        "blocked_counts_by_reason": {},
+        "candidate_rejection_counts_by_reason": {},
+        "graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+        "hash_algorithm": "sha256",
+        "interpretation": "descriptive_observed_dispatch_facts_only_no_causal_attribution",
+        "observed_fulfilled_count": 1,
+        "observed_fulfillment_rate": 1.0,
+        "observed_request_count": 1,
+        "observed_transport_wait_minutes": 1.0,
+        "runtime_mode": "vertical_lateral",
+        "sample_count": 1,
+        "schema_version": "organization-dispatch-summary-v0",
+        "selection_counts_by_source_mode": {
+          "lateral": 1
+        },
+        "summary_scope": "single_run",
+        "transport_arrival_count": 1,
+        "transport_batch_count": 1
+      },
+      "organization_graph_identity": {
+        "graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+        "hash_algorithm": "sha256",
+        "runtime_mode": "vertical_lateral"
+      },
+      "outcome": "arrived",
+      "selected_source_mode": "lateral"
+    },
+    {
+      "blocked_reason": null,
+      "case_id": "vertical_fallback",
+      "events": [
+        {
+          "details": {
+            "context": {
+              "arrival_minute": 1,
+              "batch_sequence": 1,
+              "job_id": "job-0001",
+              "organization_path": [
+                "org-parent",
+                "org-leaf"
+              ],
+              "product_id": "shared-spare",
+              "quantity": 1,
+              "resource_id": "deck",
+              "source_resource_id": "parent-stock",
+              "supply_mode": "vertical",
+              "task_index": 0,
+              "transport_policy_ids": [
+                "vertical-policy"
+              ]
+            },
+            "destination_organization_node_id": "org-leaf",
+            "destination_resource_id": "deck",
+            "fact_type": "selection_made",
+            "organization_graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+            "reason": "",
+            "relation_id": "",
+            "requested_minute": 0,
+            "requirement_id": "shared-spare",
+            "requirement_type": "spare",
+            "runtime_mode": "vertical_lateral",
+            "source_mode": "vertical",
+            "source_organization_node_id": "org-parent",
+            "wait_minutes": 1.0
+          },
+          "event": "organization_supply_selected",
+          "event_sequence": 1,
+          "message": "selected parent-stock for job-0001",
+          "source_event_id": "organization-000001",
+          "time": 0
+        },
+        {
+          "details": {
+            "context": {
+              "arrival_minute": 1,
+              "batch_sequence": 1,
+              "job_id": "job-0001",
+              "organization_path": [
+                "org-parent",
+                "org-leaf"
+              ],
+              "product_id": "shared-spare",
+              "quantity": 1,
+              "resource_id": "deck",
+              "source_resource_id": "parent-stock",
+              "supply_mode": "vertical",
+              "task_index": 0,
+              "transport_policy_ids": [
+                "vertical-policy"
+              ]
+            },
+            "destination_organization_node_id": "org-leaf",
+            "destination_resource_id": "deck",
+            "fact_type": "dispatch_started",
+            "organization_graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+            "reason": "",
+            "relation_id": "",
+            "requested_minute": 0,
+            "requirement_id": "shared-spare",
+            "requirement_type": "spare",
+            "runtime_mode": "vertical_lateral",
+            "source_mode": "vertical",
+            "source_organization_node_id": "org-parent",
+            "wait_minutes": 1.0
+          },
+          "event": "organization_transport_dispatched",
+          "event_sequence": 2,
+          "message": "dispatched 1 shared-spare from parent-stock",
+          "source_event_id": "organization-000002",
+          "time": 0
+        },
+        {
+          "details": {
+            "context": {
+              "arrival_minute": 1,
+              "job_id": "job-0001",
+              "organization_path": [
+                "org-parent",
+                "org-leaf"
+              ],
+              "product_id": "shared-spare",
+              "quantity": 1,
+              "reserved_for_job": true,
+              "resource_id": "deck",
+              "source_resource_id": "parent-stock",
+              "supply_mode": "vertical",
+              "task_index": 0,
+              "transport_policy_ids": [
+                "vertical-policy"
+              ]
+            },
+            "destination_organization_node_id": "org-leaf",
+            "destination_resource_id": "deck",
+            "fact_type": "dispatch_arrived",
+            "organization_graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+            "reason": "",
+            "relation_id": "",
+            "requested_minute": 0,
+            "requirement_id": "shared-spare",
+            "requirement_type": "spare",
+            "runtime_mode": "vertical_lateral",
+            "source_mode": "vertical",
+            "source_organization_node_id": "org-parent",
+            "wait_minutes": 1.0
+          },
+          "event": "organization_transport_arrived",
+          "event_sequence": 3,
+          "message": "organization shipment arrived for job-0001",
+          "source_event_id": "organization-000003",
+          "time": 1
+        }
+      ],
+      "inventory": {
+        "lateral": 0,
+        "vertical_parent": 1
+      },
+      "organization_dispatch_summary": {
+        "blocked_counts_by_reason": {},
+        "candidate_rejection_counts_by_reason": {},
+        "graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+        "hash_algorithm": "sha256",
+        "interpretation": "descriptive_observed_dispatch_facts_only_no_causal_attribution",
+        "observed_fulfilled_count": 1,
+        "observed_fulfillment_rate": 1.0,
+        "observed_request_count": 1,
+        "observed_transport_wait_minutes": 1.0,
+        "runtime_mode": "vertical_lateral",
+        "sample_count": 1,
+        "schema_version": "organization-dispatch-summary-v0",
+        "selection_counts_by_source_mode": {
+          "vertical": 1
+        },
+        "summary_scope": "single_run",
+        "transport_arrival_count": 1,
+        "transport_batch_count": 1
+      },
+      "organization_graph_identity": {
+        "graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+        "hash_algorithm": "sha256",
+        "runtime_mode": "vertical_lateral"
+      },
+      "outcome": "arrived",
+      "selected_source_mode": "vertical"
+    },
+    {
+      "blocked_reason": "no_available_supplier",
+      "case_id": "fail_closed",
+      "events": [
+        {
+          "details": {
+            "context": {
+              "job_id": "job-0001",
+              "organization_node_id": "org-leaf",
+              "product_id": "shared-spare",
+              "resource_id": "deck",
+              "task_index": 0
+            },
+            "destination_organization_node_id": "org-leaf",
+            "destination_resource_id": "deck",
+            "fact_type": "supply_blocked",
+            "organization_graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+            "reason": "no_available_supplier",
+            "relation_id": "",
+            "requested_minute": 0,
+            "requirement_id": "shared-spare",
+            "requirement_type": "spare",
+            "runtime_mode": "vertical_lateral",
+            "source_mode": "",
+            "source_organization_node_id": "",
+            "wait_minutes": 0
+          },
+          "event": "organization_dispatch_failed",
+          "event_sequence": 1,
+          "message": "unable to dispatch shared-spare for job-0001",
+          "source_event_id": "organization-000001",
+          "time": 0
+        }
+      ],
+      "inventory": {
+        "lateral": 0,
+        "vertical_parent": 0
+      },
+      "organization_dispatch_summary": {
+        "blocked_counts_by_reason": {
+          "no_available_supplier": 1
+        },
+        "candidate_rejection_counts_by_reason": {},
+        "graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+        "hash_algorithm": "sha256",
+        "interpretation": "descriptive_observed_dispatch_facts_only_no_causal_attribution",
+        "observed_fulfilled_count": 0,
+        "observed_fulfillment_rate": 0.0,
+        "observed_request_count": 1,
+        "observed_transport_wait_minutes": 0,
+        "runtime_mode": "vertical_lateral",
+        "sample_count": 1,
+        "schema_version": "organization-dispatch-summary-v0",
+        "selection_counts_by_source_mode": {},
+        "summary_scope": "single_run",
+        "transport_arrival_count": 0,
+        "transport_batch_count": 0
+      },
+      "organization_graph_identity": {
+        "graph_hash": "111bd9eee9db0d71f78c620c6181f1403a395a9c31ac984d71486132496b31d4",
+        "hash_algorithm": "sha256",
+        "runtime_mode": "vertical_lateral"
+      },
+      "outcome": "blocked",
+      "selected_source_mode": null
+    }
+  ],
+  "schema_version": "organization-observability-cases-v0",
+  "seed": 317,
+  "source_scenario": "tests/fixtures/aircraft_support_v1_scenario.json"
+}
