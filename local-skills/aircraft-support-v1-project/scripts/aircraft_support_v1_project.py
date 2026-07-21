@@ -225,7 +225,7 @@ def compile_project_json_to_aircraft_support_inputs(
     _validate_aircraft_pre_life_thresholds(project, aircraft_summary)
     products_by_id = _products_by_id(project)
     organization_graph = _organization_graph(project)
-    canonical_organization = organization_graph["runtime_mode"] == "vertical"
+    canonical_organization = organization_graph["runtime_mode"] in {"vertical", "vertical_lateral"}
     support_nodes = _support_nodes(
         project,
         products_by_id,
@@ -757,7 +757,7 @@ def _canonical_root_runtime_resource_id(
     organization_graph: dict[str, Any],
     support_nodes: list[dict[str, Any]],
 ) -> str | None:
-    if organization_graph.get("runtime_mode") != "vertical":
+    if organization_graph.get("runtime_mode") not in {"vertical", "vertical_lateral"}:
         return None
     root_ids = [
         str(node.get("id") or "")
@@ -808,6 +808,7 @@ def _organization_graph(project: dict[str, Any]) -> dict[str, Any]:
             "from_node_id": str(relation.get("fromOrganizationNodeId") or ""),
             "to_node_id": str(relation.get("toOrganizationNodeId") or ""),
             "priority": _positive_int(relation.get("priority"), 1),
+            "enabled": relation.get("enabled", True) is True,
         }
         for relation in _list(organization.get("relations"))
         if isinstance(relation, dict)

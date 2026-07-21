@@ -534,7 +534,7 @@
       "additionalProperties": false,
       "required": ["runtimeMode", "tree", "relations"],
       "properties": {
-        "runtimeMode": { "enum": ["legacy", "vertical"] },
+        "runtimeMode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
         "tree": {
           "oneOf": [
             { "$ref": "#/$defs/supportOrganizationNode" },
@@ -559,10 +559,11 @@
     "supportOrganizationRelation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type", "fromOrganizationNodeId", "toOrganizationNodeId", "priority"],
+      "required": ["id", "type", "enabled", "fromOrganizationNodeId", "toOrganizationNodeId", "priority"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "type": { "const": "lateral" },
+        "enabled": { "type": "boolean" },
         "fromOrganizationNodeId": { "type": "string", "minLength": 1 },
         "toOrganizationNodeId": { "type": "string", "minLength": 1 },
         "priority": { "type": "integer", "minimum": 1 }

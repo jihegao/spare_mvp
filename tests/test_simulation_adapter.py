@@ -13,7 +13,10 @@ import jsonschema
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 from src.spare_mvp_backend.m9_6_case_package import build_m9_6_platform_case_export
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
-from tests.test_aircraft_support_v1_model import _vertical_organization_inputs
+from tests.test_aircraft_support_v1_model import (
+    _lateral_organization_inputs,
+    _vertical_organization_inputs,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -1297,6 +1300,10 @@ class SimulationAdapterTest(unittest.TestCase):
             scope["behavior_driving_fields"],
         )
         self.assertIn(
+            "support_network.organization_graph.lateral_edges[]",
+            scope["behavior_driving_fields"],
+        )
+        self.assertIn(
             "support_network.organization_graph.transport_policies[]",
             scope["behavior_driving_fields"],
         )
@@ -1323,6 +1330,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 "support_network.organization_graph.nodes[]",
                 "support_network.organization_graph.runtime_mode",
                 "support_network.organization_graph.parent_edges[]",
+                "support_network.organization_graph.lateral_edges[]",
                 "support_network.organization_graph.transport_policies[]",
             },
         )
@@ -1584,9 +1592,79 @@ class SimulationAdapterTest(unittest.TestCase):
             "transport_policy_ids",
             "batch_sequence",
             "arrival_minute",
+            "supply_mode",
+            "relation_id",
         }
         self.assertEqual(set(single_dispatch["details"]), required_detail_fields)
         self.assertEqual(single_dispatch["details"], mc_dispatch["details"])
+
+    def test_lateral_dispatch_events_and_metrics_are_equivalent_for_single_and_monte_carlo_sample(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        inputs = _lateral_organization_inputs(local_quantity=0, parent_quantity=0)
+        inputs["schema_version"] = "aircraft-support-v1-input-v0"
+        for node in inputs["support_network"]["nodes"]:
+            node["personnel_capacity"] = 2
+            node["equipment_capacity"] = 2
+        graph = inputs["support_network"]["organization_graph"]
+        graph["transport_policies"][-1]["capacity"] = 1
+        graph["transport_policies"][-1]["transport_time_hours"] = 0
+        preflight = inputs["support_activities"]["activities"][0]
+        preflight["resource_id"] = "deck"
+        preflight["jobs"] = [{
+            "activityCode": "prepare",
+            "durationMinutes": 1,
+            "spare": [{"product_id": "shared-spare", "quantity": 1}],
+        }]
+        inputs["mission_profile"]["basic_missions"][0]["equipmentQuantity"] = 1
+        scenario["simulation_inputs"] = inputs
+        monte_carlo_config = {
+            "sample_count": 1,
+            "parallel_cores": 1,
+            "sweep": {
+                "failureRates": [1.0],
+                "spareMultipliers": [1.0],
+                "supportCapacities": [2],
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as single_tmp, tempfile.TemporaryDirectory() as mc_tmp:
+            single = self.adapter.run_scenario(
+                copy.deepcopy(scenario),
+                output_dir=Path(single_tmp),
+                run_id="run-lateral-single",
+            )
+            monte_carlo = self.adapter.run_monte_carlo_scenario(
+                copy.deepcopy(scenario),
+                output_dir=Path(mc_tmp),
+                run_id="run-lateral-mc",
+                monte_carlo_config=monte_carlo_config,
+            )
+            single_log_artifact = next(
+                artifact for artifact in single["artifact_manifest"]["artifacts"]
+                if artifact["kind"] == "log"
+            )
+            single_log = json.loads(
+                (Path(single_tmp) / single_log_artifact["path"]).read_text(encoding="utf-8")
+            )
+            mc_base_artifact = next(
+                artifact for artifact in monte_carlo["artifact_manifest"]["artifacts"]
+                if artifact["kind"] == "monte_carlo_base"
+            )
+            mc_base = json.loads((Path(mc_tmp) / mc_base_artifact["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(single["result"]["metrics"], mc_base["samples"][0]["metrics"])
+        single_dispatch = next(
+            event for event in single_log["events"]
+            if event["event"] == "organization_transport_dispatched"
+        )
+        mc_dispatch = next(
+            event for event in mc_base["samples"][0]["events"]
+            if event["event"] == "organization_transport_dispatched"
+        )
+        self.assertEqual(single_dispatch["details"], mc_dispatch["details"])
+        self.assertEqual(single_dispatch["details"]["supply_mode"], "lateral")
+        self.assertEqual(single_dispatch["details"]["relation_id"], "lateral-to-leaf")
 
     def test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]

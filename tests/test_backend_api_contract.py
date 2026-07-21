@@ -2737,6 +2737,7 @@ class BackendApiContractTest(unittest.TestCase):
                 "support_network.organization_graph.nodes[]",
                 "support_network.organization_graph.runtime_mode",
                 "support_network.organization_graph.parent_edges[]",
+                "support_network.organization_graph.lateral_edges[]",
                 "support_network.organization_graph.transport_policies[]",
             },
         )

@@ -193,6 +193,76 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         self.assertEqual(inputs["support_network"]["nodes"][0]["organization_node_id"], "node-a")
         self.assertEqual(graph["lateral_edges"], [])
 
+    def test_compiles_enabled_direct_lateral_relation_for_vertical_lateral_runtime(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        leaf = project["supportOrganization"]["tree"]
+        project["supportOrganization"] = {
+            "runtimeMode": "vertical_lateral",
+            "tree": {
+                "id": "org-root",
+                "name": "root",
+                "serviceScope": {
+                    "airportIds": [],
+                    "aircraftModels": [],
+                    "productIds": [],
+                    "resourceTypes": [],
+                },
+                "children": [
+                    leaf,
+                    {
+                        "id": "node-b",
+                        "name": "node B",
+                        "serviceScope": {
+                            "airportIds": [],
+                            "aircraftModels": [],
+                            "productIds": [],
+                            "resourceTypes": [],
+                        },
+                        "children": [],
+                    },
+                ],
+            },
+            "relations": [{
+                "id": "lateral-b-a",
+                "type": "lateral",
+                "fromOrganizationNodeId": "node-b",
+                "toOrganizationNodeId": "node-a",
+                "priority": 1,
+                "enabled": True,
+            }],
+        }
+        project["supportNodes"].append({
+            "id": "node-b",
+            "name": "node B",
+            "organizationNodeId": "node-b",
+            "personnelCapacity": 1,
+            "equipmentCapacity": 1,
+            "inventory": {"product-whole-aircraft": 1},
+        })
+        project["transportPolicies"] = [{
+            "id": "policy-b-a",
+            "fromOrganizationNodeId": "node-b",
+            "toOrganizationNodeId": "node-a",
+            "productId": "product-whole-aircraft",
+            "capacity": 1,
+            "priority": 1,
+            "transportTimeHours": 0,
+        }]
+        project["supportActivities"][0]["resourceId"] = "node A"
+
+        inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        graph = inputs["support_network"]["organization_graph"]
+        self.assertEqual(graph["runtime_mode"], "vertical_lateral")
+        self.assertEqual(graph["lateral_edges"], [{
+            "id": "lateral-b-a",
+            "from_node_id": "node-b",
+            "to_node_id": "node-a",
+            "priority": 1,
+            "enabled": True,
+        }])
+
     def test_compiles_canonical_pre_life_and_blocks_missing_threshold_without_legacy_hour_fallback(self) -> None:
         skill = _load_skill_module()
         project = self._project()

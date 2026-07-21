@@ -34,7 +34,7 @@
 13. 任务字段按单一归属保存：`basicMissions[].minRequiredSorties` 是最小装备数量唯一来源，复合任务项只读继承；`compositeTasks[].priority` 是任务优先级唯一来源。基本任务与复合任务项中的旧 `priority`、以及 task item 的旧 `minRequiredSystems` 都只在迁移时读取后删除。修改该边界时必须同步更新 contract、后台 Project 迁移、canonical/M9.6/clean Project 导出 JSON，并运行两条 fixture drift check；已发布 import 和历史 run/snapshot 不得原地覆盖，应发布新版本后创建新 Project。
 14. 周期性任务的月、年剖面组合保存在 `missionProfile.periodicProfileLists`。月剖面的 4 个固定周坑位和可选第 5 周、年剖面的 12 个月均允许以空字符串表示“未配置”，新建时默认全空；保存、重新打开、删除被引用剖面和汇总时不得静默回退为首个周/月剖面。编译按“有年用年、有月用月、否则用周”选择最高已配置来源，更高层全空不阻断有效周/月任务；页面显示当前来源。非空悬空引用和零有效实例仍失败关闭。
 15. 基本保障活动基础库只保留一个真实本地 CSV 文件入口，活动类型由行内字段决定，同批可混合使用保障、预防性维修和修复性维修。表头、必填字段、分布参数、整机引用、全局活动编号和紧前作业 DAG 在 detached staging 中一次校验；错误按行和字段聚合且整批不落地，成功后刷新列表、反馈数量并沿既有 Project draft 边界保存。模板列、别名和兼容策略见 [`basic-support-activity-csv-import-design.md`](basic-support-activity-csv-import-design.md)。
-16. 保障组织按 #314 收敛为单根组织树、横向 DAG、节点/资源唯一归属、作用域和组织端点运输策略，并编译为稳定排序的 `support_network.organization_graph`；#315 启用本级优先和父链逐级上溯的纵向人员、设备、备件供给与逐边运输，横向边仍延后到 #316。规范、迁移、调度顺序与失败关闭规则见 [`support-organization-contract.md`](support-organization-contract.md)。
+16. 保障组织按 #314 收敛为单根组织树、横向 DAG、节点/资源唯一归属、作用域和组织端点运输策略，并编译为稳定排序的 `support_network.organization_graph`；#315 启用本级/父链纵向供给，#316 以显式 `vertical_lateral` 模式启用本级→直接横向→纵向回退，并复用同一原子预约、分批和释放语义。规范、迁移、调度顺序与失败关闭规则见 [`support-organization-contract.md`](support-organization-contract.md)。
 
 ## 文档地图
 

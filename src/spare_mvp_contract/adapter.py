@@ -668,7 +668,7 @@ class SimulationAdapter:
         initial_ready = aircraft_summary["initial_ready"]
         products_by_id = self._aircraft_support_v1_products_by_id(project)
         organization_graph = self._aircraft_support_v1_organization_graph(project)
-        canonical_organization = organization_graph["runtime_mode"] == "vertical"
+        canonical_organization = organization_graph["runtime_mode"] in {"vertical", "vertical_lateral"}
         support_network_nodes = self._aircraft_support_v1_support_nodes(
             project,
             products_by_id,
@@ -1313,6 +1313,7 @@ class SimulationAdapter:
                 "from_node_id": str(relation.get("fromOrganizationNodeId") or ""),
                 "to_node_id": str(relation.get("toOrganizationNodeId") or ""),
                 "priority": self._positive_int(relation.get("priority"), 1),
+                "enabled": relation.get("enabled", True) is True,
             }
             for relation in self._dict_list(organization.get("relations"))
         ]
@@ -1642,7 +1643,9 @@ class SimulationAdapter:
                 "supportNodes[].organizationNodeId",
                 "supportOrganization.tree[].id",
                 "supportOrganization.tree[].serviceScope",
+                "supportOrganization.runtimeMode",
                 "supportOrganization.relations[]",
+                "supportOrganization.relations[].enabled",
                 "transportPolicies[]",
                 "transportPolicies[].fromOrganizationNodeId",
                 "transportPolicies[].toOrganizationNodeId",
@@ -1699,9 +1702,15 @@ class SimulationAdapter:
                 "project_id",
                 "project_version",
             ],
-            "runtime_deferred_fields": [
-                "simulation_inputs.support_network.organization_graph.lateral_edges",
-            ],
+            "runtime_deferred_fields": (
+                []
+                if str(
+                    (project.get("supportOrganization") or {}).get("runtimeMode")
+                    if isinstance(project.get("supportOrganization"), dict)
+                    else ""
+                ) == "vertical_lateral"
+                else ["simulation_inputs.support_network.organization_graph.lateral_edges"]
+            ),
             "unsupported_fields": self._aircraft_support_v1_unsupported_fields(project),
         }
 
@@ -1741,7 +1750,7 @@ class SimulationAdapter:
         if not self._runtime_stop_policy_sources(project, runtime_config):
             defaults.append("ExperimentPlan.config.stopPolicy=duration")
         organization_graph = self._aircraft_support_v1_organization_graph(project)
-        if organization_graph["runtime_mode"] == "vertical":
+        if organization_graph["runtime_mode"] in {"vertical", "vertical_lateral"}:
             support_nodes = self._aircraft_support_v1_support_nodes(
                 project,
                 self._aircraft_support_v1_products_by_id(project),
@@ -1875,7 +1884,7 @@ class SimulationAdapter:
         issues.extend(self._aircraft_pre_life_compile_issues(project))
 
         organization_graph = self._aircraft_support_v1_organization_graph(project)
-        if organization_graph["runtime_mode"] == "vertical":
+        if organization_graph["runtime_mode"] in {"vertical", "vertical_lateral"}:
             runtime_nodes = self._aircraft_support_v1_support_nodes(
                 project,
                 self._aircraft_support_v1_products_by_id(project),
