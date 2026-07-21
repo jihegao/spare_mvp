@@ -568,6 +568,15 @@ class SimulationAdapterTest(unittest.TestCase):
             warnings.simplefilter("ignore", DeprecationWarning)
             jsonschema.validate(instance=scenario, schema=scenario_schema)
             jsonschema.validate(instance=scenario["simulation_inputs"], schema=input_schema)
+            historical = copy.deepcopy(scenario)
+            historical.pop("organization_observability_version")
+            historical["compiled_from"]["mapping_provenance"].pop("organization_graph_identity")
+            historical["compiled_from"]["mapping_provenance"].pop("migration_notices")
+            jsonschema.validate(instance=historical, schema=scenario_schema)
+            marked_missing_identity = copy.deepcopy(scenario)
+            marked_missing_identity["compiled_from"]["mapping_provenance"].pop("organization_graph_identity")
+            with self.assertRaises(jsonschema.ValidationError):
+                jsonschema.validate(instance=marked_missing_identity, schema=scenario_schema)
         self.assertEqual(
             scenario["simulation_model"],
             {
@@ -1173,6 +1182,27 @@ class SimulationAdapterTest(unittest.TestCase):
         jsonschema.validate(instance=result, schema=result_schema)
         jsonschema.validate(instance=manifest, schema=manifest_schema)
         jsonschema.validate(instance=state_payload, schema=state_series_schema)
+        historical_result = copy.deepcopy(result)
+        historical_result.pop("organization_observability_version")
+        historical_result.pop("organization_graph_identity")
+        historical_result.pop("organization_dispatch_summary")
+        jsonschema.validate(instance=historical_result, schema=result_schema)
+        marked_result_without_summary = copy.deepcopy(result)
+        marked_result_without_summary.pop("organization_dispatch_summary")
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(instance=marked_result_without_summary, schema=result_schema)
+        historical_state = copy.deepcopy(state_payload)
+        historical_state.pop("organization_observability_version")
+        historical_state.pop("organization_graph_identity")
+        historical_state.pop("organization_dispatch_summary")
+        for frame in historical_state["frames"]:
+            frame.pop("organization_graph_identity")
+            frame.pop("organization_dispatch_summary")
+        jsonschema.validate(instance=historical_state, schema=state_series_schema)
+        marked_state_without_identity = copy.deepcopy(state_payload)
+        marked_state_without_identity.pop("organization_graph_identity")
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(instance=marked_state_without_identity, schema=state_series_schema)
         missing_compact_status_payload = copy.deepcopy(state_payload)
         del missing_compact_status_payload["frames"][0]["missions"][0]["status"]
         with self.assertRaises(jsonschema.ValidationError):
@@ -1582,20 +1612,26 @@ class SimulationAdapterTest(unittest.TestCase):
             if event["event"] == "organization_transport_dispatched"
         )
         required_detail_fields = {
-            "job_id",
-            "task_index",
-            "product_id",
-            "quantity",
-            "source_resource_id",
-            "resource_id",
-            "organization_path",
-            "transport_policy_ids",
-            "batch_sequence",
-            "arrival_minute",
-            "supply_mode",
             "relation_id",
+            "fact_type",
+            "runtime_mode",
+            "organization_graph_hash",
+            "source_mode",
+            "source_organization_node_id",
+            "destination_organization_node_id",
+            "destination_resource_id",
+            "reason",
+            "requested_minute",
+            "wait_minutes",
+            "requirement_type",
+            "requirement_id",
+            "context",
         }
         self.assertEqual(set(single_dispatch["details"]), required_detail_fields)
+        self.assertEqual(set(single_dispatch["details"]["context"]), {
+            "job_id", "task_index", "product_id", "quantity", "source_resource_id", "resource_id",
+            "organization_path", "transport_policy_ids", "batch_sequence", "arrival_minute", "supply_mode",
+        })
         self.assertEqual(single_dispatch["details"], mc_dispatch["details"])
 
     def test_lateral_dispatch_events_and_metrics_are_equivalent_for_single_and_monte_carlo_sample(self) -> None:
@@ -1663,7 +1699,7 @@ class SimulationAdapterTest(unittest.TestCase):
             if event["event"] == "organization_transport_dispatched"
         )
         self.assertEqual(single_dispatch["details"], mc_dispatch["details"])
-        self.assertEqual(single_dispatch["details"]["supply_mode"], "lateral")
+        self.assertEqual(single_dispatch["details"]["source_mode"], "lateral")
         self.assertEqual(single_dispatch["details"]["relation_id"], "lateral-to-leaf")
 
     def test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts(self) -> None:

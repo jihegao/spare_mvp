@@ -43,6 +43,11 @@ from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
     mission_period_outcome,
     period_completion_summary,
 )
+from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
+    aggregate_organization_dispatch_summaries,
+    organization_dispatch_summary,
+    organization_graph_identity,
+)
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 from src.spare_mvp_contract.downtime import (
     normalize_downtime_event_for_analysis,
@@ -1012,6 +1017,13 @@ class BackendApi:
         elif "sortie_completion_rate" in aggregate:
             aggregate["mission_success_probability"] = aggregate["sortie_completion_rate"]
         aggregation_seconds = time.perf_counter() - aggregation_started
+        organization_identity = organization_graph_identity(
+            inputs.get("support_network", {}).get("organization_graph")
+        )
+        organization_summary = aggregate_organization_dispatch_summaries(
+            [sample.get("organization_dispatch_summary") or {} for sample in samples],
+            identity=organization_identity,
+        )
         projection_started = time.perf_counter()
         base_artifact_id = f"lite-mesa-analysis-base-{run_id}"
         projections = self.adapter._aircraft_support_v1_analysis_projections(  # noqa: SLF001 - projection payload only.
@@ -1036,6 +1048,10 @@ class BackendApi:
             result_summary_id=f"lite-mesa-analysis-summary-{run_id}",
             artifact_manifest_id=f"lite-mesa-analysis-manifest-{run_id}",
             frames=copy.deepcopy(samples[0].get("frames") or []),
+            organization_identity=organization_identity,
+            organization_summary=samples[0]["organization_dispatch_summary"],
+            representative_sample_index=samples[0]["sample_index"],
+            representative_seed=samples[0]["seed"],
         )
         projection_seconds = time.perf_counter() - projection_started
         timings = {
@@ -1061,6 +1077,11 @@ class BackendApi:
             "parallel_cores": normalized_settings["parallelCores"],
             "worker_count": worker_count,
             "aggregate_metrics": aggregate,
+            "organization_graph_identity": organization_identity,
+            "organization_dispatch_summary": organization_summary,
+            "sample_organization_dispatch_summaries": [
+                copy.deepcopy(sample.get("organization_dispatch_summary") or {}) for sample in samples
+            ],
             "metric_moments": metric_moments,
             "projection": projections[normalized_analysis_type],
             "metrics": page_result["metrics"],
@@ -2071,8 +2092,11 @@ def _run_aircraft_support_v1_analysis_sample(
         model.missions,
         duration_days=execution.get("metrics", {}).get("simulation_days", 0),
     )
+    source_frames = execution.get("frames", [])[:20]
+    if not source_frames:
+        source_frames = [model.visualization_frame(run_id="", step=0)]
     frames = []
-    for sample_step, frame in enumerate(execution.get("frames", [])[:20]):
+    for sample_step, frame in enumerate(source_frames):
         item = copy.deepcopy(frame)
         item["sample_index"] = sample_index
         item["sample_step"] = sample_step
@@ -2091,6 +2115,8 @@ def _run_aircraft_support_v1_analysis_sample(
         "events": copy.deepcopy(execution.get("events") or []),
         "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
         "lifecycle_trace": copy.deepcopy(execution.get("lifecycle_trace") or []),
+        "organization_graph_identity": copy.deepcopy(execution["organization_graph_identity"]),
+        "organization_dispatch_summary": copy.deepcopy(execution["organization_dispatch_summary"]),
     }
 
 

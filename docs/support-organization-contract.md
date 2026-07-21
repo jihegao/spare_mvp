@@ -44,3 +44,11 @@ Issue #314 将保障组织从仅用于展示/追溯的数据，收敛为可校�
 - 人员和设备容量在供给组织按整条路径容量拆批（例如需求 5、容量 2 为 2/2/1），整项需求先原子预约；全部批次到达后作业才能开始，完成后全量释放回各供给组织，不增加目的组织的永久容量。人员与设备可来自不同祖先，但两类计划必须一起提交或一起失败。
 - 备件先为一个任务的全部产品缺口构建完整可行计划，全部可行后才统一扣来源库存并创建在途批次；任何一种备件失败都不得留下局部扣减。到货写入 `(job, task, product)` 专属预留，不能进入共享库存被其他作业抢占；齐套启动时消费，取消时退回目的库存。单批数量取缺口、来源可用量和整条路径最小容量三者的最小值；多跳时间为逐边分钟数之和，零时延策略也在下一 tick 到达。
 - 无完整纵向路径、资源不足或已有同一作业批次在途时保持等待并记录确定的阻断事实，不得静默改用其他节点。固定 seed 下，single run 与 Monte Carlo 样本共用同一模型调度代码。
+
+## #317 业务事实与结果口径
+
+- 每个 `organization_*` 事件都有确定性 `source_event_id` / `event_sequence`，并携带 `runtime_mode`、组织图 SHA-256、`requirement_type` / `requirement_id`、来源/目的、供给模式、关系、原因和等待时间。状态序列中同一来源事实跨帧保持同一事件 ID。
+- `selection_made` 只表示候选已提交，不等于满足；本地人员、设备、逐项备件的 `local_fulfilled`，以及远端 `dispatch_arrived` 才进入 `observed_fulfilled_count`。阻断请求的满足数为零。
+- single 摘要为 `single_run`；Monte Carlo 与 lite 先逐样本去重，再按样本摘要加总为 `all_samples`，避免相同 job ID 跨样本碰撞；状态序列明确标记 `representative_sample` 及样本序号/seed。所有指标仅描述已观察调度事实，不作因果归因。
+- 新输出用可选扩展标记 `organization_observability_version=organization-observability-v1` 启用严格 identity、summary 和事件结构，不提升历史总体 v0 schema 版本；无标记的历史 v0 仍可校验。Scenario provenance、Result、single/MC 日志与报告、lite API、状态序列和 Solara 使用同一个 `organization_graph_identity`。历史项目只有顶层 `transportPolicies[]` 且仍为 `legacy` 时，provenance 返回 `legacy_top_level_transport_policies_retained`，提示补齐 canonical 组织端点并核对运行模式；不会自动启用纵向或横向语义。
+- `scripts/export-organization-observability-cases.py --check` 可复核 [`../tests/fixtures/organization_observability_cases.json`](../tests/fixtures/organization_observability_cases.json)，固定 seed 覆盖横向成功、横向不可用后的纵向回退和全路径失败关闭。

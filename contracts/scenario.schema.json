@@ -50,6 +50,7 @@
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "scenario-v0" },
+    "organization_observability_version": { "const": "organization-observability-v1" },
     "scenario_id": { "type": "string" },
     "project_id": { "type": "string" },
     "scenario_version": { "type": "string" },
@@ -114,6 +115,34 @@
             "validation_warnings": {
               "type": "array",
               "items": { "type": "object" }
+            },
+            "organization_graph_identity": {
+              "type": "object",
+              "required": ["runtime_mode", "graph_hash", "hash_algorithm"],
+              "properties": {
+                "runtime_mode": { "enum": ["legacy", "vertical", "vertical_lateral"] },
+                "graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                "hash_algorithm": { "const": "sha256" }
+              },
+              "additionalProperties": false
+            },
+            "migration_notices": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["code", "message", "changes"],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "legacy_transport_policies_migrated",
+                      "legacy_top_level_transport_policies_retained"
+                    ]
+                  },
+                  "message": { "type": "string", "minLength": 1 },
+                  "changes": { "type": "array", "items": { "type": "string" } }
+                }
+              }
             }
           },
           "additionalProperties": false
@@ -123,6 +152,23 @@
     },
     "simulation_inputs": { "type": "object" }
   },
+  "allOf": [{
+    "if": {
+      "properties": { "organization_observability_version": { "const": "organization-observability-v1" } },
+      "required": ["organization_observability_version"]
+    },
+    "then": {
+      "properties": {
+        "compiled_from": {
+          "properties": {
+            "mapping_provenance": {
+              "required": ["organization_graph_identity", "migration_notices"]
+            }
+          }
+        }
+      }
+    }
+  }],
   "$defs": {
     "AircraftSupportV1ModelSelector": {
       "description": "Current formal runtime selector for /api/runs.",
