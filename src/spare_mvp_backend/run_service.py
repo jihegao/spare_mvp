@@ -55,6 +55,20 @@ class RunService:
         experiment_plan_id: str | None = None,
     ) -> dict[str, Any]:
         """Compile persisted inputs without creating snapshots, runs, or artifacts."""
+        with self._run_lock:
+            return self._compile_preflight_unlocked(
+                project_id,
+                model_family=model_family,
+                experiment_plan_id=experiment_plan_id,
+            )
+
+    def _compile_preflight_unlocked(
+        self,
+        project_id: str,
+        *,
+        model_family: str,
+        experiment_plan_id: str | None,
+    ) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
         plan = None
         snapshot = None
@@ -84,6 +98,8 @@ class RunService:
             )
             if plan is not None:
                 runtime_config = _compile_runtime_config(plan, model_family=model_family)
+        except RunServiceError:
+            raise
         except ValueError as exc:
             return _blocked_project_export_preflight(
                 project_id=project_id,

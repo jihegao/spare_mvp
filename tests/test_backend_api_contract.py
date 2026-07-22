@@ -232,6 +232,40 @@ class RecordingAdapter(SimulationAdapter):
         )
 
 
+class LifecycleBlockingAdapter(RecordingAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.run_scenario_entered = threading.Event()
+        self.release_run_scenario = threading.Event()
+        self.preflight_compile_entered = threading.Event()
+
+    def compile_scenario_with_gate(
+        self,
+        project: dict,
+        model_family: str = "aircraft_support_v1",
+        runtime_config: dict | None = None,
+    ) -> dict:
+        if project.get("projectInfo", {}).get("summary") == "preflight branch":
+            self.preflight_compile_entered.set()
+        return super().compile_scenario_with_gate(
+            project,
+            model_family=model_family,
+            runtime_config=runtime_config,
+        )
+
+    def run_scenario(
+        self,
+        scenario: dict,
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+    ) -> dict[str, dict]:
+        self.run_scenario_entered.set()
+        if not self.release_run_scenario.wait(timeout=5):
+            raise TimeoutError("test did not release the formal run")
+        return super().run_scenario(scenario, output_dir=output_dir, steps=steps, run_id=run_id)
+
+
 class FailingRunAdapter(RecordingAdapter):
     def run_scenario(
         self,
@@ -355,6 +389,133 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(result["issues"][0]["code"], "invalid_clean_project")
         self.assertEqual(result["issues"][0]["field_path"], "Project JSON")
         self.assertEqual(compile_preflight_persistence_counts(self.connection), before)
+
+    def test_experiment_plan_compile_preflight_rejects_embedded_project_id_mismatch(self) -> None:
+        project = small_aircraft_support_project("project-plan-preflight-owner")
+        self.api.save_project(project)
+        branch = copy.deepcopy(project)
+        branch["project_id"] = "different-project"
+        plan = self.api.create_experiment_plan(
+            project["project_id"],
+            {"name": "mismatched branch", "steps": 1, "projectJson": branch},
+        )
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.compile_project_preflight(
+                project["project_id"],
+                experiment_plan_id=plan["experiment_plan_id"],
+            )
+
+        self.assertEqual(ctx.exception.code, "project_plan_mismatch")
+        self.assertEqual(ctx.exception.details["branch_project_id"], "different-project")
+
+    def test_experiment_plan_compile_preflight_uses_snapshot_then_saved_project_fallbacks(self) -> None:
+        snapshot_project = small_aircraft_support_project("project-preflight-snapshot-fallback")
+        self.api.save_project(snapshot_project)
+        snapshot_plan = self.api.create_experiment_plan(
+            snapshot_project["project_id"],
+            {"name": "snapshot fallback", "steps": 1},
+        )
+        snapshot_project["supportActivities"] = []
+        self.api.save_project(snapshot_project)
+
+        snapshot_result = self.api.compile_project_preflight(
+            snapshot_project["project_id"],
+            experiment_plan_id=snapshot_plan["experiment_plan_id"],
+        )
+
+        self.assertEqual(snapshot_result["status"], "compiled")
+
+        saved_project = small_aircraft_support_project("project-preflight-saved-fallback")
+        saved_project["supportActivities"] = []
+        self.api.save_project(saved_project)
+        saved_plan = {
+            "experiment_plan_id": "experiment-plan-without-snapshot",
+            "project_id": saved_project["project_id"],
+            "modeling_snapshot_id": None,
+            "schema_version": "experiment-plan-v0",
+            "project_version": saved_project["project_version"],
+            "status": "draft",
+            "config": {"name": "saved fallback", "steps": 1},
+        }
+        self.repository.upsert_experiment_plan(saved_plan)
+
+        saved_result = self.api.compile_project_preflight(
+            saved_project["project_id"],
+            experiment_plan_id=saved_plan["experiment_plan_id"],
+        )
+
+        self.assertEqual(saved_result["status"], "blocked")
+        self.assertIn("missing_support_activities", {issue["code"] for issue in saved_result["issues"]})
+
+    def test_preflight_waits_for_formal_lifecycle_and_cannot_pollute_input_project_artifact(self) -> None:
+        connection = sqlite3.connect(":memory:", check_same_thread=False)
+        initialize_database(connection)
+        repository = ContractRepository(connection)
+        adapter = LifecycleBlockingAdapter()
+        with tempfile.TemporaryDirectory() as tmp:
+            api = BackendApi(repository, adapter, output_dir=Path(tmp))
+            project = small_aircraft_support_project("project-preflight-lifecycle-lock")
+            api.save_project(project)
+            formal_branch = copy.deepcopy(project)
+            formal_branch["projectInfo"]["summary"] = "formal branch"
+            preflight_branch = copy.deepcopy(project)
+            preflight_branch["projectInfo"]["summary"] = "preflight branch"
+            formal_plan = api.create_experiment_plan(
+                project["project_id"],
+                {"name": "formal", "steps": 1, "projectJson": formal_branch},
+            )
+            preflight_plan = api.create_experiment_plan(
+                project["project_id"],
+                {"name": "preflight", "steps": 1, "projectJson": preflight_branch},
+            )
+            outcomes: dict[str, Any] = {}
+
+            def submit_formal_run() -> None:
+                try:
+                    outcomes["run"] = api.submit_run({
+                        "project_id": project["project_id"],
+                        "experiment_plan_id": formal_plan["experiment_plan_id"],
+                        "model_family": "aircraft_support_v1",
+                        "run_type": "single",
+                    })
+                except BaseException as exc:  # pragma: no cover - assertion reports worker failure
+                    outcomes["run_error"] = exc
+
+            def run_preflight() -> None:
+                try:
+                    outcomes["preflight"] = api.compile_project_preflight(
+                        project["project_id"],
+                        experiment_plan_id=preflight_plan["experiment_plan_id"],
+                    )
+                except BaseException as exc:  # pragma: no cover - assertion reports worker failure
+                    outcomes["preflight_error"] = exc
+
+            run_thread = threading.Thread(target=submit_formal_run)
+            run_thread.start()
+            self.assertTrue(adapter.run_scenario_entered.wait(timeout=5))
+            preflight_thread = threading.Thread(target=run_preflight)
+            preflight_thread.start()
+
+            self.assertFalse(
+                adapter.preflight_compile_entered.wait(timeout=0.2),
+                "preflight entered the shared Adapter while the formal lifecycle held the lock",
+            )
+            adapter.release_run_scenario.set()
+            run_thread.join(timeout=10)
+            preflight_thread.join(timeout=10)
+
+            self.assertFalse(run_thread.is_alive())
+            self.assertFalse(preflight_thread.is_alive())
+            self.assertNotIn("run_error", outcomes)
+            self.assertNotIn("preflight_error", outcomes)
+            self.assertTrue(adapter.preflight_compile_entered.is_set())
+            self.assertEqual(outcomes["preflight"]["status"], "compiled")
+            input_project = json.loads(
+                (Path(tmp) / outcomes["run"]["run_id"] / "input-project.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(input_project["projectInfo"]["summary"], "formal branch")
+        connection.close()
 
     def test_lite_mesa_session_budget_scales_with_execution_waves_and_stays_bounded(self) -> None:
         parallel = _normalize_lite_mesa_analysis_settings({"samples": 24, "parallelCores": 4})

@@ -2272,10 +2272,23 @@ class BackendHttpApiTest(unittest.TestCase):
                     {"config": {"name": "blocked branch", "steps": 1, "projectJson": branch}},
                     auth_token=token,
                 )
+                mismatched_branch = json.loads(json.dumps(project))
+                mismatched_branch["project_id"] = "different-project"
+                mismatched_plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{quote(project['project_id'], safe='')}/experiment-plans",
+                    {"config": {"name": "mismatched branch", "steps": 1, "projectJson": mismatched_branch}},
+                    auth_token=token,
+                )
                 project_route = f"/projects/{quote(project['project_id'], safe='')}/compile-preflight"
                 plan_route = (
                     f"/projects/{quote(project['project_id'], safe='')}/experiment-plans/"
                     f"{quote(plan['experiment_plan_id'], safe='')}/compile-preflight"
+                )
+                mismatched_plan_route = (
+                    f"/projects/{quote(project['project_id'], safe='')}/experiment-plans/"
+                    f"{quote(mismatched_plan['experiment_plan_id'], safe='')}/compile-preflight"
                 )
 
                 unauthenticated = self._json_error(base_url, "POST", project_route, {})
@@ -2306,6 +2319,16 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(issue["field_path"], "supportActivities")
                 self.assertEqual(issue["page"], "保障活动建模")
                 self.assertTrue(issue["suggestion"])
+                mismatch_status, mismatch = self._json_error_with_status(
+                    base_url,
+                    "POST",
+                    mismatched_plan_route,
+                    {},
+                    auth_token=token,
+                )
+                self.assertEqual(mismatch_status, 400)
+                self.assertEqual(mismatch["code"], "project_plan_mismatch")
+                self.assertEqual(mismatch["details"]["branch_project_id"], "different-project")
 
                 missing = self._json_error(
                     base_url,
