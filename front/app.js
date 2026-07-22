@@ -7634,6 +7634,9 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
   const basePath = metric === "mtbf" ? `components.${index}.failureDistribution` : `components.${index}.repairDistribution`;
   const fixedLabel = metric === "mtbf" ? "MTBF" : "MTTR（min）";
   const fixedPath = metric === "mtbf" ? `${basePath}.value` : `components.${index}.meanRepairTimeMinutes`;
+  const fixedValue = metric === "mtbf"
+    ? component?.failureDistribution?.value || component?.failureDistribution?.mean || component?.mtbfHours || ""
+    : getPath(scenario, fixedPath);
   const fieldsByDistribution = {
     指数分布: [{ key: "rate", label: "均值", step: "0.1", mtbfHours: metric === "mtbf" }],
     正态分布: [
@@ -7650,7 +7653,7 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     return `
       <div class="equipment-param-fields">
         <label>${fixedLabel}
-          <input data-path="${fixedPath}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="${metric === "mtbf" ? "0.0001" : "0"}" step="0.1" value="${htmlEscape(getPath(scenario, fixedPath))}" aria-label="${htmlEscape(fixedLabel)}">
+          <input data-path="${fixedPath}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="${metric === "mtbf" ? "0.0001" : "0"}" step="0.1" value="${htmlEscape(fixedValue)}" aria-label="${htmlEscape(fixedLabel)}">
         </label>
       </div>
     `;

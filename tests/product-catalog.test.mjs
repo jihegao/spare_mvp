@@ -124,24 +124,36 @@ test("shared reliability parameters hydrate from the canonical exact product ID 
   assert.equal(project.components[2].repairDistribution, undefined);
 });
 
-test("legacy fixed product MTBF hydrates the distribution value without overwriting an explicit parameter", () => {
+test("fixed product parameters outrank the MTBF compatibility projection and legacy values backfill only when missing", () => {
   const project = {
     products: [
       { id: "legacy", name: "Legacy", mtbfHours: 1200, failureDistribution: { distributionType: "固定值" } },
-      { id: "explicit", name: "Explicit", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: 450 } }
+      { id: "explicit-value", name: "Value", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: 450 } },
+      { id: "explicit-mean", name: "Mean", mtbfHours: 300, failureDistribution: { distributionType: "固定值", mean: 600 } },
+      { id: "value-first", name: "Both", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: 450, mean: 600 } },
+      { id: "invalid-explicit", name: "Invalid", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: -1 } },
+      { id: "non-fixed", name: "Exponential", mtbfHours: 300, failureDistribution: { distributionType: "指数分布", rate: 0.02 } }
     ],
-    components: [
-      { id: "legacy-component", productId: "legacy" },
-      { id: "explicit-component", productId: "explicit" }
-    ]
+    components: ["legacy", "explicit-value", "explicit-mean", "value-first", "invalid-explicit", "non-fixed"]
+      .map((productId) => ({ id: `${productId}-component`, productId }))
   };
 
   normalizeProjectProducts(project);
 
-  assert.equal(project.products[0].failureDistribution.value, 1200);
-  assert.equal(project.components[0].failureDistribution.value, 1200);
-  assert.equal(project.products[1].failureDistribution.value, 450);
-  assert.equal(project.components[1].failureDistribution.value, 450);
+  const products = Object.fromEntries(project.products.map((product) => [product.id, product]));
+  const components = Object.fromEntries(project.components.map((component) => [component.productId, component]));
+  assert.equal(products.legacy.failureDistribution.value, 1200);
+  assert.equal(components.legacy.failureDistribution.value, 1200);
+  assert.equal(products["explicit-value"].mtbfHours, 450);
+  assert.equal(components["explicit-value"].mtbfHours, 450);
+  assert.equal(products["explicit-mean"].mtbfHours, 600);
+  assert.equal(products["explicit-mean"].failureDistribution.value, undefined);
+  assert.equal(components["explicit-mean"].mtbfHours, 600);
+  assert.equal(products["value-first"].mtbfHours, 450);
+  assert.equal(products["invalid-explicit"].mtbfHours, 300);
+  assert.equal(products["invalid-explicit"].failureDistribution.value, -1);
+  assert.equal(products["non-fixed"].mtbfHours, 300);
+  assert.deepEqual(products["non-fixed"].failureDistribution, { distributionType: "指数分布", rate: 0.02 });
   const once = JSON.stringify(project);
   normalizeProjectProducts(project);
   assert.equal(JSON.stringify(project), once);

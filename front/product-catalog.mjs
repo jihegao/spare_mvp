@@ -134,7 +134,7 @@ export function synchronizeProjectProductParameters(project) {
       if (!Object.hasOwn(product, field) && Object.hasOwn(component, field)) product[field] = cloneValue(component[field]);
     }
   }
-  for (const product of products) normalizeLegacyFixedMtbfDistribution(product);
+  for (const product of products) normalizeFixedMtbfRepresentations(product);
   for (const component of components) {
     const product = productsById.get(cleanText(component?.productId));
     if (product) copySharedProductParameters(product, component);
@@ -142,14 +142,26 @@ export function synchronizeProjectProductParameters(project) {
   return project;
 }
 
-function normalizeLegacyFixedMtbfDistribution(product) {
-  const mtbfHours = Number(product?.mtbfHours);
+function normalizeFixedMtbfRepresentations(product) {
   const distribution = product?.failureDistribution;
-  if (!Number.isFinite(mtbfHours) || mtbfHours <= 0) return;
   if (!distribution || typeof distribution !== "object" || Array.isArray(distribution)) return;
   const distributionType = cleanText(distribution.distributionType || distribution.distribution_type).toLocaleLowerCase();
   if (!distributionType.includes("fixed") && !distributionType.includes("固定")) return;
-  if (!Object.hasOwn(distribution, "value") || distribution.value === "") distribution.value = mtbfHours;
+  const fixedParameter = positiveNumberOrNull(distribution.value || distribution.mean);
+  if (fixedParameter !== null) {
+    product.mtbfHours = fixedParameter;
+    return;
+  }
+  const hasExplicitParameter = ["value", "mean"].some((field) => (
+    Object.hasOwn(distribution, field) && distribution[field] !== "" && distribution[field] != null
+  ));
+  const legacyMtbfHours = positiveNumberOrNull(product.mtbfHours);
+  if (!hasExplicitParameter && legacyMtbfHours !== null) distribution.value = legacyMtbfHours;
+}
+
+function positiveNumberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
 }
 
 export function updateSharedProductParameter(project, productId, parameterPath, value) {

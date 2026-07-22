@@ -64,6 +64,14 @@ class SimulationAdapterTest(unittest.TestCase):
             self.adapter._failure_distribution_rate({"distributionType": "固定值", "value": 100}),
             0.01,
         )
+        self.assertAlmostEqual(
+            self.adapter._failure_distribution_rate({"distributionType": "固定值", "mean": 200}),
+            0.005,
+        )
+        self.assertAlmostEqual(
+            self.adapter._failure_distribution_rate({"distributionType": "固定值", "value": 100, "mean": 200}),
+            0.01,
+        )
 
     def test_downtime_projection_maps_four_factor_event_ledger_without_duplicate_ids(self) -> None:
         samples = [

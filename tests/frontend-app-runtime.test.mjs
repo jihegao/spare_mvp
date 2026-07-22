@@ -4011,7 +4011,7 @@ test("shared equipment product parameters cancel without persistence and confirm
       equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35"], quantity: 2 },
       products: [
         { id: "product-engine", name: "共享发动机", mtbfHours: 1200, failureDistribution: { distributionType: "固定值" } },
-        { id: "PRODUCT-ENGINE", name: "大小写不同发动机", mtbfHours: 300, failureDistribution: { distributionType: "固定值" } }
+        { id: "PRODUCT-ENGINE", name: "大小写不同发动机", mtbfHours: 200, failureDistribution: { distributionType: "固定值", mean: 300 } }
       ],
       components: [
         { id: "j15-engine", name: "J-15发动机", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
@@ -4047,7 +4047,8 @@ test("shared equipment product parameters cancel without persistence and confirm
         && body.products?.find((product) => product.id === "product-engine")?.failureDistribution?.value === 1500
     ));
     assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").mtbfHours, 300);
-    assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution.value, 300);
+    assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution.mean, 300);
+    assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution.value, undefined);
     assert.equal(runtime.confirmMessages.length, 2);
   } finally {
     runtime.restore();
