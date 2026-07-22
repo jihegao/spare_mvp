@@ -114,6 +114,8 @@ import {
   equipmentComponentSubtreeIds,
   equipmentComponentsForSelectionModel,
   equipmentKOutOfNQuantity,
+  exponentialFailureDistributionForMtbfHours,
+  exponentialMtbfHours,
   normalizeEquipmentComponentKOutOfN,
   validateEquipmentComponentKOutOfN,
   resolveEquipmentSelectionModel,
@@ -6803,9 +6805,23 @@ function updateSharedEquipmentProductParameter(input) {
   normalizeProjectProducts(scenario);
   const product = projectProductById(scenario, component.productId);
   if (!product) return false;
-  const parameterPath = pathMatch[1];
+  let parameterPath = pathMatch[1];
+  let newValue = parseInput(input);
+  if (input.dataset.equipmentMtbfHours === "true") {
+    const normalizedDistribution = exponentialFailureDistributionForMtbfHours(
+      product.failureDistribution || component.failureDistribution,
+      input.value
+    );
+    if (!normalizedDistribution) {
+      input.setCustomValidity("MTBF 必须为大于 0 的小时数。");
+      input.reportValidity();
+      return true;
+    }
+    input.setCustomValidity("");
+    parameterPath = "failureDistribution";
+    newValue = normalizedDistribution;
+  }
   const oldValue = getPath(product, parameterPath);
-  const newValue = parseInput(input);
   const relatedComponents = componentsSharingProduct(scenario, product.id);
   if (relatedComponents.length > 1) {
     const affected = relatedComponents.map((item) => `${item.aircraftModel || "未指定机型"}-${item.name || item.id || "未命名组件"}`).join("、");
@@ -7614,9 +7630,9 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
   const component = scenario.components?.[index];
   const basePath = metric === "mtbf" ? `components.${index}.failureDistribution` : `components.${index}.repairDistribution`;
   const fixedLabel = metric === "mtbf" ? "MTBF" : "MTTR（min）";
-  const fixedPath = metric === "mtbf" ? `components.${index}.mtbfHours` : `components.${index}.meanRepairTimeMinutes`;
+  const fixedPath = metric === "mtbf" ? `${basePath}.value` : `components.${index}.meanRepairTimeMinutes`;
   const fieldsByDistribution = {
-    指数分布: [{ key: "rate", label: "速率参数", step: "0.0001" }],
+    指数分布: [{ key: "rate", label: "均值", step: "0.1", mtbfHours: metric === "mtbf" }],
     正态分布: [
       { key: "mean", label: "均值", step: "0.1" },
       { key: "variance", label: "方差", step: "0.1" }
@@ -7631,7 +7647,7 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     return `
       <div class="equipment-param-fields">
         <label>${fixedLabel}
-          <input data-path="${fixedPath}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="0" step="0.1" value="${htmlEscape(getPath(scenario, fixedPath))}" aria-label="${htmlEscape(fixedLabel)}">
+          <input data-path="${fixedPath}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="${metric === "mtbf" ? "0.0001" : "0"}" step="0.1" value="${htmlEscape(getPath(scenario, fixedPath))}" aria-label="${htmlEscape(fixedLabel)}">
         </label>
       </div>
     `;
@@ -7640,7 +7656,7 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     <div class="equipment-param-fields">
       ${fields.map((fieldDef) => `
         <label>${fieldDef.label}
-          <input data-path="${basePath}.${fieldDef.key}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="0" step="${fieldDef.step}" value="${htmlEscape(getPath(scenario, `${basePath}.${fieldDef.key}`))}" aria-label="${htmlEscape(fieldDef.label)}">
+          <input data-path="${basePath}.${fieldDef.key}" data-shared-product-component-id="${htmlEscape(component?.id || "")}"${fieldDef.mtbfHours ? " data-equipment-mtbf-hours=\"true\"" : ""} type="number" min="${fieldDef.mtbfHours ? "0.0001" : "0"}" step="${fieldDef.step}" value="${htmlEscape(fieldDef.mtbfHours ? exponentialMtbfHours(component?.failureDistribution) : getPath(scenario, `${basePath}.${fieldDef.key}`))}" aria-label="${htmlEscape(fieldDef.mtbfHours ? "MTBF（h）" : fieldDef.label)}">
         </label>
       `).join("")}
     </div>

@@ -5,6 +5,8 @@ import {
   addEquipmentNodeForSelectionModel,
   buildEquipmentComponentTreeModel,
   deleteEquipmentNodeForSelectionModel,
+  exponentialFailureDistributionForMtbfHours,
+  exponentialMtbfHours,
   equipmentComponentSubtreeIds,
   normalizeEquipmentTreeIntegrityForScenario,
   resolveEquipmentSelectionModel
@@ -46,6 +48,16 @@ test("equipment integrity normalization materializes the real aircraft root and 
   assert.equal(scenario.products.find((product) => product.id === "product-avionics").failureDistribution.distributionType, "正态分布");
   assert.equal(scenario.supportActivities[0].equipmentId, "aircraft-root");
   assert.ok(scenario.products.some((product) => product.id === "product-aircraft-root"));
+});
+
+test("exponential MTBF editor value is persisted as the canonical failure rate", () => {
+  assert.equal(exponentialMtbfHours({ distributionType: "指数分布", rate: 0.008 }), 125);
+  assert.equal(exponentialMtbfHours({ distributionType: "指数分布", parameters: "lambda=0.01" }), 100);
+  assert.deepEqual(
+    exponentialFailureDistributionForMtbfHours({ distributionType: "指数分布", parameters: "lambda=0.01" }, 200),
+    { distributionType: "指数分布", rate: 0.005 }
+  );
+  assert.equal(exponentialFailureDistributionForMtbfHours({ distributionType: "指数分布" }, 0), null);
 });
 
 test("zero-aircraft imported sample add node creates a whole-machine aircraft entry", () => {

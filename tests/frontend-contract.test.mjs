@@ -1595,7 +1595,7 @@ test("equipment system table exposes composition, MTBF and MTTR distribution fie
   assert.match(equipmentSource, /role="combobox"/);
   assert.match(equipmentSource, /equipmentKOutOfNInput\(selectedIndex\)/);
   assert.match(equipmentSource, /可用数量要求k（n中取k）/);
-  assert.match(equipmentSource, /components\.\$\{index\}\.mtbfHours/);
+  assert.match(equipmentSource, /\$\{basePath\}\.value/);
   assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution\.distributionType/);
   assert.match(equipmentSource, /components\.\$\{index\}\.meanRepairTimeMinutes/);
   assert.match(equipmentSource, /components\.\$\{index\}\.repairDistribution\.distributionType/);
@@ -1708,9 +1708,12 @@ test("equipment system table exposes MTBF and MTTR distribution parameter rules"
   for (const label of ["固定值", "指数分布", "正态分布", "均匀分布"]) {
     assert.match(equipmentSource, new RegExp(label));
   }
-  for (const label of ["速率参数", "均值", "方差", "最小值", "最大值"]) {
+  for (const label of ["均值", "方差", "最小值", "最大值"]) {
     assert.match(equipmentSource, new RegExp(label));
   }
+  assert.doesNotMatch(equipmentSource, /速率参数/);
+  assert.match(equipmentSource, /data-equipment-mtbf-hours=/);
+  assert.match(equipmentSource, /exponentialFailureDistributionForMtbfHours/);
   assert.doesNotMatch(equipmentSource, /三角分布/);
   assert.doesNotMatch(equipmentSource, /威布尔分布/);
   assert.doesNotMatch(equipmentSource, /模数/);
@@ -1719,12 +1722,13 @@ test("equipment system table exposes MTBF and MTTR distribution parameter rules"
   assert.match(equipmentSource, /equipmentDistributionType\(component\.failureDistribution\?\.distributionType, "mtbf"\)/);
   assert.match(equipmentSource, /equipmentDistributionType\(component\.repairDistribution\?\.distributionType, "mttr"\)/);
   assert.match(equipmentSource, /metric === "mtbf" \? "指数分布" : "固定值"/);
-  assert.match(equipmentSource, /fixedPath = metric === "mtbf" \? `components\.\$\{index\}\.mtbfHours` : `components\.\$\{index\}\.meanRepairTimeMinutes`/);
+  assert.match(equipmentSource, /fixedPath = metric === "mtbf" \? `\$\{basePath\}\.value` : `components\.\$\{index\}\.meanRepairTimeMinutes`/);
+  assert.match(equipmentSource, /min="\$\{metric === "mtbf" \? "0\.0001" : "0"\}"/);
   assert.match(equipmentSource, /aria-label="\$\{htmlEscape\(fixedLabel\)\}"/);
   assert.doesNotMatch(equipmentSource, /固定值使用 \$\{fixedLabel\}/);
   assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution/);
   assert.match(equipmentSource, /components\.\$\{index\}\.repairDistribution/);
-  assert.match(equipmentSource, /type="number" min="0" step="\$\{fieldDef\.step\}"/);
+  assert.match(equipmentSource, /type="number" min="\$\{fieldDef\.mtbfHours \? "0\.0001" : "0"\}" step="\$\{fieldDef\.step\}"/);
   assert.doesNotMatch(equipmentSource, /组件属性表/);
   assert.doesNotMatch(equipmentSource, /飞机状态数据表/);
   assert.doesNotMatch(equipmentSource, /可出动标识/);
