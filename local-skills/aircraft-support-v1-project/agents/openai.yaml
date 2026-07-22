@@ -1,4 +1,0 @@
-interface:
-  display_name: "Aircraft Support V1 Project"
-  short_description: "按干净 Project JSON 独立解释、运行并同步模型结构"
-  default_prompt: "Use $aircraft-support-v1-project to explain or run a current Project JSON, and synchronize the skill whenever its modeling structure changes."

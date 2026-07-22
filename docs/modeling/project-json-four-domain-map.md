@@ -1,6 +1,6 @@
 # Project JSON Four-Domain Map
 
-Use this map when explaining aircraft_support_v1 Project JSON from modeling data.
+Use this map when explaining `aircraft_support_v1` Project JSON from modeling data. The schemas in `contracts/`, `ProjectJsonExporter`, and `SimulationAdapter` are authoritative; this document summarizes field ownership and compatibility behavior without defining another schema or compiler.
 
 ## 任务
 
@@ -20,7 +20,7 @@ Interpretation:
 - Basic missions describe sortie/task units and default durations.
 - Composite tasks group basic mission items into waves or task packages.
 - Periodic tasks describe calendar or repeat rules that create mission instances.
-- Periodic profile lists persist the month-to-week and year-to-month planning composition. Empty strings in their reference arrays mean “not configured” and must not be replaced with another profile ID; these lists support authoring and summaries, while runtime task generation still uses `missionProfile.periodicTasks[]`.
+- Periodic tasks are the reusable week-profile definitions. `periodicProfileLists` is behavior-driving composition input: the formal compiler selects the highest configured level (`year`, then `month`, then `week`) and expands referenced periodic and composite tasks into the compiled schedule with their week offsets. Empty reference slots mean “not configured” and must not be replaced with another profile ID.
 - Mission phases now belong to each basic mission. Airports provide context for timing/location. Root mission phases and mission areas are legacy fallback fields only.
 
 ## 装备
@@ -41,7 +41,7 @@ Interpretation:
 - `components[].parentId` is a strict component-ID reference. When child rows use `aircraft-root`, the Project must contain one real parentless `components[]` row with that ID and a whole-aircraft product; hiding it in the authoring table does not make it virtual. Non-empty `supportActivities[].equipmentId` values follow the same component-ID contract.
 - Clean Project JSON uses `failureDistribution`, `repairDistribution`, `kOutOfN`, and `productType`; legacy scalar failure, life-limit, RMS, spare type, and RBD fields should not be reintroduced to make clean data run.
 - Failure-distribution parameters may use the legacy `parameters` string or current editor-owned fields: exponential `rate`/`lambda`, normal `mean` (plus optional variance), uniform `min`/`max`, and fixed `value`/`mean`. If a historical distribution label conflicts with an unambiguous parameter family, migrate the label instead of discarding the values.
-- The independent compiler keys component repair requirements by `productId` and uses `products[].name` only as a display label; it does not derive or restore `spareType`.
+- The formal compiler keys component repair requirements by `productId` and uses `products[].name` only as a display label; it does not derive or restore `spareType`.
 
 ## 保障组织
 
