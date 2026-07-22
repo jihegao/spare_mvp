@@ -1110,9 +1110,10 @@ test("buildBackendProjectJson persists shared reliability parameters on products
 
   assert.equal(projectJson.products[0].mtbfHours, 1200);
   assert.equal(projectJson.products[0].meanRepairTimeMinutes, 90);
+  assert.deepEqual(projectJson.products[0].failureDistribution, { distributionType: "固定值", value: 1200 });
   assert.equal(projectJson.components[0].mtbfHours, 1200);
   assert.equal(projectJson.components[0].meanRepairTimeMinutes, 90);
-  assert.deepEqual(projectJson.components[0].failureDistribution, { distributionType: "固定值" });
+  assert.deepEqual(projectJson.components[0].failureDistribution, { distributionType: "固定值", value: 1200 });
   assert.deepEqual(projectJson.components[1].repairDistribution, { distributionType: "固定值" });
 });
 

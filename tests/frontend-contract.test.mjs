@@ -1723,6 +1723,9 @@ test("equipment system table exposes MTBF and MTTR distribution parameter rules"
   assert.match(equipmentSource, /equipmentDistributionType\(component\.repairDistribution\?\.distributionType, "mttr"\)/);
   assert.match(equipmentSource, /metric === "mtbf" \? "指数分布" : "固定值"/);
   assert.match(equipmentSource, /fixedPath = metric === "mtbf" \? `\$\{basePath\}\.value` : `components\.\$\{index\}\.meanRepairTimeMinutes`/);
+  assert.match(equipmentSource, /Object\.hasOwn\(distribution, "value"\).*distribution\.value \?\? ""/);
+  assert.match(equipmentSource, /Object\.hasOwn\(distribution, "mean"\).*distribution\.mean \?\? ""/);
+  assert.match(equipmentSource, /return component\?\.mtbfHours \?\? ""/);
   assert.match(equipmentSource, /min="\$\{metric === "mtbf" \? "0\.0001" : "0"\}"/);
   assert.match(equipmentSource, /aria-label="\$\{htmlEscape\(fixedLabel\)\}"/);
   assert.doesNotMatch(equipmentSource, /固定值使用 \$\{fixedLabel\}/);

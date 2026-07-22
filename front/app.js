@@ -6831,6 +6831,9 @@ function updateSharedEquipmentProductParameter(input) {
     if (!confirmed) return true;
   }
   updateSharedProductParameter(scenario, product.id, parameterPath, newValue);
+  if (input.dataset.equipmentMtbfHours === "true" || parameterPath === "failureDistribution.value") {
+    updateSharedProductParameter(scenario, product.id, "mtbfHours", Number(input.value));
+  }
   updatePreviewResultsThroughApiClient();
   markProjectDraftChanged();
   return true;
@@ -7626,11 +7629,21 @@ function equipmentDistributionType(value, metric = "mtbf") {
   return metric === "mtbf" ? "指数分布" : "固定值";
 }
 
+function fixedMtbfDisplayValue(component) {
+  const distribution = component?.failureDistribution;
+  if (distribution && Object.hasOwn(distribution, "value")) return distribution.value ?? "";
+  if (distribution && Object.hasOwn(distribution, "mean")) return distribution.mean ?? "";
+  return component?.mtbfHours ?? "";
+}
+
 function renderEquipmentDistributionParameters(index, metric, distributionType) {
   const component = scenario.components?.[index];
   const basePath = metric === "mtbf" ? `components.${index}.failureDistribution` : `components.${index}.repairDistribution`;
   const fixedLabel = metric === "mtbf" ? "MTBF" : "MTTR（min）";
   const fixedPath = metric === "mtbf" ? `${basePath}.value` : `components.${index}.meanRepairTimeMinutes`;
+  const fixedValue = metric === "mtbf"
+    ? fixedMtbfDisplayValue(component)
+    : getPath(scenario, fixedPath);
   const fieldsByDistribution = {
     指数分布: [{ key: "rate", label: "均值", step: "0.1", mtbfHours: metric === "mtbf" }],
     正态分布: [
@@ -7647,7 +7660,7 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     return `
       <div class="equipment-param-fields">
         <label>${fixedLabel}
-          <input data-path="${fixedPath}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="${metric === "mtbf" ? "0.0001" : "0"}" step="0.1" value="${htmlEscape(getPath(scenario, fixedPath))}" aria-label="${htmlEscape(fixedLabel)}">
+          <input data-path="${fixedPath}" data-shared-product-component-id="${htmlEscape(component?.id || "")}" type="number" min="${metric === "mtbf" ? "0.0001" : "0"}" step="0.1" value="${htmlEscape(fixedValue)}" aria-label="${htmlEscape(fixedLabel)}">
         </label>
       </div>
     `;

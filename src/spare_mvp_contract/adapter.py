@@ -1088,9 +1088,15 @@ class SimulationAdapter:
             if minimum >= 0 and maximum >= minimum and minimum + maximum > 0:
                 return (2.0 / (minimum + maximum)) * multiplier
         if "fixed" in distribution_type or "固定" in distribution_type:
-            value = self._non_negative_number(distribution.get("value") or distribution.get("mean"), 0.0)
-            if value > 0:
-                return (1.0 / value) * multiplier
+            if "value" in distribution:
+                value = self._optional_positive_number(distribution.get("value"))
+            elif "mean" in distribution:
+                value = self._optional_positive_number(distribution.get("mean"))
+            else:
+                value = None
+            if value is None:
+                return None
+            return (1.0 / value) * multiplier
         return None
 
     def _distribution_parameters(self, parameters: str) -> dict[str, float]:

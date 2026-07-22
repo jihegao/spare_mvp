@@ -124,6 +124,60 @@ test("shared reliability parameters hydrate from the canonical exact product ID 
   assert.equal(project.components[2].repairDistribution, undefined);
 });
 
+test("fixed product parameters outrank the MTBF compatibility projection and legacy values backfill only when missing", () => {
+  const project = {
+    products: [
+      { id: "legacy", name: "Legacy", mtbfHours: 1200, failureDistribution: { distributionType: "固定值" } },
+      { id: "explicit-value", name: "Value", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: 450 } },
+      { id: "explicit-mean", name: "Mean", mtbfHours: 300, failureDistribution: { distributionType: "固定值", mean: 600 } },
+      { id: "value-first", name: "Both", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: 450, mean: 600 } },
+      { id: "value-negative", name: "Negative value", mtbfHours: 301, failureDistribution: { distributionType: "fixed", value: -1 } },
+      { id: "value-zero", name: "Zero value", mtbfHours: 302, failureDistribution: { distributionType: "fixed", value: 0 } },
+      { id: "value-null", name: "Null value", mtbfHours: 303, failureDistribution: { distributionType: "fixed", value: null, mean: 603 } },
+      { id: "mean-negative", name: "Negative mean", mtbfHours: 304, failureDistribution: { distributionType: "fixed", mean: -1 } },
+      { id: "mean-zero", name: "Zero mean", mtbfHours: 305, failureDistribution: { distributionType: "fixed", mean: 0 } },
+      { id: "mean-null", name: "Null mean", mtbfHours: 306, failureDistribution: { distributionType: "fixed", mean: null } },
+      { id: "non-fixed", name: "Exponential", mtbfHours: 300, failureDistribution: { distributionType: "指数分布", rate: 0.02 } }
+    ],
+    components: [
+      "legacy", "explicit-value", "explicit-mean", "value-first", "value-negative", "value-zero", "value-null",
+      "mean-negative", "mean-zero", "mean-null", "non-fixed"
+    ]
+      .map((productId) => ({ id: `${productId}-component`, productId }))
+  };
+
+  normalizeProjectProducts(project);
+
+  const products = Object.fromEntries(project.products.map((product) => [product.id, product]));
+  const components = Object.fromEntries(project.components.map((component) => [component.productId, component]));
+  assert.equal(products.legacy.failureDistribution.value, 1200);
+  assert.equal(components.legacy.failureDistribution.value, 1200);
+  assert.equal(products["explicit-value"].mtbfHours, 450);
+  assert.equal(components["explicit-value"].mtbfHours, 450);
+  assert.equal(products["explicit-mean"].mtbfHours, 600);
+  assert.equal(products["explicit-mean"].failureDistribution.value, undefined);
+  assert.equal(components["explicit-mean"].mtbfHours, 600);
+  assert.equal(products["value-first"].mtbfHours, 450);
+  assert.equal(products["value-negative"].mtbfHours, 301);
+  assert.equal(products["value-negative"].failureDistribution.value, -1);
+  assert.equal(products["value-zero"].mtbfHours, 302);
+  assert.equal(products["value-zero"].failureDistribution.value, 0);
+  assert.equal(products["value-null"].mtbfHours, 303);
+  assert.equal(products["value-null"].failureDistribution.value, null);
+  assert.equal(products["value-null"].failureDistribution.mean, 603);
+  assert.equal(products["mean-negative"].mtbfHours, 304);
+  assert.equal(products["mean-negative"].failureDistribution.mean, -1);
+  assert.equal(products["mean-zero"].mtbfHours, 305);
+  assert.equal(products["mean-zero"].failureDistribution.mean, 0);
+  assert.equal(products["mean-null"].mtbfHours, 306);
+  assert.equal(products["mean-null"].failureDistribution.mean, null);
+  assert.equal(products["non-fixed"].mtbfHours, 300);
+  assert.deepEqual(products["non-fixed"].failureDistribution, { distributionType: "指数分布", rate: 0.02 });
+  const once = JSON.stringify(project);
+  normalizeProjectProducts(project);
+  assert.equal(JSON.stringify(project), once);
+});
+
 test("legacy component parameters seed a product once and canonical product values win conflicts", () => {
   const project = {
     products: [{ id: "product-shared", name: "共享产品" }],

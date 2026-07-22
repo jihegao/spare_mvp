@@ -4011,7 +4011,7 @@ test("shared equipment product parameters cancel without persistence and confirm
       equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35"], quantity: 2 },
       products: [
         { id: "product-engine", name: "共享发动机", mtbfHours: 1200, failureDistribution: { distributionType: "固定值" } },
-        { id: "PRODUCT-ENGINE", name: "大小写不同发动机", mtbfHours: 300, failureDistribution: { distributionType: "固定值" } }
+        { id: "PRODUCT-ENGINE", name: "大小写不同发动机", mtbfHours: 200, failureDistribution: { distributionType: "固定值", mean: 300 } }
       ],
       components: [
         { id: "j15-engine", name: "J-15发动机", aircraftModel: "J-15", parentId: "aircraft-root", productId: "product-engine", productType: "LRU", quantity: 1 },
@@ -4025,7 +4025,7 @@ test("shared equipment product parameters cancel without persistence and confirm
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
     await runtime.change("[data-path]", {
-      path: "components.0.mtbfHours",
+      path: "components.0.failureDistribution.value",
       sharedProductComponentId: "j15-engine"
     }, { value: "1500", type: "number" });
     assert.match(runtime.confirmMessages[0], /J-15-J-15发动机.*J-35-J-35发动机/);
@@ -4035,16 +4035,20 @@ test("shared equipment product parameters cancel without persistence and confirm
     const cancelledSave = await waitForProjectSave(runtime, (body) => body.products?.some((product) => product.id === "product-engine"));
     assert.equal(cancelledSave.products.find((product) => product.id === "product-engine").mtbfHours, 1200);
     assert.equal(cancelledSave.components.find((component) => component.id === "j15-engine").mtbfHours, 1200);
+    assert.equal(cancelledSave.products.find((product) => product.id === "product-engine").failureDistribution.value, 1200);
 
     await runtime.change("[data-path]", {
-      path: "components.0.mtbfHours",
+      path: "components.0.failureDistribution.value",
       sharedProductComponentId: "j15-engine"
     }, { value: "1500", type: "number" });
     await runtime.click("[data-project-draft-save]");
     savedProject = await waitForProjectSave(runtime, (body) => (
       body.products?.find((product) => product.id === "product-engine")?.mtbfHours === 1500
+        && body.products?.find((product) => product.id === "product-engine")?.failureDistribution?.value === 1500
     ));
     assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").mtbfHours, 300);
+    assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution.mean, 300);
+    assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution.value, undefined);
     assert.equal(runtime.confirmMessages.length, 2);
   } finally {
     runtime.restore();
@@ -4054,9 +4058,63 @@ test("shared equipment product parameters cancel without persistence and confirm
   try {
     await rehydrated.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await rehydrated.setHash("feature=spare-planning-equipment-system");
-    await waitForRuntimeHtml(rehydrated, /data-path="components\.0\.mtbfHours"[^>]*value="1500"/, "canonical product MTBF should rehydrate into the component row");
+    await waitForRuntimeHtml(rehydrated, /data-path="components\.0\.failureDistribution\.value"[^>]*value="1500"/, "canonical product MTBF should rehydrate into the component row");
   } finally {
     rehydrated.restore();
+  }
+});
+
+test("fixed MTBF inputs preserve explicit invalid value and mean precedence on rehydrate", async () => {
+  const products = [
+    { id: "value-negative", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", value: -1 } },
+    { id: "value-zero", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", value: 0 } },
+    { id: "value-null", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", value: null, mean: 1400 } },
+    { id: "mean-zero", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", mean: 0 } },
+    { id: "mean-null", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", mean: null } },
+    { id: "legacy-scalar", mtbfHours: 1300, failureDistribution: { distributionType: "固定值" } }
+  ].map((product) => ({ ...product, name: product.id }));
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      products,
+      components: products.map((product, index) => ({
+        id: `${product.id}-component`,
+        name: product.name,
+        aircraftModel: "J-15",
+        parentId: "aircraft-root",
+        productId: product.id,
+        productType: "LRU",
+        quantity: 1,
+        sortOrder: index
+      }))
+    })
+  });
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    const fixedInput = (index, value) => new RegExp(
+      `data-path="components\\.${index}\\.failureDistribution\\.value"[^>]*value="${value}"`
+    );
+    const displayCases = [
+      ["value-negative", 0, "-1"],
+      ["value-zero", 1, "0"],
+      ["value-null", 2, ""],
+      ["mean-zero", 3, "0"],
+      ["mean-null", 4, ""],
+      ["legacy-scalar", 5, "1300"]
+    ];
+    for (const [productId, index, value] of displayCases) {
+      await runtime.click("[data-select-equipment-component]", {
+        selectEquipmentComponent: `${productId}-component`
+      });
+      assert.match(runtime.appNode.innerHTML, fixedInput(index, value));
+    }
+    await runtime.click("[data-select-equipment-component]", {
+      selectEquipmentComponent: "value-null-component"
+    });
+    assert.doesNotMatch(runtime.appNode.innerHTML, fixedInput(2, "1400"));
+  } finally {
+    runtime.restore();
   }
 });
 

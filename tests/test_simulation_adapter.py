@@ -64,6 +64,48 @@ class SimulationAdapterTest(unittest.TestCase):
             self.adapter._failure_distribution_rate({"distributionType": "固定值", "value": 100}),
             0.01,
         )
+        self.assertAlmostEqual(
+            self.adapter._failure_distribution_rate({"distributionType": "固定值", "mean": 200}),
+            0.005,
+        )
+        self.assertAlmostEqual(
+            self.adapter._failure_distribution_rate({"distributionType": "固定值", "value": 100, "mean": 200}),
+            0.01,
+        )
+        for invalid_value in (None, 0, -1):
+            with self.subTest(invalid_value=invalid_value):
+                self.assertIsNone(
+                    self.adapter._failure_distribution_rate({
+                        "distributionType": "固定值",
+                        "value": invalid_value,
+                        "mean": 200,
+                    })
+                )
+
+    def test_aircraft_support_v1_compile_gate_keeps_explicit_invalid_fixed_value_fail_closed(self) -> None:
+        for invalid_value in (None, 0, -1):
+            with self.subTest(invalid_value=invalid_value):
+                project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+                project["components"][1]["failureDistribution"] = {
+                    "distributionType": "固定值",
+                    "value": invalid_value,
+                    "mean": 200,
+                }
+
+                result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+                self.assertEqual(result["status"], "blocked")
+                self.assertIsNone(result["scenario"])
+                self.assertIn(
+                    {
+                        "code": "invalid_component_failure_distribution",
+                        "field_path": "components[1].failureDistribution",
+                    },
+                    [
+                        {"code": issue["code"], "field_path": issue["field_path"]}
+                        for issue in result["issues"]
+                    ],
+                )
 
     def test_downtime_projection_maps_four_factor_event_ledger_without_duplicate_ids(self) -> None:
         samples = [

@@ -134,11 +134,36 @@ export function synchronizeProjectProductParameters(project) {
       if (!Object.hasOwn(product, field) && Object.hasOwn(component, field)) product[field] = cloneValue(component[field]);
     }
   }
+  for (const product of products) normalizeFixedMtbfRepresentations(product);
   for (const component of components) {
     const product = productsById.get(cleanText(component?.productId));
     if (product) copySharedProductParameters(product, component);
   }
   return project;
+}
+
+function normalizeFixedMtbfRepresentations(product) {
+  const distribution = product?.failureDistribution;
+  if (!distribution || typeof distribution !== "object" || Array.isArray(distribution)) return;
+  const distributionType = cleanText(distribution.distributionType || distribution.distribution_type).toLocaleLowerCase();
+  if (!distributionType.includes("fixed") && !distributionType.includes("固定")) return;
+  if (Object.hasOwn(distribution, "value")) {
+    const value = positiveNumberOrNull(distribution.value);
+    if (value !== null) product.mtbfHours = value;
+    return;
+  }
+  if (Object.hasOwn(distribution, "mean")) {
+    const mean = positiveNumberOrNull(distribution.mean);
+    if (mean !== null) product.mtbfHours = mean;
+    return;
+  }
+  const legacyMtbfHours = positiveNumberOrNull(product.mtbfHours);
+  if (legacyMtbfHours !== null) distribution.value = legacyMtbfHours;
+}
+
+function positiveNumberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
 }
 
 export function updateSharedProductParameter(project, productId, parameterPath, value) {
