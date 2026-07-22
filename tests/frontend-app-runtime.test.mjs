@@ -4940,6 +4940,43 @@ test("operations support activity selection adds an existing basic definition wi
   }
 });
 
+test("selecting a basic activity does not materialize three implicit operations phase rows", async () => {
+  const projectId = "operations-selection-no-implicit-phases";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivities[0].planType = "使用保障方案";
+  delete projectJson.supportActivities[0].planGroupId;
+  projectJson.supportActivityJobs.push({
+    activityCode: "BA-002",
+    workName: "飞行后检查",
+    durationMinutes: 12
+  });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "不隐式创建三阶段活动")]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-operations-support-activity");
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
+    await runtime.click("[data-support-activity-job-add]", { supportActivityJobAdd: "ops_postflight" });
+    await runtime.click("[data-support-activity-job-template]", {
+      supportActivityJobTemplate: "ops_postflight",
+      basicActivityKey: "unlinked:BA-002"
+    });
+    await runtime.click("[data-project-draft-save]");
+
+    const saved = await waitForProjectSave(runtime, (body) => (
+      body.supportActivities?.length === 1
+      && body.supportActivities[0]?.activityCodes?.join(",") === "BA-001,BA-002"
+    ), "expected basic activity selection to reuse the existing plan without implicit phase rows");
+    assert.equal(saved.supportActivities[0].id, "ops-runtime-1");
+    assert.equal(saved.supportActivities.some((activity) => String(activity.id || "").startsWith("ops-support-")), false);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("basic support activity scope edits persist on the selected top-level job", async () => {
   const projectJson = createRuntimeProjectJson({
     equipment: { wholeMachineModels: ["J-15", "J-35"] }

@@ -299,13 +299,12 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(settings["sessionTimeoutSeconds"], 300)
         self.assertNotIn("maxTimeWindow", _normalize_lite_mesa_analysis_settings({"maxTimeWindow": 1}))
 
-    def test_save_project_accepts_committed_case_large_after_legacy_export_normalization(self) -> None:
-        legacy = json.loads((REPO_ROOT / "exports" / "project-case-large.json").read_text(encoding="utf-8"))
-        clean = export_project_json(legacy, target="aircraft_support_v1")
+    def test_save_project_accepts_committed_case_large_template_directly(self) -> None:
+        project = json.loads((REPO_ROOT / "exports" / "project-case-large.json").read_text(encoding="utf-8"))
 
-        saved = self.api.save_project(clean)
+        saved = self.api.save_project(project)
 
-        self.assertEqual(saved["project_id"], legacy["project_id"])
+        self.assertEqual(saved["project_id"], project["project_id"])
 
     def test_project_compile_preflight_uses_formal_gate_without_persistence(self) -> None:
         project = small_aircraft_support_project("project-compile-preflight-ready")

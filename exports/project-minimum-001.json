@@ -1,0 +1,774 @@
+{
+  "activeModule": "sparePlanning",
+  "airports": [],
+  "basicMissions": [
+    {
+      "advanceNoticeMinutes": 60,
+      "basicTaskName": "巡逻任务",
+      "cancelMinutes": 20,
+      "equipmentQuantity": 1,
+      "equipmentType": "J-15",
+      "id": "BM-CV-01",
+      "minRequiredSorties": 1,
+      "missionId": "BM-CV-01",
+      "missionPhases": [
+        {
+          "id": "phase-alert",
+          "limitHours": 1,
+          "name": "出航",
+          "phaseRatio": 0.3,
+          "state": "idle",
+          "transitionCondition": "任务波次触发"
+        },
+        {
+          "id": "phase-prep",
+          "limitHours": 2,
+          "name": "任务",
+          "phaseRatio": 0.4,
+          "state": "preparing",
+          "transitionCondition": "保障完成"
+        },
+        {
+          "id": "phase-sortie",
+          "limitHours": 4,
+          "name": "返航",
+          "phaseRatio": 0.3,
+          "state": "sortie",
+          "transitionCondition": "任务完成或故障"
+        }
+      ],
+      "name": "巡逻任务",
+      "startHour": 1,
+      "successPoint": 0.75,
+      "supportActivityName": "典型保障方案",
+      "taskArea": "巡逻区",
+      "taskDurationMinutes": 180,
+      "taskNo": "P01"
+    }
+  ],
+  "combatUnit": {
+    "members": [
+      {
+        "aircraftNo": "J15-101",
+        "airport": "A",
+        "model": "J-15",
+        "preLifeCalendarDays": 200,
+        "preLifeFlightHours": 14,
+        "preLifeTakeoffLandingCount": 20,
+        "status": "执行"
+      }
+    ],
+    "quantity": 1
+  },
+  "components": [
+    {
+      "aircraftModel": "J-15",
+      "failureDistribution": {
+        "distributionType": "指数分布",
+        "parameters": "lambda=0.055",
+        "rate": 20
+      },
+      "id": "j15-engine",
+      "kOutOfN": {
+        "enabled": true,
+        "k": 1,
+        "n": 2
+      },
+      "name": "发动机",
+      "parentId": "aircraft-root",
+      "productId": "product-j15-engine",
+      "productType": "LRU",
+      "quantity": 2,
+      "specialRepairProfile": {
+        "repairTimeMinutes": 220
+      }
+    },
+    {
+      "aircraftModel": "J-15",
+      "failureDistribution": {
+        "distributionType": "正态分布",
+        "parameters": "mean=125, sigma=14",
+        "rate": 30
+      },
+      "id": "j15-avionics",
+      "kOutOfN": {
+        "enabled": false,
+        "k": 1,
+        "n": 1
+      },
+      "name": "航电系统",
+      "parentId": "aircraft-root",
+      "productId": "product-j15-avionics",
+      "productType": "LRU",
+      "quantity": 1,
+      "specialRepairProfile": {
+        "repairTimeMinutes": 150
+      }
+    },
+    {
+      "aircraftModel": "J-15",
+      "id": "aircraft-root",
+      "kOutOfN": {
+        "enabled": false,
+        "k": 1,
+        "n": 1
+      },
+      "name": "J-15（整机）",
+      "productId": "product-aircraft-root",
+      "productType": "whole",
+      "quantity": 1
+    }
+  ],
+  "equipment": {
+    "aircraftTypes": [
+      {
+        "id": "aircraft-type-j-15",
+        "model": "J-15",
+        "name": "J-15"
+      }
+    ],
+    "model": "J-15",
+    "wholeMachineModels": [
+      "J-15"
+    ]
+  },
+  "missionProfile": {
+    "compositeTasks": [
+      {
+        "id": "composite-day-cap",
+        "name": "典型日剖面",
+        "priority": 1,
+        "taskItems": [
+          {
+            "basicMissionId": "BM-CV-01",
+            "basicTaskName": "巡逻任务",
+            "dailyRepeatCount": 4,
+            "equipmentType": "J-15",
+            "firstWaveTime": "06:00",
+            "groupName": "A",
+            "intervalHours": 5
+          }
+        ]
+      }
+    ],
+    "id": "mission-profile-day-night",
+    "name": "日夜间任务剖面",
+    "periodicProfileLists": {
+      "month": [
+        {
+          "id": "month-default",
+          "name": "常规月",
+          "weekProfileIds": [
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ],
+      "week": [
+        {
+          "id": "periodic-carrier-day-night",
+          "name": "1天任务"
+        }
+      ],
+      "year": [
+        {
+          "id": "year-default",
+          "monthProfileIds": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "name": "基准年度"
+        }
+      ]
+    },
+    "periodicTasks": [
+      {
+        "compositeTaskIds": [
+          "composite-day-cap"
+        ],
+        "compositeTasks": [
+          {
+            "compositeTaskId": "composite-day-cap",
+            "weekIndex": 1,
+            "weekday": "mondayCompositeTaskId"
+          }
+        ],
+        "cycleDays": 7.0,
+        "id": "periodic-carrier-day-night",
+        "name": "1天任务",
+        "repeatWeeks": 1.0
+      }
+    ],
+    "profileId": "MP-CV-01",
+    "sourceImportId": "import-carrier-day-night-001"
+  },
+  "modelingImportValidation": {
+    "disabledDomains": [],
+    "importId": "import-carrier-day-night-001",
+    "usedTables": {
+      "equipmentAssets": true,
+      "missionProfiles": true,
+      "supportActivities": true,
+      "supportOrganization": true,
+      "supportResources": true,
+      "transportPolicies": true
+    },
+    "warnings": []
+  },
+  "products": [
+    {
+      "id": "product-aircraft-root",
+      "model": "舰载机",
+      "name": "舰载机"
+    },
+    {
+      "id": "product-j15-engine",
+      "model": "发动机",
+      "name": "发动机"
+    },
+    {
+      "id": "product-j15-engine-control",
+      "kind": "LRU",
+      "model": "发动机控制模块",
+      "name": "发动机控制模块"
+    },
+    {
+      "id": "product-j15-avionics",
+      "model": "航电系统",
+      "name": "航电系统"
+    },
+    {
+      "id": "product-j15-radar",
+      "kind": "LRU",
+      "model": "雷达 LRU",
+      "name": "雷达 LRU"
+    },
+    {
+      "id": "product-j15-hydraulic",
+      "kind": "LRU",
+      "model": "液压系统",
+      "name": "液压系统"
+    },
+    {
+      "id": "product-j35-engine",
+      "kind": "LRU",
+      "model": "发动机",
+      "name": "发动机"
+    },
+    {
+      "id": "product-j35-avionics",
+      "kind": "LRU",
+      "model": "航电系统",
+      "name": "航电系统"
+    },
+    {
+      "id": "product-j35-mission-computer",
+      "kind": "SRU",
+      "model": "任务计算机模块",
+      "name": "任务计算机模块"
+    },
+    {
+      "id": "product-j35-hydraulic",
+      "kind": "LRU",
+      "model": "液压系统",
+      "name": "液压系统"
+    },
+    {
+      "id": "product-j-15-j15-engine-control-node-11",
+      "kind": "LRU",
+      "model": "新增子系统1",
+      "name": "新增子系统1"
+    },
+    {
+      "id": "product-j-15-j15-engine-node-5",
+      "kind": "LRU",
+      "model": "j-15-j15-engine-node-5",
+      "name": "新增子系统1"
+    }
+  ],
+  "projectInfo": {
+    "baseCode": "MINIMUM-001",
+    "isTemplate": true,
+    "is_template": true,
+    "name": "最小案例",
+    "sourceProjectId": "project-carrier-day-night",
+    "summary": "单机单任务测试"
+  },
+  "project_id": "project-template-minimum-001",
+  "project_version": "import-v1",
+  "scenarioId": "template-minimum-001",
+  "schema_version": "project-v0",
+  "supportActivities": [
+    {
+      "activityCodes": [
+        "OPS-001",
+        "OPS-002"
+      ],
+      "activityName": "典型保障方案",
+      "activityType": "飞行前保障",
+      "aircraftModel": "J-15",
+      "durationHours": 1,
+      "id": "preflight",
+      "maxWorkTimeRefMinutes": 60,
+      "planType": "使用保障方案",
+      "predecessors": {
+        "OPS-001": [],
+        "OPS-002": [
+          "OPS-001"
+        ]
+      },
+      "priority": 1,
+      "resourceId": "support-node-3"
+    },
+    {
+      "activityCodes": [
+        "REP-001",
+        "REP-002"
+      ],
+      "activityName": "航电模块故障修复方案",
+      "activityType": "修复性维修",
+      "aircraftModel": "J-15",
+      "durationHours": 3,
+      "id": "corrective",
+      "maintenanceMethods": [
+        "non_replacement"
+      ],
+      "planType": "修复性维修方案",
+      "predecessors": {
+        "REP-001": [],
+        "REP-002": [
+          "REP-001"
+        ]
+      },
+      "priority": 1,
+      "replacementRatio": 0,
+      "resourceId": "support-node-3"
+    },
+    {
+      "activityCodes": [
+        "PM-001",
+        "PM-002"
+      ],
+      "activityName": "50小时舰载机定检",
+      "activityType": "预防性维修",
+      "calendarDayInterval": 30,
+      "durationHours": 2,
+      "equipmentId": "aircraft-root",
+      "id": "preventive",
+      "maintenanceMethods": [
+        "non_replacement"
+      ],
+      "planType": "预防性维修方案",
+      "plannedDowntimeHours": 2,
+      "predecessors": {
+        "PM-001": [],
+        "PM-002": [
+          "PM-001"
+        ]
+      },
+      "priority": 2,
+      "replacementRatio": 0,
+      "resourceId": "support-node-3",
+      "runHourInterval": 50,
+      "takeoffLandingInterval": 6
+    },
+    {
+      "activityCodes": [],
+      "activityName": "航母多级保障组织后勤保障方案",
+      "activityType": "后勤保障",
+      "durationHours": 2,
+      "equipmentId": "j15-engine",
+      "id": "logistics-support",
+      "planType": "后勤保障方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-node-3"
+    }
+  ],
+  "supportActivityJobs": [
+    {
+      "activityCode": "OPS-001",
+      "applicableAircraft": "J-15",
+      "durationMinutes": 5,
+      "durationProfile": {
+        "distributionType": "三角分布",
+        "max": 60,
+        "min": 35,
+        "mode": 45
+      },
+      "equipment": [
+        {
+          "model": "通用",
+          "name": "登机梯",
+          "quantity": 1
+        }
+      ],
+      "equipmentModel": "通用",
+      "facility": "甲板保障站位",
+      "personnel": [
+        {
+          "professional": "机械",
+          "quantity": 1
+        },
+        {
+          "professional": "军械",
+          "quantity": 1
+        },
+        {
+          "professional": "航电",
+          "quantity": 1
+        },
+        {
+          "professional": "特设",
+          "quantity": 1
+        }
+      ],
+      "personnelProfessional": "机械",
+      "servicePersonnel": "勤务一组,1",
+      "workName": "机务检查"
+    },
+    {
+      "activityCode": "OPS-002",
+      "applicableAircraft": "J-15",
+      "durationMinutes": 6,
+      "durationProfile": {
+        "distributionType": "均匀分布",
+        "max": 7,
+        "min": 5
+      },
+      "equipment": [
+        {
+          "model": "通用",
+          "name": "加油车",
+          "quantity": 1
+        }
+      ],
+      "equipmentModel": "通用",
+      "facility": "甲板加油站位",
+      "personnel": [
+        {
+          "professional": "机械",
+          "quantity": 1
+        }
+      ],
+      "personnelProfessional": "机械",
+      "servicePersonnel": "油料组,2",
+      "workName": "燃油加注"
+    },
+    {
+      "activityCode": "REP-001",
+      "applicableAircraft": "J-15",
+      "durationMinutes": 40,
+      "durationProfile": {
+        "distributionType": "三角分布",
+        "max": 55,
+        "min": 30,
+        "mode": 40
+      },
+      "equipment": [
+        {
+          "model": "DT-01",
+          "name": "检测仪",
+          "quantity": 1
+        }
+      ],
+      "facility": "维修工位",
+      "personnel": [
+        {
+          "professional": "维修/航电",
+          "quantity": 2
+        }
+      ],
+      "servicePersonnel": "勤务二组,1",
+      "workName": "故障定位"
+    },
+    {
+      "activityCode": "REP-002",
+      "applicableAircraft": "J-15",
+      "durationMinutes": 90,
+      "durationProfile": {
+        "distributionType": "正态分布",
+        "mean": 90,
+        "stdDev": 15
+      },
+      "equipment": [],
+      "equipmentModel": "",
+      "facility": "维修工位",
+      "personnel": [],
+      "personnelProfessional": "",
+      "servicePersonnel": "勤务二组,1",
+      "workName": "换件维修"
+    },
+    {
+      "activityCode": "PM-001",
+      "applicableAircraft": "J-35",
+      "durationMinutes": 30,
+      "durationProfile": {
+        "distributionType": "固定值",
+        "value": 30
+      },
+      "equipment": [],
+      "equipmentModel": "",
+      "facility": "定检工位",
+      "personnel": [],
+      "personnelProfessional": "",
+      "servicePersonnel": "勤务一组,1",
+      "workName": "定检准备"
+    },
+    {
+      "activityCode": "PM-002",
+      "applicableAircraft": "J-35",
+      "durationMinutes": 70,
+      "durationProfile": {
+        "distributionType": "三角分布",
+        "max": 90,
+        "min": 55,
+        "mode": 70
+      },
+      "equipment": [],
+      "equipmentModel": "",
+      "facility": "定检工位",
+      "personnel": [],
+      "personnelProfessional": "",
+      "servicePersonnel": "勤务一组,1",
+      "workName": "液压系统检查"
+    },
+    {
+      "activityCode": "BA-001",
+      "applicableAircraft": "J-15",
+      "durationMinutes": 25,
+      "durationProfile": {
+        "distributionType": "固定值",
+        "value": 25
+      },
+      "equipment": [
+        {
+          "model": "通用",
+          "name": "加油车",
+          "quantity": 1
+        },
+        {
+          "model": "通用",
+          "name": "登机梯",
+          "quantity": 1
+        }
+      ],
+      "equipmentModel": "通用",
+      "personnel": [
+        {
+          "professional": "机械",
+          "quantity": 1
+        },
+        {
+          "professional": "航电",
+          "quantity": 1
+        },
+        {
+          "professional": "军械",
+          "quantity": 1
+        },
+        {
+          "professional": "特设",
+          "quantity": 1
+        }
+      ],
+      "personnelProfessional": "机械",
+      "workName": "再次出动准备基本保障活动1"
+    },
+    {
+      "activityCode": "BA-002",
+      "applicableAircraft": "J-15",
+      "durationMinutes": 30,
+      "workName": "飞行后检查基本保障活动1"
+    }
+  ],
+  "supportNodes": [
+    {
+      "id": "support-node-1",
+      "name": "基地",
+      "organizationNodeId": "support-node-1"
+    },
+    {
+      "airport": "A",
+      "id": "support-node-2",
+      "name": "基层",
+      "organizationNodeId": "support-node-3"
+    }
+  ],
+  "supportOrganization": {
+    "relations": [],
+    "runtimeMode": "vertical",
+    "tree": {
+      "children": [
+        {
+          "children": [],
+          "id": "support-node-1",
+          "name": "基地",
+          "serviceScope": {
+            "aircraftModels": [],
+            "airportIds": [],
+            "productIds": [],
+            "resourceTypes": []
+          }
+        },
+        {
+          "children": [],
+          "description": "机场保障点",
+          "id": "support-node-3",
+          "name": "基层",
+          "serviceScope": {
+            "aircraftModels": [],
+            "airportIds": [],
+            "productIds": [],
+            "resourceTypes": []
+          }
+        }
+      ],
+      "description": "由导入项目保障节点生成的初始组织树",
+      "id": "support-org-root",
+      "name": "保障组织",
+      "serviceScope": {
+        "aircraftModels": [],
+        "airportIds": [],
+        "productIds": [],
+        "resourceTypes": []
+      }
+    }
+  },
+  "supportResources": [
+    {
+      "id": "support-resource-11",
+      "model": "机械",
+      "name": "基层人员",
+      "organizationNodeId": "support-node-3",
+      "quantity": 4,
+      "supportNodeName": "基层",
+      "type": "personnel"
+    },
+    {
+      "id": "support-resource-12",
+      "model": "通用",
+      "name": "登机梯",
+      "organizationNodeId": "support-node-3",
+      "quantity": 3,
+      "supportNodeName": "基层",
+      "type": "equipment"
+    },
+    {
+      "id": "support-resource-16",
+      "model": "通用",
+      "name": "加油车",
+      "organizationNodeId": "support-node-3",
+      "quantity": 1,
+      "supportNodeName": "基层",
+      "type": "equipment"
+    },
+    {
+      "id": "support-resource-18",
+      "model": "航电",
+      "name": "基层人员",
+      "organizationNodeId": "support-node-3",
+      "quantity": 4,
+      "supportNodeName": "基层",
+      "type": "personnel"
+    },
+    {
+      "id": "support-resource-19",
+      "model": "特设",
+      "name": "基层人员",
+      "organizationNodeId": "support-node-3",
+      "quantity": 4,
+      "supportNodeName": "基层",
+      "type": "personnel"
+    },
+    {
+      "id": "support-resource-20",
+      "model": "军械",
+      "name": "基层人员",
+      "organizationNodeId": "support-node-3",
+      "quantity": 4,
+      "supportNodeName": "基层",
+      "type": "personnel"
+    },
+    {
+      "id": "support-spare:support-node-1:product-j15-engine",
+      "model": "j15-engine",
+      "name": "发动机",
+      "organizationNodeId": "support-node-1",
+      "organizationNodeName": "support-node-1",
+      "productId": "product-j15-engine",
+      "quantity": 0,
+      "supportNodeName": "基地",
+      "type": "spare"
+    },
+    {
+      "id": "support-spare:support-node-1:product-j15-avionics",
+      "model": "j15-avionics",
+      "name": "航电系统",
+      "organizationNodeId": "support-node-1",
+      "organizationNodeName": "support-node-1",
+      "productId": "product-j15-avionics",
+      "quantity": 0,
+      "supportNodeName": "基地",
+      "type": "spare"
+    },
+    {
+      "id": "support-spare:support-node-3:product-j15-engine",
+      "model": "j15-engine",
+      "name": "发动机",
+      "organizationNodeId": "support-node-3",
+      "organizationNodeName": "support-node-3",
+      "productId": "product-j15-engine",
+      "quantity": 0,
+      "supportNodeName": "基层",
+      "type": "spare"
+    },
+    {
+      "id": "support-spare:support-node-3:product-j15-avionics",
+      "model": "j15-avionics",
+      "name": "航电系统",
+      "organizationNodeId": "support-node-3",
+      "organizationNodeName": "support-node-3",
+      "productId": "product-j15-avionics",
+      "quantity": 0,
+      "supportNodeName": "基层",
+      "type": "spare"
+    }
+  ],
+  "transportPolicies": [
+    {
+      "capacity": 2,
+      "criticalInventory": 1,
+      "fromOrganizationNodeId": "support-node-1",
+      "id": "transport-policy-2",
+      "name": "1",
+      "priority": 1,
+      "toOrganizationNodeId": "support-node-3",
+      "transportMode": "纵向运输",
+      "transportTimeHours": 2
+    },
+    {
+      "capacity": 1,
+      "criticalInventory": 1,
+      "fromOrganizationNodeId": "support-node-1",
+      "id": "transport-policy-4",
+      "name": "1",
+      "priority": 2,
+      "toOrganizationNodeId": "support-node-3",
+      "transportMode": "横向运输",
+      "transportTimeHours": 2
+    }
+  ]
+}

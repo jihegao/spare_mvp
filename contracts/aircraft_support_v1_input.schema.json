@@ -96,6 +96,16 @@
                   "takeoff_landing_cycles": { "type": "integer", "minimum": 0 }
                 }
               },
+              "source_initial_life_state": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["calendar_days", "flight_hours", "takeoff_landing_cycles"],
+                "properties": {
+                  "calendar_days": { "type": "integer", "minimum": 0 },
+                  "flight_hours": { "type": "number", "minimum": 0 },
+                  "takeoff_landing_cycles": { "type": "integer", "minimum": 0 }
+                }
+              },
               "preventive_thresholds": {
                 "type": "object",
                 "additionalProperties": false,

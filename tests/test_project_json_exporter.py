@@ -508,7 +508,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertEqual(tombstone["quantity"], 0)
         self.assertEqual(self._schema_errors(clean), [])
 
-    def test_committed_case_large_legacy_export_still_normalizes_before_stable_key_enforcement(self) -> None:
+    def test_committed_case_large_template_remains_clean_after_reexport(self) -> None:
         project = json.loads((REPO_ROOT / "exports" / "project-case-large.json").read_text(encoding="utf-8"))
 
         clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
