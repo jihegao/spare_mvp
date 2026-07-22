@@ -147,16 +147,18 @@ function normalizeFixedMtbfRepresentations(product) {
   if (!distribution || typeof distribution !== "object" || Array.isArray(distribution)) return;
   const distributionType = cleanText(distribution.distributionType || distribution.distribution_type).toLocaleLowerCase();
   if (!distributionType.includes("fixed") && !distributionType.includes("固定")) return;
-  const fixedParameter = positiveNumberOrNull(distribution.value || distribution.mean);
-  if (fixedParameter !== null) {
-    product.mtbfHours = fixedParameter;
+  if (Object.hasOwn(distribution, "value")) {
+    const value = positiveNumberOrNull(distribution.value);
+    if (value !== null) product.mtbfHours = value;
     return;
   }
-  const hasExplicitParameter = ["value", "mean"].some((field) => (
-    Object.hasOwn(distribution, field) && distribution[field] !== "" && distribution[field] != null
-  ));
+  if (Object.hasOwn(distribution, "mean")) {
+    const mean = positiveNumberOrNull(distribution.mean);
+    if (mean !== null) product.mtbfHours = mean;
+    return;
+  }
   const legacyMtbfHours = positiveNumberOrNull(product.mtbfHours);
-  if (!hasExplicitParameter && legacyMtbfHours !== null) distribution.value = legacyMtbfHours;
+  if (legacyMtbfHours !== null) distribution.value = legacyMtbfHours;
 }
 
 function positiveNumberOrNull(value) {

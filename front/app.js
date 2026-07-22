@@ -7629,13 +7629,20 @@ function equipmentDistributionType(value, metric = "mtbf") {
   return metric === "mtbf" ? "指数分布" : "固定值";
 }
 
+function fixedMtbfDisplayValue(component) {
+  const distribution = component?.failureDistribution;
+  if (distribution && Object.hasOwn(distribution, "value")) return distribution.value ?? "";
+  if (distribution && Object.hasOwn(distribution, "mean")) return distribution.mean ?? "";
+  return component?.mtbfHours ?? "";
+}
+
 function renderEquipmentDistributionParameters(index, metric, distributionType) {
   const component = scenario.components?.[index];
   const basePath = metric === "mtbf" ? `components.${index}.failureDistribution` : `components.${index}.repairDistribution`;
   const fixedLabel = metric === "mtbf" ? "MTBF" : "MTTR（min）";
   const fixedPath = metric === "mtbf" ? `${basePath}.value` : `components.${index}.meanRepairTimeMinutes`;
   const fixedValue = metric === "mtbf"
-    ? component?.failureDistribution?.value || component?.failureDistribution?.mean || component?.mtbfHours || ""
+    ? fixedMtbfDisplayValue(component)
     : getPath(scenario, fixedPath);
   const fieldsByDistribution = {
     指数分布: [{ key: "rate", label: "均值", step: "0.1", mtbfHours: metric === "mtbf" }],

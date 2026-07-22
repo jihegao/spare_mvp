@@ -4064,6 +4064,60 @@ test("shared equipment product parameters cancel without persistence and confirm
   }
 });
 
+test("fixed MTBF inputs preserve explicit invalid value and mean precedence on rehydrate", async () => {
+  const products = [
+    { id: "value-negative", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", value: -1 } },
+    { id: "value-zero", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", value: 0 } },
+    { id: "value-null", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", value: null, mean: 1400 } },
+    { id: "mean-zero", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", mean: 0 } },
+    { id: "mean-null", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", mean: null } },
+    { id: "legacy-scalar", mtbfHours: 1300, failureDistribution: { distributionType: "固定值" } }
+  ].map((product) => ({ ...product, name: product.id }));
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 },
+      products,
+      components: products.map((product, index) => ({
+        id: `${product.id}-component`,
+        name: product.name,
+        aircraftModel: "J-15",
+        parentId: "aircraft-root",
+        productId: product.id,
+        productType: "LRU",
+        quantity: 1,
+        sortOrder: index
+      }))
+    })
+  });
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    const fixedInput = (index, value) => new RegExp(
+      `data-path="components\\.${index}\\.failureDistribution\\.value"[^>]*value="${value}"`
+    );
+    const displayCases = [
+      ["value-negative", 0, "-1"],
+      ["value-zero", 1, "0"],
+      ["value-null", 2, ""],
+      ["mean-zero", 3, "0"],
+      ["mean-null", 4, ""],
+      ["legacy-scalar", 5, "1300"]
+    ];
+    for (const [productId, index, value] of displayCases) {
+      await runtime.click("[data-select-equipment-component]", {
+        selectEquipmentComponent: `${productId}-component`
+      });
+      assert.match(runtime.appNode.innerHTML, fixedInput(index, value));
+    }
+    await runtime.click("[data-select-equipment-component]", {
+      selectEquipmentComponent: "value-null-component"
+    });
+    assert.doesNotMatch(runtime.appNode.innerHTML, fixedInput(2, "1400"));
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("equipment aircraft rename keeps aircraftTypes catalog in saved Project draft", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({

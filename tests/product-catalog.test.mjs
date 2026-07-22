@@ -131,10 +131,18 @@ test("fixed product parameters outrank the MTBF compatibility projection and leg
       { id: "explicit-value", name: "Value", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: 450 } },
       { id: "explicit-mean", name: "Mean", mtbfHours: 300, failureDistribution: { distributionType: "固定值", mean: 600 } },
       { id: "value-first", name: "Both", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: 450, mean: 600 } },
-      { id: "invalid-explicit", name: "Invalid", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: -1 } },
+      { id: "value-negative", name: "Negative value", mtbfHours: 301, failureDistribution: { distributionType: "fixed", value: -1 } },
+      { id: "value-zero", name: "Zero value", mtbfHours: 302, failureDistribution: { distributionType: "fixed", value: 0 } },
+      { id: "value-null", name: "Null value", mtbfHours: 303, failureDistribution: { distributionType: "fixed", value: null, mean: 603 } },
+      { id: "mean-negative", name: "Negative mean", mtbfHours: 304, failureDistribution: { distributionType: "fixed", mean: -1 } },
+      { id: "mean-zero", name: "Zero mean", mtbfHours: 305, failureDistribution: { distributionType: "fixed", mean: 0 } },
+      { id: "mean-null", name: "Null mean", mtbfHours: 306, failureDistribution: { distributionType: "fixed", mean: null } },
       { id: "non-fixed", name: "Exponential", mtbfHours: 300, failureDistribution: { distributionType: "指数分布", rate: 0.02 } }
     ],
-    components: ["legacy", "explicit-value", "explicit-mean", "value-first", "invalid-explicit", "non-fixed"]
+    components: [
+      "legacy", "explicit-value", "explicit-mean", "value-first", "value-negative", "value-zero", "value-null",
+      "mean-negative", "mean-zero", "mean-null", "non-fixed"
+    ]
       .map((productId) => ({ id: `${productId}-component`, productId }))
   };
 
@@ -150,8 +158,19 @@ test("fixed product parameters outrank the MTBF compatibility projection and leg
   assert.equal(products["explicit-mean"].failureDistribution.value, undefined);
   assert.equal(components["explicit-mean"].mtbfHours, 600);
   assert.equal(products["value-first"].mtbfHours, 450);
-  assert.equal(products["invalid-explicit"].mtbfHours, 300);
-  assert.equal(products["invalid-explicit"].failureDistribution.value, -1);
+  assert.equal(products["value-negative"].mtbfHours, 301);
+  assert.equal(products["value-negative"].failureDistribution.value, -1);
+  assert.equal(products["value-zero"].mtbfHours, 302);
+  assert.equal(products["value-zero"].failureDistribution.value, 0);
+  assert.equal(products["value-null"].mtbfHours, 303);
+  assert.equal(products["value-null"].failureDistribution.value, null);
+  assert.equal(products["value-null"].failureDistribution.mean, 603);
+  assert.equal(products["mean-negative"].mtbfHours, 304);
+  assert.equal(products["mean-negative"].failureDistribution.mean, -1);
+  assert.equal(products["mean-zero"].mtbfHours, 305);
+  assert.equal(products["mean-zero"].failureDistribution.mean, 0);
+  assert.equal(products["mean-null"].mtbfHours, 306);
+  assert.equal(products["mean-null"].failureDistribution.mean, null);
   assert.equal(products["non-fixed"].mtbfHours, 300);
   assert.deepEqual(products["non-fixed"].failureDistribution, { distributionType: "指数分布", rate: 0.02 });
   const once = JSON.stringify(project);
