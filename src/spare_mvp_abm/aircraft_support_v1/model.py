@@ -4109,9 +4109,15 @@ def _failure_distribution_rate(distribution: dict[str, Any]) -> float | None:
         if minimum >= 0 and maximum >= minimum and minimum + maximum > 0:
             return (2.0 / (minimum + maximum)) * multiplier
     if "fixed" in distribution_type or "固定" in distribution_type:
-        value = _non_negative_float(distribution.get("value") or distribution.get("mean"), 0.0)
-        if value > 0:
-            return (1.0 / value) * multiplier
+        if "value" in distribution:
+            value = _positive_float(distribution.get("value"), 0.0)
+        elif "mean" in distribution:
+            value = _positive_float(distribution.get("mean"), 0.0)
+        else:
+            value = 0.0
+        if value <= 0:
+            return None
+        return (1.0 / value) * multiplier
     return None
 
 
