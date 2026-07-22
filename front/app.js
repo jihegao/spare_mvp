@@ -9129,7 +9129,6 @@ function supportActivityJobs(activity) {
 
 function setSupportActivityJobs(activity, jobs) {
   if (!activity || typeof activity !== "object") return;
-  isolateOperationsSupportActivityJobs(activity);
   const table = ensureSupportActivityJobTable();
   const tableByCode = new Map(table.map((job) => [supportActivityJobCode(job?.activityCode), job]).filter(([code]) => code));
   const currentActivityCodes = new Set(Array.isArray(activity.activityCodes) ? activity.activityCodes.map((code) => supportActivityJobCode(code)).filter(Boolean) : []);
@@ -9165,58 +9164,6 @@ function setSupportActivityJobs(activity, jobs) {
   activity.predecessors = predecessors;
   delete activity.jobs;
   return activity;
-}
-
-// Work-item definitions live in the project-level table and are selected by
-// activityCode.  Older operation plans can therefore make their three phases
-// point at the same definition.  Before a phase is edited, give that phase its
-// own copies so editing (or unlinking) it cannot change the other phases.
-function isolateOperationsSupportActivityJobs(activity) {
-  if (!isOperationsSupportActivity(activity) || !Array.isArray(activity?.activityCodes)) return false;
-  const definitions = supportActivityJobDefinitionsByCode();
-  const sharedCodes = new Set();
-  for (const otherActivity of scenario.supportActivities || []) {
-    if (otherActivity === activity || !Array.isArray(otherActivity?.activityCodes)) continue;
-    for (const code of otherActivity.activityCodes) sharedCodes.add(supportActivityJobCode(code));
-  }
-  const codeMap = new Map();
-  for (const rawCode of activity.activityCodes) {
-    const code = supportActivityJobCode(rawCode);
-    if (!code || !sharedCodes.has(code) || !definitions.has(code) || codeMap.has(code)) continue;
-    codeMap.set(code, nextIsolatedSupportActivityJobCode(code));
-  }
-  if (!codeMap.size) return false;
-
-  const table = ensureSupportActivityJobTable();
-  for (const [code, isolatedCode] of codeMap) {
-    const definition = definitions.get(code);
-    if (!definition) continue;
-    table.push({ ...supportActivityJobDefinition(definition), activityCode: isolatedCode });
-  }
-  activity.activityCodes = activity.activityCodes.map((code) => codeMap.get(supportActivityJobCode(code)) || supportActivityJobCode(code));
-  const predecessors = {};
-  for (const [rawCode, rawPredecessors] of Object.entries(activity.predecessors || {})) {
-    const code = codeMap.get(supportActivityJobCode(rawCode)) || supportActivityJobCode(rawCode);
-    if (!code) continue;
-    predecessors[code] = Array.isArray(rawPredecessors)
-      ? rawPredecessors.map((value) => codeMap.get(supportActivityJobCode(value)) || supportActivityJobCode(value)).filter(Boolean)
-      : [];
-  }
-  activity.predecessors = predecessors;
-  return true;
-}
-
-function nextIsolatedSupportActivityJobCode(sourceCode) {
-  const used = new Set(ensureSupportActivityJobTable().map((job) => supportActivityJobCode(job?.activityCode)).filter(Boolean));
-  const match = String(sourceCode || "BA").match(/^(.*?)(?:-(\d+))?$/);
-  const prefix = (match?.[1] || sourceCode || "BA").replace(/-$/, "") || "BA";
-  let index = Math.max(1, Number(match?.[2] || 0) + 1);
-  let code = `${prefix}-${String(index).padStart(3, "0")}`;
-  while (used.has(code)) {
-    index += 1;
-    code = `${prefix}-${String(index).padStart(3, "0")}`;
-  }
-  return code;
 }
 
 function permanentlyDeleteSupportActivityJobDefinitions(codes) {
@@ -9293,7 +9240,6 @@ function deleteSupportActivityJob(key) {
   const [tabKey, rawIndex] = String(key || "").split(":");
   const index = Number(rawIndex);
   const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
-  isolateOperationsSupportActivityJobs(activity);
   if (!deleteSupportActivityJobAt(activity, index)) return;
   selectedSupportActivityJobKeys.delete(key);
   renumberSupportActivityJobSelections(tabKey);
@@ -9303,7 +9249,6 @@ function deleteSupportActivityJob(key) {
 function deleteSelectedSupportActivityJobs(tabKey) {
   const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   if (!activity) return;
-  isolateOperationsSupportActivityJobs(activity);
   const selectedIndexes = Array.from(selectedSupportActivityJobKeys)
     .map((key) => {
       const [keyTab, rawIndex] = String(key).split(":");
@@ -9324,7 +9269,6 @@ function deleteSelectedSupportActivityJobs(tabKey) {
 function addSupportActivityJob(tabKey) {
   const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   if (!activity) return "";
-  isolateOperationsSupportActivityJobs(activity);
   const jobs = supportActivityJobs(activity).slice();
   const nextIndex = jobs.length;
   jobs.push({
@@ -9377,30 +9321,10 @@ function selectedSupportActivityJob(tabKey) {
 }
 
 function updateSupportActivityJobField(key, fieldName, value) {
-  const [tabKey, rawIndex] = String(key || "").split(":");
-  const index = Number(rawIndex);
-  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
-  if (!activity || !Number.isInteger(index) || !fieldName) return;
-  isolateOperationsSupportActivityJobs(activity);
-  const jobs = supportActivityJobs(activity).slice();
-  if (!jobs[index]) return;
-  const activityIndex = (scenario.supportActivities || []).indexOf(activity);
-  const basicActivityKey = activityIndex >= 0 ? `${activityIndex}:${index}` : "";
-  const oldCode = jobs[index].activityCode;
-  const nextValue = fieldName === "durationMinutes"
-    ? Math.max(0, Number(value || 0))
-    : fieldName === "activityCode"
-      ? uniqueBasicActivityCode(value, basicActivityKey)
-      : value;
-  jobs[index] = {
-    ...jobs[index],
-    [fieldName]: nextValue
-  };
-  setSupportActivityJobs(
-    activity,
-    fieldName === "activityCode" ? remapSupportActivityJobPredecessors(jobs, oldCode, nextValue) : jobs
-  );
-  updatePreviewResultsThroughApiClient();
+  // Basic work-item properties are authored only in the basic activity
+  // library.  The operations page may change references and predecessors,
+  // never a shared definition's code, name, duration, or resources.
+  return false;
 }
 
 function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
@@ -9456,10 +9380,10 @@ function renderSupportActivityJobRows(activity, tabKey) {
       <tr class="${selectedSupportActivityJobKeys.has(key) ? "selected-table-row" : ""}">
         <td><input type="checkbox" data-support-activity-job-select="${htmlEscape(key)}" ${selectedSupportActivityJobKeys.has(key) ? "checked" : ""} aria-label="选择${htmlEscape(job.workName || `工作项目${index + 1}`)}"${lockedAttr}></td>
         <td>${index + 1}</td>
-        <td>${supportActivityJobInput(key, job, "activityCode", "text", { "aria-label": "基本保障活动编号" })}</td>
-        <td>${supportActivityJobInput(key, job, "workName", "text", { "aria-label": "作业项" })}</td>
+        <td>${htmlEscape(job.activityCode || "-")}</td>
+        <td>${htmlEscape(job.workName || "-")}</td>
         <td>${renderSupportActivityPredecessorCell(jobs, job, index, tabKey)}</td>
-        <td>${supportActivityJobInput(key, job, "durationMinutes", "number", { min: "0", step: "1", "aria-label": "工期分钟" })}</td>
+        <td>${htmlEscape(String(job.durationMinutes ?? 0))}</td>
         <td class="table-actions"><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}"${lockedAttr}>编辑</button></td>
       </tr>
     `;
@@ -9550,23 +9474,6 @@ function supportActivityJobByKey(key) {
   const job = supportActivityJobs(activity || {})[index];
   if (!activity || !job) return null;
   return { activity, tabKey, index, key: supportActivityJobKey(tabKey, index), job };
-}
-
-function supportActivityJobInput(key, row, fieldName, type = "text", attrs = {}) {
-  const attrText = Object.entries(withModelingLockAttrs(attrs))
-    .map(([attrName, attrValue]) => ` ${attrName}="${htmlEscape(attrValue)}"`)
-    .join("");
-  return `<input class="table-edit-input" data-support-activity-job-key="${htmlEscape(key)}" data-support-activity-job-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(row[fieldName] ?? "")}"${attrText}>`;
-}
-
-function supportActivityJobSelect(key, row, fieldName, options, label) {
-  const selectedValue = String(row[fieldName] ?? "");
-  const lockedAttr = modelingLockDisabledAttr();
-  return `
-    <select class="table-edit-select" data-support-activity-job-key="${htmlEscape(key)}" data-support-activity-job-field="${htmlEscape(fieldName)}" aria-label="${htmlEscape(label)}"${lockedAttr}>
-      ${selectOptionsWithCurrent(options, selectedValue)}
-    </select>
-  `;
 }
 
 function supportPersonnelOptions(currentValue = "") {
@@ -9737,8 +9644,8 @@ function renderSupportActivityJobDialog(selectedJob) {
         </div>
         <div class="form-table-grid">
           <label>作业项${supportActivityJobBasicActivitySelect(selectedJob)}</label>
-          <label>基本保障活动编号${supportActivityJobInput(selectedJob.key, row, "activityCode", "text")}</label>
-          <label>工期(min)${supportActivityJobInput(selectedJob.key, row, "durationMinutes", "number", { min: "0", step: "1" })}</label>
+          <label>基本保障活动编号<strong>${htmlEscape(row.activityCode || "-")}</strong></label>
+          <label>工期(min)<strong>${htmlEscape(String(row.durationMinutes ?? 0))}</strong></label>
         </div>
         <div class="plan-editor-actions">
           <button type="button" class="btn-primary" data-support-activity-job-dialog-close>完成</button>
@@ -9805,17 +9712,6 @@ function supportActivityJobBasicActivitySelect(selectedJob) {
       ${selectOptionsWithCurrent(options, currentKey)}
     </select>
   `;
-}
-
-function supportActivityJobEditorInput(key, row, fieldName, label, type = "text") {
-  const control = fieldName === "personnel"
-    ? supportActivityJobSelect(key, row, fieldName, supportPersonnelOptions(row[fieldName]), label)
-    : fieldName === "equipment"
-      ? supportActivityJobSelect(key, row, fieldName, supportEquipmentOptions(row[fieldName]), label)
-      : fieldName === "spare"
-        ? supportActivityJobSelect(key, row, fieldName, supportSpareOptions(row[fieldName]), label)
-        : supportActivityJobInput(key, row, fieldName, type);
-  return `<label>${label}${control}</label>`;
 }
 
 function renderBasicActivityLibrary() {
@@ -10419,7 +10315,14 @@ function basicActivityLibraryRows() {
       spare: normalizeBasicActivityResourceRequirements(job, "spare"),
       predecessors: []
     }));
-  return [...referencedRows, ...unlinkedRows];
+  // Definitions are global.  A basic activity can be referenced by any number
+  // of use-support phases, but the library must show that definition once.
+  const rowsByCode = new Map();
+  for (const row of [...referencedRows, ...unlinkedRows]) {
+    const code = supportActivityJobCode(row.activityCode);
+    if (!rowsByCode.has(code || row.key)) rowsByCode.set(code || row.key, row);
+  }
+  return [...rowsByCode.values()];
 }
 
 function filteredBasicActivityLibraryRows() {
@@ -11182,24 +11085,17 @@ function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
   const addMode = supportActivityTemplatePickerTabKey === tabKey;
   const targetIndex = addMode ? jobs.length : selectedSupportActivityJobIndexForTab(tabKey, jobs);
   const current = jobs[targetIndex] || {};
-  const activityIndex = (scenario.supportActivities || []).indexOf(activity);
-  const targetKey = activityIndex >= 0 ? `${activityIndex}:${targetIndex}` : "";
   const convertedTemplateJob = supportActivityJobFromBasicActivity(template);
   const canonicalTemplateDefinition = supportActivityJobDefinitionsByCode().get(
     supportActivityJobCode(convertedTemplateJob.activityCode)
   );
-  const templateJob = addMode && canonicalTemplateDefinition
+  const templateJob = canonicalTemplateDefinition
     ? {
       ...canonicalTemplateDefinition,
       predecessors: Array.isArray(convertedTemplateJob.predecessors) ? [...convertedTemplateJob.predecessors] : []
     }
     : convertedTemplateJob;
-  templateJob.activityCode = addMode
-    ? (templateJob.activityCode || nextSupportActivityJobCode(tabKey, jobs))
-    : uniqueBasicActivityCode(
-      templateJob.activityCode || nextSupportActivityJobCode(tabKey, jobs),
-      targetKey
-    );
+  templateJob.activityCode = templateJob.activityCode || nextSupportActivityJobCode(tabKey, jobs);
   jobs[targetIndex] = {
     ...current,
     ...templateJob

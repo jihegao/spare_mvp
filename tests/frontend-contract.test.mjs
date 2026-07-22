@@ -1258,7 +1258,7 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivityJobSource, />编辑<\/button>/);
   assert.doesNotMatch(supportActivityJobSource, /data-support-activity-job-delete/);
   assert.doesNotMatch(supportActivityJobSource, /弹窗编辑|弹窗\/删除/);
-  assert.match(supportActivityJobSource, /data-support-activity-job-field/);
+  assert.doesNotMatch(supportActivityJobSource, /data-support-activity-job-field/);
   assert.match(supportActivityJobSource, /supportActivityJobDialogKey/);
   assert.match(supportActivityJobSource, /supportActivityPredecessorDialogKey/);
   assert.match(supportActivityJobSource, /renderSupportActivityJobDialog/);
@@ -2421,7 +2421,7 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(jobTableSource, /basicActivityLibraryOptions/);
   assert.match(appSource, /function applyBasicActivityToSupportActivityJob/);
   assert.doesNotMatch(jobTableSource, /data-support-activity-predecessor-add-template/);
-  assert.match(jobTableSource, /data-support-activity-job-field/);
+  assert.doesNotMatch(jobTableSource, /data-support-activity-job-field/);
   assert.match(jobTableSource, /renderSupportActivityJobDialog/);
   assert.match(jobTableSource, /renderSupportActivityPredecessorDialog/);
   assert.match(jobTableSource, /data-support-activity-job-dialog-close/);

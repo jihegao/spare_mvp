@@ -4575,11 +4575,11 @@ test("support activity add work item opens the editing dialog at runtime", async
       basicActivityKey: "unlinked:BA-002"
     });
 
-    assert.match(runtime.appNode.innerHTML, /value="初始工作项目"/);
-    assert.match(runtime.appNode.innerHTML, /value="可添加工作项目"/);
-    assert.match(runtime.appNode.innerHTML, /value="BA-001"/);
-    assert.match(runtime.appNode.innerHTML, /value="BA-002"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /value="BA-003"/);
+    assert.match(runtime.appNode.innerHTML, /初始工作项目/);
+    assert.match(runtime.appNode.innerHTML, /可添加工作项目/);
+    assert.match(runtime.appNode.innerHTML, /BA-001/);
+    assert.match(runtime.appNode.innerHTML, /BA-002/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /BA-003/);
     assert.match(runtime.appNode.innerHTML, /data-support-activity-job="ops_preflight-1"/);
 
     await runtime.click("[data-support-activity-job]", { supportActivityJob: "ops_preflight-1" });
@@ -4847,65 +4847,36 @@ test("operations support deletion only unlinks a job while basic activity deleti
   }
 });
 
-test("operations support phases isolate legacy shared work-item definitions before editing", async () => {
-  const projectId = "operations-phase-job-isolation";
+test("operations support activity selection adds an existing basic definition without cloning it", async () => {
+  const projectId = "operations-shares-basic-definition";
   const projectJson = createRuntimeProjectJson({ project_id: projectId });
-  projectJson.supportActivities.push(
-    {
-      id: "ops-runtime-relaunch",
-      activityType: "使用保障活动",
-      planType: "再次出动准备方案",
-      planGroupId: "ops-runtime",
-      activityName: "J-15再次出动准备方案",
-      aircraftModel: "J-15",
-      activityCodes: ["BA-001"],
-      predecessors: { "BA-001": [] }
-    },
-    {
-      id: "ops-runtime-postflight",
-      activityType: "使用保障活动",
-      planType: "飞行后检查方案",
-      planGroupId: "ops-runtime",
-      activityName: "J-15飞行后检查方案",
-      aircraftModel: "J-15",
-      activityCodes: ["BA-001"],
-      predecessors: { "BA-001": [] }
-    }
-  );
+  projectJson.supportActivityJobs.push({
+    activityCode: "BA-002",
+    workName: "可选基本保障活动",
+    durationMinutes: 12
+  });
   const runtime = await setupRuntimeApp({
     projectJson,
-    backendProjects: [runtimeBackendProjectEntry(projectId, "使用保障阶段工作项目隔离")]
+    backendProjects: [runtimeBackendProjectEntry(projectId, "使用保障活动选择基础活动")]
   });
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-operations-support-activity");
-    await runtime.change(
-      "[data-support-activity-job-field]",
-      { supportActivityJobKey: "ops_preflight:0", supportActivityJobField: "workName" },
-      { value: "仅飞行前工作项目" }
-    );
-    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "再次出动准备方案" });
-    assert.match(runtime.appNode.innerHTML, /初始工作项目/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /仅飞行前工作项目/);
-
-    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
-    await runtime.change(
-      "[data-support-activity-job-select]",
-      { supportActivityJobSelect: "ops_postflight:0" },
-      { checked: true, type: "checkbox" }
-    );
-    await runtime.click("[data-support-activity-job-batch-delete]", { supportActivityJobBatchDelete: "ops_postflight" });
-    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "直接准备方案" });
-    assert.match(runtime.appNode.innerHTML, /仅飞行前工作项目/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-job-field/);
+    await runtime.click("[data-support-activity-job-add]", { supportActivityJobAdd: "ops_preflight" });
+    await runtime.click("[data-support-activity-job-template]", {
+      supportActivityJobTemplate: "ops_preflight",
+      basicActivityKey: "unlinked:BA-002"
+    });
+    assert.match(runtime.appNode.innerHTML, /可选基本保障活动/);
 
     await runtime.click("[data-project-draft-save]");
     const saved = await waitForProjectSave(runtime, (body) => (
-      body.supportActivities?.[0]?.activityCodes?.[0] !== "BA-001"
-      && body.supportActivities?.[1]?.activityCodes?.[0] === "BA-001"
-      && body.supportActivities?.[2]?.activityCodes?.length === 0
-    ), "expected independently saved operation-phase work-item lists");
-    assert.ok(saved.supportActivityJobs.some((job) => job.workName === "仅飞行前工作项目"));
+      body.supportActivities?.[0]?.activityCodes?.join(",") === "BA-001,BA-002"
+    ), "expected an existing definition to be referenced without cloning");
+    assert.deepEqual(saved.supportActivityJobs.map((job) => job.activityCode).sort(), ["BA-001", "BA-002"]);
+    assert.deepEqual(saved.supportActivities[0].predecessors, { "BA-001": [], "BA-002": [] });
   } finally {
     runtime.restore();
   }
