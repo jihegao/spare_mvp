@@ -853,19 +853,29 @@ class SimulationAdapter:
                     }
                     for activity in contributors
                 ]
-            life = asset.get("initial_life_state") if isinstance(asset.get("initial_life_state"), dict) else {}
-            due_dimensions = [
-                dimension
-                for dimension in ("calendar_days", "flight_hours", "takeoff_landing_cycles")
-                if thresholds[dimension] > 0 and float(life.get(dimension, 0) or 0) >= float(thresholds[dimension])
-            ]
+            raw_life = asset.get("initial_life_state") if isinstance(asset.get("initial_life_state"), dict) else {}
+            source_life = {
+                "calendar_days": max(0, int(raw_life.get("calendar_days", 0) or 0)),
+                "flight_hours": max(0.0, float(raw_life.get("flight_hours", 0) or 0)),
+                "takeoff_landing_cycles": max(0, int(raw_life.get("takeoff_landing_cycles", 0) or 0)),
+            }
+            # Pre-life values are cumulative historical usage.  Assume every
+            # full preventive interval before the simulation boundary was
+            # completed on time, so only the residual counter enters runtime.
+            effective_life: dict[str, int | float] = {}
+            for dimension, value in source_life.items():
+                threshold = thresholds[dimension]
+                remainder = value % threshold if threshold > 0 else value
+                effective_life[dimension] = (
+                    float(remainder) if dimension == "flight_hours" else int(remainder)
+                )
             asset["source_initial_state"] = str(asset.get("source_initial_state") or asset.get("initial_state") or "available")
+            asset["source_initial_life_state"] = source_life
+            asset["initial_life_state"] = effective_life
             asset["preventive_thresholds"] = thresholds
             asset["preventive_threshold_sources"] = threshold_sources
-            asset["initial_due_dimensions"] = due_dimensions
-            asset["initial_preventive_due"] = bool(due_dimensions)
-            if due_dimensions:
-                asset["initial_state"] = "maintenance"
+            asset["initial_due_dimensions"] = []
+            asset["initial_preventive_due"] = False
         if assets:
             inputs["aircraft"]["initial_ready"] = sum(
                 1 for asset in assets if isinstance(asset, dict) and asset.get("initial_state") == "available"

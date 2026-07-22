@@ -1439,7 +1439,10 @@ class AircraftSupportV1Model:
             "id": kind,
             "name": kind,
             "priority": 1,
-            "resource_id": next(iter(self.nodes)),
+            # Resolve a missing activity's node from the aircraft when the job
+            # is created.  Node insertion order commonly places the parent
+            # base first, which is not the aircraft's flight-line support site.
+            "resource_id": "",
             "jobs": [{"activityCode": f"{kind}-001", "durationMinutes": 30, "workName": kind}],
         }
 
@@ -2434,8 +2437,6 @@ class AircraftSupportV1Model:
 
     def _default_resource_node_id(self, aircraft: AircraftState) -> str:
         """Choose the aircraft's explicitly associated support node before list-order fallback."""
-        if self.canonical_organization_enabled:
-            return ""
         aircraft_scope = {value.strip().casefold() for value in (aircraft.airport, aircraft.airport_id) if value and value.strip()}
         if aircraft_scope:
             for node_id, node in self.nodes.items():
@@ -2445,6 +2446,14 @@ class AircraftSupportV1Model:
                 }
                 if aircraft_scope & (node_scope - {""}):
                     return node_id
+        if self.canonical_organization_enabled:
+            capable_nodes = [
+                node_id
+                for node_id, node in self.nodes.items()
+                if int(node.get("personnel_capacity") or 0) > 0
+                or int(node.get("equipment_capacity") or 0) > 0
+            ]
+            return capable_nodes[0] if len(capable_nodes) == 1 else ""
         return next(iter(self.nodes))
 
     def _release_job_resources(self, job: JobState) -> None:

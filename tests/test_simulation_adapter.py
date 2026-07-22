@@ -223,11 +223,12 @@ class SimulationAdapterTest(unittest.TestCase):
             "flight_hours": 2.5,
             "takeoff_landing_cycles": 3,
         })
+        self.assertEqual(asset["source_initial_life_state"], asset["initial_life_state"])
         provenance = scenario["compiled_from"]["mapping_provenance"]
         self.assertIn("combatUnit.members[].preLifeFlightHours", provenance["consumed_fields"])
         self.assertIn("simulation_inputs.aircraft.assets[].initial_life_state", provenance["derived_fields"])
 
-    def test_compile_and_model_share_minute_zero_preventive_due_and_initial_ready(self) -> None:
+    def test_compile_reduces_completed_preventive_intervals_to_zero_remainders(self) -> None:
         project = self._project_with_pre_life()
         project["combatUnit"]["members"][0].update({
             "preLifeCalendarDays": 2,
@@ -239,24 +240,30 @@ class SimulationAdapterTest(unittest.TestCase):
         inputs = scenario["simulation_inputs"]
         asset = inputs["aircraft"]["assets"][0]
 
-        self.assertEqual(inputs["aircraft"]["initial_ready"], 0)
+        self.assertEqual(inputs["aircraft"]["initial_ready"], 1)
         self.assertEqual(asset["source_initial_state"], "available")
-        self.assertEqual(asset["initial_state"], "maintenance")
-        self.assertTrue(asset["initial_preventive_due"])
-        self.assertEqual(
-            asset["initial_due_dimensions"],
-            ["calendar_days", "flight_hours", "takeoff_landing_cycles"],
-        )
+        self.assertEqual(asset["initial_state"], "available")
+        self.assertEqual(asset["source_initial_life_state"], {
+            "calendar_days": 2,
+            "flight_hours": 4.0,
+            "takeoff_landing_cycles": 6,
+        })
+        self.assertEqual(asset["initial_life_state"], {
+            "calendar_days": 0,
+            "flight_hours": 0.0,
+            "takeoff_landing_cycles": 0,
+        })
+        self.assertFalse(asset["initial_preventive_due"])
+        self.assertEqual(asset["initial_due_dimensions"], [])
         model = AircraftSupportV1Model(inputs)
         preventive_jobs = [job for job in model.jobs if job.kind == "preventive"]
-        self.assertEqual(len(preventive_jobs), 1)
-        self.assertEqual(preventive_jobs[0].due_dimensions, asset["initial_due_dimensions"])
+        self.assertEqual(preventive_jobs, [])
 
     def test_compile_merges_unique_threshold_dimensions_across_applicable_preventive_plans(self) -> None:
         project = self._project_with_pre_life()
         project["combatUnit"]["members"][0].update({
             "preLifeCalendarDays": 0,
-            "preLifeFlightHours": 8,
+            "preLifeFlightHours": 10.5,
             "preLifeTakeoffLandingCount": 0,
         })
         first = project["supportActivities"][-1]
@@ -275,15 +282,12 @@ class SimulationAdapterTest(unittest.TestCase):
             asset["preventive_threshold_sources"]["flight_hours"],
             [{"activity_id": "preventive-flight", "equipment_id": "whole-aircraft"}],
         )
-        self.assertEqual(asset["initial_due_dimensions"], ["flight_hours"])
+        self.assertEqual(asset["source_initial_life_state"]["flight_hours"], 10.5)
+        self.assertEqual(asset["initial_life_state"]["flight_hours"], 2.5)
+        self.assertEqual(asset["initial_due_dimensions"], [])
         model = AircraftSupportV1Model(inputs)
         preventive_jobs = [job for job in model.jobs if job.kind == "preventive"]
-        self.assertEqual(len(preventive_jobs), 1)
-        self.assertEqual(preventive_jobs[0].due_dimensions, ["flight_hours"])
-        self.assertEqual(preventive_jobs[0].activity_id, "preventive-flight")
-        execution = model.run()
-        self.assertTrue(any(event["event"] == "preventive_completed" for event in execution["events"]))
-        self.assertEqual(execution["lifecycle_trace"][0]["current_life_state"]["flight_hours"], 0.0)
+        self.assertEqual(preventive_jobs, [])
 
     def test_compile_blocks_positive_pre_life_without_dimension_threshold_at_exact_field(self) -> None:
         project = self._project_with_pre_life()

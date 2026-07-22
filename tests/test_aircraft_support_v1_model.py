@@ -694,6 +694,79 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.postflight_activity["id"], "postflight")
         self.assertEqual(postflight_jobs[0].activity_id, "postflight")
 
+    def test_default_postflight_uses_aircraft_local_node_with_canonical_organization(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"] = {
+            "fleet_count": 1,
+            "initial_ready": 1,
+            "models": ["J-15"],
+            "assets": [{
+                "tail_number": "J15-101",
+                "aircraft_type": "J-15",
+                "model": "J-15",
+                "airport": "A",
+                "initial_state": "available",
+            }],
+        }
+        inputs["support_network"] = {
+            "nodes": [
+                {
+                    "id": "基地",
+                    "name": "基地",
+                    "organization_node_id": "org-base",
+                    "personnel_capacity": 0,
+                    "equipment_capacity": 0,
+                    "inventory": {},
+                    "transport_policies": [],
+                },
+                {
+                    "id": "基层",
+                    "name": "基层",
+                    "organization_node_id": "org-local",
+                    "airport": "A",
+                    "personnel_capacity": 2,
+                    "equipment_capacity": 2,
+                    "inventory": {},
+                    "transport_policies": [],
+                },
+            ],
+            "organization_graph": {
+                "nodes": [
+                    {"id": "org-root", "name": "保障组织", "parent_id": None, "service_scope": {}},
+                    {"id": "org-base", "name": "基地", "parent_id": "org-root", "service_scope": {}},
+                    {"id": "org-local", "name": "基层", "parent_id": "org-root", "service_scope": {}},
+                ],
+                "parent_edges": [
+                    {"from_node_id": "org-root", "to_node_id": "org-base"},
+                    {"from_node_id": "org-root", "to_node_id": "org-local"},
+                ],
+                "lateral_edges": [],
+                "resource_ownership": [],
+                "transport_policies": [],
+            },
+        }
+        inputs["support_activities"]["activities"] = [
+            activity for activity in inputs["support_activities"]["activities"] if activity["id"] != "postflight"
+        ]
+        for activity in inputs["support_activities"]["activities"]:
+            activity["resource_id"] = "基层"
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 5
+        mission.required_aircraft = 1
+        model.aircraft[0].prepared_mission_ids.add(mission.mission_id)
+
+        model._dispatch_due_missions()
+        model.minute = 5
+        model._process_mission_returns()
+
+        postflight_job = next(job for job in model.jobs if job.kind == "postflight")
+        self.assertEqual(postflight_job.resource_node_id, "基层")
+        model._start_waiting_jobs()
+        self.assertEqual(postflight_job.state, "running")
+
     def test_mission_return_creates_postflight_before_aircraft_becomes_available(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())
         mission = model.missions[0]

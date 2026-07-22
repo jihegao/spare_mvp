@@ -1,6 +1,6 @@
 # 飞机寿命前置数据语义
 
-`combatUnit.members[]` 的三项寿命前置字段表示仿真开始前、上次预防维修后的累计消耗：
+`combatUnit.members[]` 的三项寿命前置字段表示仿真开始前的历史累计消耗。编译器假设历史上已经跨过的完整预防维修周期均按时完成，因此运行时只继承当前周期余量：
 
 | Project 字段 | Scenario 字段 | 单位与约束 | 正式阈值来源 |
 | --- | --- | --- | --- |
@@ -12,4 +12,4 @@
 
 历史数据缺失 canonical 字段时物化为 `0`，不自动转换任何 legacy 字段。`takeoffLandingCount` 可能是全寿命总循环，`preLifeRequirementHours` 是要求值，`remainingLifeHours` 是剩余值，三者都不等于上次预防维修后的累计消耗；原始导入数据可保留它们，但它们不驱动 pre-life 行为。
 
-Scenario 编译阶段就写入 `source_initial_state`、`initial_preventive_due`、`preventive_thresholds` 和 `initial_due_dimensions`，并从 `initial_ready` 中排除 minute=0 已到期飞机。模型只消费该显式到期标记创建一个预防维修工单，`due_dimensions` 保留全部到期维度；普通初始维修状态不会被误建预防工单。维修完成后三类累计量从零重新计算。单次运行、Monte Carlo、轻量 Mesa 与 Solara 都消费同一份 Scenario/model 输入。状态帧、事件和运行结果中的寿命字段用于追溯。
+Scenario 编译阶段把 Project 原值保存在 `source_initial_life_state`，并按每个启用阈值计算 `initial_life_state = source_initial_life_state % preventive_thresholds`。未启用阈值的维度保持原值；正累计值缺少同维阈值仍失败关闭。取余后的飞机不会因为历史完整周期在 minute=0 重复创建定检工单，`initial_preventive_due=false`、`initial_due_dimensions=[]`，初始可用状态保持与 Project 一致。进入仿真后，计数器从余量继续累积，到达下一周期阈值时正常创建预防维修工单；维修完成后三类累计量从零重新计算。单次运行、Monte Carlo、轻量 Mesa 与 Solara 都消费同一份 Scenario/model 输入。

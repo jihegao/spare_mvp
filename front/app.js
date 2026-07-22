@@ -9010,12 +9010,11 @@ function deleteOperationsSupportActivityPlan(key = "") {
   const targetKey = key || selectedOperationsSupportActivityKey || entries[0]?.key || "";
   const entry = entries.find((item) => item.key === targetKey);
   if (!entry) return;
-  ensureOperationsSupportPhaseActivities(entry.activity);
-  const planGroupId = ensureOperationsSupportPlanGroupId(entry.activity, entry.aircraftModel);
+  const planGroupId = operationsSupportPlanGroupId(entry.activity);
   scenario.supportActivities = (scenario.supportActivities || []).filter((activity, index) => {
     if (index === entry.index) return false;
     if (!isOperationsSupportActivity(activity)) return true;
-    return operationsSupportPlanGroupId(activity) !== planGroupId;
+    return !planGroupId || operationsSupportPlanGroupId(activity) !== planGroupId;
   });
   const nextEntries = operationsSupportActivityEntries();
   selectedOperationsSupportActivityKey = nextEntries[Math.min(entry.index, Math.max(0, nextEntries.length - 1))]?.key || "";
@@ -9023,16 +9022,11 @@ function deleteOperationsSupportActivityPlan(key = "") {
   updatePreviewResultsThroughApiClient();
 }
 
-function materializeOperationsSupportPhaseActivity(baseActivity, planType) {
-  ensureOperationsSupportPhaseActivities(baseActivity);
-  return operationsSupportPhaseActivity(baseActivity, planType);
-}
-
 function supportActivityJobKey(tabKey, index) {
   return `${tabKey}:${index}`;
 }
 
-function findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases = false } = {}) {
+function findSupportActivityByJobTabKey(tabKey) {
   const operationsPlanType = operationsSupportPlanTypeFromTabKey(tabKey);
   if (operationsPlanType) {
     const baseActivity = selectedOperationsSupportActivity()
@@ -9041,9 +9035,6 @@ function findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases = 
     const phaseActivities = findOperationsSupportPhaseActivities(baseActivity);
     let phaseActivity = operationsSupportPhaseActivity(baseActivity, operationsPlanType)
       || phaseActivities.find((activity) => String(activity.planType || "") === operationsPlanType);
-    if (!phaseActivity && materializeOperationsPhases && baseActivity) {
-      phaseActivity = materializeOperationsSupportPhaseActivity(baseActivity, operationsPlanType);
-    }
     return phaseActivity
       // Legacy projects may have a single generic `使用保障方案` row.  The
       // editor renders that row when no phase-specific activity exists, so
@@ -9252,7 +9243,7 @@ function toggleAllSupportActivityJobSelection(tabKey, checked) {
 function deleteSupportActivityJob(key) {
   const [tabKey, rawIndex] = String(key || "").split(":");
   const index = Number(rawIndex);
-  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
+  const activity = findSupportActivityByJobTabKey(tabKey);
   if (!deleteSupportActivityJobAt(activity, index)) return;
   selectedSupportActivityJobKeys.delete(key);
   renumberSupportActivityJobSelections(tabKey);
@@ -9260,7 +9251,7 @@ function deleteSupportActivityJob(key) {
 }
 
 function deleteSelectedSupportActivityJobs(tabKey) {
-  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
+  const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity) return;
   const selectedIndexes = Array.from(selectedSupportActivityJobKeys)
     .map((key) => {
@@ -9280,7 +9271,7 @@ function deleteSelectedSupportActivityJobs(tabKey) {
 }
 
 function addSupportActivityJob(tabKey) {
-  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
+  const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity) return "";
   const jobs = supportActivityJobs(activity).slice();
   const nextIndex = jobs.length;
@@ -9343,7 +9334,7 @@ function updateSupportActivityJobField(key, fieldName, value) {
 function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
   const [tabKey, rawIndex] = String(encodedJob || "").split(":");
   const index = Number(rawIndex);
-  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
+  const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity || !Number.isInteger(index)) return;
   const jobs = supportActivityJobs(activity).slice();
   if (!jobs[index]) return;
@@ -9355,7 +9346,7 @@ function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
 function updateSupportActivityJobPredecessorSelection(encodedJob, predecessorValue, checked) {
   const [tabKey, rawIndex] = String(encodedJob || "").split(":");
   const index = Number(rawIndex);
-  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
+  const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity || !Number.isInteger(index)) return;
   const jobs = supportActivityJobs(activity).slice();
   if (!jobs[index]) return;
@@ -11088,7 +11079,7 @@ function ensureSupportActivityForBasicType(type) {
 }
 
 function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
-  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
+  const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity) return;
   const allowedKeys = new Set(basicActivityLibraryOptions(tabKey).map((option) => option.value));
   if (!allowedKeys.has(String(basicActivityKey || ""))) return;
@@ -11120,7 +11111,7 @@ function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
 }
 
 function addBasicActivityAsSupportActivityPredecessor(tabKey, basicActivityKey, targetKey) {
-  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
+  const activity = findSupportActivityByJobTabKey(tabKey);
   const template = basicActivityLibraryRows().find((row) => row.key === basicActivityKey);
   const target = supportActivityJobByKey(targetKey);
   if (!activity || !template || !target || target.tabKey !== tabKey) return;
