@@ -5761,6 +5761,69 @@ test("logistics transport endpoints render and survive organization renames by s
   }
 });
 
+test("support organization deletion keeps referenced nodes intact and permits empty nodes", async () => {
+  const projectId = "support-org-delete-guard-runtime";
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-support-organization",
+    projectJson: createRuntimeProjectJson({
+      project_id: projectId,
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "org-occupied", name: "有资源保障点", children: [] },
+            { id: "org-empty", name: "空保障点", children: [] }
+          ]
+        }
+      },
+      supportResources: [{
+        id: "spare-occupied",
+        type: "spare",
+        organizationNodeName: "org-occupied",
+        supportNodeName: "有资源保障点",
+        productId: "product-runtime-spare",
+        quantity: 1
+      }, {
+        id: "support-spare-tombstone:org-empty:product-runtime-spare",
+        type: "spare",
+        organizationNodeName: "org-empty",
+        supportNodeName: "空保障点",
+        productId: "product-runtime-spare",
+        quantity: 0
+      }]
+    }),
+    backendProjects: [runtimeBackendProjectEntry(projectId, "组织删除保护项目")]
+  });
+
+  try {
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "org-occupied" });
+    await runtime.click("[data-support-org-delete-node]");
+
+    assert.match(runtime.appNode.innerHTML, /data-select-support-org-node="org-occupied"/);
+    assert.match(runtime.appNode.innerHTML, /仍有 1 条资源引用/);
+    assert.doesNotMatch(runtime.requests.map((request) => request.url).join("\n"), /\/api\/projects$/);
+
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "org-empty" });
+    await runtime.click("[data-support-org-delete-node]");
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-select-support-org-node="org-empty"/);
+    assert.match(runtime.appNode.innerHTML, /data-select-support-org-node="org-occupied"/);
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(
+      runtime,
+      (body) => body.project_id === projectId,
+      "expected project save after deleting the empty organization"
+    );
+    assert.doesNotMatch(
+      JSON.stringify(saved.supportResources),
+      /support-spare-tombstone:org-empty:product-runtime-spare/
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("ambiguous legacy logistics endpoint names stay visibly unresolved", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({

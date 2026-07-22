@@ -860,6 +860,7 @@ let selectedPreventiveMaintenanceActivityKey = "";
 let selectedPreventiveMaintenanceAircraftModel = "";
 let selectedSupportResourceKeys = new Set();
 let supportResourceImportStatus = "可在当前资源清单导入 CSV / TSV / JSON 表格。";
+let supportOrgDeleteStatus = "";
 let equipmentImportStatus = "可导入 CSV / TSV / JSON 装备结构表。";
 let selectedBasicActivityKeys = new Set();
 let basicActivityDialogKey = "";
@@ -1242,8 +1243,7 @@ function bindEvents() {
 
     const supportOrgDeleteButton = event.target.closest("[data-support-org-delete-node]");
     if (supportOrgDeleteButton) {
-      deleteSelectedSupportOrgNode();
-      markProjectDraftChanged();
+      if (deleteSelectedSupportOrgNode()) markProjectDraftChanged();
       render();
       return;
     }
@@ -7878,6 +7878,7 @@ function renderSupportOrganizationWorkbench(page) {
                 <label>关联机场${supportOrgAirportSelect(selectedSupportOrgNode)}</label>
                 <label>组织描述<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="description" value="${htmlEscape(selectedSupportOrgNode?.description || "承担机务、维修、备件和设备保障资源调配")}"${lockedAttr}></label>
               </div>
+              ${supportOrgDeleteStatus ? `<p class="rms-import-status" data-support-org-delete-status>${htmlEscape(supportOrgDeleteStatus)}</p>` : ""}
             ` : `
               <div class="toolbar-row">
                 <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}"${resourceControlsDisabledAttr}>新增</button>
@@ -8547,12 +8548,40 @@ function addSupportOrgNode() {
 function deleteSelectedSupportOrgNode() {
   const orgTree = supportOrganizationTree();
   const selectedId = selectedSupportOrgNodeId || orgTree[0]?.id;
-  if (!selectedId || selectedId === orgTree[0]?.id) return;
+  if (!selectedId || selectedId === orgTree[0]?.id) return false;
+  const selectedNode = findSupportOrgTreeNode(selectedId, orgTree);
   const parent = findSupportOrgParentNode(selectedId, orgTree);
-  if (!parent || !Array.isArray(parent.children)) return;
+  if (!selectedNode || !parent || !Array.isArray(parent.children)) return false;
+  const subtreeNodes = flattenSupportOrgTreeNodes([selectedNode]);
+  const subtreeIds = new Set(subtreeNodes.map((node) => String(node.id || "").trim()).filter(Boolean));
+  const subtreeNames = new Set(subtreeNodes.map((node) => String(node.name || "").trim()).filter(Boolean));
+  const resourceReferencesDeletedNode = (resource) => {
+    const references = [
+      resource?.organizationNodeId,
+      resource?.organizationNodeName,
+      resource?.supportNodeId,
+      resource?.supportNodeName
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+    return references.some((reference) => subtreeIds.has(reference) || subtreeNames.has(reference));
+  };
+  const removedSpareTombstones = (scenario.supportResources || []).filter((resource) => (
+    isDeletedSupportSpareResource(resource) && resourceReferencesDeletedNode(resource)
+  ));
+  const referencedResources = (scenario.supportResources || []).filter((resource) => (
+    !isDeletedSupportSpareResource(resource) && resourceReferencesDeletedNode(resource)
+  ));
+  if (referencedResources.length) {
+    supportOrgDeleteStatus = `无法删除“${selectedNode.name || selectedId}”：该节点或下级节点仍有 ${referencedResources.length} 条资源引用。请先在人员、设备或备件建模中迁移或删除这些资源。`;
+    return false;
+  }
+  if (removedSpareTombstones.length) {
+    scenario.supportResources = scenario.supportResources.filter((resource) => !removedSpareTombstones.includes(resource));
+  }
   parent.children = parent.children.filter((child) => child.id !== selectedId);
   selectedSupportOrgNodeId = parent.id;
+  supportOrgDeleteStatus = "";
   updatePreviewResultsThroughApiClient();
+  return true;
 }
 
 function findSupportOrgParentNode(id, nodes = supportOrganizationTree(), parent = null) {
