@@ -4550,8 +4550,14 @@ test("RMS runtime shows an explicit failure when proportional weights sum to zer
 
 test("support activity add work item opens the editing dialog at runtime", async () => {
   const projectId = "support-activity-add-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivityJobs.push({
+    activityCode: "BA-002",
+    workName: "可添加工作项目",
+    durationMinutes: 20
+  });
   const runtime = await setupRuntimeApp({
-    projectJson: createRuntimeProjectJson({ project_id: projectId }),
+    projectJson,
     backendProjects: [runtimeBackendProjectEntry(projectId, "保障活动新增项目")]
   });
 
@@ -4562,21 +4568,118 @@ test("support activity add work item opens the editing dialog at runtime", async
     assert.match(runtime.appNode.innerHTML, /data-support-activity-job-add="ops_preflight"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-job-template="ops_preflight"/);
     await runtime.click("[data-support-activity-job-add]", { supportActivityJobAdd: "ops_preflight" });
-    assert.match(runtime.appNode.innerHTML, /data-support-activity-job-template="ops_preflight"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /OPS-001 \/ 初始工作项目/);
+    assert.match(runtime.appNode.innerHTML, /BA-002 \/ 可添加工作项目/);
     await runtime.click("[data-support-activity-job-template]", {
       supportActivityJobTemplate: "ops_preflight",
-      basicActivityKey: "0:0"
+      basicActivityKey: "unlinked:BA-002"
     });
 
     assert.match(runtime.appNode.innerHTML, /value="初始工作项目"/);
+    assert.match(runtime.appNode.innerHTML, /value="可添加工作项目"/);
     assert.match(runtime.appNode.innerHTML, /value="BA-001"/);
     assert.match(runtime.appNode.innerHTML, /value="BA-002"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /value="BA-003"/);
     assert.match(runtime.appNode.innerHTML, /data-support-activity-job="ops_preflight-1"/);
 
     await runtime.click("[data-support-activity-job]", { supportActivityJob: "ops_preflight-1" });
     assert.match(runtime.appNode.innerHTML, /工作项目编辑/);
     assert.match(runtime.appNode.innerHTML, /data-support-activity-job-template-select="ops_preflight"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<th>保障人员<\/th><th>保障设备<\/th><th>备件<\/th>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("new operations support plan starts with three empty phase lists", async () => {
+  const projectId = "empty-operations-phase-lists";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivities = [];
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "空白使用保障方案")]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-operations-support-activity");
+    assert.match(runtime.appNode.innerHTML, /暂无使用保障活动/);
+
+    await runtime.click("[data-support-activity-plan-add]");
+    assert.equal((runtime.appNode.innerHTML.match(/data-select-support-activity-plan=/g) || []).length, 1);
+    for (const planType of ["直接准备方案", "再次出动准备方案", "飞行后检查方案"]) {
+      await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: planType });
+      assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-job="/);
+    }
+
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => (
+      body.supportActivities?.length === 3
+      && body.supportActivities.every((activity) => activity.activityCodes?.length === 0)
+    ), "expected one operations plan with three empty phase lists");
+    assert.equal(new Set(saved.supportActivities.map((activity) => activity.planGroupId)).size, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("operations phase picker deduplicates basic activities referenced by other phases", async () => {
+  const projectId = "operations-picker-deduplicates-cross-phase-refs";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivityJobs = [
+    { activityCode: "BA-024", workName: "加油", durationMinutes: 20 },
+    { activityCode: "BA-025", workName: "机务检查", durationMinutes: 15 }
+  ];
+  projectJson.supportActivities = [
+    {
+      id: "ops-preflight",
+      activityType: "使用保障活动",
+      planType: "直接准备方案",
+      planGroupId: "ops-runtime",
+      activityName: "J-15使用保障方案",
+      aircraftModel: "J-15",
+      activityCodes: ["BA-024", "BA-025"],
+      predecessors: { "BA-024": [], "BA-025": [] }
+    },
+    {
+      id: "ops-relaunch",
+      activityType: "使用保障活动",
+      planType: "再次出动准备方案",
+      planGroupId: "ops-runtime",
+      activityName: "J-15使用保障方案",
+      aircraftModel: "J-15",
+      activityCodes: ["BA-024"],
+      predecessors: { "BA-024": [] }
+    },
+    {
+      id: "ops-postflight",
+      activityType: "使用保障活动",
+      planType: "飞行后检查方案",
+      planGroupId: "ops-runtime",
+      activityName: "J-15使用保障方案",
+      aircraftModel: "J-15",
+      activityCodes: ["BA-025"],
+      predecessors: { "BA-025": [] }
+    }
+  ];
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "跨阶段基础活动候选去重")]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-operations-support-activity");
+
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
+    await runtime.click("[data-support-activity-job-add]", { supportActivityJobAdd: "ops_postflight" });
+    assert.equal((runtime.appNode.innerHTML.match(/BA-024 \/ 加油/g) || []).length, 1);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /BA-025 \/ 机务检查/);
+
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "再次出动准备方案" });
+    await runtime.click("[data-support-activity-job-add]", { supportActivityJobAdd: "ops_relaunch" });
+    assert.equal((runtime.appNode.innerHTML.match(/BA-025 \/ 机务检查/g) || []).length, 1);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /BA-024 \/ 加油/);
   } finally {
     runtime.restore();
   }

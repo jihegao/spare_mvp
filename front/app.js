@@ -7155,15 +7155,7 @@ function createOperationsSupportActivityForAircraftModel(aircraftModel, config =
     aircraftModel: model,
     maxWorkTimeRefMinutes: config.maxWorkTimeRefMinutes ?? 30
   };
-  return setSupportActivityJobs(activity, [{
-      activityCode: nextSupportActivityJobCode("ops_preflight", []),
-      workName: `${config.label || "新增"}基本保障活动1`,
-      predecessors: [],
-      durationMinutes: config.maxWorkTimeRefMinutes ?? 30,
-      personnel: defaultPersonnelRequirement("机务人员", 1),
-      equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
-      spare: []
-  }]);
+  return setSupportActivityJobs(activity, []);
 }
 
 function nextOperationsSupportActivityId(aircraftModel, planType = "") {
@@ -10433,7 +10425,21 @@ function filteredBasicActivityLibraryRows() {
 
 function basicActivityLibraryOptions(tabKey = "") {
   const expectedType = basicActivityTypeForJobTab(tabKey);
-  return basicActivityLibraryRows().filter((row) => !expectedType || row.type === expectedType).map((row) => ({
+  const targetActivity = supportActivityTemplatePickerTabKey === tabKey
+    ? findSupportActivityByJobTabKey(tabKey)
+    : null;
+  const linkedCodes = new Set(supportActivityJobs(targetActivity).map((job) => supportActivityJobCode(job.activityCode)));
+  const uniqueRowsByCode = new Map();
+  for (const row of basicActivityLibraryRows()) {
+    if (expectedType && row.type !== expectedType) continue;
+    if (targetActivity && (row.activity === targetActivity || linkedCodes.has(supportActivityJobCode(row.activityCode)))) continue;
+    // In add mode, an already linked definition must not be cloned under a new
+    // code and shown as an unexpected duplicate row.
+    const code = supportActivityJobCode(row.activityCode);
+    const identity = code || row.key;
+    if (!uniqueRowsByCode.has(identity)) uniqueRowsByCode.set(identity, row);
+  }
+  return [...uniqueRowsByCode.values()].map((row) => ({
     value: row.key,
     label: [row.activityCode, row.workName, row.type].filter(Boolean).join(" / "),
     searchText: [
@@ -11161,11 +11167,22 @@ function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
   const current = jobs[targetIndex] || {};
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
   const targetKey = activityIndex >= 0 ? `${activityIndex}:${targetIndex}` : "";
-  const templateJob = supportActivityJobFromBasicActivity(template);
-  templateJob.activityCode = uniqueBasicActivityCode(
-    templateJob.activityCode || nextSupportActivityJobCode(tabKey, jobs),
-    addMode ? "" : targetKey
+  const convertedTemplateJob = supportActivityJobFromBasicActivity(template);
+  const canonicalTemplateDefinition = supportActivityJobDefinitionsByCode().get(
+    supportActivityJobCode(convertedTemplateJob.activityCode)
   );
+  const templateJob = addMode && canonicalTemplateDefinition
+    ? {
+      ...canonicalTemplateDefinition,
+      predecessors: Array.isArray(convertedTemplateJob.predecessors) ? [...convertedTemplateJob.predecessors] : []
+    }
+    : convertedTemplateJob;
+  templateJob.activityCode = addMode
+    ? (templateJob.activityCode || nextSupportActivityJobCode(tabKey, jobs))
+    : uniqueBasicActivityCode(
+      templateJob.activityCode || nextSupportActivityJobCode(tabKey, jobs),
+      targetKey
+    );
   jobs[targetIndex] = {
     ...current,
     ...templateJob
