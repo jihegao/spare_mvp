@@ -20,7 +20,7 @@ Interpretation:
 - Basic missions describe sortie/task units and default durations.
 - Composite tasks group basic mission items into waves or task packages.
 - Periodic tasks describe calendar or repeat rules that create mission instances.
-- Periodic profile lists persist the month-to-week and year-to-month planning composition. Empty strings in their reference arrays mean “not configured” and must not be replaced with another profile ID; these lists support authoring and summaries, while runtime task generation still uses `missionProfile.periodicTasks[]`.
+- Periodic tasks are the reusable week-profile definitions. `periodicProfileLists` is behavior-driving composition input: the formal compiler selects the highest configured level (`year`, then `month`, then `week`) and expands referenced periodic and composite tasks into the compiled schedule with their week offsets. Empty reference slots mean “not configured” and must not be replaced with another profile ID.
 - Mission phases now belong to each basic mission. Airports provide context for timing/location. Root mission phases and mission areas are legacy fallback fields only.
 
 ## 装备
