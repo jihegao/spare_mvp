@@ -2247,6 +2247,85 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_project_and_experiment_plan_compile_preflight_are_authenticated_and_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "preflight.sqlite3"
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=database_path,
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                token = self._login_token(base_url, "user", "user")
+                project = small_aircraft_support_project("project-http-compile-preflight")
+                self._json(base_url, "POST", "/projects", project, auth_token=token)
+                branch = json.loads(json.dumps(project))
+                branch["supportActivities"] = []
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{quote(project['project_id'], safe='')}/experiment-plans",
+                    {"config": {"name": "blocked branch", "steps": 1, "projectJson": branch}},
+                    auth_token=token,
+                )
+                project_route = f"/projects/{quote(project['project_id'], safe='')}/compile-preflight"
+                plan_route = (
+                    f"/projects/{quote(project['project_id'], safe='')}/experiment-plans/"
+                    f"{quote(plan['experiment_plan_id'], safe='')}/compile-preflight"
+                )
+
+                unauthenticated = self._json_error(base_url, "POST", project_route, {})
+                self.assertEqual(unauthenticated["code"], "unauthorized")
+
+                tables = (
+                    "modeling_snapshots",
+                    "experiment_plans",
+                    "scenarios",
+                    "simulation_runs",
+                    "result_summaries",
+                    "artifact_manifests",
+                )
+                with sqlite3.connect(database_path) as connection:
+                    before = {
+                        table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                        for table in tables
+                    }
+
+                project_result = self._json(base_url, "POST", project_route, {}, auth_token=token)
+                plan_result = self._json(base_url, "POST", plan_route, {}, auth_token=token)
+
+                self.assertEqual(project_result["status"], "compiled")
+                self.assertEqual(project_result["issues"], [])
+                self.assertNotIn("scenario", project_result)
+                self.assertEqual(plan_result["status"], "blocked")
+                issue = next(item for item in plan_result["issues"] if item["code"] == "missing_support_activities")
+                self.assertEqual(issue["field_path"], "supportActivities")
+                self.assertEqual(issue["page"], "保障活动建模")
+                self.assertTrue(issue["suggestion"])
+
+                missing = self._json_error(
+                    base_url,
+                    "POST",
+                    "/projects/missing-project/compile-preflight",
+                    {},
+                    auth_token=token,
+                )
+                self.assertEqual(missing["code"], "not_found")
+                with sqlite3.connect(database_path) as connection:
+                    after = {
+                        table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                        for table in tables
+                    }
+                self.assertEqual(after, before)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_modeling_import_create_project_requires_session_and_data_role(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(

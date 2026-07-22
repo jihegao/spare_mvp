@@ -241,6 +241,25 @@ def create_backend_server(
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "compile-scenario":
                 self._require_user()
                 return api.compile_modeling_import_scenario(parts[1], body.get("model_family", ACTIVE_FORMAL_MODEL_FAMILY))
+            if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "compile-preflight":
+                self._require_user()
+                return api.compile_project_preflight(
+                    parts[1],
+                    model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
+                )
+            if (
+                self.command == "POST"
+                and len(parts) == 5
+                and parts[0] == "projects"
+                and parts[2] == "experiment-plans"
+                and parts[4] == "compile-preflight"
+            ):
+                self._require_user()
+                return api.compile_project_preflight(
+                    parts[1],
+                    model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
+                    experiment_plan_id=parts[3],
+                )
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
             if self.command == "PUT" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "replace":

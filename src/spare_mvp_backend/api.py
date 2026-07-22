@@ -301,6 +301,32 @@ class BackendApi:
         project = normalize_project_basic_mission_support_activity_names(self.repository.get_project(project_id))
         return strip_project_sweep(project)
 
+    def compile_project_preflight(
+        self,
+        project_id: str,
+        *,
+        model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
+        experiment_plan_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Return run-readiness diagnostics without persisting compiler output."""
+        try:
+            result = self.run_service.compile_preflight(
+                project_id,
+                model_family=model_family,
+                experiment_plan_id=experiment_plan_id,
+            )
+        except RunServiceError as exc:
+            raise self._run_service_error_to_backend_error(exc) from exc
+        return {
+            "schema_version": "project-compile-preflight-v0",
+            "project_id": project_id,
+            **({"experiment_plan_id": experiment_plan_id} if experiment_plan_id else {}),
+            "model_family": model_family,
+            "status": str(result.get("status") or "blocked"),
+            "issues": [_project_compile_preflight_issue(issue) for issue in result.get("issues") or []],
+            "warnings": copy.deepcopy(result.get("warnings") or []),
+        }
+
     def list_projects(self) -> dict[str, Any]:
         projects = self.repository.list_projects()
         return {
@@ -3075,6 +3101,18 @@ def _public_user(user: dict[str, Any]) -> dict[str, Any]:
         "role": user["role"],
         "display_name": user.get("display_name") or user["username"],
         "status": user.get("status") or "active",
+    }
+
+
+def _project_compile_preflight_issue(issue: Any) -> dict[str, Any]:
+    value = issue if isinstance(issue, dict) else {}
+    return {
+        "code": str(value.get("code") or "compile_gate_blocked"),
+        "message": str(value.get("message") or "Project did not pass the Scenario compiler gate."),
+        "field_path": str(value.get("field_path") or value.get("path") or "Project JSON"),
+        "page": str(value.get("page") or "Project JSON"),
+        "severity": str(value.get("severity") or "error"),
+        "suggestion": str(value.get("suggestion") or "修正输入后重新执行运行编译预检。"),
     }
 
 

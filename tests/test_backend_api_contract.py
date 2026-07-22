@@ -115,6 +115,21 @@ def small_aircraft_support_project(project_id: str) -> dict[str, Any]:
     }
 
 
+def compile_preflight_persistence_counts(connection: sqlite3.Connection) -> dict[str, int]:
+    tables = (
+        "modeling_snapshots",
+        "experiment_plans",
+        "scenarios",
+        "simulation_runs",
+        "result_summaries",
+        "artifact_manifests",
+    )
+    return {
+        table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+        for table in tables
+    }
+
+
 def periodic_three_day_aircraft_support_project(project_id: str) -> dict[str, Any]:
     project = small_aircraft_support_project(project_id)
     project["missionProfile"]["durationHours"] = 24
@@ -257,6 +272,89 @@ class BackendApiContractTest(unittest.TestCase):
         saved = self.api.save_project(clean)
 
         self.assertEqual(saved["project_id"], legacy["project_id"])
+
+    def test_project_compile_preflight_uses_formal_gate_without_persistence(self) -> None:
+        project = small_aircraft_support_project("project-compile-preflight-ready")
+        self.api.save_project(project)
+        before = compile_preflight_persistence_counts(self.connection)
+
+        result = self.api.compile_project_preflight(project["project_id"])
+
+        self.assertEqual(result["schema_version"], "project-compile-preflight-v0")
+        self.assertEqual(result["project_id"], project["project_id"])
+        self.assertEqual(result["model_family"], "aircraft_support_v1")
+        self.assertEqual(result["status"], "compiled")
+        self.assertEqual(result["issues"], [])
+        self.assertNotIn("scenario", result)
+        self.assertEqual(compile_preflight_persistence_counts(self.connection), before)
+
+    def test_project_compile_preflight_returns_structured_blocking_issues_without_persistence(self) -> None:
+        project = small_aircraft_support_project("project-compile-preflight-blocked")
+        project["supportActivities"] = []
+        self.api.save_project(project)
+        before = compile_preflight_persistence_counts(self.connection)
+
+        result = self.api.compile_project_preflight(project["project_id"])
+
+        self.assertEqual(result["status"], "blocked")
+        issue = next(item for item in result["issues"] if item["code"] == "missing_support_activities")
+        self.assertEqual(issue["field_path"], "supportActivities")
+        self.assertEqual(issue["page"], "保障活动建模")
+        self.assertTrue(issue["suggestion"])
+        self.assertEqual(
+            set(issue),
+            {"code", "message", "field_path", "page", "severity", "suggestion"},
+        )
+        self.assertEqual(compile_preflight_persistence_counts(self.connection), before)
+
+    def test_experiment_plan_compile_preflight_uses_branch_project_without_new_snapshot_or_run(self) -> None:
+        project = small_aircraft_support_project("project-plan-compile-preflight")
+        self.api.save_project(project)
+        branch = copy.deepcopy(project)
+        branch["supportActivities"] = []
+        plan = self.api.create_experiment_plan(
+            project["project_id"],
+            {"name": "blocked branch", "steps": 1, "projectJson": branch},
+        )
+        before = compile_preflight_persistence_counts(self.connection)
+
+        result = self.api.compile_project_preflight(
+            project["project_id"],
+            experiment_plan_id=plan["experiment_plan_id"],
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertIn("missing_support_activities", {issue["code"] for issue in result["issues"]})
+        self.assertEqual(compile_preflight_persistence_counts(self.connection), before)
+
+    def test_experiment_plan_compile_preflight_returns_export_errors_as_blocked_diagnostics(self) -> None:
+        project = small_aircraft_support_project("project-plan-export-preflight")
+        self.api.save_project(project)
+        branch = copy.deepcopy(project)
+        branch["supportOrganization"] = "invalid"
+        snapshot = self.api.create_modeling_snapshot(project["project_id"])
+        plan = {
+            "experiment_plan_id": "experiment-plan-invalid-export",
+            "project_id": project["project_id"],
+            "modeling_snapshot_id": snapshot["snapshot_id"],
+            "schema_version": "experiment-plan-v0",
+            "project_version": project["project_version"],
+            "status": "draft",
+            "config": {"name": "invalid export branch", "steps": 1, "projectJson": branch},
+        }
+        self.repository.upsert_experiment_plan(plan)
+        before = compile_preflight_persistence_counts(self.connection)
+
+        result = self.api.compile_project_preflight(
+            project["project_id"],
+            experiment_plan_id=plan["experiment_plan_id"],
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["issues"][0]["code"], "invalid_clean_project")
+        self.assertEqual(result["issues"][0]["field_path"], "Project JSON")
+        self.assertEqual(compile_preflight_persistence_counts(self.connection), before)
 
     def test_lite_mesa_session_budget_scales_with_execution_waves_and_stays_bounded(self) -> None:
         parallel = _normalize_lite_mesa_analysis_settings({"samples": 24, "parallelCores": 4})
