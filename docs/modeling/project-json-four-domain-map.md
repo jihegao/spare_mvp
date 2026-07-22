@@ -1,6 +1,6 @@
 # Project JSON Four-Domain Map
 
-Use this map when explaining aircraft_support_v1 Project JSON from modeling data.
+Use this map when explaining `aircraft_support_v1` Project JSON from modeling data. The schemas in `contracts/`, `ProjectJsonExporter`, and `SimulationAdapter` are authoritative; this document summarizes field ownership and compatibility behavior without defining another schema or compiler.
 
 ## 任务
 
@@ -41,7 +41,7 @@ Interpretation:
 - `components[].parentId` is a strict component-ID reference. When child rows use `aircraft-root`, the Project must contain one real parentless `components[]` row with that ID and a whole-aircraft product; hiding it in the authoring table does not make it virtual. Non-empty `supportActivities[].equipmentId` values follow the same component-ID contract.
 - Clean Project JSON uses `failureDistribution`, `repairDistribution`, `kOutOfN`, and `productType`; legacy scalar failure, life-limit, RMS, spare type, and RBD fields should not be reintroduced to make clean data run.
 - Failure-distribution parameters may use the legacy `parameters` string or current editor-owned fields: exponential `rate`/`lambda`, normal `mean` (plus optional variance), uniform `min`/`max`, and fixed `value`/`mean`. If a historical distribution label conflicts with an unambiguous parameter family, migrate the label instead of discarding the values.
-- The independent compiler keys component repair requirements by `productId` and uses `products[].name` only as a display label; it does not derive or restore `spareType`.
+- The formal compiler keys component repair requirements by `productId` and uses `products[].name` only as a display label; it does not derive or restore `spareType`.
 
 ## 保障组织
 
