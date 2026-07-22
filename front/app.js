@@ -955,7 +955,7 @@ function supportActivityPlanForPage(page, activity) {
     for (const model of aircraftModels.length ? aircraftModels : [activityModel].filter(Boolean)) {
       planNodesByModel.set(model, []);
     }
-    for (const option of operationsSupportActivityOptions()) {
+    for (const option of operationsSupportActivityTreeEntries()) {
       const model = option.aircraftModel || activityModel || aircraftModels[0] || "未指定机型";
       if (!planNodesByModel.has(model)) planNodesByModel.set(model, []);
       planNodesByModel.get(model).push({
@@ -8637,13 +8637,12 @@ function findSupportActivityForPage(page) {
 
 function ensureSupportActivityForPage(page) {
   if (page.name.includes("基本保障活动")) {
-    return basicSupportActivityHostActivity()
-      || ensureOperationsSupportActivityForAircraftModel(defaultSupportActivityAircraftModel());
+    return basicSupportActivityHostActivity();
   }
   const activity = findSupportActivityForPage(page);
   if (activity) return activity;
   if (page.name.includes("使用")) {
-    return ensureOperationsSupportActivityForAircraftModel(defaultSupportActivityAircraftModel());
+    return null;
   }
   if (page.name.includes("预防性")) {
     return ensurePreventiveMaintenanceActivityForAircraftModel(defaultSupportActivityAircraftModel());
@@ -8857,6 +8856,21 @@ function operationsSupportActivityOptions(aircraftModel = "") {
   return operationsSupportActivityEntries(aircraftModel);
 }
 
+// One user-authored operations plan is stored as three phase activities, but
+// the modeling tree exposes that plan as a single leaf.  Phase selection stays
+// inside the editor tabs instead of adding three sibling tree nodes.
+function operationsSupportActivityTreeEntries(aircraftModel = "") {
+  const entries = operationsSupportActivityEntries(aircraftModel);
+  const groups = new Map();
+  for (const entry of entries) {
+    const groupKey = operationsSupportPlanGroupId(entry.activity) || `legacy:${entry.key}`;
+    const current = groups.get(groupKey);
+    const isDirect = normalizeOperationsSupportPlanType(entry.activity.planType) === "直接准备方案";
+    if (!current || isDirect) groups.set(groupKey, entry);
+  }
+  return [...groups.values()];
+}
+
 function selectedOperationsSupportActivity() {
   return operationsSupportActivityEntries().find((entry) => entry.key === selectedOperationsSupportActivityKey)?.activity || null;
 }
@@ -8893,10 +8907,22 @@ function ensureOperationsSupportPhaseActivities(baseActivity) {
       { assignLegacyPlanGroup: true }
     );
     if (existing) return existing;
-    const activity = createOperationsSupportActivityForAircraftModel(model, { ...config, planGroupId });
+    const activity = createOperationsSupportPhaseActivityFromLegacy(baseActivity, model, { ...config, planGroupId });
     scenario.supportActivities.push(activity);
     return activity;
   });
+}
+
+function createOperationsSupportPhaseActivityFromLegacy(baseActivity, aircraftModel, config) {
+  const activity = createOperationsSupportActivityForAircraftModel(aircraftModel, config);
+  const legacyJobs = supportActivityJobs(baseActivity);
+  if (!legacyJobs.length) return activity;
+  // A legacy single-row plan was displayed by every phase tab.  Preserve the
+  // existing visible jobs while materializing phase-local definitions.
+  return setSupportActivityJobs(activity, legacyJobs.map((job) => ({
+    ...job,
+    predecessors: [...(job.predecessors || [])]
+  })));
 }
 
 function findOperationsSupportPhaseActivities(baseActivity) {
@@ -8938,15 +8964,15 @@ function addOperationsSupportActivityPlan() {
   const entries = operationsSupportActivityEntries();
   const selected = selectedOperationsSupportActivity() || entries[0]?.activity || {};
   const model = selectedOperationsSupportAircraftModel || supportActivityAircraftModel(selected) || wholeMachineModels()[0] || scenarioEquipmentModel() || "";
-  const nextIndex = entries.length + 1;
+  const nextIndex = operationsSupportActivityTreeEntries(model).length + 1;
   const planGroupId = nextOperationsSupportPlanGroupId(model);
   if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
   const created = operationsSupportPlanTypeConfigs().map((config) => {
     const activity = createOperationsSupportActivityForAircraftModel(model, {
       ...config,
-      planGroupId,
-      activitySuffix: `新增保障活动${nextIndex}-${config.label}`
+      planGroupId
     });
+    activity.activityName = `${model}新增保障活动${nextIndex}`;
     scenario.supportActivities.push(activity);
     return activity;
   });
@@ -8975,19 +9001,28 @@ function deleteOperationsSupportActivityPlan(key = "") {
   updatePreviewResultsThroughApiClient();
 }
 
+function materializeOperationsSupportPhaseActivity(baseActivity, planType) {
+  ensureOperationsSupportPhaseActivities(baseActivity);
+  return operationsSupportPhaseActivity(baseActivity, planType);
+}
+
 function supportActivityJobKey(tabKey, index) {
   return `${tabKey}:${index}`;
 }
 
-function findSupportActivityByJobTabKey(tabKey) {
+function findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases = false } = {}) {
   const operationsPlanType = operationsSupportPlanTypeFromTabKey(tabKey);
   if (operationsPlanType) {
     const baseActivity = selectedOperationsSupportActivity()
       || operationsSupportActivityEntries()[0]?.activity
       || null;
     const phaseActivities = findOperationsSupportPhaseActivities(baseActivity);
-    return operationsSupportPhaseActivity(baseActivity, operationsPlanType)
-      || phaseActivities.find((activity) => String(activity.planType || "") === operationsPlanType)
+    let phaseActivity = operationsSupportPhaseActivity(baseActivity, operationsPlanType)
+      || phaseActivities.find((activity) => String(activity.planType || "") === operationsPlanType);
+    if (!phaseActivity && materializeOperationsPhases && baseActivity) {
+      phaseActivity = materializeOperationsSupportPhaseActivity(baseActivity, operationsPlanType);
+    }
+    return phaseActivity
       // Legacy projects may have a single generic `使用保障方案` row.  The
       // editor renders that row when no phase-specific activity exists, so
       // selection and batch deletion must resolve to the same fallback.
@@ -9085,6 +9120,7 @@ function supportActivityJobs(activity) {
 
 function setSupportActivityJobs(activity, jobs) {
   if (!activity || typeof activity !== "object") return;
+  isolateOperationsSupportActivityJobs(activity);
   const table = ensureSupportActivityJobTable();
   const tableByCode = new Map(table.map((job) => [supportActivityJobCode(job?.activityCode), job]).filter(([code]) => code));
   const currentActivityCodes = new Set(Array.isArray(activity.activityCodes) ? activity.activityCodes.map((code) => supportActivityJobCode(code)).filter(Boolean) : []);
@@ -9120,6 +9156,58 @@ function setSupportActivityJobs(activity, jobs) {
   activity.predecessors = predecessors;
   delete activity.jobs;
   return activity;
+}
+
+// Work-item definitions live in the project-level table and are selected by
+// activityCode.  Older operation plans can therefore make their three phases
+// point at the same definition.  Before a phase is edited, give that phase its
+// own copies so editing (or unlinking) it cannot change the other phases.
+function isolateOperationsSupportActivityJobs(activity) {
+  if (!isOperationsSupportActivity(activity) || !Array.isArray(activity?.activityCodes)) return false;
+  const definitions = supportActivityJobDefinitionsByCode();
+  const sharedCodes = new Set();
+  for (const otherActivity of scenario.supportActivities || []) {
+    if (otherActivity === activity || !Array.isArray(otherActivity?.activityCodes)) continue;
+    for (const code of otherActivity.activityCodes) sharedCodes.add(supportActivityJobCode(code));
+  }
+  const codeMap = new Map();
+  for (const rawCode of activity.activityCodes) {
+    const code = supportActivityJobCode(rawCode);
+    if (!code || !sharedCodes.has(code) || !definitions.has(code) || codeMap.has(code)) continue;
+    codeMap.set(code, nextIsolatedSupportActivityJobCode(code));
+  }
+  if (!codeMap.size) return false;
+
+  const table = ensureSupportActivityJobTable();
+  for (const [code, isolatedCode] of codeMap) {
+    const definition = definitions.get(code);
+    if (!definition) continue;
+    table.push({ ...supportActivityJobDefinition(definition), activityCode: isolatedCode });
+  }
+  activity.activityCodes = activity.activityCodes.map((code) => codeMap.get(supportActivityJobCode(code)) || supportActivityJobCode(code));
+  const predecessors = {};
+  for (const [rawCode, rawPredecessors] of Object.entries(activity.predecessors || {})) {
+    const code = codeMap.get(supportActivityJobCode(rawCode)) || supportActivityJobCode(rawCode);
+    if (!code) continue;
+    predecessors[code] = Array.isArray(rawPredecessors)
+      ? rawPredecessors.map((value) => codeMap.get(supportActivityJobCode(value)) || supportActivityJobCode(value)).filter(Boolean)
+      : [];
+  }
+  activity.predecessors = predecessors;
+  return true;
+}
+
+function nextIsolatedSupportActivityJobCode(sourceCode) {
+  const used = new Set(ensureSupportActivityJobTable().map((job) => supportActivityJobCode(job?.activityCode)).filter(Boolean));
+  const match = String(sourceCode || "BA").match(/^(.*?)(?:-(\d+))?$/);
+  const prefix = (match?.[1] || sourceCode || "BA").replace(/-$/, "") || "BA";
+  let index = Math.max(1, Number(match?.[2] || 0) + 1);
+  let code = `${prefix}-${String(index).padStart(3, "0")}`;
+  while (used.has(code)) {
+    index += 1;
+    code = `${prefix}-${String(index).padStart(3, "0")}`;
+  }
+  return code;
 }
 
 function permanentlyDeleteSupportActivityJobDefinitions(codes) {
@@ -9195,7 +9283,8 @@ function toggleAllSupportActivityJobSelection(tabKey, checked) {
 function deleteSupportActivityJob(key) {
   const [tabKey, rawIndex] = String(key || "").split(":");
   const index = Number(rawIndex);
-  const activity = findSupportActivityByJobTabKey(tabKey);
+  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
+  isolateOperationsSupportActivityJobs(activity);
   if (!deleteSupportActivityJobAt(activity, index)) return;
   selectedSupportActivityJobKeys.delete(key);
   renumberSupportActivityJobSelections(tabKey);
@@ -9203,8 +9292,9 @@ function deleteSupportActivityJob(key) {
 }
 
 function deleteSelectedSupportActivityJobs(tabKey) {
-  const activity = findSupportActivityByJobTabKey(tabKey);
+  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   if (!activity) return;
+  isolateOperationsSupportActivityJobs(activity);
   const selectedIndexes = Array.from(selectedSupportActivityJobKeys)
     .map((key) => {
       const [keyTab, rawIndex] = String(key).split(":");
@@ -9223,8 +9313,9 @@ function deleteSelectedSupportActivityJobs(tabKey) {
 }
 
 function addSupportActivityJob(tabKey) {
-  const activity = findSupportActivityByJobTabKey(tabKey);
+  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   if (!activity) return "";
+  isolateOperationsSupportActivityJobs(activity);
   const jobs = supportActivityJobs(activity).slice();
   const nextIndex = jobs.length;
   jobs.push({
@@ -9279,8 +9370,9 @@ function selectedSupportActivityJob(tabKey) {
 function updateSupportActivityJobField(key, fieldName, value) {
   const [tabKey, rawIndex] = String(key || "").split(":");
   const index = Number(rawIndex);
-  const activity = findSupportActivityByJobTabKey(tabKey);
+  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   if (!activity || !Number.isInteger(index) || !fieldName) return;
+  isolateOperationsSupportActivityJobs(activity);
   const jobs = supportActivityJobs(activity).slice();
   if (!jobs[index]) return;
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
@@ -9305,7 +9397,7 @@ function updateSupportActivityJobField(key, fieldName, value) {
 function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
   const [tabKey, rawIndex] = String(encodedJob || "").split(":");
   const index = Number(rawIndex);
-  const activity = findSupportActivityByJobTabKey(tabKey);
+  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   if (!activity || !Number.isInteger(index)) return;
   const jobs = supportActivityJobs(activity).slice();
   if (!jobs[index]) return;
@@ -9317,7 +9409,7 @@ function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
 function updateSupportActivityJobPredecessorSelection(encodedJob, predecessorValue, checked) {
   const [tabKey, rawIndex] = String(encodedJob || "").split(":");
   const index = Number(rawIndex);
-  const activity = findSupportActivityByJobTabKey(tabKey);
+  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   if (!activity || !Number.isInteger(index)) return;
   const jobs = supportActivityJobs(activity).slice();
   if (!jobs[index]) return;
@@ -11057,7 +11149,7 @@ function ensureSupportActivityForBasicType(type) {
 }
 
 function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
-  const activity = findSupportActivityByJobTabKey(tabKey);
+  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   if (!activity) return;
   const allowedKeys = new Set(basicActivityLibraryOptions(tabKey).map((option) => option.value));
   if (!allowedKeys.has(String(basicActivityKey || ""))) return;
@@ -11085,7 +11177,7 @@ function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
 }
 
 function addBasicActivityAsSupportActivityPredecessor(tabKey, basicActivityKey, targetKey) {
-  const activity = findSupportActivityByJobTabKey(tabKey);
+  const activity = findSupportActivityByJobTabKey(tabKey, { materializeOperationsPhases: true });
   const template = basicActivityLibraryRows().find((row) => row.key === basicActivityKey);
   const target = supportActivityJobByKey(targetKey);
   if (!activity || !template || !target || target.tabKey !== tabKey) return;
@@ -11765,6 +11857,17 @@ function renderSupportActivityWorkbench(page) {
   const lockedAttr = modelingLockDisabledAttr(locked);
   if (page.name.includes("基本保障活动")) {
     return `<div class="ship-front-workbench">${renderBasicActivityLibrary()}</div>`;
+  }
+  if (page.name.includes("使用") && !activity) {
+    return `
+      <div class="ship-front-workbench">
+        <section class="detail-panel empty-state">
+          <strong>暂无使用保障活动</strong>
+          <p>可按需新增保障活动方案；系统不会再自动创建 J-15 的飞行前、再次出动和飞行后活动。</p>
+          <button type="button" class="btn-primary" data-support-activity-plan-add${lockedAttr}>新增节点</button>
+        </section>
+      </div>
+    `;
   }
   if (page.name.includes("修复性")) {
     return `<div class="ship-front-workbench">${renderCorrectiveMaintenanceActivity(activity)}</div>`;
