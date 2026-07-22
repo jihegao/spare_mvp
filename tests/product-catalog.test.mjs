@@ -124,6 +124,29 @@ test("shared reliability parameters hydrate from the canonical exact product ID 
   assert.equal(project.components[2].repairDistribution, undefined);
 });
 
+test("legacy fixed product MTBF hydrates the distribution value without overwriting an explicit parameter", () => {
+  const project = {
+    products: [
+      { id: "legacy", name: "Legacy", mtbfHours: 1200, failureDistribution: { distributionType: "固定值" } },
+      { id: "explicit", name: "Explicit", mtbfHours: 300, failureDistribution: { distributionType: "fixed", value: 450 } }
+    ],
+    components: [
+      { id: "legacy-component", productId: "legacy" },
+      { id: "explicit-component", productId: "explicit" }
+    ]
+  };
+
+  normalizeProjectProducts(project);
+
+  assert.equal(project.products[0].failureDistribution.value, 1200);
+  assert.equal(project.components[0].failureDistribution.value, 1200);
+  assert.equal(project.products[1].failureDistribution.value, 450);
+  assert.equal(project.components[1].failureDistribution.value, 450);
+  const once = JSON.stringify(project);
+  normalizeProjectProducts(project);
+  assert.equal(JSON.stringify(project), once);
+});
+
 test("legacy component parameters seed a product once and canonical product values win conflicts", () => {
   const project = {
     products: [{ id: "product-shared", name: "共享产品" }],

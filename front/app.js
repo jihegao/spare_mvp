@@ -6831,6 +6831,9 @@ function updateSharedEquipmentProductParameter(input) {
     if (!confirmed) return true;
   }
   updateSharedProductParameter(scenario, product.id, parameterPath, newValue);
+  if (input.dataset.equipmentMtbfHours === "true" || parameterPath === "failureDistribution.value") {
+    updateSharedProductParameter(scenario, product.id, "mtbfHours", Number(input.value));
+  }
   updatePreviewResultsThroughApiClient();
   markProjectDraftChanged();
   return true;

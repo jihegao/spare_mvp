@@ -4025,7 +4025,7 @@ test("shared equipment product parameters cancel without persistence and confirm
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
     await runtime.change("[data-path]", {
-      path: "components.0.mtbfHours",
+      path: "components.0.failureDistribution.value",
       sharedProductComponentId: "j15-engine"
     }, { value: "1500", type: "number" });
     assert.match(runtime.confirmMessages[0], /J-15-J-15发动机.*J-35-J-35发动机/);
@@ -4035,16 +4035,19 @@ test("shared equipment product parameters cancel without persistence and confirm
     const cancelledSave = await waitForProjectSave(runtime, (body) => body.products?.some((product) => product.id === "product-engine"));
     assert.equal(cancelledSave.products.find((product) => product.id === "product-engine").mtbfHours, 1200);
     assert.equal(cancelledSave.components.find((component) => component.id === "j15-engine").mtbfHours, 1200);
+    assert.equal(cancelledSave.products.find((product) => product.id === "product-engine").failureDistribution.value, 1200);
 
     await runtime.change("[data-path]", {
-      path: "components.0.mtbfHours",
+      path: "components.0.failureDistribution.value",
       sharedProductComponentId: "j15-engine"
     }, { value: "1500", type: "number" });
     await runtime.click("[data-project-draft-save]");
     savedProject = await waitForProjectSave(runtime, (body) => (
       body.products?.find((product) => product.id === "product-engine")?.mtbfHours === 1500
+        && body.products?.find((product) => product.id === "product-engine")?.failureDistribution?.value === 1500
     ));
     assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").mtbfHours, 300);
+    assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution.value, 300);
     assert.equal(runtime.confirmMessages.length, 2);
   } finally {
     runtime.restore();
@@ -4054,7 +4057,7 @@ test("shared equipment product parameters cancel without persistence and confirm
   try {
     await rehydrated.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await rehydrated.setHash("feature=spare-planning-equipment-system");
-    await waitForRuntimeHtml(rehydrated, /data-path="components\.0\.mtbfHours"[^>]*value="1500"/, "canonical product MTBF should rehydrate into the component row");
+    await waitForRuntimeHtml(rehydrated, /data-path="components\.0\.failureDistribution\.value"[^>]*value="1500"/, "canonical product MTBF should rehydrate into the component row");
   } finally {
     rehydrated.restore();
   }
