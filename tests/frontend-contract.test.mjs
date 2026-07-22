@@ -2472,6 +2472,13 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(appSource, /function operationsSupportPlanTypeConfigs\(\)/);
   assert.match(appSource, /function ensureOperationsSupportPhaseActivities/);
   assert.match(appSource, /function findOperationsSupportPhaseActivities/);
+  const createOperationsActivitySource = appSource.slice(
+    appSource.indexOf("function createOperationsSupportActivityForAircraftModel"),
+    appSource.indexOf("function nextOperationsSupportActivityId")
+  );
+  assert.match(createOperationsActivitySource, /setSupportActivityJobs\(activity, \[\]\)/);
+  assert.doesNotMatch(createOperationsActivitySource, /基本保障活动1/);
+  assert.doesNotMatch(createOperationsActivitySource, /nextSupportActivityJobCode/);
   assert.match(appSource, /function operationsSupportPlanGroupId/);
   assert.match(appSource, /function nextOperationsSupportPlanGroupId/);
   assert.match(operationsPlanTypeSource, /飞行前准备/);
