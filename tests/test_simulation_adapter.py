@@ -47,6 +47,24 @@ class SimulationAdapterTest(unittest.TestCase):
         project["products"] = products
         return project
 
+    def test_failure_distribution_rate_accepts_current_editor_fields(self) -> None:
+        self.assertAlmostEqual(
+            self.adapter._failure_distribution_rate({"distributionType": "指数分布", "rate": 0.04}),
+            0.04,
+        )
+        self.assertAlmostEqual(
+            self.adapter._failure_distribution_rate({"distributionType": "正态分布", "mean": 125, "variance": 14}),
+            1 / 125,
+        )
+        self.assertAlmostEqual(
+            self.adapter._failure_distribution_rate({"distributionType": "均匀分布", "min": 80, "max": 120}),
+            0.01,
+        )
+        self.assertAlmostEqual(
+            self.adapter._failure_distribution_rate({"distributionType": "固定值", "value": 100}),
+            0.01,
+        )
+
     def test_downtime_projection_maps_four_factor_event_ledger_without_duplicate_ids(self) -> None:
         samples = [
             {

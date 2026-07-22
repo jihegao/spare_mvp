@@ -7,8 +7,11 @@ created before that schema was complete.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
+
+from .project_payload import normalize_project_equipment_tree_integrity
 
 
 Migration = tuple[int, str, Callable[[sqlite3.Connection], None]]
@@ -186,10 +189,37 @@ def _migrate_modeling_import_payload_columns(connection: sqlite3.Connection) -> 
     )
 
 
+def _migrate_project_equipment_tree_integrity(connection: sqlite3.Connection) -> None:
+    project_columns = {row[1] for row in connection.execute("PRAGMA table_info(projects)")}
+    if not {"project_id", "payload_json"}.issubset(project_columns):
+        return
+    for project_id, payload_json in connection.execute("SELECT project_id, payload_json FROM projects").fetchall():
+        try:
+            project = json.loads(payload_json)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(project, dict):
+            continue
+        normalized = normalize_project_equipment_tree_integrity(project)
+        if normalized != project:
+            payload = json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+            if "updated_at" in project_columns:
+                connection.execute(
+                    "UPDATE projects SET payload_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?",
+                    (payload, project_id),
+                )
+            else:
+                connection.execute(
+                    "UPDATE projects SET payload_json = ? WHERE project_id = ?",
+                    (payload, project_id),
+                )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "simulation_runs_nullable_scenarios", _migrate_simulation_runs_nullable_scenarios),
     (2, "simulation_run_lifecycle_columns", _migrate_simulation_run_lifecycle_columns),
     (3, "user_authentication_columns", _migrate_user_authentication_columns),
     (4, "experiment_plan_snapshot_column", _migrate_experiment_plan_snapshot_column),
     (5, "modeling_import_payload_columns", _migrate_modeling_import_payload_columns),
+    (6, "project_equipment_tree_integrity", _migrate_project_equipment_tree_integrity),
 )

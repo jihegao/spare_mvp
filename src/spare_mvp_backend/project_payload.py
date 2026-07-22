@@ -1320,9 +1320,131 @@ def normalize_project_basic_mission_support_activity_names(project_json: dict[st
     the old-name source and the canonical target are unique.
     """
 
-    project = deepcopy(project_json)
+    project = normalize_project_equipment_tree_integrity(project_json)
     _normalize_basic_mission_support_activity_names(project)
     return project
+
+
+def normalize_project_equipment_tree_integrity(project_json: dict[str, Any]) -> dict[str, Any]:
+    """Repair unambiguous legacy equipment-tree references and distributions."""
+
+    project = deepcopy(project_json)
+    components = project.get("components")
+    if not isinstance(components, list):
+        components = []
+        project["components"] = components
+    component_ids = {
+        _clean_text(component.get("id"))
+        for component in components
+        if isinstance(component, dict) and _clean_text(component.get("id"))
+    }
+    needs_root = any(
+        isinstance(component, dict) and _clean_text(component.get("parentId")) == "aircraft-root"
+        for component in components
+    )
+    if needs_root and "aircraft-root" not in component_ids:
+        aircraft_model = _project_primary_aircraft_model(project)
+        quantity = _project_aircraft_quantity(project)
+        components.append({
+            "id": "aircraft-root",
+            "name": f"{aircraft_model}（整机）" if aircraft_model else "整机",
+            "productId": "product-aircraft-root",
+            "aircraftModel": aircraft_model,
+            "productType": "whole",
+            "quantity": quantity,
+            "kOutOfN": {"enabled": quantity > 1, "n": quantity, "k": quantity},
+        })
+        component_ids.add("aircraft-root")
+
+    for owner in [
+        *(project.get("products") if isinstance(project.get("products"), list) else []),
+        *components,
+    ]:
+        if isinstance(owner, dict):
+            _normalize_legacy_failure_distribution_type(owner.get("failureDistribution"))
+
+    resolved_ids = {
+        _clean_text(component.get("id"))
+        for component in components
+        if isinstance(component, dict) and _clean_text(component.get("id"))
+    }
+    if "aircraft-root" in resolved_ids:
+        for activity in project.get("supportActivities", []) if isinstance(project.get("supportActivities"), list) else []:
+            if not isinstance(activity, dict):
+                continue
+            equipment_id = _clean_text(activity.get("equipmentId"))
+            activity_name = _clean_text(activity.get("activityName") or activity.get("name"))
+            if equipment_id and equipment_id not in resolved_ids and re.search(r"整机|舰载机", activity_name):
+                activity["equipmentId"] = "aircraft-root"
+
+    if "aircraft-root" in resolved_ids:
+        products = project.get("products")
+        if not isinstance(products, list):
+            products = []
+            project["products"] = products
+        if not any(
+            isinstance(product, dict) and _clean_text(product.get("id")) == "product-aircraft-root"
+            for product in products
+        ):
+            root = next(
+                component
+                for component in components
+                if isinstance(component, dict) and _clean_text(component.get("id")) == "aircraft-root"
+            )
+            products.append({
+                "id": "product-aircraft-root",
+                "name": _clean_text(root.get("name")) or "整机",
+                "model": _clean_text(root.get("aircraftModel")) or "aircraft-root",
+                "kind": "whole",
+            })
+    return project
+
+
+def _project_primary_aircraft_model(project: dict[str, Any]) -> str:
+    equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
+    aircraft_types = equipment.get("aircraftTypes") if isinstance(equipment.get("aircraftTypes"), list) else []
+    for aircraft_type in aircraft_types:
+        if isinstance(aircraft_type, str) and _clean_text(aircraft_type):
+            return _clean_text(aircraft_type)
+        if isinstance(aircraft_type, dict):
+            model = _clean_text(aircraft_type.get("model") or aircraft_type.get("name") or aircraft_type.get("id"))
+            if model:
+                return model
+    whole_models = equipment.get("wholeMachineModels") if isinstance(equipment.get("wholeMachineModels"), list) else []
+    for model in whole_models:
+        if _clean_text(model):
+            return _clean_text(model)
+    return _clean_text(equipment.get("model"))
+
+
+def _project_aircraft_quantity(project: dict[str, Any]) -> int:
+    equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
+    try:
+        quantity = int(equipment.get("quantity"))
+    except (TypeError, ValueError):
+        quantity = 0
+    if quantity > 0:
+        return quantity
+    combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
+    members = combat_unit.get("members") if isinstance(combat_unit.get("members"), list) else []
+    return max(1, len(members))
+
+
+def _normalize_legacy_failure_distribution_type(distribution: Any) -> None:
+    if not isinstance(distribution, dict):
+        return
+    parameters = _clean_text(distribution.get("parameters") or distribution.get("params")).casefold()
+    distribution_type = _clean_text(
+        distribution.get("distributionType") or distribution.get("distribution_type")
+    ).casefold()
+    if not parameters or not distribution_type:
+        return
+    has_rate = re.search(r"(?:^|[,，;；\s])(lambda|λ|rate|failure_rate)\s*=", parameters) is not None
+    has_mean = re.search(r"(?:^|[,，;；\s])(mean|mu)\s*=", parameters) is not None
+    if ("exponential" in distribution_type or "指数" in distribution_type) and has_mean and not has_rate:
+        distribution["distributionType"] = "正态分布" if "指数" in distribution_type else "normal"
+    elif ("normal" in distribution_type or "正态" in distribution_type) and has_rate:
+        distribution["distributionType"] = "指数分布" if "正态" in distribution_type else "exponential"
 
 
 def _normalize_basic_mission_support_activity_names(project: dict[str, Any]) -> None:

@@ -7542,10 +7542,11 @@ function equipmentParentNodeSelect(component, index) {
     rootComponentId: componentId
   }));
   const options = [
-    { value: "aircraft-root", label: "整机级" },
+    { value: "aircraft-root", label: `${aircraftModel || "整机"}（整机级）` },
     ...(scenario.components || [])
       .filter((candidate) => (
         String(candidate?.id || "")
+        && String(candidate.id) !== "aircraft-root"
         && !excludedParentIds.has(String(candidate.id))
         && componentBelongsToAircraft(candidate, aircraftModel)
       ))

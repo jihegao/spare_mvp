@@ -38,7 +38,9 @@ Interpretation:
 - Combat-unit members are aircraft assets and initial states. Their canonical `preLifeCalendarDays`, `preLifeFlightHours`, and `preLifeTakeoffLandingCount` values are cumulative consumption since the last preventive action and compile to `aircraft.assets[].initial_life_state`; missing values default to zero. Legacy total-cycle, required-life, and remaining-life fields are retained only as source data and never converted into these counters.
 - Products are shared identities maintained independently from their use in an equipment hierarchy or spare inventory.
 - Components are the primary equipment hierarchy and reliability semantics; `components[].productId` binds each row to a product.
+- `components[].parentId` is a strict component-ID reference. When child rows use `aircraft-root`, the Project must contain one real parentless `components[]` row with that ID and a whole-aircraft product; hiding it in the authoring table does not make it virtual. Non-empty `supportActivities[].equipmentId` values follow the same component-ID contract.
 - Clean Project JSON uses `failureDistribution`, `repairDistribution`, `kOutOfN`, and `productType`; legacy scalar failure, life-limit, RMS, spare type, and RBD fields should not be reintroduced to make clean data run.
+- Failure-distribution parameters may use the legacy `parameters` string or current editor-owned fields: exponential `rate`/`lambda`, normal `mean` (plus optional variance), uniform `min`/`max`, and fixed `value`/`mean`. If a historical distribution label conflicts with an unambiguous parameter family, migrate the label instead of discarding the values.
 - The independent compiler keys component repair requirements by `productId` and uses `products[].name` only as a display label; it does not derive or restore `spareType`.
 
 ## 保障组织

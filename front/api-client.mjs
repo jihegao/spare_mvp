@@ -3,6 +3,7 @@ import {
   runSimulation
 } from "./sim-engine.mjs";
 import { normalizeProjectProducts } from "./product-catalog.mjs";
+import { normalizeEquipmentTreeIntegrityForScenario } from "./equipment-tree-model.mjs";
 
 const DEFAULT_API_BASE = "/api";
 const DEFAULT_TIMEOUT_MS = 10000;
@@ -355,7 +356,7 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   stripLegacySupportNodeResourceFields(normalized);
   stripSupportActivityTypoFields(normalized);
   stripDeprecatedSupportActivityStrategyFields(normalized);
-  normalizeProjectProducts(normalized);
+  normalizeEquipmentTreeIntegrityForScenario(normalized);
   return normalized;
 }
 

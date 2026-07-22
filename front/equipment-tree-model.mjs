@@ -1,5 +1,76 @@
 import { ensureProductForComponent, normalizeProjectProducts } from "./product-catalog.mjs";
 
+const AIRCRAFT_ROOT_ID = "aircraft-root";
+
+export function normalizeEquipmentTreeIntegrityForScenario(scenario) {
+  if (!scenario || typeof scenario !== "object" || Array.isArray(scenario)) return scenario;
+  if (!Array.isArray(scenario.components)) scenario.components = [];
+
+  const componentIds = new Set(scenario.components.map((component) => cleanEquipmentText(component?.id)).filter(Boolean));
+  const needsAircraftRoot = scenario.components.some((component) => (
+    cleanEquipmentText(component?.parentId) === AIRCRAFT_ROOT_ID
+  ));
+  if (needsAircraftRoot && !componentIds.has(AIRCRAFT_ROOT_ID)) {
+    const aircraftModel = wholeMachineModelsForScenario(scenario)[0] || cleanEquipmentText(scenario.equipment?.model);
+    const quantity = equipmentRootQuantity(scenario);
+    scenario.components.push({
+      id: AIRCRAFT_ROOT_ID,
+      name: aircraftModel ? `${aircraftModel}（整机）` : "整机",
+      productId: "product-aircraft-root",
+      aircraftModel,
+      productType: "whole",
+      quantity,
+      kOutOfN: { enabled: quantity > 1, n: quantity, k: quantity }
+    });
+    componentIds.add(AIRCRAFT_ROOT_ID);
+  }
+
+  for (const product of Array.isArray(scenario.products) ? scenario.products : []) {
+    normalizeLegacyFailureDistributionType(product?.failureDistribution);
+  }
+  normalizeProjectProducts(scenario);
+  for (const component of scenario.components) {
+    normalizeLegacyFailureDistributionType(component?.failureDistribution);
+  }
+
+  const resolvedIds = new Set(scenario.components.map((component) => cleanEquipmentText(component?.id)).filter(Boolean));
+  if (resolvedIds.has(AIRCRAFT_ROOT_ID)) {
+    for (const activity of Array.isArray(scenario.supportActivities) ? scenario.supportActivities : []) {
+      const equipmentId = cleanEquipmentText(activity?.equipmentId);
+      const activityName = cleanEquipmentText(activity?.activityName || activity?.name);
+      if (equipmentId && !resolvedIds.has(equipmentId) && /整机|舰载机/.test(activityName)) {
+        activity.equipmentId = AIRCRAFT_ROOT_ID;
+      }
+    }
+  }
+  return scenario;
+}
+
+function equipmentRootQuantity(scenario) {
+  const explicitQuantity = Number(scenario?.equipment?.quantity);
+  if (Number.isInteger(explicitQuantity) && explicitQuantity > 0) return explicitQuantity;
+  const memberCount = Array.isArray(scenario?.combatUnit?.members) ? scenario.combatUnit.members.length : 0;
+  return Math.max(1, memberCount);
+}
+
+function normalizeLegacyFailureDistributionType(distribution) {
+  if (!distribution || typeof distribution !== "object" || Array.isArray(distribution)) return;
+  const parameters = cleanEquipmentText(distribution.parameters || distribution.params).toLocaleLowerCase();
+  const distributionType = cleanEquipmentText(distribution.distributionType || distribution.distribution_type).toLocaleLowerCase();
+  if (!parameters || !distributionType) return;
+  const hasRate = /(?:^|[,，;；\s])(lambda|λ|rate|failure_rate)\s*=/.test(parameters);
+  const hasMean = /(?:^|[,，;；\s])(mean|mu)\s*=/.test(parameters);
+  if ((distributionType.includes("exponential") || distributionType.includes("指数")) && hasMean && !hasRate) {
+    distribution.distributionType = distributionType.includes("指数") ? "正态分布" : "normal";
+  } else if ((distributionType.includes("normal") || distributionType.includes("正态")) && hasRate) {
+    distribution.distributionType = distributionType.includes("正态") ? "指数分布" : "exponential";
+  }
+}
+
+function cleanEquipmentText(value) {
+  return String(value ?? "").trim();
+}
+
 export function wholeMachineModelsForScenario(scenario) {
   const equipment = scenario?.equipment || {};
   const models = [

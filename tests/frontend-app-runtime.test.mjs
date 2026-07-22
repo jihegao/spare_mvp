@@ -3331,7 +3331,7 @@ test("equipment parent node selector uses Chinese names while retaining parent I
       equipmentHtml.indexOf('class="detail-panel equipment-system-table-panel"')
     );
     const rightPanel = equipmentHtml.slice(equipmentHtml.indexOf("equipment-system-table-panel"));
-    assert.match(rightPanel, /<option value="aircraft-root" selected>整机级<\/option>/);
+    assert.match(rightPanel, /<option value="aircraft-root" selected>J-15（整机级）<\/option>/);
     assert.match(rightPanel, /<option value="engine-system" selected>发动机系统<\/option>/);
     assert.doesNotMatch(rightPanel, /value="engine-system"[^>]*>engine-system<\/option>/);
     assert.match(treePanel, /class="equipment-template-action" data-equipment-download-template/);
@@ -3340,7 +3340,7 @@ test("equipment parent node selector uses Chinese names while retaining parent I
     assert.doesNotMatch(rightPanel, /data-equipment-download-template|data-equipment-export-data|data-equipment-import-file/);
 
     await runtime.change("[data-path]", { path: "components.1.parentId" }, { value: "aircraft-root" });
-    assert.match(runtime.appNode.innerHTML, /<option value="aircraft-root" selected>整机级<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="aircraft-root" selected>J-15（整机级）<\/option>/);
   } finally {
     runtime.restore();
   }
@@ -3556,7 +3556,7 @@ test("equipment import rejects unknown product IDs atomically with row and ID", 
       (body) => body.components?.some((component) => component.id === "original-node"),
       "failed equipment import should leave the original Project draft intact"
     );
-    assert.deepEqual(saved.components.map((component) => component.id), ["original-node"]);
+    assert.deepEqual(saved.components.map((component) => component.id), ["original-node", "aircraft-root"]);
     assert.equal(saved.products.some((product) => product.id === "product-missing"), false);
   } finally {
     runtime.restore();

@@ -6,9 +6,47 @@ import {
   buildEquipmentComponentTreeModel,
   deleteEquipmentNodeForSelectionModel,
   equipmentComponentSubtreeIds,
+  normalizeEquipmentTreeIntegrityForScenario,
   resolveEquipmentSelectionModel
 } from "../front/equipment-tree-model.mjs";
 import * as equipmentTreeModel from "../front/equipment-tree-model.mjs";
+
+test("equipment integrity normalization materializes the real aircraft root and repairs unambiguous legacy fields", () => {
+  const scenario = {
+    equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
+    combatUnit: { members: [{ aircraftNo: "J15-001" }, { aircraftNo: "J15-002" }] },
+    products: [{
+      id: "product-avionics",
+      name: "航电系统",
+      failureDistribution: { distributionType: "指数分布", parameters: "mean=125, sigma=14" }
+    }],
+    components: [{
+      id: "j15-avionics",
+      name: "航电系统",
+      productId: "product-avionics",
+      parentId: "aircraft-root",
+      aircraftModel: "J-15",
+      failureDistribution: { distributionType: "指数分布", parameters: "mean=125, sigma=14" }
+    }],
+    supportActivities: [{ activityName: "50小时舰载机定检", equipmentId: "j35-hydraulic" }]
+  };
+
+  normalizeEquipmentTreeIntegrityForScenario(scenario);
+
+  assert.deepEqual(scenario.components[1], {
+    id: "aircraft-root",
+    name: "J-15（整机）",
+    productId: "product-aircraft-root",
+    aircraftModel: "J-15",
+    productType: "whole",
+    quantity: 2,
+    kOutOfN: { enabled: true, n: 2, k: 2 }
+  });
+  assert.equal(scenario.components[0].failureDistribution.distributionType, "正态分布");
+  assert.equal(scenario.products.find((product) => product.id === "product-avionics").failureDistribution.distributionType, "正态分布");
+  assert.equal(scenario.supportActivities[0].equipmentId, "aircraft-root");
+  assert.ok(scenario.products.some((product) => product.id === "product-aircraft-root"));
+});
 
 test("zero-aircraft imported sample add node creates a whole-machine aircraft entry", () => {
   const scenario = {

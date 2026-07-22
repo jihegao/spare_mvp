@@ -6,6 +6,7 @@ from pathlib import Path
 import unittest
 
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
+from src.spare_mvp_backend.migrations import apply_compatibility_migrations
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -104,8 +105,34 @@ class DatabaseContractTest(unittest.TestCase):
                 (3, "user_authentication_columns"),
                 (4, "experiment_plan_snapshot_column"),
                 (5, "modeling_import_payload_columns"),
+                (6, "project_equipment_tree_integrity"),
             ],
         )
+
+    def test_equipment_tree_migration_repairs_legacy_project_payload(self) -> None:
+        legacy = {
+            "project_id": "project-legacy-equipment-tree",
+            "equipment": {"model": "J-15", "wholeMachineModels": ["J-15"]},
+            "components": [{
+                "id": "j15-avionics",
+                "name": "航电系统",
+                "productId": "product-j15-avionics",
+                "parentId": "aircraft-root",
+                "failureDistribution": {"distributionType": "指数分布", "parameters": "mean=125, sigma=14"},
+            }],
+            "products": [{"id": "product-j15-avionics", "name": "航电系统"}],
+            "supportActivities": [{"activityName": "50小时舰载机定检", "equipmentId": "missing-component"}],
+        }
+        self.repository.upsert_project(legacy)
+        self.connection.execute("DELETE FROM schema_migrations WHERE version = 6")
+
+        apply_compatibility_migrations(self.connection)
+
+        migrated = self.repository.get_project(legacy["project_id"])
+        self.assertEqual(migrated["components"][-1]["id"], "aircraft-root")
+        self.assertEqual(migrated["components"][0]["failureDistribution"]["distributionType"], "正态分布")
+        self.assertEqual(migrated["supportActivities"][0]["equipmentId"], "aircraft-root")
+        self.assertTrue(any(product["id"] == "product-aircraft-root" for product in migrated["products"]))
 
     def test_schema_preserves_version_and_traceability_columns(self) -> None:
         required_columns = {
@@ -342,13 +369,13 @@ class DatabaseContractTest(unittest.TestCase):
             )
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
-                5,
+                6,
             )
 
             initialize_database(connection)
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
-                5,
+                6,
             )
         finally:
             connection.close()

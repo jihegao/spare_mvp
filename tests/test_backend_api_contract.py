@@ -1238,6 +1238,64 @@ class BackendApiContractTest(unittest.TestCase):
             self.api.save_project(project)
         self.assertEqual(ctx.exception.code, "invalid_project")
 
+    def test_save_project_repairs_legacy_equipment_tree_integrity(self) -> None:
+        project = small_aircraft_support_project("project-legacy-equipment-tree")
+        project["equipment"] = {"model": "J-15", "wholeMachineModels": ["J-15"]}
+        project["products"] = [{
+            "id": "product-j15-avionics",
+            "name": "航电系统",
+            "failureDistribution": {"distributionType": "指数分布", "parameters": "mean=125, sigma=14"},
+        }]
+        project["components"] = [{
+            "id": "j15-avionics",
+            "name": "航电系统",
+            "productId": "product-j15-avionics",
+            "aircraftModel": "J-15",
+            "parentId": "aircraft-root",
+            "quantity": 1,
+            "failureDistribution": {"distributionType": "指数分布", "parameters": "mean=125, sigma=14"},
+        }]
+        project["supportActivities"].append({
+            "id": "preventive",
+            "activityName": "50小时舰载机定检",
+            "activityType": "预防性维修",
+            "equipmentId": "j35-hydraulic",
+            "jobs": [],
+        })
+
+        self.api.save_project(project)
+        stored = self.api.get_project(project["project_id"])
+        compile_codes = {
+            issue["code"] for issue in self.api.adapter._aircraft_support_v1_compile_issues(stored)
+        }
+
+        self.assertEqual(stored["components"][1]["id"], "aircraft-root")
+        self.assertEqual(stored["components"][0]["failureDistribution"]["distributionType"], "正态分布")
+        self.assertEqual(stored["supportActivities"][1]["equipmentId"], "aircraft-root")
+        self.assertTrue({
+            "missing_component_parent",
+            "invalid_component_failure_distribution",
+            "missing_equipment_reference",
+        }.isdisjoint(compile_codes))
+
+    def test_save_project_rejects_unresolved_equipment_references(self) -> None:
+        project = small_aircraft_support_project("project-unresolved-equipment-reference")
+        project["supportActivities"][0].update({
+            "activityName": "局部设备维修",
+            "equipmentId": "missing-component",
+        })
+
+        validation = self.api.validate_project(project)
+
+        self.assertFalse(validation["ok"])
+        self.assertIn(
+            "missing_equipment_reference",
+            {error["code"] for error in validation["errors"]},
+        )
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.save_project(project)
+        self.assertEqual(ctx.exception.code, "invalid_project")
+
     def test_save_project_migrates_basic_mission_support_activity_name_matching_legacy_name(self) -> None:
         project = small_aircraft_support_project("project-invalid-support-activity-name")
         project["basicMissions"][0]["supportActivityName"] = "Legacy display name"

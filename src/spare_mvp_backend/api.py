@@ -122,6 +122,20 @@ class BackendApi:
             validation = copy.deepcopy(validation)
             validation["ok"] = False
             validation["errors"] = [*validation.get("errors", []), *support_activity_name_errors]
+        equipment_integrity_codes = {
+            "missing_component_parent",
+            "invalid_component_failure_distribution",
+            "missing_equipment_reference",
+        }
+        equipment_integrity_errors = [
+            issue
+            for issue in self.adapter._aircraft_support_v1_compile_issues(project)
+            if issue.get("code") in equipment_integrity_codes
+        ]
+        if equipment_integrity_errors:
+            validation = copy.deepcopy(validation)
+            validation["ok"] = False
+            validation["errors"] = [*validation.get("errors", []), *equipment_integrity_errors]
         return validation
 
     def preview_project_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -284,7 +298,8 @@ class BackendApi:
         return saved
 
     def get_project(self, project_id: str) -> dict[str, Any]:
-        return strip_project_sweep(self.repository.get_project(project_id))
+        project = normalize_project_basic_mission_support_activity_names(self.repository.get_project(project_id))
+        return strip_project_sweep(project)
 
     def list_projects(self) -> dict[str, Any]:
         projects = self.repository.list_projects()

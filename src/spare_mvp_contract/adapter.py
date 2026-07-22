@@ -1052,28 +1052,45 @@ class SimulationAdapter:
         multiplier = self._non_negative_number(distribution.get("_rate_multiplier"), 1.0)
         if isinstance(parameters, (int, float)) and not isinstance(parameters, bool):
             return max(0.0, float(parameters)) * multiplier
-        if not isinstance(parameters, str):
-            return None
-        values = self._distribution_parameters(parameters)
         distribution_type = str(distribution.get("distributionType") or distribution.get("distribution_type") or "").lower()
-        if "lambda" in values or "λ" in values or "rate" in values or "failure_rate" in values:
-            return (
-                values.get("lambda")
-                or values.get("λ")
-                or values.get("rate")
-                or values.get("failure_rate")
-                or 0.0
-            ) * multiplier
-        if "weibull" in distribution_type or "威布尔" in distribution_type:
-            beta = values.get("beta") or values.get("shape") or 1.0
-            eta = values.get("eta") or values.get("scale") or values.get("mean")
-            if eta and eta > 0:
-                mean_time = eta * math.gamma(1.0 + 1.0 / max(beta, 0.001))
-                return (1.0 / mean_time) * multiplier
+        if isinstance(parameters, str):
+            values = self._distribution_parameters(parameters)
+            if "lambda" in values or "λ" in values or "rate" in values or "failure_rate" in values:
+                return (
+                    values.get("lambda")
+                    or values.get("λ")
+                    or values.get("rate")
+                    or values.get("failure_rate")
+                    or 0.0
+                ) * multiplier
+            if "weibull" in distribution_type or "威布尔" in distribution_type:
+                beta = values.get("beta") or values.get("shape") or 1.0
+                eta = values.get("eta") or values.get("scale") or values.get("mean")
+                if eta and eta > 0:
+                    mean_time = eta * math.gamma(1.0 + 1.0 / max(beta, 0.001))
+                    return (1.0 / mean_time) * multiplier
+            if "normal" in distribution_type or "正态" in distribution_type:
+                mean = values.get("mean") or values.get("mu")
+                if mean and mean > 0:
+                    return (1.0 / mean) * multiplier
+
+        if "exponential" in distribution_type or "指数" in distribution_type:
+            rate = self._non_negative_number(distribution.get("lambda") or distribution.get("rate"), 0.0)
+            if rate > 0:
+                return rate * multiplier
         if "normal" in distribution_type or "正态" in distribution_type:
-            mean = values.get("mean") or values.get("mu")
-            if mean and mean > 0:
+            mean = self._non_negative_number(distribution.get("mean") or distribution.get("mu"), 0.0)
+            if mean > 0:
                 return (1.0 / mean) * multiplier
+        if "uniform" in distribution_type or "均匀" in distribution_type:
+            minimum = self._non_negative_number(distribution.get("min"), -1.0)
+            maximum = self._non_negative_number(distribution.get("max"), -1.0)
+            if minimum >= 0 and maximum >= minimum and minimum + maximum > 0:
+                return (2.0 / (minimum + maximum)) * multiplier
+        if "fixed" in distribution_type or "固定" in distribution_type:
+            value = self._non_negative_number(distribution.get("value") or distribution.get("mean"), 0.0)
+            if value > 0:
+                return (1.0 / value) * multiplier
         return None
 
     def _distribution_parameters(self, parameters: str) -> dict[str, float]:
