@@ -47,6 +47,82 @@ class RunService:
         with self._run_lock:
             return self._submit_run_unlocked(request)
 
+    def compile_preflight(
+        self,
+        project_id: str,
+        *,
+        model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
+        experiment_plan_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Compile persisted inputs without creating snapshots, runs, or artifacts."""
+        with self._run_lock:
+            return self._compile_preflight_unlocked(
+                project_id,
+                model_family=model_family,
+                experiment_plan_id=experiment_plan_id,
+            )
+
+    def _compile_preflight_unlocked(
+        self,
+        project_id: str,
+        *,
+        model_family: str,
+        experiment_plan_id: str | None,
+    ) -> dict[str, Any]:
+        project = self.repository.get_project(project_id)
+        plan = None
+        snapshot = None
+        project_source = project
+        runtime_config = None
+        if experiment_plan_id:
+            plan = self.repository.get_experiment_plan(experiment_plan_id)
+            if plan.get("project_id") != project_id:
+                raise RunServiceError(
+                    "project_plan_mismatch",
+                    "experiment plan does not belong to project",
+                    project_id=project_id,
+                    experiment_plan_id=experiment_plan_id,
+                )
+            snapshot = (
+                self.repository.get_modeling_snapshot(plan["modeling_snapshot_id"])
+                if plan.get("modeling_snapshot_id")
+                else None
+            )
+
+        try:
+            if plan is not None:
+                project_source = _project_for_experiment_plan(project, plan, snapshot)
+            project_for_compile, clean_project_export = _export_project_for_model_family(
+                project_source,
+                model_family,
+            )
+            if plan is not None:
+                runtime_config = _compile_runtime_config(plan, model_family=model_family)
+        except RunServiceError:
+            raise
+        except ValueError as exc:
+            return _blocked_project_export_preflight(
+                project_id=project_id,
+                model_family=model_family,
+                experiment_plan_id=experiment_plan_id,
+                message=str(exc),
+            )
+
+        result = self.adapter.compile_scenario_with_gate(
+            project_for_compile,
+            model_family=model_family,
+            runtime_config=runtime_config,
+        )
+        provenance = result.get("provenance")
+        _annotate_clean_project_export_provenance(provenance, clean_project_export)
+        if plan is not None:
+            _annotate_mapping_provenance(
+                provenance,
+                experiment_plan_id=experiment_plan_id,
+                modeling_snapshot_id=plan.get("modeling_snapshot_id"),
+            )
+        return result
+
     def delete_experiment_plan(self, project_id: str, experiment_plan_id: str, *, actor_user_id: str) -> dict[str, Any]:
         with self._run_lock:
             return self.repository.delete_experiment_plan_with_runs(
@@ -882,6 +958,35 @@ def _export_project_for_model_family(
         "target": ACTIVE_FORMAL_MODEL_FAMILY,
         "source": "ProjectJsonExporter",
         "stripped_fields": _removed_field_paths(project, clean_project),
+    }
+
+
+def _blocked_project_export_preflight(
+    *,
+    project_id: str,
+    model_family: str,
+    experiment_plan_id: str | None,
+    message: str,
+) -> dict[str, Any]:
+    issue = {
+        "code": "invalid_clean_project",
+        "message": message,
+        "field_path": "Project JSON",
+        "page": "Project JSON",
+        "severity": "error",
+        "suggestion": "修正 Project JSON 后重新执行运行编译预检。",
+    }
+    return {
+        "status": "blocked",
+        "scenario": None,
+        "issues": [issue],
+        "errors": [{"code": issue["code"], "path": issue["field_path"], "message": message}],
+        "provenance": {
+            "project_id": project_id,
+            "experiment_plan_id": experiment_plan_id,
+            "model_family": model_family,
+            "mapping_version": "project-export-preflight-v0",
+        },
     }
 
 
