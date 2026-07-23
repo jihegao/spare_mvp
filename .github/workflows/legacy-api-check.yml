@@ -18,6 +18,16 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install backend dependencies
+        run: python3 -m pip install .
+
       - name: Run frontend contract tests
         run: npm test
 
