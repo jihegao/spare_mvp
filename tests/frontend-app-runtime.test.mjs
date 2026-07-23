@@ -2825,6 +2825,7 @@ test("carry list analysis restores context and complete settings while preservin
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">[\s\S]*<h3>飞机转场携行清单分析<\/h3>[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">/);
     assert.match(runtime.appNode.innerHTML, /运行状态[\s\S]*样本量[\s\S]*随机种子[\s\S]*优化方向[\s\S]*备件满足率下限/);
+    assert.match(runtime.appNode.innerHTML, /样本量[\s\S]*<strong>24<\/strong>/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /样本量 \/ 随机种子只读/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
     assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">运行分析<\/button>[\s\S]*等待运行/);
@@ -2836,6 +2837,7 @@ test("carry list analysis restores context and complete settings while preservin
       .map((request) => JSON.parse(request.options.body || "{}"))
       .at(-1);
     assert.equal(analysisRun.analysis_type, "carry_list");
+    assert.equal(analysisRun.settings.samples, 24);
     assert.equal(analysisRun.settings.missionConfidenceTarget, 0.9);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">[\s\S]*分析结果已生成/);
   } finally {

@@ -19966,7 +19966,7 @@ function liteMesaAnalysisDefinitionForPage(page) {
 function createDefaultLiteMesaAnalysisSettings() {
   return {
     spare_shortfall: { samples: 27, seed: 20260621 },
-    carry_list: { samples: 27, seed: 20260621, missionConfidenceTarget: 0.9 },
+    carry_list: { samples: 24, seed: 20260621, missionConfidenceTarget: 0.9 },
     mission_reliability: { samples: 27, seed: 20260621 },
     downtime_factors: { samples: 1, seed: 20260621, topN: 4 }
   };
