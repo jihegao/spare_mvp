@@ -126,6 +126,7 @@ export function synchronizeProjectProductParameters(project) {
   if (!project || typeof project !== "object" || Array.isArray(project)) return project;
   const products = Array.isArray(project.products) ? project.products : [];
   const components = Array.isArray(project.components) ? project.components : [];
+  for (const product of products) synchronizeFixedDistributionMtbf(product);
   const productsById = new Map(products.map((product) => [cleanText(product?.id), product]));
   for (const component of components) {
     const product = productsById.get(cleanText(component?.productId));
@@ -171,10 +172,36 @@ export function updateSharedProductParameter(project, productId, parameterPath, 
   const path = String(parameterPath || "").split(".").filter(Boolean);
   if (!product || !path.length || !SHARED_PRODUCT_PARAMETER_FIELDS.includes(path[0])) return false;
   setNestedValue(product, path, cloneValue(value));
+  if (path[0] === "mtbfHours" && isFixedDistribution(product.failureDistribution)) {
+    product.failureDistribution.value = cloneValue(value);
+  }
+  synchronizeFixedDistributionMtbf(product);
   for (const component of project.components || []) {
     if (cleanText(component?.productId) === cleanText(productId)) copySharedProductParameters(product, component);
   }
   return true;
+}
+
+function synchronizeFixedDistributionMtbf(product) {
+  if (!product || typeof product !== "object" || !isFixedDistribution(product.failureDistribution)) return;
+  const distributionValue = positiveNumber(product.failureDistribution.value);
+  const legacyMtbf = positiveNumber(product.mtbfHours);
+  if (distributionValue !== null) {
+    product.mtbfHours = distributionValue;
+  } else if (legacyMtbf !== null) {
+    product.failureDistribution.value = legacyMtbf;
+  }
+}
+
+function isFixedDistribution(distribution) {
+  if (!distribution || typeof distribution !== "object" || Array.isArray(distribution)) return false;
+  const type = cleanText(distribution.distributionType || distribution.distribution_type).toLocaleLowerCase();
+  return type.includes("fixed") || type.includes("固定");
+}
+
+function positiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
 }
 
 export function componentsSharingProduct(project, productId) {

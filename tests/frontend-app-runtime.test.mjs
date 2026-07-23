@@ -4046,6 +4046,7 @@ test("shared equipment product parameters cancel without persistence and confirm
       body.products?.find((product) => product.id === "product-engine")?.mtbfHours === 1500
         && body.products?.find((product) => product.id === "product-engine")?.failureDistribution?.value === 1500
     ));
+    assert.equal(savedProject.products.find((product) => product.id === "product-engine").mtbfHours, 1500);
     assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").mtbfHours, 300);
     assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution.mean, 300);
     assert.equal(savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution.value, undefined);

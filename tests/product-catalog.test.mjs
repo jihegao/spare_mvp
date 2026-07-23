@@ -178,6 +178,19 @@ test("fixed product parameters outrank the MTBF compatibility projection and leg
   assert.equal(JSON.stringify(project), once);
 });
 
+test("fixed failure distributions synchronize the shared MTBF compatibility scalar", () => {
+  const project = {
+    products: [{ id: "product-engine", mtbfHours: 1200, failureDistribution: { distributionType: "固定值" } }],
+    components: [{ id: "j15-engine", productId: "product-engine" }, { id: "j35-engine", productId: "product-engine" }]
+  };
+
+  normalizeProjectProducts(project);
+  assert.equal(updateSharedProductParameter(project, "product-engine", "failureDistribution.value", 1500), true);
+  assert.equal(project.products[0].mtbfHours, 1500);
+  assert.equal(project.components[0].mtbfHours, 1500);
+  assert.equal(project.components[1].failureDistribution.value, 1500);
+});
+
 test("legacy component parameters seed a product once and canonical product values win conflicts", () => {
   const project = {
     products: [{ id: "product-shared", name: "共享产品" }],
