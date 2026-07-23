@@ -54,6 +54,32 @@ class ImportableProjectJsonTemplateTest(unittest.TestCase):
                 self.assertTrue(project["products"])
                 self.assertTrue(project["supportActivityJobs"])
                 self.assertTrue(all("jobs" not in activity for activity in project["supportActivities"]))
+                operations_phases = [
+                    activity
+                    for activity in project["supportActivities"]
+                    if activity.get("planType") in {
+                        "直接准备方案",
+                        "再次出动准备方案",
+                        "飞行后检查方案",
+                    }
+                ]
+                operations_groups = {
+                    activity["planGroupId"]
+                    for activity in operations_phases
+                }
+                self.assertTrue(operations_groups)
+                for group_id in operations_groups:
+                    group = [
+                        activity
+                        for activity in operations_phases
+                        if activity["planGroupId"] == group_id
+                    ]
+                    self.assertEqual(
+                        {activity["planType"] for activity in group},
+                        {"直接准备方案", "再次出动准备方案", "飞行后检查方案"},
+                    )
+                    self.assertEqual(len({id(activity["activityCodes"]) for activity in group}), 3)
+                    self.assertEqual(len({id(activity["predecessors"]) for activity in group}), 3)
 
                 canonical_node_ids = {
                     str(node.get("organizationNodeId") or node.get("id") or "")

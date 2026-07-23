@@ -90,7 +90,10 @@
           "simulation_inputs.support_network.nodes[].organization_node_id",
           "simulation_inputs.time.duration_minutes",
           "simulation_inputs.time.requested_steps",
-          "ExperimentPlan.config.steps"
+          "ExperimentPlan.config.steps",
+          "organization_observability_version",
+          "organization_graph_identity",
+          "organization_dispatch_summary"
         ],
         "disabled_domains": [],
         "experiment_plan_id": "experiment-plan-m9-6-platform-case",
@@ -112,8 +115,14 @@
           "missionProfile.combatUnit.members[].takeoffLandingCount"
         ],
         "mapping_version": "aircraft-support-v1-input-v0",
+        "migration_notices": [],
         "model_family": "aircraft_support_v1",
         "modeling_snapshot_id": "snapshot-m9-6-platform-case",
+        "organization_graph_identity": {
+          "graph_hash": "3907794c517cd19329e3e19dcc0d39c691ff584bccae7f25a013b45d6c530434",
+          "hash_algorithm": "sha256",
+          "runtime_mode": "vertical"
+        },
         "project_id": "project-carrier-day-night",
         "runtime_deferred_fields": [
           "simulation_inputs.support_network.organization_graph.lateral_edges"
@@ -135,6 +144,7 @@
       "project_schema_version": "project-v0",
       "project_version": "import-v1"
     },
+    "organization_observability_version": "organization-observability-v1",
     "project_id": "project-carrier-day-night",
     "scenario_id": "scenario-import-carrier-day-night-001",
     "scenario_version": "scenario-v0.1",
@@ -149,7 +159,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -161,6 +171,11 @@
               "takeoff_landing_cycles": []
             },
             "preventive_thresholds": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
+            "source_initial_life_state": {
               "calendar_days": 0,
               "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
@@ -175,7 +190,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -187,6 +202,11 @@
               "takeoff_landing_cycles": []
             },
             "preventive_thresholds": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
+            "source_initial_life_state": {
               "calendar_days": 0,
               "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
@@ -201,7 +221,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -231,6 +251,11 @@
               "calendar_days": 1,
               "flight_hours": 8.0,
               "takeoff_landing_cycles": 6
+            },
+            "source_initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
             },
             "source_initial_state": "available",
             "tail_number": "J35-201"
@@ -242,7 +267,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -273,6 +298,11 @@
               "flight_hours": 8.0,
               "takeoff_landing_cycles": 6
             },
+            "source_initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
             "source_initial_state": "available",
             "tail_number": "J35-202"
           },
@@ -283,7 +313,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -299,6 +329,11 @@
               "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
+            "source_initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
             "source_initial_state": "available",
             "tail_number": "J15-103"
           },
@@ -309,7 +344,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -339,6 +374,11 @@
               "calendar_days": 1,
               "flight_hours": 8.0,
               "takeoff_landing_cycles": 6
+            },
+            "source_initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
             },
             "source_initial_state": "available",
             "tail_number": "J35-203"
@@ -2225,7 +2265,8 @@
             "equipmentId": "j15-avionics",
             "id": "preflight",
             "maxWorkTimeRefMinutes": 60,
-            "planType": "使用保障方案",
+            "planGroupId": "preflight",
+            "planType": "直接准备方案",
             "predecessors": {
               "OPS-001": [],
               "OPS-002": [
@@ -2314,7 +2355,8 @@
             "equipmentId": "j15-engine",
             "id": "ops-support-j-15---5",
             "maxWorkTimeRefMinutes": 45,
-            "planType": "使用保障方案",
+            "planGroupId": "preflight",
+            "planType": "再次出动准备方案",
             "predecessors": {
               "BA-001": []
             },
@@ -2332,7 +2374,8 @@
             "equipmentId": "j15-engine",
             "id": "ops-support-j-15---6",
             "maxWorkTimeRefMinutes": 60,
-            "planType": "使用保障方案",
+            "planGroupId": "preflight",
+            "planType": "飞行后检查方案",
             "predecessors": {
               "BA-002": []
             },
@@ -3478,7 +3521,8 @@
           "equipmentId": "j15-avionics",
           "id": "preflight",
           "maxWorkTimeRefMinutes": 60,
-          "planType": "使用保障方案",
+          "planGroupId": "preflight",
+          "planType": "直接准备方案",
           "predecessors": {
             "OPS-001": [],
             "OPS-002": [
@@ -3567,7 +3611,8 @@
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---5",
           "maxWorkTimeRefMinutes": 45,
-          "planType": "使用保障方案",
+          "planGroupId": "preflight",
+          "planType": "再次出动准备方案",
           "predecessors": {
             "BA-001": []
           },
@@ -3585,7 +3630,8 @@
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---6",
           "maxWorkTimeRefMinutes": 60,
-          "planType": "使用保障方案",
+          "planGroupId": "preflight",
+          "planType": "飞行后检查方案",
           "predecessors": {
             "BA-002": []
           },
@@ -4745,7 +4791,8 @@
         "equipmentId": "j15-avionics",
         "id": "preflight",
         "maxWorkTimeRefMinutes": 60,
-        "planType": "使用保障方案",
+        "planGroupId": "preflight",
+        "planType": "直接准备方案",
         "predecessors": {
           "OPS-001": [],
           "OPS-002": [
@@ -4834,7 +4881,8 @@
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---5",
         "maxWorkTimeRefMinutes": 45,
-        "planType": "使用保障方案",
+        "planGroupId": "preflight",
+        "planType": "再次出动准备方案",
         "predecessors": {
           "BA-001": []
         },
@@ -4852,7 +4900,8 @@
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---6",
         "maxWorkTimeRefMinutes": 60,
-        "planType": "使用保障方案",
+        "planGroupId": "preflight",
+        "planType": "飞行后检查方案",
         "predecessors": {
           "BA-002": []
         },

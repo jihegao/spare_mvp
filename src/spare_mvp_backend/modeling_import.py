@@ -863,7 +863,7 @@ def _support_activity_to_project(row: dict[str, Any], resource_name_by_id: dict[
     resource_id = activity.get("resourceId")
     if resource_name_by_id and resource_id not in (None, ""):
         activity["resourceId"] = resource_name_by_id.get(str(resource_id), str(resource_id))
-    for field in ("name", "planGroupId", "supportNodeId", "requiredPersonnel", "requiredDevices"):
+    for field in ("name", "supportNodeId", "requiredPersonnel", "requiredDevices"):
         activity.pop(field, None)
     return activity
 
@@ -871,15 +871,27 @@ def _support_activity_to_project(row: dict[str, Any], resource_name_by_id: dict[
 def _canonical_support_activity_plan_type(activity: dict[str, Any]) -> str:
     plan_type = str(activity.get("planType") or "").strip()
     activity_type = str(activity.get("activityType") or "").strip()
-    combined = f"{plan_type} {activity_type}".lower()
-    if plan_type == "修复性维修方案" or "修复性维修" in combined or "corrective" in combined:
-        return "修复性维修方案"
-    if plan_type == "预防性维修方案" or "预防性维修" in combined or "preventive" in combined:
-        return "预防性维修方案"
-    if plan_type in {"后勤保障方案", "后勤保障活动方案"} or "后勤保障" in combined or "logistics" in combined:
+    if plan_type in {
+        "使用保障方案",
+        "直接准备方案",
+        "再次出动准备方案",
+        "飞行后检查方案",
+        "修复性维修方案",
+        "预防性维修方案",
+        "后勤保障方案",
+    }:
+        return plan_type
+    if plan_type == "后勤保障活动方案":
         return "后勤保障方案"
-    if plan_type in {"使用保障方案", "直接准备方案", "再次出动准备方案", "飞行后检查方案"}:
-        return "使用保障方案"
+    if plan_type:
+        return plan_type
+    combined = activity_type.lower()
+    if "修复性维修" in combined or "corrective" in combined:
+        return "修复性维修方案"
+    if "预防性维修" in combined or "preventive" in combined:
+        return "预防性维修方案"
+    if "后勤保障" in combined or "logistics" in combined:
+        return "后勤保障方案"
     if any(token in combined for token in ("飞行前保障", "使用保障", "operations", "preflight", "relaunch", "postflight")):
         return "使用保障方案"
     return "使用保障方案"

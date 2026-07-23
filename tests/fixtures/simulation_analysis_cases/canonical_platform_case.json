@@ -2083,7 +2083,8 @@
         "equipmentId": "j15-avionics",
         "id": "preflight",
         "maxWorkTimeRefMinutes": 60,
-        "planType": "使用保障方案",
+        "planGroupId": "preflight",
+        "planType": "直接准备方案",
         "predecessors": {
           "OPS-001": [],
           "OPS-002": [
@@ -2172,7 +2173,8 @@
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---5",
         "maxWorkTimeRefMinutes": 45,
-        "planType": "使用保障方案",
+        "planGroupId": "preflight",
+        "planType": "再次出动准备方案",
         "predecessors": {
           "BA-001": []
         },
@@ -2190,7 +2192,8 @@
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---6",
         "maxWorkTimeRefMinutes": 60,
-        "planType": "使用保障方案",
+        "planGroupId": "preflight",
+        "planType": "飞行后检查方案",
         "predecessors": {
           "BA-002": []
         },

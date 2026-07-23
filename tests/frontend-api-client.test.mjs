@@ -979,7 +979,13 @@ test("mixed-type basic activity CSV results survive Project save and reload with
     mean: 45,
     stdDev: 5
   });
-  assert.deepEqual(savedAgain.supportActivities.map((activity) => activity.activityCodes), [["BA-002"], ["PM-101"]]);
+  const activitiesByPlanType = new Map(
+    savedAgain.supportActivities.map((activity) => [activity.planType, activity])
+  );
+  assert.deepEqual(activitiesByPlanType.get("直接准备方案").activityCodes, ["BA-002"]);
+  assert.deepEqual(activitiesByPlanType.get("再次出动准备方案").activityCodes, []);
+  assert.deepEqual(activitiesByPlanType.get("飞行后检查方案").activityCodes, []);
+  assert.deepEqual(activitiesByPlanType.get("预防性维修方案").activityCodes, ["PM-101"]);
 });
 
 test("buildBackendProjectJson strips corrective MTTR fields from support activity jobs", () => {
@@ -1235,10 +1241,10 @@ test("buildBackendProjectJson preserves support activity runtime resource refere
   const projectJson = buildBackendProjectJson(scenario, { id: "support-activity-reference-boundary" });
 
   assert.equal(projectJson.supportActivities[0].activityName, "Legacy display name");
-  assert.equal(projectJson.supportActivities[0].planType, "使用保障方案");
+  assert.equal(projectJson.supportActivities[0].planType, "直接准备方案");
+  assert.equal(projectJson.supportActivities[0].planGroupId, "ops-plan-group");
   assert.equal(projectJson.supportActivities[0].maxWorkTimeRefMinutes, 30);
   assert.equal("name" in projectJson.supportActivities[0], false);
-  assert.equal("planGroupId" in projectJson.supportActivities[0], false);
   assert.equal(projectJson.supportActivities[0].resourceId, "carrier-deck");
   assert.equal("requiredDevices" in projectJson.supportActivities[0], false);
   assert.equal("requiredPersonnel" in projectJson.supportActivities[0], false);
@@ -1246,6 +1252,259 @@ test("buildBackendProjectJson preserves support activity runtime resource refere
   assert.deepEqual(projectJson.supportActivities[0].activityCodes, ["OPS-001"]);
   assert.deepEqual(projectJson.supportActivities[0].predecessors, { "OPS-001": [] });
   assert.equal(projectJson.supportActivityJobs[0].activityCode, "OPS-001");
+  assert.deepEqual(
+    projectJson.supportActivities.map((activity) => activity.planType),
+    ["直接准备方案", "再次出动准备方案", "飞行后检查方案"]
+  );
+  assert.equal(new Set(projectJson.supportActivities.map((activity) => activity.planGroupId)).size, 1);
+  assert.deepEqual(projectJson.supportActivities[1].activityCodes, []);
+  assert.deepEqual(projectJson.supportActivities[2].activityCodes, []);
+});
+
+test("legacy single-row operations support materializes three phase-local reference containers", () => {
+  const legacy = {
+    scenarioId: "legacy-operations-phases",
+    supportActivityJobs: [
+      { activityCode: "OPS-001", workName: "机务检查", durationMinutes: 5 },
+      { activityCode: "OPS-002", workName: "燃油加注", durationMinutes: 6 }
+    ],
+    supportActivities: [
+      {
+        id: "preflight",
+        activityName: "典型保障方案",
+        activityType: "飞行前保障",
+        planType: "使用保障方案",
+        aircraftModel: "J-15",
+        activityCodes: ["OPS-001", "OPS-002"],
+        predecessors: { "OPS-001": [], "OPS-002": ["OPS-001"] }
+      }
+    ]
+  };
+
+  const normalized = normalizeProjectJsonForClientDraft(legacy);
+  const normalizedAgain = normalizeProjectJsonForClientDraft(normalized);
+  const phases = normalized.supportActivities;
+
+  assert.equal(phases.length, 3);
+  assert.deepEqual(
+    phases.map((activity) => activity.planType),
+    ["直接准备方案", "再次出动准备方案", "飞行后检查方案"]
+  );
+  assert.equal(new Set(phases.map((activity) => activity.planGroupId)).size, 1);
+  assert.deepEqual(phases[0].activityCodes, ["OPS-001", "OPS-002"]);
+  assert.deepEqual(phases[0].predecessors, { "OPS-001": [], "OPS-002": ["OPS-001"] });
+  assert.deepEqual(phases[1].activityCodes, []);
+  assert.deepEqual(phases[1].predecessors, {});
+  assert.deepEqual(phases[2].activityCodes, []);
+  assert.deepEqual(phases[2].predecessors, {});
+  assert.deepEqual(normalizedAgain.supportActivities, phases);
+  assert.equal(legacy.supportActivities.length, 1);
+});
+
+test("regressed three-row operations data restores one phase group without expanding to nine rows", () => {
+  const regressed = {
+    scenarioId: "regressed-operations-phases",
+    supportActivities: [
+      {
+        id: "preflight",
+        activityName: "典型保障方案",
+        activityType: "飞行前保障",
+        planType: "使用保障方案",
+        aircraftModel: "J-15",
+        activityCodes: ["OPS-001", "OPS-002"],
+        predecessors: { "OPS-001": [], "OPS-002": ["OPS-001"] }
+      },
+      {
+        id: "preflight-relaunch",
+        activityName: "典型保障方案（再次出动准备）",
+        activityType: "使用保障",
+        planType: "使用保障方案",
+        aircraftModel: "J-15",
+        activityCodes: [],
+        predecessors: {}
+      },
+      {
+        id: "preflight-postflight",
+        activityName: "典型保障方案（飞行后检查）",
+        activityType: "使用保障",
+        planType: "使用保障方案",
+        aircraftModel: "J-15",
+        activityCodes: [],
+        predecessors: {}
+      }
+    ]
+  };
+
+  const normalized = normalizeProjectJsonForClientDraft(regressed);
+
+  assert.equal(normalized.supportActivities.length, 3);
+  assert.deepEqual(
+    normalized.supportActivities.map((activity) => activity.planType),
+    ["直接准备方案", "再次出动准备方案", "飞行后检查方案"]
+  );
+  assert.deepEqual(
+    normalized.supportActivities.map((activity) => activity.planGroupId),
+    ["preflight", "preflight", "preflight"]
+  );
+});
+
+test("real legacy operations phase names recover one group independent of input order", () => {
+  const rows = [
+    {
+      id: "ops-support-j-15---4",
+      activityName: "J-15飞行前准备活动",
+      activityType: "使用保障",
+      planType: "使用保障方案",
+      aircraftModel: "J-15",
+      activityCodes: ["BA-001"],
+      predecessors: { "BA-001": [] }
+    },
+    {
+      id: "ops-support-j-15---5",
+      activityName: "J-15再次出动准备活动",
+      activityType: "使用保障",
+      planType: "使用保障方案",
+      aircraftModel: "J-15",
+      activityCodes: ["BA-002"],
+      predecessors: { "BA-002": [] }
+    },
+    {
+      id: "ops-support-j-15---6",
+      activityName: "J-15飞行后检查活动",
+      activityType: "使用保障",
+      planType: "使用保障方案",
+      aircraftModel: "J-15",
+      activityCodes: ["BA-003"],
+      predecessors: { "BA-003": [] }
+    }
+  ];
+  const normalizeRows = (supportActivities) => normalizeProjectJsonForClientDraft({
+    scenarioId: "real-legacy-operations-phase-names",
+    supportActivityJobs: ["BA-001", "BA-002", "BA-003"].map((activityCode) => ({
+      activityCode,
+      workName: activityCode,
+      durationMinutes: 5
+    })),
+    supportActivities
+  }).supportActivities;
+
+  const forward = normalizeRows(rows);
+  const shuffled = normalizeRows([rows[2], rows[0], rows[1]]);
+  const semanticRows = (activities) => activities
+    .map((activity) => ({
+      activityName: activity.activityName,
+      planType: activity.planType,
+      planGroupId: activity.planGroupId,
+      activityCodes: activity.activityCodes,
+      predecessors: activity.predecessors
+    }))
+    .sort((left, right) => left.planType.localeCompare(right.planType, "zh-CN"));
+
+  assert.equal(forward.length, 3);
+  assert.equal(new Set(forward.map((activity) => activity.planGroupId)).size, 1);
+  assert.deepEqual(semanticRows(shuffled), semanticRows(forward));
+  assert.deepEqual(
+    new Map(forward.map((activity) => [activity.planType, activity.activityCodes])),
+    new Map([
+      ["直接准备方案", ["BA-001"]],
+      ["再次出动准备方案", ["BA-002"]],
+      ["飞行后检查方案", ["BA-003"]]
+    ])
+  );
+});
+
+test("explicit non-operations plan type wins over misleading activity type text", () => {
+  const normalized = normalizeProjectJsonForClientDraft({
+    scenarioId: "explicit-non-operations-plan-type",
+    supportActivities: [{
+      id: "corrective-plan",
+      activityName: "修复方案",
+      activityType: "使用保障",
+      planType: "修复性维修方案"
+    }]
+  });
+
+  assert.equal(normalized.supportActivities.length, 1);
+  assert.equal(normalized.supportActivities[0].planType, "修复性维修方案");
+  assert.equal("planGroupId" in normalized.supportActivities[0], false);
+});
+
+test("legacy operations grouping fails closed on ambiguous or duplicate phases", () => {
+  const direct = {
+    activityType: "使用保障",
+    planType: "使用保障方案",
+    aircraftModel: "J-15"
+  };
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft({
+      scenarioId: "ambiguous-legacy-operations-group",
+      supportActivities: [
+        { ...direct, id: "direct-a", activityName: "J-15飞行前准备活动" },
+        { ...direct, id: "direct-b", activityName: "J-15飞行前准备活动" },
+        { ...direct, id: "relaunch", activityName: "J-15再次出动准备活动" }
+      ]
+    }),
+    /duplicate 直接准备方案/
+  );
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft({
+      scenarioId: "duplicate-explicit-operations-phase",
+      supportActivities: [
+        {
+          id: "direct-a",
+          activityType: "使用保障",
+          planType: "直接准备方案",
+          planGroupId: "ops-group"
+        },
+        {
+          id: "direct-b",
+          activityType: "使用保障",
+          planType: "直接准备方案",
+          planGroupId: "ops-group"
+        }
+      ]
+    }),
+    /duplicate 直接准备方案/
+  );
+});
+
+test("operations phase references reject malformed duplicate unknown and cross-phase values", () => {
+  const normalizeReferences = (overrides) => normalizeProjectJsonForClientDraft({
+    scenarioId: "invalid-operations-phase-references",
+    supportActivityJobs: [
+      { activityCode: "BA-001", workName: "检查", durationMinutes: 5 },
+      { activityCode: "BA-002", workName: "加油", durationMinutes: 5 },
+      { activityCode: "BA-999", workName: "其他阶段", durationMinutes: 5 }
+    ],
+    supportActivities: [{
+      id: "direct",
+      activityType: "使用保障",
+      planType: "直接准备方案",
+      planGroupId: "ops-group",
+      activityCodes: ["BA-001", "BA-002"],
+      predecessors: { "BA-001": [], "BA-002": ["BA-001"] },
+      ...overrides
+    }]
+  });
+
+  for (const [overrides, pattern] of [
+    [{ activityCodes: "BA-001" }, /activityCodes: expected an array/],
+    [{ activityCodes: ["BA-001", "BA-001"] }, /duplicate activity code BA-001/],
+    [{ activityCodes: ["BA-404"] }, /unknown support activity job code BA-404/],
+    [{ predecessors: [] }, /predecessors: expected an object/],
+    [{ predecessors: { "BA-404": [] } }, /unknown activity code BA-404/],
+    [{ predecessors: { "BA-001": ["BA-999"], "BA-002": [] } }, /unknown activity code BA-999/],
+    [{ predecessors: { "BA-001": ["BA-002", "BA-002"], "BA-002": [] } }, /duplicate predecessor BA-002/]
+  ]) {
+    assert.throws(() => normalizeReferences(overrides), pattern);
+  }
+
+  const missingFields = normalizeReferences({
+    activityCodes: undefined,
+    predecessors: undefined
+  }).supportActivities[0];
+  assert.deepEqual(missingFields.activityCodes, []);
+  assert.deepEqual(missingFields.predecessors, {});
 });
 
 test("legacy support activity display-name references are canonicalized when loaded and saved", () => {
@@ -1352,11 +1611,19 @@ test("buildBackendProjectJson migrates duplicate operations activity names into 
   const firstSave = buildBackendProjectJson(scenario, { id: "case-large" });
   const reloadedSave = buildBackendProjectJson(firstSave, { id: "case-large" });
 
-  assert.deepEqual(firstSave.supportActivities.map((activity) => activity.activityName), [
-    "J16基本方案",
-    "J16基本方案（2）",
-    "J16基本方案（3）"
-  ]);
+  assert.equal(firstSave.supportActivities.length, 9);
+  assert.equal(new Set(firstSave.supportActivities.map((activity) => activity.activityName)).size, 9);
+  assert.equal(new Set(firstSave.supportActivities.map((activity) => activity.planGroupId)).size, 3);
+  for (const planGroupId of new Set(firstSave.supportActivities.map((activity) => activity.planGroupId))) {
+    assert.deepEqual(
+      new Set(
+        firstSave.supportActivities
+          .filter((activity) => activity.planGroupId === planGroupId)
+          .map((activity) => activity.planType)
+      ),
+      new Set(["直接准备方案", "再次出动准备方案", "飞行后检查方案"])
+    );
+  }
   assert.deepEqual(firstSave.basicMissions.map((mission) => mission.supportActivityName), Array(4).fill("J16基本方案"));
   assert.deepEqual(reloadedSave.supportActivities.map((activity) => activity.activityName), firstSave.supportActivities.map((activity) => activity.activityName));
   assert.equal(

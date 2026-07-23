@@ -264,6 +264,7 @@ _SUPPORT_ACTIVITY_FIELDS = {
     "activityName",
     "activityType",
     "planType",
+    "planGroupId",
     "aircraftModel",
     "equipmentId",
     "resourceId",
@@ -284,6 +285,9 @@ _SUPPORT_ACTIVITY_FIELDS = {
 }
 _SUPPORT_ACTIVITY_PLAN_TYPES = {
     "使用保障方案",
+    "直接准备方案",
+    "再次出动准备方案",
+    "飞行后检查方案",
     "修复性维修方案",
     "预防性维修方案",
     "后勤保障方案",
@@ -2248,11 +2252,16 @@ def _validate_clean_support_activities(activities: Any, target: str) -> None:
         extra = sorted(field for field in activity if field not in _SUPPORT_ACTIVITY_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at supportActivities.{index}: unexpected field {extra[0]}")
-        for field in ("activityName", "activityType", "planType", "aircraftModel", "equipmentId"):
+        for field in ("activityName", "activityType", "planType", "planGroupId", "aircraftModel", "equipmentId"):
             _validate_optional_clean_string(activity, field, f"supportActivities.{index}.{field}", target)
         if activity.get("planType") not in (None, "") and activity.get("planType") not in _SUPPORT_ACTIVITY_PLAN_TYPES:
             raise ValueError(
                 f"clean Project JSON failed {target} schema at supportActivities.{index}.planType: unexpected plan type"
+            )
+        if activity.get("planType") in _OPERATIONS_SUPPORT_PHASE_TYPES and not _clean_text(activity.get("planGroupId")):
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportActivities.{index}.planGroupId: "
+                "operations support phase requires a stable plan group"
             )
         for field in ("priority", "durationMinutes", "maxWorkTimeRefMinutes", "spareQuantity"):
             minimum = 1 if field == "durationMinutes" else 0
@@ -2697,7 +2706,10 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _strip_support_activity_spare_type_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivityJobs"))
+    _validate_support_activity_reference_fields_before_migration(project)
     _lift_support_activity_jobs_to_top_level(project)
+    _validate_support_activity_reference_fields_before_migration(project)
+    _materialize_operations_support_activity_phases(project)
     _materialize_support_activity_job_applicability(project)
     _normalize_support_activity_reference_fields(project)
     project.update(normalize_support_organization_contract(project)[0])
@@ -3496,8 +3508,411 @@ def _normalize_support_activity_reference_fields(project: dict[str, Any]) -> Non
         if activity.get("activityName") in (None, ""):
             activity["activityName"] = str(activity.get("name") or activity.get("id") or "保障活动")
         activity["planType"] = _canonical_support_activity_plan_type(activity)
-        for field in ("name", "planGroupId", "supportNodeId", "requiredDevices", "requiredPersonnel"):
+        for field in ("name", "supportNodeId", "requiredDevices", "requiredPersonnel"):
             activity.pop(field, None)
+
+
+_OPERATIONS_SUPPORT_PHASE_CONFIGS = (
+    {
+        "planType": "直接准备方案",
+        "idSuffix": "preflight",
+        "nameSuffix": "飞行前准备",
+        "maxWorkTimeRefMinutes": 30,
+    },
+    {
+        "planType": "再次出动准备方案",
+        "idSuffix": "relaunch",
+        "nameSuffix": "再次出动准备",
+        "maxWorkTimeRefMinutes": 45,
+    },
+    {
+        "planType": "飞行后检查方案",
+        "idSuffix": "postflight",
+        "nameSuffix": "飞行后检查",
+        "maxWorkTimeRefMinutes": 60,
+    },
+)
+_OPERATIONS_SUPPORT_PHASE_TYPES = {
+    str(config["planType"])
+    for config in _OPERATIONS_SUPPORT_PHASE_CONFIGS
+}
+
+
+def _materialize_operations_support_activity_phases(project: dict[str, Any]) -> None:
+    activities = project.get("supportActivities")
+    if not isinstance(activities, list) or not activities:
+        return
+    used_ids = {
+        _clean_text(activity.get("id"))
+        for activity in activities
+        if isinstance(activity, dict) and _clean_text(activity.get("id"))
+    }
+    used_names = {
+        _clean_text(activity.get("activityName") or activity.get("name"))
+        for activity in activities
+        if isinstance(activity, dict) and _clean_text(activity.get("activityName") or activity.get("name"))
+    }
+    rows: list[dict[str, Any]] = []
+    for index, activity in enumerate(activities):
+        if not _is_operations_support_activity_for_contract(activity):
+            continue
+        if activity.get("activityName") in (None, ""):
+            activity["activityName"] = str(
+                activity.get("name") or activity.get("id") or f"使用保障方案{index + 1}"
+            )
+        inference = _inferred_legacy_operations_phase(activity)
+        raw_plan_type = _clean_text(activity.get("planType"))
+        if (
+            raw_plan_type in _OPERATIONS_SUPPORT_PHASE_TYPES
+            and inference.get("hasEvidence")
+            and inference.get("planType") != raw_plan_type
+        ):
+            raise ValueError(
+                "clean Project JSON failed aircraft_support_v1 schema at "
+                f"supportActivities.{index}.planType: conflicting operations support phase evidence"
+            )
+        phase_type = (
+            raw_plan_type
+            if raw_plan_type in _OPERATIONS_SUPPORT_PHASE_TYPES
+            else str(inference.get("planType") or "直接准备方案")
+        )
+        activity.setdefault("activityCodes", [])
+        activity.setdefault("predecessors", {})
+        rows.append({
+            "activity": activity,
+            "index": index,
+            "phaseType": phase_type,
+            "explicitGroupId": _clean_text(activity.get("planGroupId")),
+            "baseId": str(inference.get("baseId") or ""),
+            "baseName": str(inference.get("baseName") or ""),
+        })
+
+    groups = _group_operations_support_rows(rows)
+    for plan_group_id in sorted(groups):
+        phase_rows = groups[plan_group_id]
+        template = phase_rows.get("直接准备方案") or min(
+            phase_rows.values(),
+            key=_operations_support_row_sort_key,
+            default=None,
+        )
+        if template is None:
+            continue
+        base_name = _clean_text(
+            phase_rows.get("直接准备方案", {}).get("activityName")
+            or template.get("activityName")
+            or template.get("name")
+            or template.get("id")
+        ) or "使用保障方案"
+        for config in _OPERATIONS_SUPPORT_PHASE_CONFIGS:
+            phase_type = str(config["planType"])
+            if phase_type in phase_rows:
+                continue
+            id_base = f"{_clean_text(template.get('id')) or plan_group_id}-{config['idSuffix']}"
+            activity_id = id_base
+            id_suffix = 2
+            while activity_id in used_ids:
+                activity_id = f"{id_base}-{id_suffix}"
+                id_suffix += 1
+            used_ids.add(activity_id)
+            name_base = f"{base_name}（{config['nameSuffix']}）"
+            activity_name = name_base
+            name_suffix = 2
+            while activity_name in used_names:
+                activity_name = f"{name_base}（{name_suffix}）"
+                name_suffix += 1
+            used_names.add(activity_name)
+            created: dict[str, Any] = {
+                "id": activity_id,
+                "activityName": activity_name,
+                "activityType": "使用保障",
+                "planType": phase_type,
+                "planGroupId": plan_group_id,
+                "aircraftModel": _clean_text(template.get("aircraftModel")),
+                "activityCodes": [],
+                "predecessors": {},
+                "maxWorkTimeRefMinutes": int(config["maxWorkTimeRefMinutes"]),
+            }
+            for field in (
+                "equipmentId",
+                "resourceId",
+                "priority",
+                "durationMinutes",
+                "durationHours",
+                "spareQuantity",
+            ):
+                if field in template:
+                    created[field] = deepcopy(template[field])
+            activities.append(created)
+            phase_rows[phase_type] = created
+
+
+def _group_operations_support_rows(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    groups: dict[str, dict[str, dict[str, Any]]] = {}
+    ungrouped: list[dict[str, Any]] = []
+    for row in rows:
+        explicit_group_id = str(row["explicitGroupId"])
+        if not explicit_group_id:
+            ungrouped.append(row)
+            continue
+        _add_operations_support_row_to_group(groups, explicit_group_id, row)
+
+    identity_index: dict[str, set[int]] = {}
+    for row_index, row in enumerate(ungrouped):
+        for identity in _operations_support_row_identities(row):
+            identity_index.setdefault(identity, set()).add(row_index)
+
+    remaining = set(range(len(ungrouped)))
+    components: list[list[dict[str, Any]]] = []
+    while remaining:
+        pending = [min(remaining, key=lambda value: _operations_support_row_sort_key(ungrouped[value]["activity"]))]
+        component_indexes: set[int] = set()
+        while pending:
+            row_index = pending.pop()
+            if row_index in component_indexes:
+                continue
+            component_indexes.add(row_index)
+            for identity in _operations_support_row_identities(ungrouped[row_index]):
+                pending.extend(identity_index.get(identity, set()) - component_indexes)
+        remaining -= component_indexes
+        components.append([ungrouped[row_index] for row_index in component_indexes])
+
+    reserved_group_ids = set(groups)
+    for component in sorted(
+        components,
+        key=lambda value: min(_operations_support_row_sort_key(row["activity"]) for row in value),
+    ):
+        plan_group_id = _operations_support_component_group_id(component)
+        if plan_group_id in reserved_group_ids:
+            raise ValueError(
+                "clean Project JSON failed aircraft_support_v1 schema at supportActivities: "
+                f"ambiguous operations support plan group {plan_group_id!r}"
+            )
+        reserved_group_ids.add(plan_group_id)
+        for row in component:
+            _add_operations_support_row_to_group(groups, plan_group_id, row)
+    return groups
+
+
+def _add_operations_support_row_to_group(
+    groups: dict[str, dict[str, dict[str, Any]]],
+    plan_group_id: str,
+    row: dict[str, Any],
+) -> None:
+    phase_type = str(row["phaseType"])
+    phase_rows = groups.setdefault(plan_group_id, {})
+    if phase_type in phase_rows:
+        raise ValueError(
+            "clean Project JSON failed aircraft_support_v1 schema at supportActivities: "
+            f"duplicate operations support phase ({plan_group_id}, {phase_type})"
+        )
+    activity = row["activity"]
+    activity["planType"] = phase_type
+    activity["planGroupId"] = plan_group_id
+    phase_rows[phase_type] = activity
+
+
+def _operations_support_row_identities(row: dict[str, Any]) -> set[str]:
+    activity = row["activity"]
+    scope = "|".join((
+        _clean_text(activity.get("aircraftModel")),
+        _clean_text(activity.get("equipmentId")),
+    ))
+    identities: set[str] = set()
+    base_id = str(row.get("baseId") or "")
+    base_name = str(row.get("baseName") or "")
+    if base_id:
+        identities.add(f"{scope}|id:{base_id}")
+    if base_name:
+        identities.add(f"{scope}|name:{base_name}")
+    if not identities:
+        activity_id = _clean_text(activity.get("id"))
+        activity_name = _clean_text(activity.get("activityName") or activity.get("name"))
+        if activity_id:
+            identities.add(f"{scope}|id:{activity_id}")
+        if activity_name:
+            identities.add(f"{scope}|name:{activity_name}")
+    return identities
+
+
+def _operations_support_component_group_id(component: list[dict[str, Any]]) -> str:
+    direct_rows = [row for row in component if row["phaseType"] == "直接准备方案"]
+    candidates = direct_rows or component
+    base_ids = sorted({
+        str(row.get("baseId") or "")
+        for row in candidates
+        if str(row.get("baseId") or "")
+    })
+    if base_ids:
+        return base_ids[0]
+    activity_ids = sorted({
+        _clean_text(row["activity"].get("id"))
+        for row in candidates
+        if _clean_text(row["activity"].get("id"))
+    })
+    if activity_ids:
+        return activity_ids[0]
+    base_names = sorted({
+        str(row.get("baseName") or "")
+        for row in candidates
+        if str(row.get("baseName") or "")
+    })
+    if base_names:
+        return base_names[0]
+    return f"operations-support-plan-{min(int(row['index']) for row in component) + 1}"
+
+
+def _operations_support_row_sort_key(activity: dict[str, Any]) -> tuple[str, str]:
+    return (
+        _clean_text(activity.get("id")),
+        _clean_text(activity.get("activityName") or activity.get("name")),
+    )
+
+
+def _inferred_legacy_operations_phase(activity: dict[str, Any]) -> dict[str, str]:
+    activity_id = _clean_text(activity.get("id"))
+    activity_name = _clean_text(activity.get("activityName") or activity.get("name"))
+    evidence: list[dict[str, str]] = []
+    for config in _OPERATIONS_SUPPORT_PHASE_CONFIGS:
+        id_suffix = f"-{config['idSuffix']}"
+        name_suffixes = (
+            f"（{config['nameSuffix']}）",
+            f"({config['nameSuffix']})",
+            f"{config['nameSuffix']}活动",
+        )
+        if activity_id.endswith(id_suffix):
+            evidence.append({
+                "planType": str(config["planType"]),
+                "baseId": activity_id[:-len(id_suffix)],
+                "baseName": next(
+                    (
+                        activity_name[:-len(name_suffix)]
+                        for name_suffix in name_suffixes
+                        if activity_name.endswith(name_suffix)
+                    ),
+                    "",
+                ),
+            })
+        for name_suffix in name_suffixes:
+            if activity_name.endswith(name_suffix):
+                evidence.append({
+                    "planType": str(config["planType"]),
+                    "baseId": "",
+                    "baseName": activity_name[:-len(name_suffix)],
+                })
+                break
+    evidence_types = {item["planType"] for item in evidence}
+    if len(evidence_types) > 1:
+        raise ValueError(
+            "clean Project JSON failed aircraft_support_v1 schema at supportActivities: "
+            "conflicting operations support phase identity"
+        )
+    if evidence:
+        base_ids = sorted({item["baseId"] for item in evidence if item["baseId"]})
+        base_names = sorted({item["baseName"] for item in evidence if item["baseName"]})
+        return {
+            "planType": evidence[0]["planType"],
+            "baseId": base_ids[0] if base_ids else "",
+            "baseName": base_names[0] if base_names else "",
+            "hasEvidence": "true",
+        }
+    return {
+        "planType": "直接准备方案",
+        "baseId": activity_id,
+        "baseName": activity_name,
+        "hasEvidence": "",
+    }
+
+
+def _is_operations_support_activity_for_contract(activity: Any) -> bool:
+    if not isinstance(activity, dict):
+        return False
+    plan_type = _clean_text(activity.get("planType"))
+    if plan_type:
+        return plan_type == "使用保障方案" or plan_type in _OPERATIONS_SUPPORT_PHASE_TYPES
+    activity_type = _clean_text(activity.get("activityType")).lower()
+    return any(
+        token in activity_type
+        for token in ("使用保障", "飞行前保障", "operations", "preflight", "relaunch", "postflight")
+    )
+
+
+def _validate_support_activity_reference_fields_before_migration(project: dict[str, Any]) -> None:
+    activities = project.get("supportActivities")
+    if not isinstance(activities, list):
+        return
+    for activity_index, activity in enumerate(activities):
+        if not isinstance(activity, dict):
+            continue
+        path = f"supportActivities.{activity_index}"
+        raw_codes = activity.get("activityCodes", [])
+        if "activityCodes" in activity:
+            if not isinstance(raw_codes, list):
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at {path}.activityCodes: "
+                    "expected string array"
+                )
+            activity_codes: list[str] = []
+            for code_index, code in enumerate(raw_codes):
+                if not isinstance(code, str) or not _clean_text(code):
+                    raise ValueError(
+                        f"clean Project JSON failed aircraft_support_v1 schema at "
+                        f"{path}.activityCodes.{code_index}: expected non-empty string"
+                    )
+                activity_codes.append(_clean_text(code))
+            if len(activity_codes) != len(set(activity_codes)):
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at {path}.activityCodes: "
+                    "duplicate activity code"
+                )
+        else:
+            activity_codes = []
+        raw_predecessors = activity.get("predecessors", {})
+        if "predecessors" not in activity:
+            continue
+        if not isinstance(raw_predecessors, dict):
+            raise ValueError(
+                f"clean Project JSON failed aircraft_support_v1 schema at {path}.predecessors: "
+                "expected string array map"
+            )
+        activity_code_set = set(activity_codes)
+        for code, values in raw_predecessors.items():
+            if not isinstance(code, str) or not _clean_text(code):
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at {path}.predecessors: "
+                    "expected non-empty string keys"
+                )
+            code_text = _clean_text(code)
+            if code_text not in activity_code_set:
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at "
+                    f"{path}.predecessors.{code_text}: predecessor key is outside activityCodes"
+                )
+            if not isinstance(values, list):
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at "
+                    f"{path}.predecessors.{code_text}: expected string array"
+                )
+            predecessors: list[str] = []
+            for value_index, value in enumerate(values):
+                if not isinstance(value, str) or not _clean_text(value):
+                    raise ValueError(
+                        f"clean Project JSON failed aircraft_support_v1 schema at "
+                        f"{path}.predecessors.{code_text}.{value_index}: expected non-empty string"
+                    )
+                predecessor = _clean_text(value)
+                if predecessor not in activity_code_set:
+                    raise ValueError(
+                        f"clean Project JSON failed aircraft_support_v1 schema at "
+                        f"{path}.predecessors.{code_text}: predecessor value is outside activityCodes"
+                    )
+                predecessors.append(predecessor)
+            if len(predecessors) != len(set(predecessors)):
+                raise ValueError(
+                    f"clean Project JSON failed aircraft_support_v1 schema at "
+                    f"{path}.predecessors.{code_text}: duplicate predecessor"
+                )
 
 
 def _normalize_support_activity_maintenance_methods(project: dict[str, Any]) -> list[str]:
@@ -3663,15 +4078,19 @@ def _validate_support_activity_maintenance_methods(activity: dict[str, Any], pat
 def _canonical_support_activity_plan_type(activity: dict[str, Any]) -> str:
     plan_type = str(activity.get("planType") or "").strip()
     activity_type = str(activity.get("activityType") or "").strip()
-    combined = f"{plan_type} {activity_type}".lower()
-    if plan_type == "修复性维修方案" or "修复性维修" in combined or "corrective" in combined:
-        return "修复性维修方案"
-    if plan_type == "预防性维修方案" or "预防性维修" in combined or "preventive" in combined:
-        return "预防性维修方案"
-    if plan_type in {"后勤保障方案", "后勤保障活动方案"} or "后勤保障" in combined or "logistics" in combined:
+    if plan_type in _SUPPORT_ACTIVITY_PLAN_TYPES:
+        return plan_type
+    if plan_type in {"后勤保障活动方案"}:
         return "后勤保障方案"
-    if plan_type in {"使用保障方案", "直接准备方案", "再次出动准备方案", "飞行后检查方案"}:
-        return "使用保障方案"
+    if plan_type:
+        return plan_type
+    combined = activity_type.lower()
+    if "修复性维修" in combined or "corrective" in combined:
+        return "修复性维修方案"
+    if "预防性维修" in combined or "preventive" in combined:
+        return "预防性维修方案"
+    if "后勤保障" in combined or "logistics" in combined:
+        return "后勤保障方案"
     if any(token in combined for token in ("飞行前保障", "使用保障", "operations", "preflight", "relaunch", "postflight")):
         return "使用保障方案"
     return "使用保障方案"

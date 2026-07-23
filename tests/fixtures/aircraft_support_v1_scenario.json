@@ -89,7 +89,10 @@
         "simulation_inputs.support_network.nodes[].organization_node_id",
         "simulation_inputs.time.duration_minutes",
         "simulation_inputs.time.requested_steps",
-        "ExperimentPlan.config.steps"
+        "ExperimentPlan.config.steps",
+        "organization_observability_version",
+        "organization_graph_identity",
+        "organization_dispatch_summary"
       ],
       "experiment_plan_id": null,
       "governance_only_fields": [
@@ -110,8 +113,14 @@
         "missionProfile.combatUnit.members[].takeoffLandingCount"
       ],
       "mapping_version": "aircraft-support-v1-input-v0",
+      "migration_notices": [],
       "model_family": "aircraft_support_v1",
       "modeling_snapshot_id": null,
+      "organization_graph_identity": {
+        "graph_hash": "820c9a95cc6dcda4398bb24c364861d289dacd2d689d2d0f70b8df92ecc806a4",
+        "hash_algorithm": "sha256",
+        "runtime_mode": "vertical"
+      },
       "project_id": "project-aircraft-support-contract-001",
       "runtime_deferred_fields": [
         "simulation_inputs.support_network.organization_graph.lateral_edges"
@@ -123,6 +132,7 @@
     "project_schema_version": "project-v0",
     "project_version": "project-v0.1"
   },
+  "organization_observability_version": "organization-observability-v1",
   "project_id": "project-aircraft-support-contract-001",
   "scenario_id": "scenario-aircraft-support-contract-demo",
   "scenario_version": "scenario-v0.1",
@@ -137,7 +147,7 @@
           "initial_due_dimensions": [],
           "initial_life_state": {
             "calendar_days": 0,
-            "flight_hours": 0,
+            "flight_hours": 0.0,
             "takeoff_landing_cycles": 0
           },
           "initial_preventive_due": false,
@@ -149,6 +159,11 @@
             "takeoff_landing_cycles": []
           },
           "preventive_thresholds": {
+            "calendar_days": 0,
+            "flight_hours": 0.0,
+            "takeoff_landing_cycles": 0
+          },
+          "source_initial_life_state": {
             "calendar_days": 0,
             "flight_hours": 0.0,
             "takeoff_landing_cycles": 0

@@ -35,7 +35,7 @@
     "supportResources": { "type": "array", "items": { "type": "object" } },
     "transportPolicies": { "type": "array", "items": { "type": "object" } },
     "supportActivityJobs": { "type": "array", "items": { "type": "object" } },
-    "supportActivities": { "type": "array", "items": { "type": "object" } },
+    "supportActivities": { "type": "array", "items": { "$ref": "#/$defs/supportActivity" } },
     "supportOrganization": {
       "type": "object",
       "properties": {
@@ -44,5 +44,46 @@
     },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" }
+  },
+  "$defs": {
+    "supportActivity": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "planType": {
+          "type": "string",
+          "enum": [
+            "使用保障方案",
+            "直接准备方案",
+            "再次出动准备方案",
+            "飞行后检查方案",
+            "修复性维修方案",
+            "预防性维修方案",
+            "后勤保障方案"
+          ]
+        },
+        "planGroupId": { "type": "string", "minLength": 1 },
+        "activityCodes": { "type": "array", "items": { "type": "string" } },
+        "predecessors": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["planType"],
+            "properties": {
+              "planType": {
+                "enum": ["直接准备方案", "再次出动准备方案", "飞行后检查方案"]
+              }
+            }
+          },
+          "then": {
+            "required": ["planGroupId", "activityCodes", "predecessors"]
+          }
+        }
+      ]
+    }
   }
 }

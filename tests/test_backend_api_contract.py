@@ -1673,8 +1673,18 @@ class BackendApiContractTest(unittest.TestCase):
             ["J16基本方案"] * 4,
         )
         self.assertEqual(
-            [activity["activityName"] for activity in stored["supportActivities"]],
-            ["J16基本方案", "J16基本方案（2）"],
+            {
+                (activity["planGroupId"], activity["planType"], activity["activityName"])
+                for activity in stored["supportActivities"]
+            },
+            {
+                ("j16-primary", "直接准备方案", "J16基本方案"),
+                ("j16-primary", "再次出动准备方案", "J16基本方案（再次出动准备）"),
+                ("j16-primary", "飞行后检查方案", "J16基本方案（飞行后检查）"),
+                ("j16-duplicate-renamed", "直接准备方案", "J16基本方案（2）"),
+                ("j16-duplicate-renamed", "再次出动准备方案", "J16基本方案（2）（再次出动准备）"),
+                ("j16-duplicate-renamed", "飞行后检查方案", "J16基本方案（2）（飞行后检查）"),
+            },
         )
 
     def test_get_project_strips_legacy_persisted_monte_carlo_payload(self) -> None:
@@ -1769,7 +1779,15 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("requiredDevices", stored["supportActivities"][0])
         self.assertNotIn("requiredPersonnel", stored["supportActivities"][0])
         self.assertEqual(stored["supportActivities"][0]["activityName"], "Legacy display name")
-        self.assertEqual(stored["supportActivities"][0]["planType"], "使用保障方案")
+        self.assertEqual(stored["supportActivities"][0]["planType"], "直接准备方案")
+        self.assertEqual(
+            {
+                row["planType"]
+                for row in stored["supportActivities"]
+                if row.get("planGroupId") == "activity-1"
+            },
+            {"直接准备方案", "再次出动准备方案", "飞行后检查方案"},
+        )
         self.assertNotIn("jobs", stored["supportActivities"][0])
         self.assertEqual(stored["supportActivities"][0]["activityCodes"], ["BA-001", "BA-002"])
         self.assertEqual(stored["supportActivities"][0]["predecessors"], {"BA-001": [], "BA-002": ["BA-001"]})
@@ -4748,6 +4766,24 @@ class BackendApiContractTest(unittest.TestCase):
         jobs_by_code = {job["activityCode"]: job for job in project["supportActivityJobs"]}
         self.assertEqual(jobs_by_code["BA-001"], {"activityCode": "BA-001", "workName": "检查雷达", "durationMinutes": 30})
         self.assertEqual(jobs_by_code["BA-002"], {"activityCode": "BA-002", "workName": "挂载雷达", "durationMinutes": 45})
+
+    def test_modeling_import_to_project_preserves_operations_phase_identity(self) -> None:
+        project = modeling_import_to_project(self._fixture("modeling_import_project.json"))
+
+        phases = [
+            activity
+            for activity in project["supportActivities"]
+            if activity.get("planGroupId") == "preflight"
+        ]
+        self.assertEqual(len(phases), 3)
+        self.assertEqual(
+            {activity["planType"] for activity in phases},
+            {"直接准备方案", "再次出动准备方案", "飞行后检查方案"},
+        )
+        self.assertEqual(
+            {activity["activityName"] for activity in phases},
+            {"典型保障方案", "J-15再次出动准备活动", "J-15飞行后检查活动"},
+        )
 
     def test_create_project_from_modeling_import_saves_project_and_snapshot(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
