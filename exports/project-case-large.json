@@ -13434,7 +13434,8 @@
       "equipmentId": "j16-part-0029",
       "id": "j16-service-0103",
       "maxWorkTimeRefMinutes": 148,
-      "planType": "使用保障方案",
+      "planGroupId": "j16-service-0103",
+      "planType": "直接准备方案",
       "predecessors": {
         "J16-USE-001": [
           "J16-USE-014"
@@ -13512,7 +13513,8 @@
       "equipmentId": "j16d-part-2602030200000800",
       "id": "j16-service-0104",
       "maxWorkTimeRefMinutes": 148,
-      "planType": "使用保障方案",
+      "planGroupId": "j16-service-0104",
+      "planType": "直接准备方案",
       "predecessors": {
         "J16D-USE-001": [
           "J16D-USE-014"
@@ -13590,7 +13592,8 @@
       "equipmentId": "j16-part-0029",
       "id": "ops-support-j16---3",
       "maxWorkTimeRefMinutes": 150,
-      "planType": "使用保障方案",
+      "planGroupId": "ops-support-j16---3",
+      "planType": "直接准备方案",
       "predecessors": {
         "J16-OPS-001": [
           "J16-OPS-014"
@@ -13655,7 +13658,8 @@
       "equipmentId": "j16-part-0029",
       "id": "ops-support-j16---4",
       "maxWorkTimeRefMinutes": 45,
-      "planType": "使用保障方案",
+      "planGroupId": "ops-support-j16---4",
+      "planType": "直接准备方案",
       "predecessors": {
         "BA-002": []
       },
@@ -13672,7 +13676,8 @@
       "equipmentId": "j16-part-0029",
       "id": "ops-support-j16---5",
       "maxWorkTimeRefMinutes": 60,
-      "planType": "使用保障方案",
+      "planGroupId": "ops-support-j16---5",
+      "planType": "直接准备方案",
       "predecessors": {
         "BA-003": []
       },
@@ -13701,6 +13706,154 @@
       "resourceId": "support-org-dadui",
       "runHourInterval": 8,
       "takeoffLandingInterval": 6
+    },
+    {
+      "activityCodes": [],
+      "activityName": "J16使用保障基本保障活动（再次出动准备）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16",
+      "durationHours": 2.466666666666667,
+      "equipmentId": "j16-part-0029",
+      "id": "j16-service-0103-relaunch",
+      "maxWorkTimeRefMinutes": 45,
+      "planGroupId": "j16-service-0103",
+      "planType": "再次出动准备方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-org-dadui"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "J16使用保障基本保障活动（飞行后检查）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16",
+      "durationHours": 2.466666666666667,
+      "equipmentId": "j16-part-0029",
+      "id": "j16-service-0103-postflight",
+      "maxWorkTimeRefMinutes": 60,
+      "planGroupId": "j16-service-0103",
+      "planType": "飞行后检查方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-org-dadui"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "J16D使用保障基本保障活动（再次出动准备）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16D",
+      "durationHours": 2.466666666666667,
+      "equipmentId": "j16d-part-2602030200000800",
+      "id": "j16-service-0104-relaunch",
+      "maxWorkTimeRefMinutes": 45,
+      "planGroupId": "j16-service-0104",
+      "planType": "再次出动准备方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-org-dadui"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "J16D使用保障基本保障活动（飞行后检查）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16D",
+      "durationHours": 2.466666666666667,
+      "equipmentId": "j16d-part-2602030200000800",
+      "id": "j16-service-0104-postflight",
+      "maxWorkTimeRefMinutes": 60,
+      "planGroupId": "j16-service-0104",
+      "planType": "飞行后检查方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-org-dadui"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "J16保障方案A（再次出动准备）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16",
+      "durationHours": 2.5,
+      "equipmentId": "j16-part-0029",
+      "id": "ops-support-j16---3-relaunch",
+      "maxWorkTimeRefMinutes": 45,
+      "planGroupId": "ops-support-j16---3",
+      "planType": "再次出动准备方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-org-dadui",
+      "spareQuantity": 0
+    },
+    {
+      "activityCodes": [],
+      "activityName": "J16保障方案A（飞行后检查）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16",
+      "durationHours": 2.5,
+      "equipmentId": "j16-part-0029",
+      "id": "ops-support-j16---3-postflight",
+      "maxWorkTimeRefMinutes": 60,
+      "planGroupId": "ops-support-j16---3",
+      "planType": "飞行后检查方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-org-dadui",
+      "spareQuantity": 0
+    },
+    {
+      "activityCodes": [],
+      "activityName": "preflight J16再次出动准备活动（再次出动准备）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16",
+      "durationHours": 0.75,
+      "equipmentId": "j16-part-0029",
+      "id": "ops-support-j16---4-relaunch",
+      "maxWorkTimeRefMinutes": 45,
+      "planGroupId": "ops-support-j16---4",
+      "planType": "再次出动准备方案",
+      "predecessors": {},
+      "resourceId": "support-org-dadui"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "preflight J16再次出动准备活动（飞行后检查）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16",
+      "durationHours": 0.75,
+      "equipmentId": "j16-part-0029",
+      "id": "ops-support-j16---4-postflight",
+      "maxWorkTimeRefMinutes": 60,
+      "planGroupId": "ops-support-j16---4",
+      "planType": "飞行后检查方案",
+      "predecessors": {},
+      "resourceId": "support-org-dadui"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "J16飞行后检查活动（再次出动准备）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16",
+      "durationHours": 1,
+      "equipmentId": "j16-part-0029",
+      "id": "ops-support-j16---5-relaunch",
+      "maxWorkTimeRefMinutes": 45,
+      "planGroupId": "ops-support-j16---5",
+      "planType": "再次出动准备方案",
+      "predecessors": {},
+      "resourceId": "support-org-dadui"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "J16飞行后检查活动（飞行后检查）",
+      "activityType": "使用保障",
+      "aircraftModel": "J16",
+      "durationHours": 1,
+      "equipmentId": "j16-part-0029",
+      "id": "ops-support-j16---5-postflight",
+      "maxWorkTimeRefMinutes": 60,
+      "planGroupId": "ops-support-j16---5",
+      "planType": "飞行后检查方案",
+      "predecessors": {},
+      "resourceId": "support-org-dadui"
     }
   ],
   "supportActivityJobs": [

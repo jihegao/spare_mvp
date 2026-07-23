@@ -2494,7 +2494,8 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(operationsPlanTypeSource, /飞行后检查/);
   assert.match(appSource, /planGroupId/);
   assert.match(appSource, /const planGroupId = operationsSupportPlanGroupId\(entry\.activity\)/);
-  assert.doesNotMatch(appSource, /materializeOperationsSupportPhaseActivity/);
+  assert.match(appSource, /function materializeOperationsSupportPhaseActivity/);
+  assert.match(appSource, /materializeOperationsPhases: true/);
   assert.match(operationsSource, /data-ops-support-plan-type/);
   assert.match(operationsSource, /operationsSupportPlanTypeTabKey\(activePlanType\)/);
   assert.match(operationsSource, /activePhaseActivity/);

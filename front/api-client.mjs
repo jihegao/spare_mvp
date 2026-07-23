@@ -352,6 +352,7 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   materializeLegacySupportTables(normalized);
   normalizeSupportModelTables(normalized);
   normalizeSupportActivityMaintenanceMethods(normalized);
+  materializeOperationsSupportActivityPhases(normalized);
   materializeSupportActivityJobApplicability(normalized);
   stripLegacySupportNodeResourceFields(normalized);
   stripSupportActivityTypoFields(normalized);
@@ -1558,11 +1559,230 @@ function normalizeSupportActivityReferenceFields(projectJson) {
     activity.activityName ||= activity.name || activity.id || "保障活动";
     activity.planType = canonicalSupportActivityPlanType(activity);
     delete activity.name;
-    delete activity.planGroupId;
     delete activity.supportNodeId;
     delete activity.requiredDevices;
     delete activity.requiredPersonnel;
   }
+}
+
+const OPERATIONS_SUPPORT_PHASE_CONFIGS = Object.freeze([
+  Object.freeze({
+    planType: "直接准备方案",
+    idSuffix: "preflight",
+    nameSuffix: "飞行前准备",
+    maxWorkTimeRefMinutes: 30
+  }),
+  Object.freeze({
+    planType: "再次出动准备方案",
+    idSuffix: "relaunch",
+    nameSuffix: "再次出动准备",
+    maxWorkTimeRefMinutes: 45
+  }),
+  Object.freeze({
+    planType: "飞行后检查方案",
+    idSuffix: "postflight",
+    nameSuffix: "飞行后检查",
+    maxWorkTimeRefMinutes: 60
+  })
+]);
+const OPERATIONS_SUPPORT_PHASE_TYPES = new Set(
+  OPERATIONS_SUPPORT_PHASE_CONFIGS.map((config) => config.planType)
+);
+
+function materializeOperationsSupportActivityPhases(projectJson) {
+  const activities = Array.isArray(projectJson?.supportActivities) ? projectJson.supportActivities : [];
+  if (!activities.length) return;
+  inferLegacyCollapsedOperationsSupportPhases(activities);
+  const usedIds = new Set(
+    activities
+      .map((activity) => normalizedText(activity?.id))
+      .filter(Boolean)
+  );
+  const usedNames = new Set(
+    activities
+      .map((activity) => normalizedText(activity?.activityName || activity?.name))
+      .filter(Boolean)
+  );
+  const groups = new Map();
+
+  for (const [index, activity] of activities.entries()) {
+    if (!isOperationsSupportActivityForContract(activity)) continue;
+    const rawPlanType = normalizedText(activity.planType);
+    const phaseType = OPERATIONS_SUPPORT_PHASE_TYPES.has(rawPlanType)
+      ? rawPlanType
+      : "直接准备方案";
+    const planGroupId = normalizedText(activity.planGroupId)
+      || uniqueOperationsSupportGroupId(activity, index, groups);
+    activity.planType = phaseType;
+    activity.planGroupId = planGroupId;
+    activity.activityName ||= activity.name || activity.id || `使用保障方案${index + 1}`;
+    activity.activityCodes = Array.isArray(activity.activityCodes)
+      ? activity.activityCodes.map((code) => normalizedText(code)).filter(Boolean)
+      : [];
+    activity.predecessors = normalizePhasePredecessors(activity.predecessors, activity.activityCodes);
+    if (!groups.has(planGroupId)) groups.set(planGroupId, new Map());
+    const phaseRows = groups.get(planGroupId);
+    if (!phaseRows.has(phaseType)) phaseRows.set(phaseType, activity);
+  }
+
+  for (const [planGroupId, phaseRows] of groups) {
+    const template = phaseRows.get("直接准备方案") || phaseRows.values().next().value;
+    if (!template) continue;
+    const baseName = normalizedText(
+      phaseRows.get("直接准备方案")?.activityName
+      || template.activityName
+      || template.name
+      || template.id
+    ) || "使用保障方案";
+    for (const config of OPERATIONS_SUPPORT_PHASE_CONFIGS) {
+      if (phaseRows.has(config.planType)) continue;
+      const idBase = `${normalizedText(template.id) || planGroupId}-${config.idSuffix}`;
+      const name = uniqueSupportActivityName(
+        `${baseName}（${config.nameSuffix}）`,
+        usedNames
+      );
+      const created = {
+        id: uniqueSupportActivityId(idBase, usedIds),
+        activityName: name,
+        activityType: "使用保障",
+        planType: config.planType,
+        planGroupId,
+        aircraftModel: normalizedText(template.aircraftModel),
+        activityCodes: [],
+        predecessors: {},
+        maxWorkTimeRefMinutes: config.maxWorkTimeRefMinutes
+      };
+      for (const field of [
+        "equipmentId",
+        "resourceId",
+        "priority",
+        "durationMinutes",
+        "durationHours",
+        "spareQuantity"
+      ]) {
+        if (template[field] !== undefined) created[field] = cloneJson(template[field]);
+      }
+      activities.push(created);
+      phaseRows.set(config.planType, created);
+    }
+  }
+}
+
+function inferLegacyCollapsedOperationsSupportPhases(activities) {
+  const legacyRows = activities.filter((activity) => (
+    isOperationsSupportActivityForContract(activity)
+    && normalizedText(activity.planType) === "使用保障方案"
+    && !normalizedText(activity.planGroupId)
+  ));
+  const rowsById = new Map();
+  const rowsByName = new Map();
+  for (const row of legacyRows) {
+    const id = normalizedText(row.id);
+    const name = normalizedText(row.activityName || row.name);
+    if (id) {
+      if (!rowsById.has(id)) rowsById.set(id, []);
+      rowsById.get(id).push(row);
+    }
+    if (name) {
+      if (!rowsByName.has(name)) rowsByName.set(name, []);
+      rowsByName.get(name).push(row);
+    }
+  }
+  for (const row of legacyRows) {
+    const phase = inferredLegacyOperationsPhase(row);
+    if (!phase || phase.planType === "直接准备方案") continue;
+    const directMatches = [
+      ...(phase.baseId ? rowsById.get(phase.baseId) || [] : []),
+      ...(phase.baseName ? rowsByName.get(phase.baseName) || [] : [])
+    ].filter((candidate, index, matches) => candidate !== row && matches.indexOf(candidate) === index);
+    if (directMatches.length !== 1) continue;
+    const direct = directMatches[0];
+    const planGroupId = normalizedText(direct.id || direct.activityName || direct.name);
+    if (!planGroupId) continue;
+    direct.planType = "直接准备方案";
+    direct.planGroupId = planGroupId;
+    row.planType = phase.planType;
+    row.planGroupId = planGroupId;
+  }
+}
+
+function inferredLegacyOperationsPhase(activity) {
+  const id = normalizedText(activity?.id);
+  const name = normalizedText(activity?.activityName || activity?.name);
+  for (const config of OPERATIONS_SUPPORT_PHASE_CONFIGS.filter((item) => item.planType !== "直接准备方案")) {
+    const idSuffix = `-${config.idSuffix}`;
+    const nameSuffix = `（${config.nameSuffix}）`;
+    if (id.endsWith(idSuffix)) {
+      return {
+        planType: config.planType,
+        baseId: id.slice(0, -idSuffix.length),
+        baseName: name.endsWith(nameSuffix) ? name.slice(0, -nameSuffix.length) : ""
+      };
+    }
+    if (name.endsWith(nameSuffix)) {
+      return {
+        planType: config.planType,
+        baseId: "",
+        baseName: name.slice(0, -nameSuffix.length)
+      };
+    }
+  }
+  return null;
+}
+
+function isOperationsSupportActivityForContract(activity) {
+  if (!activity || typeof activity !== "object" || Array.isArray(activity)) return false;
+  const planType = normalizedText(activity.planType);
+  if (planType === "使用保障方案" || OPERATIONS_SUPPORT_PHASE_TYPES.has(planType)) return true;
+  const activityType = normalizedText(activity.activityType).toLowerCase();
+  return /使用保障|飞行前保障|operations|preflight|relaunch|postflight/.test(activityType);
+}
+
+function uniqueOperationsSupportGroupId(activity, index, groups) {
+  const base = normalizedText(activity.id || activity.activityName || activity.name)
+    || `operations-support-plan-${index + 1}`;
+  let candidate = base;
+  let suffix = 2;
+  while (groups.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function uniqueSupportActivityId(base, usedIds) {
+  let candidate = normalizedText(base) || "operations-support-phase";
+  let suffix = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
+function uniqueSupportActivityName(base, usedNames) {
+  let candidate = normalizedText(base) || "使用保障阶段";
+  let suffix = 2;
+  while (usedNames.has(candidate)) {
+    candidate = `${base}（${suffix}）`;
+    suffix += 1;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
+
+function normalizePhasePredecessors(rawPredecessors, activityCodes) {
+  const codeSet = new Set(activityCodes);
+  const predecessors = {};
+  for (const code of activityCodes) {
+    predecessors[code] = Array.isArray(rawPredecessors?.[code])
+      ? rawPredecessors[code]
+        .map((value) => normalizedText(value))
+        .filter((value) => value && codeSet.has(value))
+      : [];
+  }
+  return predecessors;
 }
 
 const MAINTENANCE_METHOD_VALUES = Object.freeze(["non_replacement", "replacement"]);
@@ -1679,11 +1899,9 @@ function canonicalSupportActivityPlanType(activity = {}) {
   if (planType === "修复性维修方案" || /修复性维修|corrective/.test(combined)) return "修复性维修方案";
   if (planType === "预防性维修方案" || /预防性维修|preventive/.test(combined)) return "预防性维修方案";
   if (planType === "后勤保障方案" || planType === "后勤保障活动方案" || /后勤保障|logistics/.test(combined)) return "后勤保障方案";
+  if (OPERATIONS_SUPPORT_PHASE_TYPES.has(planType)) return planType;
   if (
     planType === "使用保障方案"
-    || planType === "直接准备方案"
-    || planType === "再次出动准备方案"
-    || planType === "飞行后检查方案"
     || /飞行前保障|使用保障|operations|preflight|relaunch|postflight/.test(combined)
   ) {
     return "使用保障方案";

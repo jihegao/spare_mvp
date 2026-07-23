@@ -322,7 +322,8 @@
       "durationHours": 1,
       "id": "preflight",
       "maxWorkTimeRefMinutes": 60,
-      "planType": "使用保障方案",
+      "planGroupId": "preflight",
+      "planType": "直接准备方案",
       "predecessors": {
         "OPS-001": [],
         "OPS-002": [
@@ -392,6 +393,34 @@
       "equipmentId": "j15-engine",
       "id": "logistics-support",
       "planType": "后勤保障方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-node-3"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "典型保障方案（再次出动准备）",
+      "activityType": "使用保障",
+      "aircraftModel": "J-15",
+      "durationHours": 1,
+      "id": "preflight-relaunch",
+      "maxWorkTimeRefMinutes": 45,
+      "planGroupId": "preflight",
+      "planType": "再次出动准备方案",
+      "predecessors": {},
+      "priority": 1,
+      "resourceId": "support-node-3"
+    },
+    {
+      "activityCodes": [],
+      "activityName": "典型保障方案（飞行后检查）",
+      "activityType": "使用保障",
+      "aircraftModel": "J-15",
+      "durationHours": 1,
+      "id": "preflight-postflight",
+      "maxWorkTimeRefMinutes": 60,
+      "planGroupId": "preflight",
+      "planType": "飞行后检查方案",
       "predecessors": {},
       "priority": 1,
       "resourceId": "support-node-3"

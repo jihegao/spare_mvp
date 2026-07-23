@@ -42,6 +42,7 @@
           "supportActivityJobs[]",
           "supportActivities[].aircraftModel",
           "supportActivities[].equipmentId",
+          "supportActivities[].planType",
           "supportActivities[].calendarDayInterval",
           "supportActivities[].runHourInterval",
           "supportActivities[].takeoffLandingInterval",
@@ -90,7 +91,10 @@
           "simulation_inputs.support_network.nodes[].organization_node_id",
           "simulation_inputs.time.duration_minutes",
           "simulation_inputs.time.requested_steps",
-          "ExperimentPlan.config.steps"
+          "ExperimentPlan.config.steps",
+          "organization_observability_version",
+          "organization_graph_identity",
+          "organization_dispatch_summary"
         ],
         "disabled_domains": [],
         "experiment_plan_id": "experiment-plan-m9-6-platform-case",
@@ -112,8 +116,14 @@
           "missionProfile.combatUnit.members[].takeoffLandingCount"
         ],
         "mapping_version": "aircraft-support-v1-input-v0",
+        "migration_notices": [],
         "model_family": "aircraft_support_v1",
         "modeling_snapshot_id": "snapshot-m9-6-platform-case",
+        "organization_graph_identity": {
+          "graph_hash": "3907794c517cd19329e3e19dcc0d39c691ff584bccae7f25a013b45d6c530434",
+          "hash_algorithm": "sha256",
+          "runtime_mode": "vertical"
+        },
         "project_id": "project-carrier-day-night",
         "runtime_deferred_fields": [
           "simulation_inputs.support_network.organization_graph.lateral_edges"
@@ -135,6 +145,7 @@
       "project_schema_version": "project-v0",
       "project_version": "import-v1"
     },
+    "organization_observability_version": "organization-observability-v1",
     "project_id": "project-carrier-day-night",
     "scenario_id": "scenario-import-carrier-day-night-001",
     "scenario_version": "scenario-v0.1",
@@ -149,7 +160,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -161,6 +172,11 @@
               "takeoff_landing_cycles": []
             },
             "preventive_thresholds": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
+            "source_initial_life_state": {
               "calendar_days": 0,
               "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
@@ -175,7 +191,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -187,6 +203,11 @@
               "takeoff_landing_cycles": []
             },
             "preventive_thresholds": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
+            "source_initial_life_state": {
               "calendar_days": 0,
               "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
@@ -201,7 +222,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -231,6 +252,11 @@
               "calendar_days": 1,
               "flight_hours": 8.0,
               "takeoff_landing_cycles": 6
+            },
+            "source_initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
             },
             "source_initial_state": "available",
             "tail_number": "J35-201"
@@ -242,7 +268,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -273,6 +299,11 @@
               "flight_hours": 8.0,
               "takeoff_landing_cycles": 6
             },
+            "source_initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
             "source_initial_state": "available",
             "tail_number": "J35-202"
           },
@@ -283,7 +314,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -299,6 +330,11 @@
               "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
+            "source_initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
+            },
             "source_initial_state": "available",
             "tail_number": "J15-103"
           },
@@ -309,7 +345,7 @@
             "initial_due_dimensions": [],
             "initial_life_state": {
               "calendar_days": 0,
-              "flight_hours": 0,
+              "flight_hours": 0.0,
               "takeoff_landing_cycles": 0
             },
             "initial_preventive_due": false,
@@ -339,6 +375,11 @@
               "calendar_days": 1,
               "flight_hours": 8.0,
               "takeoff_landing_cycles": 6
+            },
+            "source_initial_life_state": {
+              "calendar_days": 0,
+              "flight_hours": 0.0,
+              "takeoff_landing_cycles": 0
             },
             "source_initial_state": "available",
             "tail_number": "J35-203"
@@ -1219,6 +1260,114 @@
               }
             ],
             "name": "J-15飞行后检查活动",
+            "priority": 1,
+            "required_devices": 1,
+            "required_personnel": 1,
+            "resource_id": "基地",
+            "runHourInterval": null,
+            "spare_quantity": 0,
+            "takeoffLandingInterval": null
+          },
+          {
+            "activity_type": "使用保障",
+            "aircraft_model": "",
+            "calendarDayInterval": null,
+            "duration_minutes": 60,
+            "equipment_id": "j15-avionics",
+            "floatRatio": null,
+            "id": "preflight-relaunch",
+            "jobs": [],
+            "name": "典型保障方案（再次出动准备）",
+            "priority": 1,
+            "required_devices": 1,
+            "required_personnel": 1,
+            "resource_id": "基地",
+            "runHourInterval": null,
+            "spare_quantity": 0,
+            "takeoffLandingInterval": null
+          },
+          {
+            "activity_type": "使用保障",
+            "aircraft_model": "",
+            "calendarDayInterval": null,
+            "duration_minutes": 60,
+            "equipment_id": "j15-avionics",
+            "floatRatio": null,
+            "id": "preflight-postflight",
+            "jobs": [],
+            "name": "典型保障方案（飞行后检查）",
+            "priority": 1,
+            "required_devices": 1,
+            "required_personnel": 1,
+            "resource_id": "基地",
+            "runHourInterval": null,
+            "spare_quantity": 0,
+            "takeoffLandingInterval": null
+          },
+          {
+            "activity_type": "使用保障",
+            "aircraft_model": "J-15",
+            "calendarDayInterval": null,
+            "duration_minutes": 60,
+            "equipment_id": "j15-engine",
+            "floatRatio": null,
+            "id": "ops-support-j-15---5-relaunch",
+            "jobs": [],
+            "name": "J-15再次出动准备活动（再次出动准备）",
+            "priority": 1,
+            "required_devices": 1,
+            "required_personnel": 1,
+            "resource_id": "基地",
+            "runHourInterval": null,
+            "spare_quantity": 0,
+            "takeoffLandingInterval": null
+          },
+          {
+            "activity_type": "使用保障",
+            "aircraft_model": "J-15",
+            "calendarDayInterval": null,
+            "duration_minutes": 60,
+            "equipment_id": "j15-engine",
+            "floatRatio": null,
+            "id": "ops-support-j-15---5-postflight",
+            "jobs": [],
+            "name": "J-15再次出动准备活动（飞行后检查）",
+            "priority": 1,
+            "required_devices": 1,
+            "required_personnel": 1,
+            "resource_id": "基地",
+            "runHourInterval": null,
+            "spare_quantity": 0,
+            "takeoffLandingInterval": null
+          },
+          {
+            "activity_type": "使用保障",
+            "aircraft_model": "J-15",
+            "calendarDayInterval": null,
+            "duration_minutes": 60,
+            "equipment_id": "j15-engine",
+            "floatRatio": null,
+            "id": "ops-support-j-15---6-relaunch",
+            "jobs": [],
+            "name": "J-15飞行后检查活动（再次出动准备）",
+            "priority": 1,
+            "required_devices": 1,
+            "required_personnel": 1,
+            "resource_id": "基地",
+            "runHourInterval": null,
+            "spare_quantity": 0,
+            "takeoffLandingInterval": null
+          },
+          {
+            "activity_type": "使用保障",
+            "aircraft_model": "J-15",
+            "calendarDayInterval": null,
+            "duration_minutes": 60,
+            "equipment_id": "j15-engine",
+            "floatRatio": null,
+            "id": "ops-support-j-15---6-postflight",
+            "jobs": [],
+            "name": "J-15飞行后检查活动（飞行后检查）",
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
@@ -2225,7 +2374,8 @@
             "equipmentId": "j15-avionics",
             "id": "preflight",
             "maxWorkTimeRefMinutes": 60,
-            "planType": "使用保障方案",
+            "planGroupId": "preflight",
+            "planType": "直接准备方案",
             "predecessors": {
               "OPS-001": [],
               "OPS-002": [
@@ -2314,7 +2464,8 @@
             "equipmentId": "j15-engine",
             "id": "ops-support-j-15---5",
             "maxWorkTimeRefMinutes": 45,
-            "planType": "使用保障方案",
+            "planGroupId": "ops-support-j-15---5",
+            "planType": "直接准备方案",
             "predecessors": {
               "BA-001": []
             },
@@ -2332,10 +2483,103 @@
             "equipmentId": "j15-engine",
             "id": "ops-support-j-15---6",
             "maxWorkTimeRefMinutes": 60,
-            "planType": "使用保障方案",
+            "planGroupId": "ops-support-j-15---6",
+            "planType": "直接准备方案",
             "predecessors": {
               "BA-002": []
             },
+            "priority": 1,
+            "resourceId": "基地"
+          },
+          {
+            "activityCodes": [],
+            "activityName": "典型保障方案（再次出动准备）",
+            "activityType": "使用保障",
+            "aircraftModel": "",
+            "durationHours": 1,
+            "equipmentId": "j15-avionics",
+            "id": "preflight-relaunch",
+            "maxWorkTimeRefMinutes": 45,
+            "planGroupId": "preflight",
+            "planType": "再次出动准备方案",
+            "predecessors": {},
+            "priority": 1,
+            "resourceId": "基地",
+            "spareQuantity": 0
+          },
+          {
+            "activityCodes": [],
+            "activityName": "典型保障方案（飞行后检查）",
+            "activityType": "使用保障",
+            "aircraftModel": "",
+            "durationHours": 1,
+            "equipmentId": "j15-avionics",
+            "id": "preflight-postflight",
+            "maxWorkTimeRefMinutes": 60,
+            "planGroupId": "preflight",
+            "planType": "飞行后检查方案",
+            "predecessors": {},
+            "priority": 1,
+            "resourceId": "基地",
+            "spareQuantity": 0
+          },
+          {
+            "activityCodes": [],
+            "activityName": "J-15再次出动准备活动（再次出动准备）",
+            "activityType": "使用保障",
+            "aircraftModel": "J-15",
+            "durationHours": 0.08333333333333333,
+            "equipmentId": "j15-engine",
+            "id": "ops-support-j-15---5-relaunch",
+            "maxWorkTimeRefMinutes": 45,
+            "planGroupId": "ops-support-j-15---5",
+            "planType": "再次出动准备方案",
+            "predecessors": {},
+            "priority": 1,
+            "resourceId": "基地"
+          },
+          {
+            "activityCodes": [],
+            "activityName": "J-15再次出动准备活动（飞行后检查）",
+            "activityType": "使用保障",
+            "aircraftModel": "J-15",
+            "durationHours": 0.08333333333333333,
+            "equipmentId": "j15-engine",
+            "id": "ops-support-j-15---5-postflight",
+            "maxWorkTimeRefMinutes": 60,
+            "planGroupId": "ops-support-j-15---5",
+            "planType": "飞行后检查方案",
+            "predecessors": {},
+            "priority": 1,
+            "resourceId": "基地"
+          },
+          {
+            "activityCodes": [],
+            "activityName": "J-15飞行后检查活动（再次出动准备）",
+            "activityType": "使用保障",
+            "aircraftModel": "J-15",
+            "durationHours": 0.5,
+            "equipmentId": "j15-engine",
+            "id": "ops-support-j-15---6-relaunch",
+            "maxWorkTimeRefMinutes": 45,
+            "planGroupId": "ops-support-j-15---6",
+            "planType": "再次出动准备方案",
+            "predecessors": {},
+            "priority": 1,
+            "resourceId": "基地"
+          },
+          {
+            "activityCodes": [],
+            "activityName": "J-15飞行后检查活动（飞行后检查）",
+            "activityType": "使用保障",
+            "aircraftModel": "J-15",
+            "durationHours": 0.5,
+            "equipmentId": "j15-engine",
+            "id": "ops-support-j-15---6-postflight",
+            "maxWorkTimeRefMinutes": 60,
+            "planGroupId": "ops-support-j-15---6",
+            "planType": "飞行后检查方案",
+            "predecessors": {},
             "priority": 1,
             "resourceId": "基地"
           }
@@ -3478,7 +3722,8 @@
           "equipmentId": "j15-avionics",
           "id": "preflight",
           "maxWorkTimeRefMinutes": 60,
-          "planType": "使用保障方案",
+          "planGroupId": "preflight",
+          "planType": "直接准备方案",
           "predecessors": {
             "OPS-001": [],
             "OPS-002": [
@@ -3567,7 +3812,8 @@
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---5",
           "maxWorkTimeRefMinutes": 45,
-          "planType": "使用保障方案",
+          "planGroupId": "ops-support-j-15---5",
+          "planType": "直接准备方案",
           "predecessors": {
             "BA-001": []
           },
@@ -3585,10 +3831,103 @@
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---6",
           "maxWorkTimeRefMinutes": 60,
-          "planType": "使用保障方案",
+          "planGroupId": "ops-support-j-15---6",
+          "planType": "直接准备方案",
           "predecessors": {
             "BA-002": []
           },
+          "priority": 1,
+          "resourceId": "基地"
+        },
+        {
+          "activityCodes": [],
+          "activityName": "典型保障方案（再次出动准备）",
+          "activityType": "使用保障",
+          "aircraftModel": "",
+          "durationHours": 1,
+          "equipmentId": "j15-avionics",
+          "id": "preflight-relaunch",
+          "maxWorkTimeRefMinutes": 45,
+          "planGroupId": "preflight",
+          "planType": "再次出动准备方案",
+          "predecessors": {},
+          "priority": 1,
+          "resourceId": "基地",
+          "spareQuantity": 0
+        },
+        {
+          "activityCodes": [],
+          "activityName": "典型保障方案（飞行后检查）",
+          "activityType": "使用保障",
+          "aircraftModel": "",
+          "durationHours": 1,
+          "equipmentId": "j15-avionics",
+          "id": "preflight-postflight",
+          "maxWorkTimeRefMinutes": 60,
+          "planGroupId": "preflight",
+          "planType": "飞行后检查方案",
+          "predecessors": {},
+          "priority": 1,
+          "resourceId": "基地",
+          "spareQuantity": 0
+        },
+        {
+          "activityCodes": [],
+          "activityName": "J-15再次出动准备活动（再次出动准备）",
+          "activityType": "使用保障",
+          "aircraftModel": "J-15",
+          "durationHours": 0.08333333333333333,
+          "equipmentId": "j15-engine",
+          "id": "ops-support-j-15---5-relaunch",
+          "maxWorkTimeRefMinutes": 45,
+          "planGroupId": "ops-support-j-15---5",
+          "planType": "再次出动准备方案",
+          "predecessors": {},
+          "priority": 1,
+          "resourceId": "基地"
+        },
+        {
+          "activityCodes": [],
+          "activityName": "J-15再次出动准备活动（飞行后检查）",
+          "activityType": "使用保障",
+          "aircraftModel": "J-15",
+          "durationHours": 0.08333333333333333,
+          "equipmentId": "j15-engine",
+          "id": "ops-support-j-15---5-postflight",
+          "maxWorkTimeRefMinutes": 60,
+          "planGroupId": "ops-support-j-15---5",
+          "planType": "飞行后检查方案",
+          "predecessors": {},
+          "priority": 1,
+          "resourceId": "基地"
+        },
+        {
+          "activityCodes": [],
+          "activityName": "J-15飞行后检查活动（再次出动准备）",
+          "activityType": "使用保障",
+          "aircraftModel": "J-15",
+          "durationHours": 0.5,
+          "equipmentId": "j15-engine",
+          "id": "ops-support-j-15---6-relaunch",
+          "maxWorkTimeRefMinutes": 45,
+          "planGroupId": "ops-support-j-15---6",
+          "planType": "再次出动准备方案",
+          "predecessors": {},
+          "priority": 1,
+          "resourceId": "基地"
+        },
+        {
+          "activityCodes": [],
+          "activityName": "J-15飞行后检查活动（飞行后检查）",
+          "activityType": "使用保障",
+          "aircraftModel": "J-15",
+          "durationHours": 0.5,
+          "equipmentId": "j15-engine",
+          "id": "ops-support-j-15---6-postflight",
+          "maxWorkTimeRefMinutes": 60,
+          "planGroupId": "ops-support-j-15---6",
+          "planType": "飞行后检查方案",
+          "predecessors": {},
           "priority": 1,
           "resourceId": "基地"
         }
@@ -4745,7 +5084,8 @@
         "equipmentId": "j15-avionics",
         "id": "preflight",
         "maxWorkTimeRefMinutes": 60,
-        "planType": "使用保障方案",
+        "planGroupId": "preflight",
+        "planType": "直接准备方案",
         "predecessors": {
           "OPS-001": [],
           "OPS-002": [
@@ -4834,7 +5174,8 @@
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---5",
         "maxWorkTimeRefMinutes": 45,
-        "planType": "使用保障方案",
+        "planGroupId": "ops-support-j-15---5",
+        "planType": "直接准备方案",
         "predecessors": {
           "BA-001": []
         },
@@ -4852,10 +5193,103 @@
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---6",
         "maxWorkTimeRefMinutes": 60,
-        "planType": "使用保障方案",
+        "planGroupId": "ops-support-j-15---6",
+        "planType": "直接准备方案",
         "predecessors": {
           "BA-002": []
         },
+        "priority": 1,
+        "resourceId": "基地"
+      },
+      {
+        "activityCodes": [],
+        "activityName": "典型保障方案（再次出动准备）",
+        "activityType": "使用保障",
+        "aircraftModel": "",
+        "durationHours": 1,
+        "equipmentId": "j15-avionics",
+        "id": "preflight-relaunch",
+        "maxWorkTimeRefMinutes": 45,
+        "planGroupId": "preflight",
+        "planType": "再次出动准备方案",
+        "predecessors": {},
+        "priority": 1,
+        "resourceId": "基地",
+        "spareQuantity": 0
+      },
+      {
+        "activityCodes": [],
+        "activityName": "典型保障方案（飞行后检查）",
+        "activityType": "使用保障",
+        "aircraftModel": "",
+        "durationHours": 1,
+        "equipmentId": "j15-avionics",
+        "id": "preflight-postflight",
+        "maxWorkTimeRefMinutes": 60,
+        "planGroupId": "preflight",
+        "planType": "飞行后检查方案",
+        "predecessors": {},
+        "priority": 1,
+        "resourceId": "基地",
+        "spareQuantity": 0
+      },
+      {
+        "activityCodes": [],
+        "activityName": "J-15再次出动准备活动（再次出动准备）",
+        "activityType": "使用保障",
+        "aircraftModel": "J-15",
+        "durationHours": 0.08333333333333333,
+        "equipmentId": "j15-engine",
+        "id": "ops-support-j-15---5-relaunch",
+        "maxWorkTimeRefMinutes": 45,
+        "planGroupId": "ops-support-j-15---5",
+        "planType": "再次出动准备方案",
+        "predecessors": {},
+        "priority": 1,
+        "resourceId": "基地"
+      },
+      {
+        "activityCodes": [],
+        "activityName": "J-15再次出动准备活动（飞行后检查）",
+        "activityType": "使用保障",
+        "aircraftModel": "J-15",
+        "durationHours": 0.08333333333333333,
+        "equipmentId": "j15-engine",
+        "id": "ops-support-j-15---5-postflight",
+        "maxWorkTimeRefMinutes": 60,
+        "planGroupId": "ops-support-j-15---5",
+        "planType": "飞行后检查方案",
+        "predecessors": {},
+        "priority": 1,
+        "resourceId": "基地"
+      },
+      {
+        "activityCodes": [],
+        "activityName": "J-15飞行后检查活动（再次出动准备）",
+        "activityType": "使用保障",
+        "aircraftModel": "J-15",
+        "durationHours": 0.5,
+        "equipmentId": "j15-engine",
+        "id": "ops-support-j-15---6-relaunch",
+        "maxWorkTimeRefMinutes": 45,
+        "planGroupId": "ops-support-j-15---6",
+        "planType": "再次出动准备方案",
+        "predecessors": {},
+        "priority": 1,
+        "resourceId": "基地"
+      },
+      {
+        "activityCodes": [],
+        "activityName": "J-15飞行后检查活动（飞行后检查）",
+        "activityType": "使用保障",
+        "aircraftModel": "J-15",
+        "durationHours": 0.5,
+        "equipmentId": "j15-engine",
+        "id": "ops-support-j-15---6-postflight",
+        "maxWorkTimeRefMinutes": 60,
+        "planGroupId": "ops-support-j-15---6",
+        "planType": "飞行后检查方案",
+        "predecessors": {},
         "priority": 1,
         "resourceId": "基地"
       }

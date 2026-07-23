@@ -741,6 +741,68 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         clean = self._export_with_old_jsonschema(invalid_plan_type)
         self.assertEqual(clean["supportActivities"][0]["planType"], "使用保障方案")
 
+    def test_exporter_materializes_legacy_operations_plan_as_three_independent_phase_references(self) -> None:
+        project = self._polluted_project()
+        activity = project["supportActivities"][0]
+        activity.update({
+            "id": "preflight",
+            "activityName": "Typical support plan",
+            "activityType": "飞行前保障",
+            "planType": "使用保障方案",
+            "aircraftModel": "J-15",
+        })
+        project["basicMissions"][0]["supportActivityName"] = "Typical support plan"
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+        phases = {
+            row["planType"]: row
+            for row in clean["supportActivities"]
+            if row.get("planGroupId") == "preflight"
+        }
+
+        self.assertEqual(
+            set(phases),
+            {"直接准备方案", "再次出动准备方案", "飞行后检查方案"},
+        )
+        self.assertEqual(phases["直接准备方案"]["activityCodes"], ["JOB-1"])
+        self.assertEqual(phases["直接准备方案"]["predecessors"], {"JOB-1": []})
+        self.assertEqual(phases["再次出动准备方案"]["activityCodes"], [])
+        self.assertEqual(phases["再次出动准备方案"]["predecessors"], {})
+        self.assertEqual(phases["飞行后检查方案"]["activityCodes"], [])
+        self.assertEqual(phases["飞行后检查方案"]["predecessors"], {})
+        self.assertEqual(len({row["activityName"] for row in phases.values()}), 3)
+        self.assertEqual(self._schema_errors(clean), [])
+
+        missing_phase_references = deepcopy(clean)
+        next(
+            row
+            for row in missing_phase_references["supportActivities"]
+            if row.get("planType") == "再次出动准备方案"
+        ).pop("activityCodes")
+        self.assertTrue(
+            any("activityCodes" in error.message for error in self._schema_errors(missing_phase_references))
+        )
+
+        round_tripped = ProjectJsonExporter(target="aircraft_support_v1").export(clean)
+        self.assertEqual(round_tripped["supportActivities"], clean["supportActivities"])
+
+        regressed = deepcopy(clean)
+        for row in regressed["supportActivities"]:
+            if row.get("planGroupId") == "preflight":
+                row["planType"] = "使用保障方案"
+                row.pop("planGroupId")
+        repaired = ProjectJsonExporter(target="aircraft_support_v1").export(regressed)
+        repaired_phases = [
+            row
+            for row in repaired["supportActivities"]
+            if row.get("planGroupId") == "preflight"
+        ]
+        self.assertEqual(len(repaired_phases), 3)
+        self.assertEqual(
+            {row["planType"] for row in repaired_phases},
+            {"直接准备方案", "再次出动准备方案", "飞行后检查方案"},
+        )
+
     def test_exporter_materializes_and_round_trips_maintenance_method_defaults(self) -> None:
         project = self._polluted_project()
         activity = project["supportActivities"][0]

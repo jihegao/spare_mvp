@@ -425,8 +425,17 @@
         "activityType": { "type": "string" },
         "planType": {
           "type": "string",
-          "enum": ["使用保障方案", "修复性维修方案", "预防性维修方案", "后勤保障方案"]
+          "enum": [
+            "使用保障方案",
+            "直接准备方案",
+            "再次出动准备方案",
+            "飞行后检查方案",
+            "修复性维修方案",
+            "预防性维修方案",
+            "后勤保障方案"
+          ]
         },
+        "planGroupId": { "type": "string", "minLength": 1 },
         "aircraftModel": { "type": "string" },
         "equipmentId": { "type": "string" },
         "resourceId": { "type": "string", "minLength": 1 },
@@ -459,6 +468,19 @@
         "replacementRatio": ["maintenanceMethods"]
       },
       "allOf": [
+        {
+          "if": {
+            "required": ["planType"],
+            "properties": {
+              "planType": {
+                "enum": ["直接准备方案", "再次出动准备方案", "飞行后检查方案"]
+              }
+            }
+          },
+          "then": {
+            "required": ["planGroupId", "activityCodes", "predecessors"]
+          }
+        },
         {
           "if": { "required": ["maintenanceMethods"] },
           "then": {

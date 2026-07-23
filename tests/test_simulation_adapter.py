@@ -12,6 +12,7 @@ import jsonschema
 
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 from src.spare_mvp_backend.m9_6_case_package import build_m9_6_platform_case_export
+from src.spare_mvp_backend.project_payload import ProjectJsonExporter
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
 from tests.test_aircraft_support_v1_model import (
     _lateral_organization_inputs,
@@ -1031,6 +1032,34 @@ class SimulationAdapterTest(unittest.TestCase):
         runtime_activity = compiled["simulation_inputs"]["support_activities"]["activities"][0]
         self.assertNotIn("maintenance_methods", runtime_activity)
         self.assertNotIn("replacement_ratio", runtime_activity)
+
+    def test_aircraft_support_v1_compiles_operations_phase_local_job_references(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        activity = project["supportActivities"][0]
+        activity.update({
+            "id": "preflight",
+            "activityName": "Typical support plan",
+            "activityType": "飞行前保障",
+            "planType": "使用保障方案",
+            "aircraftModel": "J-15",
+        })
+        activity.pop("maintenanceMethods", None)
+        activity.pop("replacementRatio", None)
+
+        clean_project = ProjectJsonExporter(
+            target="aircraft_support_v1",
+            repo_root=REPO_ROOT,
+        ).export(project)
+        scenario = self.adapter.compile_scenario(clean_project, model_family="aircraft_support_v1")
+        runtime_activities = scenario["simulation_inputs"]["support_activities"]["activities"]
+
+        self.assertEqual(len(runtime_activities), 3)
+        self.assertEqual([len(item["jobs"]) for item in runtime_activities], [1, 0, 0])
+        self.assertEqual(len({item["name"] for item in runtime_activities}), 3)
+        input_schema = json.loads(
+            (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
+        )
+        jsonschema.validate(scenario["simulation_inputs"], input_schema)
 
     def test_aircraft_support_v1_compile_gate_blocks_missing_support_activity_job_reference(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
