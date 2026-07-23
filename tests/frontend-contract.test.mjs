@@ -4252,7 +4252,7 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
     appSource.indexOf('if (definition.analysisType === "mission_reliability")', carryBodyStart)
   );
 
-  assert.match(carryDefinitionSource, /metricLabels: \["建议携行总数", "高优先级备件", "总体备件利用率"\]/);
+  assert.match(carryDefinitionSource, /metricLabels: \["建议携行总数", "高优先级备件", "满足下限备件", "总体备件利用率"\]/);
   assert.match(downtimeDefinitionSource, /metricLabels: \["停机因素项", "首要因素", "最高贡献度"\]/);
   assert.match(metricFilterSource, /carry_list: new Set\(\["备件满足率下限", "置信度目标", "样本数"\]\)/);
   assert.match(metricFilterSource, /downtime_factors: new Set\(\["样本数"\]\)/);
@@ -4261,6 +4261,10 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
   assert.match(carryBodySource, /隐藏需求数值为 0 的备件/);
   assert.match(carryBodySource, /data-carry-aircraft-filter/);
   assert.match(carryBodySource, /<th>机型<\/th>/);
+  assert.match(carryBodySource, /<th>备件满足率<\/th><th>约束状态<\/th>/);
+  assert.match(carryBodySource, /row\.satisfactionRate/);
+  assert.match(carryBodySource, /row\.satisfactionConstraintMet/);
+  assert.match(carryBodySource, /carrySatisfactionConstraintMarginDisplay/);
   assert.match(carryBodySource, /data-carry-recommended-sort="asc"/);
   assert.match(carryBodySource, /data-carry-recommended-sort="desc"/);
   assert.match(carryBodySource, /aria-label="按建议携行数量升序排列"/);

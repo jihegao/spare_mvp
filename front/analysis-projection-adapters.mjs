@@ -185,20 +185,34 @@ function normalizeCarryList(payload) {
       const carriedQuantity = optionalNonnegativeFiniteNumber(row.carried_quantity);
       const usedQuantity = optionalNonnegativeFiniteNumber(row.used_quantity);
       const hasRawQuantities = carriedQuantity !== null && usedQuantity !== null;
+      const minimumSatisfactionRate = row.minimum_satisfaction_rate === null || row.minimum_satisfaction_rate === undefined
+        ? 0.9
+        : clamp01(requireFiniteNumber(row.minimum_satisfaction_rate, "minimum_satisfaction_rate"));
+      const satisfactionRate = row.satisfaction_rate === null || row.satisfaction_rate === undefined
+        ? Math.min(1, multiplier / Math.max(multiplier, 1))
+        : clamp01(requireFiniteNumber(row.satisfaction_rate, "satisfaction_rate"));
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         productId: stringValue(row.product_id, ""),
         name: stringValue(row.spare_type, "unknown_spare"),
         multiplier,
-        satisfy: Math.min(1, multiplier / Math.max(multiplier, 1)),
+        satisfy: satisfactionRate,
+        satisfactionRate,
+        satisfactionConstraintMet: row.satisfaction_constraint_met === undefined
+          ? satisfactionRate >= minimumSatisfactionRate
+          : Boolean(row.satisfaction_constraint_met),
+        satisfactionConstraintMargin: row.satisfaction_constraint_margin === null || row.satisfaction_constraint_margin === undefined
+          ? satisfactionRate - minimumSatisfactionRate
+          : requireFiniteNumber(row.satisfaction_constraint_margin, "satisfaction_constraint_margin"),
         delay: Math.max(0, Math.round((multiplier - 1) * 24)),
         qty,
         usedQuantity,
         carriedQuantity,
         priority,
         demand: Math.max(0, Math.round(numberOrZero(row.demand_count))),
+        shortage: Math.max(0, Math.round(numberOrZero(row.shortage_count))),
         utilization: hasRawQuantities ? (carriedQuantity > 0 ? usedQuantity / carriedQuantity : null) : utilization,
-        minimumSatisfactionRate: clamp01(numberOrZero(row.minimum_satisfaction_rate) || 0.9),
+        minimumSatisfactionRate,
         hideZeroDemand: row.hide_zero_demand !== false,
         lifeLimited: Boolean(row.life_limited),
         lifeLandings: Math.max(0, Math.round(numberOrZero(row.life_landings))),
