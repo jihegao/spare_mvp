@@ -7437,6 +7437,80 @@ test("experiment plan list selection editing and saving do not change the run co
   }
 });
 
+test("editing current modeling data resets a persisted saved-plan analysis context", async () => {
+  const currentProjectJson = createRuntimeProjectJson();
+  currentProjectJson.components = [{
+    id: "component-current",
+    parentId: "aircraft-root",
+    aircraftModel: "J-15",
+    name: "当前项目航电",
+    productType: "LRU",
+    quantity: 1
+  }];
+  currentProjectJson.supportActivities.push({
+    id: "corrective-current",
+    activityType: "修复性维修",
+    planType: "修复性维修方案",
+    activityName: "当前项目修复方案",
+    aircraftModel: "J-15",
+    maintenanceMethods: ["non_replacement"],
+    replacementRatio: 0,
+    activityCodes: [],
+    predecessors: {}
+  });
+  const savedPlanProjectJson = JSON.parse(JSON.stringify(currentProjectJson));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis",
+    projectJson: currentProjectJson,
+    experimentPlans: [{
+      experiment_plan_id: "plan-stale-after-model-edit",
+      status: "draft",
+      config: {
+        name: "修改前方案快照",
+        samples: 8,
+        seed: 808,
+        projectJson: savedPlanProjectJson
+      }
+    }]
+  });
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-stale-after-model-edit" }
+    );
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-stale-after-model-edit" selected/);
+
+    await runtime.setHash("feature=spare-planning-corrective-maintenance-activity");
+    await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-current" });
+    await runtime.change(
+      "[data-maintenance-method]",
+      { maintenanceActivityIndex: "1", maintenanceMethod: "replacement" },
+      { checked: true, type: "checkbox" }
+    );
+
+    assert.equal(
+      JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
+      "current-project:project-runtime"
+    );
+    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
+    assert.match(runtime.appNode.innerHTML, /<option value="current-project:project-runtime" selected/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="plan-stale-after-model-edit" selected/);
+
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const analysisBody = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    const corrective = analysisBody.project.supportActivities.find((activity) => activity.id === "corrective-current");
+    assert.deepEqual(corrective.maintenanceMethods, ["non_replacement", "replacement"]);
+    assert.equal(analysisBody.settings.samples, 27, "analysis must restore current-project defaults instead of the stale plan's 8 samples");
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("switching from a saved plan to a Project without experiment resets Monte Carlo settings", async () => {
   const currentProjectJson = createRuntimeProjectJson();
   delete currentProjectJson.experiment;
