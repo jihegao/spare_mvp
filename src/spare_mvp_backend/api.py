@@ -1074,6 +1074,7 @@ class BackendApi:
             run_id=run_id,
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
             simulation_inputs=inputs,
+            carry_minimum_satisfaction_rate=normalized_settings["missionConfidenceTarget"],
         )
         page_result = _lite_mesa_analysis_page_result(
             normalized_analysis_type,
@@ -2423,6 +2424,7 @@ def _lite_mesa_carry_list_result(
     samples: list[dict[str, Any]],
     settings: dict[str, Any],
 ) -> dict[str, Any]:
+    minimum_satisfaction_rate = settings["missionConfidenceTarget"]
     base_quantity = max(
         1,
         _metric_int(aggregate.get("spare_consumed_total"), default=0)
@@ -2448,6 +2450,19 @@ def _lite_mesa_carry_list_result(
             if item.get("utilization") is not None
             else None
         )
+        satisfaction_rate = _clamp01(
+            item.get("satisfaction_rate", item.get("fill_rate", 1.0))
+        )
+        satisfaction_constraint_met = bool(
+            item.get(
+                "satisfaction_constraint_met",
+                satisfaction_rate + 1e-12 >= minimum_satisfaction_rate,
+            )
+        )
+        satisfaction_constraint_margin = _metric_float(
+            item.get("satisfaction_constraint_margin"),
+            default=satisfaction_rate - minimum_satisfaction_rate,
+        )
         rows.append(
             {
                 "aircraftModel": str(item.get("aircraft_model") or item.get("aircraftModel") or "全部机型"),
@@ -2458,14 +2473,20 @@ def _lite_mesa_carry_list_result(
                 "carriedQuantity": carried_quantity,
                 "demand": max(0, _metric_int(item.get("demand_count"), default=planned)),
                 "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
+                "observedFilled": max(0, _metric_int(item.get("observed_filled_count"), default=0)),
+                "observedShortage": max(0, _metric_int(item.get("observed_shortage_count"), default=0)),
+                "observedFillRate": _clamp01(item.get("observed_fill_rate", satisfaction_rate)),
+                "satisfactionRate": satisfaction_rate,
+                "satisfactionConstraintMet": satisfaction_constraint_met,
+                "satisfactionConstraintMargin": satisfaction_constraint_margin,
                 "utilization": (
                     used_quantity / carried_quantity
                     if has_raw_quantities and carried_quantity > 0
                     else legacy_utilization if not has_raw_quantities else None
                 ),
                 "riskLevel": _risk_label(item.get("risk_level")),
-                "confidenceTarget": settings["missionConfidenceTarget"],
-                "minimumSatisfactionRate": settings["missionConfidenceTarget"],
+                "confidenceTarget": minimum_satisfaction_rate,
+                "minimumSatisfactionRate": minimum_satisfaction_rate,
                 "hideZeroDemand": True,
                 "lifeLimited": bool(item.get("life_limited") or item.get("lifeLimited")),
                 "lifeLandings": _metric_int(item.get("life_landings", item.get("lifeLandings")), default=0),
@@ -2495,6 +2516,10 @@ def _lite_mesa_carry_list_result(
         else "--" if overall_utilization_status == "zero_carried"
         else "数据不可用"
     )
+    constrained_rows = [row for row in rows if row["demand"] > 0]
+    satisfied_constraint_count = sum(
+        1 for row in constrained_rows if row["satisfactionConstraintMet"]
+    )
     return {
         "experiment_id": "minimum_carry_list_search",
         "spare_used_total": used_total,
@@ -2504,8 +2529,9 @@ def _lite_mesa_carry_list_result(
         "metrics": [
             ["建议携行总数", str(sum(int(row["recommended"]) for row in rows))],
             ["高优先级备件", str(sum(1 for row in rows if row["riskLevel"] == "高"))],
+            ["满足下限备件", f"{satisfied_constraint_count}/{len(constrained_rows)}"],
             ["总体备件利用率", overall_utilization_display],
-            ["备件满足率下限", f"{settings['missionConfidenceTarget']:.2f}"],
+            ["备件满足率下限", f"{minimum_satisfaction_rate:.2f}"],
             ["样本数", str(len(samples))],
         ],
         "rows": rows,

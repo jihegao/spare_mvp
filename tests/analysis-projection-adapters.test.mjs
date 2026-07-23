@@ -115,8 +115,34 @@ test("normalizes carry list projection payload for formal KPI and table renderin
     run_id: "run-ui",
     model_family: "aircraft_support_v1",
     data: [
-      { product_id: "product-engine", spare_type: "engine", recommended_quantity: 2, recommended_multiplier: 1.4, used_quantity: 1, carried_quantity: 1, utilization: 0, risk_level: "high" },
-      { product_id: "product-hydraulic", spare_type: "hydraulic", recommended_quantity: 1, recommended_multiplier: 1.1, used_quantity: 1, carried_quantity: 9, utilization: 0, risk_level: "medium" }
+      {
+        product_id: "product-engine",
+        spare_type: "engine",
+        recommended_quantity: 2,
+        recommended_multiplier: 1.4,
+        used_quantity: 1,
+        carried_quantity: 1,
+        satisfaction_rate: 0.9,
+        minimum_satisfaction_rate: 0.9,
+        satisfaction_constraint_met: true,
+        satisfaction_constraint_margin: 0,
+        utilization: 0,
+        risk_level: "high"
+      },
+      {
+        product_id: "product-hydraulic",
+        spare_type: "hydraulic",
+        recommended_quantity: 1,
+        recommended_multiplier: 1.1,
+        used_quantity: 1,
+        carried_quantity: 9,
+        satisfaction_rate: 0.95,
+        minimum_satisfaction_rate: 0.9,
+        satisfaction_constraint_met: true,
+        satisfaction_constraint_margin: 0.05,
+        utilization: 0,
+        risk_level: "medium"
+      }
     ]
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
@@ -132,7 +158,12 @@ test("normalizes carry list projection payload for formal KPI and table renderin
   assert.equal(view.rows[0].productId, "product-engine");
   assert.equal(view.rows[0].qty, 2);
   assert.equal(view.rows[0].utilization, 1);
+  assert.equal(view.rows[0].satisfactionRate, 0.9);
+  assert.equal(view.rows[0].minimumSatisfactionRate, 0.9);
+  assert.equal(view.rows[0].satisfactionConstraintMet, true);
+  assert.equal(view.rows[0].satisfactionConstraintMargin, 0);
   assert.equal(view.rows[1].utilization, 1 / 9);
+  assert.equal(view.rows[1].satisfactionConstraintMargin, 0.05);
 
   const legacyView = normalizeAnalysisProjectionPayload("carry_list", {
     projection_type: "carry_list",
