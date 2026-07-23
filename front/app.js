@@ -12139,6 +12139,8 @@ function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
 }
 
 function resetRunContextToCurrentProject() {
+  liteMesaMonteCarloRequestEpoch += 1;
+  liteMesaAnalysisRequestEpoch += 1;
   replaceSelectedRunContextKey(
     experimentPlanContextOptions().find((option) => option.kind === "current-project")?.key || "",
     { persist: true }
@@ -12158,6 +12160,13 @@ function resetRunContextToCurrentProject() {
   liteMesaAnalysisResults = {};
   analysisXlsxExportState = {};
   liteMesaMonteCarloStatus = "已切换运行来源：当前项目";
+}
+
+function resetSavedRunContextAfterProjectMutation() {
+  if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) return;
+  resetRunContextToCurrentProject();
+  liteMesaMonteCarloStatus = "当前项目建模数据已更新，已切换运行来源：当前项目";
+  aircraftMissionReliabilityState.status = "当前项目建模数据已更新，请重新运行。";
 }
 
 function experimentPlanRunContextFingerprint(context) {
@@ -13438,6 +13447,7 @@ function markProjectDraftDirty({ modelingPageOnly = false, updatePreview = false
   experimentPlanBranchActive = false;
   projectDraftRevision += 1;
   projectDraftSaveStatus = "有未保存修改";
+  resetSavedRunContextAfterProjectMutation();
   if (updatePreview) updatePreviewResultsThroughApiClient();
   if (currentProject) scheduleProjectDraftAutosave();
 }
