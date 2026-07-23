@@ -1692,16 +1692,19 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
   assert.equal("supportResourceOverrides" in projectJson, false);
   assert.equal("deletedSupportResourceKeys" in projectJson, false);
   assert.deepEqual(projectJson.supportNodes.map((node) => node.name), ["基地", "中继", "基层"]);
-  assert.deepEqual(projectJson.supportNodes.map((node) => node.organizationNodeId), ["carrier-deck", "forward-sea-base", "line-team"]);
+  assert.deepEqual(projectJson.supportNodes.map((node) => node.id), ["carrier-deck", "forward-sea-base", "line-team"]);
+  assert.ok(projectJson.supportNodes.every((node) => !("organizationNodeId" in node)));
   assert.equal(projectJson.supportNodes.some((node) => node.id === "carrier-stock-personnel-mech" || node.name === "机械保障人员"), false);
-  assert.deepEqual(projectJson.supportResources, scenario.supportResources);
+  assert.deepEqual(projectJson.supportResources, [
+    { ...scenario.supportResources[0], organizationNodeId: "line-team" }
+  ]);
   assert.deepEqual(projectJson.transportPolicies, [
     { id: "transport-1", fromOrganizationNodeId: "line-team", toOrganizationNodeId: "carrier-deck", capacity: 2 }
   ]);
   assert.equal(projectJson.supportActivities[0].resourceId, "line-team");
   assert.ok(projectJson.transportPolicies.every((policy) => (
-    projectJson.supportNodes.some((node) => node.organizationNodeId === policy.fromOrganizationNodeId)
-    && projectJson.supportNodes.some((node) => node.organizationNodeId === policy.toOrganizationNodeId)
+    projectJson.supportNodes.some((node) => node.id === policy.fromOrganizationNodeId)
+    && projectJson.supportNodes.some((node) => node.id === policy.toOrganizationNodeId)
   )));
 });
 
@@ -1725,9 +1728,56 @@ test("buildBackendProjectJson retains organization-managed airport associations"
   }, { id: "support-node-airport-association" });
 
   assert.deepEqual(projectJson.supportNodes, [
-    { id: "support-node-1", name: "中继", organizationNodeId: "org-relay", airport: "前出基地" },
-    { id: "support-node-2", name: "基层", organizationNodeId: "org-line", airport: "大队" }
+    { id: "org-relay", name: "中继", airport: "前出基地" },
+    { id: "org-line", name: "基层", airport: "大队" }
   ]);
+});
+
+test("buildBackendProjectJson does not invent a missing runtime node from organization order", () => {
+  const projectJson = buildBackendProjectJson({
+    scenarioId: "missing-runtime-support-node",
+    supportOrganization: {
+      tree: {
+        id: "org-root",
+        name: "保障组织",
+        children: [{ id: "org-line", name: "基层", children: [] }]
+      }
+    },
+    supportNodes: [],
+    supportResources: [
+      {
+        id: "personnel-line",
+        organizationNodeId: "org-line",
+        supportNodeName: "基层",
+        type: "personnel",
+        name: "基层人员",
+        quantity: 1
+      }
+    ]
+  }, { id: "missing-runtime-support-node" });
+
+  assert.deepEqual(projectJson.supportNodes, []);
+  assert.equal(projectJson.supportResources[0].organizationNodeId, "org-line");
+});
+
+test("buildBackendProjectJson rejects two runtime rows mapped to one organization", () => {
+  assert.throws(
+    () => buildBackendProjectJson({
+      scenarioId: "duplicate-runtime-support-node",
+      supportOrganization: {
+        tree: {
+          id: "org-root",
+          name: "保障组织",
+          children: [{ id: "org-line", name: "基层", children: [] }]
+        }
+      },
+      supportNodes: [
+        { id: "legacy-line-a", name: "基层 A", organizationNodeId: "org-line" },
+        { id: "legacy-line-b", name: "基层 B", organizationNodeId: "org-line" }
+      ]
+    }, { id: "duplicate-runtime-support-node" }),
+    /重复映射保障组织 org-line/
+  );
 });
 
 test("buildBackendProjectJson migrates legacy activity transport strategies to top-level policies", () => {

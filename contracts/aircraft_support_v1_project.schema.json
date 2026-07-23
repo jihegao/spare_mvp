@@ -346,9 +346,9 @@
     "supportNode": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "organizationNodeId"],
+      "required": ["id", "name"],
       "properties": {
-        "id": { "type": "string" },
+        "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string" },
         "supportNodeName": { "type": "string" },
         "airport": { "type": "string" },
@@ -363,8 +363,7 @@
         "lateralSupportNodes": { "type": "array", "items": { "type": "string" } },
         "transportPolicies": { "type": "array", "items": { "$ref": "#/$defs/transportPolicy" } },
         "policy": { "type": "string" },
-        "organizationStrategy": { "type": "string" },
-        "organizationNodeId": { "type": "string", "minLength": 1 }
+        "organizationStrategy": { "type": "string" }
       }
     },
     "supportResource": {

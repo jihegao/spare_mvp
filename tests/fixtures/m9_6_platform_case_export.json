@@ -30,7 +30,7 @@
           "supportResources[].productId",
           "supportResources[].supportNodeName",
           "supportResources[].organizationNodeId",
-          "supportNodes[].organizationNodeId",
+          "supportNodes[].id",
           "supportOrganization.tree[].id",
           "supportOrganization.tree[].serviceScope",
           "supportOrganization.runtimeMode",
@@ -979,7 +979,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "基地",
+            "resource_id": "carrier-deck",
             "runHourInterval": null,
             "spare_quantity": 0,
             "takeoffLandingInterval": null
@@ -1074,7 +1074,7 @@
             "replacement_ratio": 0.0,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "基地",
+            "resource_id": "carrier-deck",
             "runHourInterval": null,
             "spare_quantity": 1,
             "takeoffLandingInterval": null
@@ -1164,7 +1164,7 @@
             "replacement_ratio": 0.0,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "基地",
+            "resource_id": "carrier-deck",
             "runHourInterval": 8,
             "spare_quantity": 1,
             "takeoffLandingInterval": 6
@@ -1182,7 +1182,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "基层1",
+            "resource_id": "carrier-stock",
             "runHourInterval": null,
             "spare_quantity": 1,
             "takeoffLandingInterval": null
@@ -1222,7 +1222,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "基地",
+            "resource_id": "carrier-deck",
             "runHourInterval": null,
             "spare_quantity": 0,
             "takeoffLandingInterval": null
@@ -1262,7 +1262,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "基地",
+            "resource_id": "carrier-deck",
             "runHourInterval": null,
             "spare_quantity": 0,
             "takeoffLandingInterval": null
@@ -1275,7 +1275,7 @@
             "airport": "",
             "airport_id": "",
             "equipment_capacity": 3,
-            "id": "基地",
+            "id": "carrier-deck",
             "inventory": {
               "product-support-resource-spare-17fde32d23": 5,
               "product-support-resource-spare-3c7d67e069": 6,
@@ -1307,18 +1307,18 @@
             "transport_policies": [
               {
                 "capacity": 1,
-                "from": "基层1",
+                "from": "carrier-stock",
                 "priority": 1,
                 "product_id": "",
-                "to": "基地",
+                "to": "carrier-deck",
                 "transportTimeHours": 1.0
               },
               {
                 "capacity": 4,
-                "from": "基层1",
+                "from": "carrier-stock",
                 "priority": 1,
                 "product_id": "",
-                "to": "基地",
+                "to": "carrier-deck",
                 "transportTimeHours": 1.0
               }
             ]
@@ -1327,7 +1327,7 @@
             "airport": "",
             "airport_id": "",
             "equipment_capacity": 2,
-            "id": "中继",
+            "id": "forward-sea-base",
             "inventory": {
               "product-support-resource-spare-17fde32d23": 2,
               "product-support-resource-spare-3c7d67e069": 3,
@@ -1359,18 +1359,18 @@
             "transport_policies": [
               {
                 "capacity": 1,
-                "from": "基地",
+                "from": "carrier-deck",
                 "priority": 1,
                 "product_id": "",
-                "to": "中继",
+                "to": "forward-sea-base",
                 "transportTimeHours": 2.0
               },
               {
                 "capacity": 2,
-                "from": "基地",
+                "from": "carrier-deck",
                 "priority": 1,
                 "product_id": "",
-                "to": "中继",
+                "to": "forward-sea-base",
                 "transportTimeHours": 2.0
               }
             ]
@@ -1379,7 +1379,7 @@
             "airport": "",
             "airport_id": "",
             "equipment_capacity": 2,
-            "id": "基层1",
+            "id": "carrier-stock",
             "inventory": {
               "product-support-resource-spare-17fde32d23": 6,
               "product-support-resource-spare-3c7d67e069": 8,
@@ -1411,10 +1411,10 @@
             "transport_policies": [
               {
                 "capacity": 3,
-                "from": "基地",
+                "from": "carrier-deck",
                 "priority": 2,
                 "product_id": "",
-                "to": "基层1",
+                "to": "carrier-stock",
                 "transportTimeHours": 3.0
               }
             ]
@@ -2274,7 +2274,7 @@
               ]
             },
             "priority": 1,
-            "resourceId": "基地",
+            "resourceId": "carrier-deck",
             "spareQuantity": 0
           },
           {
@@ -2299,7 +2299,7 @@
             },
             "priority": 1,
             "replacementRatio": 0.0,
-            "resourceId": "基地",
+            "resourceId": "carrier-deck",
             "spareQuantity": 1
           },
           {
@@ -2326,7 +2326,7 @@
             },
             "priority": 2,
             "replacementRatio": 0.0,
-            "resourceId": "基地",
+            "resourceId": "carrier-deck",
             "runHourInterval": 8,
             "spareQuantity": 1,
             "takeoffLandingInterval": 6
@@ -2341,7 +2341,7 @@
             "planType": "后勤保障方案",
             "predecessors": {},
             "priority": 1,
-            "resourceId": "基层1",
+            "resourceId": "carrier-stock",
             "spareQuantity": 1
           },
           {
@@ -2361,7 +2361,7 @@
               "BA-001": []
             },
             "priority": 1,
-            "resourceId": "基地"
+            "resourceId": "carrier-deck"
           },
           {
             "activityCodes": [
@@ -2380,7 +2380,7 @@
               "BA-002": []
             },
             "priority": 1,
-            "resourceId": "基地"
+            "resourceId": "carrier-deck"
           }
         ],
         "supportActivityJobs": [
@@ -2615,19 +2615,16 @@
         ],
         "supportNodes": [
           {
-            "id": "support-node-1",
-            "name": "基地",
-            "organizationNodeId": "carrier-deck"
+            "id": "carrier-deck",
+            "name": "基地"
           },
           {
-            "id": "support-node-2",
-            "name": "中继",
-            "organizationNodeId": "forward-sea-base"
+            "id": "forward-sea-base",
+            "name": "中继"
           },
           {
-            "id": "support-node-3",
-            "name": "基层1",
-            "organizationNodeId": "carrier-stock"
+            "id": "carrier-stock",
+            "name": "基层1"
           }
         ],
         "supportOrganization": {
@@ -3530,7 +3527,7 @@
             ]
           },
           "priority": 1,
-          "resourceId": "基地",
+          "resourceId": "carrier-deck",
           "spareQuantity": 0
         },
         {
@@ -3555,7 +3552,7 @@
           },
           "priority": 1,
           "replacementRatio": 0.0,
-          "resourceId": "基地",
+          "resourceId": "carrier-deck",
           "spareQuantity": 1
         },
         {
@@ -3582,7 +3579,7 @@
           },
           "priority": 2,
           "replacementRatio": 0.0,
-          "resourceId": "基地",
+          "resourceId": "carrier-deck",
           "runHourInterval": 8,
           "spareQuantity": 1,
           "takeoffLandingInterval": 6
@@ -3597,7 +3594,7 @@
           "planType": "后勤保障方案",
           "predecessors": {},
           "priority": 1,
-          "resourceId": "基层1",
+          "resourceId": "carrier-stock",
           "spareQuantity": 1
         },
         {
@@ -3617,7 +3614,7 @@
             "BA-001": []
           },
           "priority": 1,
-          "resourceId": "基地"
+          "resourceId": "carrier-deck"
         },
         {
           "activityCodes": [
@@ -3636,7 +3633,7 @@
             "BA-002": []
           },
           "priority": 1,
-          "resourceId": "基地"
+          "resourceId": "carrier-deck"
         }
       ],
       "supportActivityJobs": [
@@ -3871,19 +3868,16 @@
       ],
       "supportNodes": [
         {
-          "id": "support-node-1",
-          "name": "基地",
-          "organizationNodeId": "carrier-deck"
+          "id": "carrier-deck",
+          "name": "基地"
         },
         {
-          "id": "support-node-2",
-          "name": "中继",
-          "organizationNodeId": "forward-sea-base"
+          "id": "forward-sea-base",
+          "name": "中继"
         },
         {
-          "id": "support-node-3",
-          "name": "基层1",
-          "organizationNodeId": "carrier-stock"
+          "id": "carrier-stock",
+          "name": "基层1"
         }
       ],
       "supportOrganization": {
@@ -4800,7 +4794,7 @@
           ]
         },
         "priority": 1,
-        "resourceId": "基地",
+        "resourceId": "carrier-deck",
         "spareQuantity": 0
       },
       {
@@ -4825,7 +4819,7 @@
         },
         "priority": 1,
         "replacementRatio": 0.0,
-        "resourceId": "基地",
+        "resourceId": "carrier-deck",
         "spareQuantity": 1
       },
       {
@@ -4852,7 +4846,7 @@
         },
         "priority": 2,
         "replacementRatio": 0.0,
-        "resourceId": "基地",
+        "resourceId": "carrier-deck",
         "runHourInterval": 8,
         "spareQuantity": 1,
         "takeoffLandingInterval": 6
@@ -4867,7 +4861,7 @@
         "planType": "后勤保障方案",
         "predecessors": {},
         "priority": 1,
-        "resourceId": "基层1",
+        "resourceId": "carrier-stock",
         "spareQuantity": 1
       },
       {
@@ -4887,7 +4881,7 @@
           "BA-001": []
         },
         "priority": 1,
-        "resourceId": "基地"
+        "resourceId": "carrier-deck"
       },
       {
         "activityCodes": [
@@ -4906,7 +4900,7 @@
           "BA-002": []
         },
         "priority": 1,
-        "resourceId": "基地"
+        "resourceId": "carrier-deck"
       }
     ],
     "supportActivityJobs": [
@@ -5141,19 +5135,16 @@
     ],
     "supportNodes": [
       {
-        "id": "support-node-1",
-        "name": "基地",
-        "organizationNodeId": "carrier-deck"
+        "id": "carrier-deck",
+        "name": "基地"
       },
       {
-        "id": "support-node-2",
-        "name": "中继",
-        "organizationNodeId": "forward-sea-base"
+        "id": "forward-sea-base",
+        "name": "中继"
       },
       {
-        "id": "support-node-3",
-        "name": "基层1",
-        "organizationNodeId": "carrier-stock"
+        "id": "carrier-stock",
+        "name": "基层1"
       }
     ],
     "supportOrganization": {

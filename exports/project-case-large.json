@@ -15130,14 +15130,12 @@
   ],
   "supportNodes": [
     {
-      "id": "support-node-1",
-      "name": "中继",
-      "organizationNodeId": "support-org-dadui"
+      "id": "support-org-dadui",
+      "name": "中继"
     },
     {
-      "id": "support-node-2",
-      "name": "基层",
-      "organizationNodeId": "support-org-1783479792728"
+      "id": "support-org-1783479792728",
+      "name": "基层"
     }
   ],
   "supportOrganization": {

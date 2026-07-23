@@ -919,10 +919,10 @@ function buildSupportOrganizationTreeFromNodes() {
     name: "保障组织",
     description: "由导入项目保障节点生成的初始组织树",
     children: supportNodes.map((node) => ({
-      id: node.organizationNodeId || node.id || `support-node-${node.name}`,
+      id: node.id || node.organizationNodeId || `support-node-${node.name}`,
       name: node.name || node.nodeType || "保障节点",
       description: node.organizationStrategy || node.policy || node.nodeType || "",
-      supportNodeId: node.id,
+      supportNodeId: node.id || node.organizationNodeId,
       children: []
     }))
   };
@@ -8233,9 +8233,13 @@ function supportNodeForOrgNode(orgNode, createIfMissing = false) {
   if (!orgNode) return null;
   if (!Array.isArray(scenario.supportNodes)) scenario.supportNodes = [];
   let node = scenario.supportNodes.find((item) => item.organizationNodeId === orgNode.id || item.id === orgNode.supportNodeId || item.id === orgNode.id || item.name === orgNode.name);
+  if (node) {
+    node.id = orgNode.id;
+    delete node.organizationNodeId;
+  }
   if (!node && createIfMissing) {
     node = {
-      id: `support-node-${Date.now()}`,
+      id: orgNode.id,
       name: orgNode.name || "新增保障节点"
     };
     scenario.supportNodes.push(node);
@@ -8587,6 +8591,19 @@ function deleteSelectedSupportOrgNode() {
   const subtreeNodes = flattenSupportOrgTreeNodes([selectedNode]);
   const subtreeIds = new Set(subtreeNodes.map((node) => String(node.id || "").trim()).filter(Boolean));
   const subtreeNames = new Set(subtreeNodes.map((node) => String(node.name || "").trim()).filter(Boolean));
+  const subtreeSupportNodeIds = new Set((scenario.supportNodes || [])
+    .filter((node) => (
+      subtreeIds.has(String(node?.id || "").trim())
+      || subtreeIds.has(String(node?.organizationNodeId || "").trim())
+      || subtreeNames.has(String(node?.name || "").trim())
+    ))
+    .flatMap((node) => [node?.id, node?.organizationNodeId])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean));
+  const referencesDeletedNode = (value) => {
+    const reference = String(value || "").trim();
+    return subtreeIds.has(reference) || subtreeNames.has(reference) || subtreeSupportNodeIds.has(reference);
+  };
   const resourceReferencesDeletedNode = (resource) => {
     const references = [
       resource?.organizationNodeId,
@@ -8594,7 +8611,7 @@ function deleteSelectedSupportOrgNode() {
       resource?.supportNodeId,
       resource?.supportNodeName
     ].map((value) => String(value || "").trim()).filter(Boolean);
-    return references.some((reference) => subtreeIds.has(reference) || subtreeNames.has(reference));
+    return references.some(referencesDeletedNode);
   };
   const removedSpareTombstones = (scenario.supportResources || []).filter((resource) => (
     isDeletedSupportSpareResource(resource) && resourceReferencesDeletedNode(resource)
@@ -8606,9 +8623,31 @@ function deleteSelectedSupportOrgNode() {
     supportOrgDeleteStatus = `无法删除“${selectedNode.name || selectedId}”：该节点或下级节点仍有 ${referencedResources.length} 条资源引用。请先在人员、设备或备件建模中迁移或删除这些资源。`;
     return false;
   }
+  const activityReferences = (scenario.supportActivities || [])
+    .filter((activity) => referencesDeletedNode(activity?.resourceId));
+  const transportReferences = (scenario.transportPolicies || [])
+    .filter((policy) => (
+      referencesDeletedNode(policy?.fromOrganizationNodeId || policy?.fromSupportNodeName || policy?.from)
+      || referencesDeletedNode(policy?.toOrganizationNodeId || policy?.toSupportNodeName || policy?.to)
+    ));
+  const relationReferences = (scenario.supportOrganization?.relations || [])
+    .filter((relation) => (
+      referencesDeletedNode(relation?.fromOrganizationNodeId)
+      || referencesDeletedNode(relation?.toOrganizationNodeId)
+    ));
+  if (activityReferences.length || transportReferences.length || relationReferences.length) {
+    const referenceCount = activityReferences.length + transportReferences.length + relationReferences.length;
+    supportOrgDeleteStatus = `无法删除“${selectedNode.name || selectedId}”：该节点或下级节点仍有 ${referenceCount} 条活动、运输或横向关系引用。请先迁移或删除这些引用。`;
+    return false;
+  }
   if (removedSpareTombstones.length) {
     scenario.supportResources = scenario.supportResources.filter((resource) => !removedSpareTombstones.includes(resource));
   }
+  scenario.supportNodes = (scenario.supportNodes || []).filter((node) => (
+    !subtreeIds.has(String(node?.id || "").trim())
+    && !subtreeIds.has(String(node?.organizationNodeId || "").trim())
+    && !subtreeNames.has(String(node?.name || "").trim())
+  ));
   parent.children = parent.children.filter((child) => child.id !== selectedId);
   selectedSupportOrgNodeId = parent.id;
   supportOrgDeleteStatus = "";
@@ -8633,7 +8672,8 @@ function updateSupportOrgField(id, fieldName, value) {
   node[fieldName] = value;
   if (supportNode && fieldName === "name") {
     supportNode.name = value;
-    supportNode.organizationNodeId = node.id;
+    supportNode.id = node.id;
+    delete supportNode.organizationNodeId;
     for (const activity of scenario.supportActivities || []) {
       const resourceRef = String(activity?.resourceId || "").trim();
       if ([previousName, supportNode.id, node.id].includes(resourceRef)) activity.resourceId = node.id;
@@ -8795,7 +8835,7 @@ function supportActivityAircraftModel(activity) {
 
 function supportActivityRuntimeNodeOptions(activity) {
   const options = uniqueSelectOptions((scenario.supportNodes || []).map((node) => {
-    const value = String(node?.organizationNodeId || node?.id || node?.name || node?.supportNodeName || "").trim();
+    const value = String(node?.id || node?.organizationNodeId || node?.name || node?.supportNodeName || "").trim();
     const label = String(node?.name || node?.supportNodeName || node?.id || value).trim();
     return { value, label };
   }).filter((option) => option.value));
@@ -8810,11 +8850,11 @@ function supportActivityRuntimeNodeRef(activity) {
   const current = String(activity?.resourceId || "").trim();
   if (!current) return "";
   const matches = (scenario.supportNodes || []).filter((node) => (
-    [node?.organizationNodeId, node?.id, node?.name, node?.supportNodeName]
+    [node?.id, node?.organizationNodeId, node?.name, node?.supportNodeName]
       .some((candidate) => String(candidate || "").trim() === current)
   ));
   if (matches.length !== 1) return current;
-  return String(matches[0]?.organizationNodeId || matches[0]?.id || current).trim();
+  return String(matches[0]?.id || matches[0]?.organizationNodeId || current).trim();
 }
 
 function supportActivityRuntimeNodeField(activity, activityIndex) {
@@ -11660,7 +11700,7 @@ function logisticsSupportNodeOptions() {
     .map((node) => ({ value: String(node.id), label: String(node.name || node.id) }));
   if (canonicalOptions.length) return uniqueSelectOptions(canonicalOptions);
   return uniqueSelectOptions((scenario.supportNodes || []).map((supportNode) => {
-    const value = String(supportNode?.organizationNodeId || supportNode?.id || supportNode?.name || "").trim();
+    const value = String(supportNode?.id || supportNode?.organizationNodeId || supportNode?.name || "").trim();
     const label = String(supportNode?.name || supportNode?.supportNodeName || supportNode?.id || value).trim();
     return { value, label };
   }).filter((option) => option.value));
@@ -11676,14 +11716,14 @@ function logisticsOrganizationNodeIdForRef(ref) {
   if (nameMatches.length === 1) return String(nameMatches[0].value);
   if (nameMatches.length > 1) return "";
   const supportNodeMatches = (scenario.supportNodes || []).filter((node) => (
-    [node?.id, node?.name, node?.supportNodeName, node?.organizationNodeId]
+    [node?.id, node?.organizationNodeId, node?.name, node?.supportNodeName]
       .some((candidate) => String(candidate || "").trim() === value)
   ));
   if (supportNodeMatches.length !== 1) return "";
   const matched = supportNodeMatches[0];
   const matchedOption = options.find((option) => (
-    String(option.value) === String(matched?.organizationNodeId || "")
-    || String(option.value) === String(matched?.id || "")
+    String(option.value) === String(matched?.id || "")
+    || String(option.value) === String(matched?.organizationNodeId || "")
     || String(option.label) === String(matched?.name || matched?.supportNodeName || "")
   ));
   return String(matchedOption?.value || "");

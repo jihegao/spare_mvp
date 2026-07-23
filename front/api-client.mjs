@@ -697,15 +697,13 @@ function legacyTransportPoliciesFromSupportActivities(projectJson, nameByRef = n
 
 function normalizeSupportModelTables(projectJson) {
   if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return;
+  const legacySupportNodes = Array.isArray(projectJson.supportNodes) ? projectJson.supportNodes : [];
   const legacyNameByRef = legacySupportNodeNameByRef(projectJson.supportNodes);
   const nodeScopeByRef = supportNodeScopeByRef(projectJson.supportNodes);
   const organization = normalizeSupportOrganization(projectJson.supportOrganization, legacyNameByRef);
   const nameByRef = new Map([...legacyNameByRef, ...organization.nameByRef]);
   const nodeScopeByName = supportNodeScopeByName(nodeScopeByRef, nameByRef);
   normalizeSupportResourceNodeRefs(projectJson, nameByRef, organization.idByRef);
-  const supportNodeNames = organization.supportNodeNames.length
-    ? organization.supportNodeNames
-    : supportNodeNamesFromSupportNodes(projectJson.supportNodes);
   normalizeSupportResourcePersonnelModels(projectJson);
   normalizeSupportResourceSpareRows(
     projectJson,
@@ -713,12 +711,40 @@ function normalizeSupportModelTables(projectJson) {
     organization.nodes,
     organization.nameByRef
   );
-  projectJson.supportNodes = supportNodeNames.map((name, index) => ({
-    id: `support-node-${index + 1}`,
-    name,
-    ...(organization.idByRef.get(name) ? { organizationNodeId: organization.idByRef.get(name) } : {}),
-    ...(nodeScopeByName.get(name) || {})
-  }));
+  const organizationNodeById = new Map(organization.nodes.map((node) => [cleanText(node.id), node]));
+  const seenCanonicalIds = new Map();
+  projectJson.supportNodes = legacySupportNodes
+    .filter((node) => node && typeof node === "object" && !Array.isArray(node) && !isLegacySupportResourceRow(node))
+    .map((node, index) => {
+      const explicitRef = cleanText(node.organizationNodeId);
+      const legacyId = cleanText(node.id);
+      const resolvedRefs = [];
+      if (explicitRef) {
+        const resolved = cleanText(organization.idByRef.get(explicitRef));
+        if (!resolved) throw new Error(`supportNodes[${index}].organizationNodeId 无法唯一解析到保障组织`);
+        resolvedRefs.push(resolved);
+      }
+      const resolvedLegacyId = cleanText(organization.idByRef.get(legacyId));
+      if (resolvedLegacyId) resolvedRefs.push(resolvedLegacyId);
+      if (!resolvedRefs.length) {
+        const displayRef = cleanText(node.name || node.supportNodeName);
+        const resolvedDisplay = cleanText(organization.idByRef.get(displayRef));
+        if (resolvedDisplay) resolvedRefs.push(resolvedDisplay);
+      }
+      const distinctIds = [...new Set(resolvedRefs)];
+      if (distinctIds.length > 1) throw new Error(`supportNodes[${index}].id 与 organizationNodeId 指向不同保障组织`);
+      const canonicalId = distinctIds[0] || explicitRef || legacyId;
+      if (seenCanonicalIds.has(canonicalId)) {
+        throw new Error(`supportNodes[${index}].id 与 supportNodes[${seenCanonicalIds.get(canonicalId)}].id 重复映射保障组织 ${canonicalId}`);
+      }
+      seenCanonicalIds.set(canonicalId, index);
+      const organizationNode = organizationNodeById.get(canonicalId);
+      return {
+        id: canonicalId,
+        name: cleanText(organizationNode?.name || node.name || node.supportNodeName || canonicalId),
+        ...(nodeScopeByRef.get(legacyId) || nodeScopeByRef.get(explicitRef) || nodeScopeByName.get(cleanText(node.name)) || {})
+      };
+    });
   normalizeTopLevelTransportPolicies(projectJson, nameByRef, organization.idByRef);
   normalizeSupportNodeRefsInProject(projectJson, nameByRef, organization.idByRef);
 }
@@ -842,10 +868,16 @@ function normalizeSupportResourceNodeRefs(projectJson, nameByRef, idByRef = new 
       || resource.supportNodeName
     );
     resource.supportNodeName = supportNodeNameForRef(resource.supportNodeName || resource.supportNodeId || organizationRef, nameByRef);
-    const organizationId = cleanText(idByRef.get(organizationRef) || idByRef.get(resource.supportNodeName));
-    if (organizationId && isSpareSupportResource(resource)) resource.organizationNodeName = organizationId;
+    const organizationId = cleanText(
+      idByRef.get(organizationRef)
+      || idByRef.get(resource.supportNodeName)
+      || (resource.organizationNodeId ? organizationRef : "")
+    );
+    if (organizationId) {
+      resource.organizationNodeId = organizationId;
+      resource.organizationNodeName = organizationId;
+    }
     delete resource.supportNodeId;
-    delete resource.organizationNodeId;
   }
 }
 
@@ -901,6 +933,7 @@ function normalizeSupportResourceSpareRows(projectJson, resourceNodes, organizat
       const organizationId = supportSpareTombstoneOrganizationId(resource);
       return {
         ...resource,
+        organizationNodeId: organizationId || cleanText(resource.organizationNodeId),
         organizationNodeName: organizationId || cleanText(resource.organizationNodeName),
         supportNodeName: cleanText(organizationNameByRef.get(organizationId) || resource.supportNodeName)
       };
@@ -952,6 +985,7 @@ function normalizeSupportResourceSpareRows(projectJson, resourceNodes, organizat
         if (oldId && oldId !== id) setUniqueResourceIdAlias(resourceIdAliases, oldId, id);
         return {
           id,
+          organizationNodeId: organizationId,
           organizationNodeName: organizationId,
           supportNodeName: nodeName,
           type: "spare",
@@ -1046,6 +1080,7 @@ function stripSupportResourceNonModelFields(projectJson) {
     if (!resource || typeof resource !== "object" || Array.isArray(resource)) continue;
     delete resource.equipment;
     delete resource.equipmentId;
+    delete resource.organizationNodeName;
   }
 }
 
@@ -1112,24 +1147,8 @@ function supportSpareResourceId(organizationId, productId) {
   return `${SUPPORT_SPARE_RESOURCE_ID_PREFIX}${encodeURIComponent(cleanText(organizationId))}:${encodeURIComponent(cleanText(productId))}`;
 }
 
-function supportNodeNamesFromSupportNodes(supportNodes) {
-  const names = [];
-  if (!Array.isArray(supportNodes)) return names;
-  for (const node of supportNodes) {
-    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
-    if (isLegacySupportResourceRow(node)) continue;
-    const name = cleanText(node.name || node.supportNodeName || node.id);
-    if (name && !names.includes(name)) names.push(name);
-  }
-  return names;
-}
-
 function isLegacySupportResourceRow(node) {
-  return Boolean(
-    node.importedResourceType
-    || node.organizationNodeId
-    || /(^|[-_])(personnel|equipment|spare|stock)([-_]|$)/i.test(String(node.id || ""))
-  );
+  return Boolean(node.importedResourceType);
 }
 
 function normalizeTopLevelTransportPolicies(projectJson, nameByRef, organizationIdByRef = new Map()) {

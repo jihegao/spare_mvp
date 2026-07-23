@@ -2092,7 +2092,7 @@
           ]
         },
         "priority": 1,
-        "resourceId": "基地",
+        "resourceId": "carrier-deck",
         "spareQuantity": 0
       },
       {
@@ -2117,7 +2117,7 @@
         },
         "priority": 1,
         "replacementRatio": 0.0,
-        "resourceId": "基地",
+        "resourceId": "carrier-deck",
         "spareQuantity": 1
       },
       {
@@ -2144,7 +2144,7 @@
         },
         "priority": 2,
         "replacementRatio": 0.0,
-        "resourceId": "基地",
+        "resourceId": "carrier-deck",
         "runHourInterval": 8,
         "spareQuantity": 1,
         "takeoffLandingInterval": 6
@@ -2159,7 +2159,7 @@
         "planType": "后勤保障方案",
         "predecessors": {},
         "priority": 1,
-        "resourceId": "基层1",
+        "resourceId": "carrier-stock",
         "spareQuantity": 1
       },
       {
@@ -2179,7 +2179,7 @@
           "BA-001": []
         },
         "priority": 1,
-        "resourceId": "基地"
+        "resourceId": "carrier-deck"
       },
       {
         "activityCodes": [
@@ -2198,7 +2198,7 @@
           "BA-002": []
         },
         "priority": 1,
-        "resourceId": "基地"
+        "resourceId": "carrier-deck"
       }
     ],
     "supportActivityJobs": [
@@ -2433,19 +2433,16 @@
     ],
     "supportNodes": [
       {
-        "id": "support-node-1",
-        "name": "基地",
-        "organizationNodeId": "carrier-deck"
+        "id": "carrier-deck",
+        "name": "基地"
       },
       {
-        "id": "support-node-2",
-        "name": "中继",
-        "organizationNodeId": "forward-sea-base"
+        "id": "forward-sea-base",
+        "name": "中继"
       },
       {
-        "id": "support-node-3",
-        "name": "基层1",
-        "organizationNodeId": "carrier-stock"
+        "id": "carrier-stock",
+        "name": "基层1"
       }
     ],
     "supportOrganization": {

@@ -626,14 +626,12 @@
   "supportNodes": [
     {
       "id": "support-node-1",
-      "name": "基地",
-      "organizationNodeId": "support-node-1"
+      "name": "基地"
     },
     {
       "airport": "A",
-      "id": "support-node-2",
-      "name": "基层",
-      "organizationNodeId": "support-node-3"
+      "id": "support-node-3",
+      "name": "基层"
     }
   ],
   "supportOrganization": {

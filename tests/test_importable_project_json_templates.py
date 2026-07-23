@@ -82,9 +82,13 @@ class ImportableProjectJsonTemplateTest(unittest.TestCase):
                     self.assertEqual(len({id(activity["predecessors"]) for activity in group}), 3)
 
                 canonical_node_ids = {
-                    str(node.get("organizationNodeId") or node.get("id") or "")
+                    str(node.get("id") or "")
                     for node in project["supportNodes"]
                 }
+                self.assertTrue(all(
+                    "organizationNodeId" not in node
+                    for node in project["supportNodes"]
+                ))
                 self.assertTrue(all(
                     not activity.get("resourceId") or activity["resourceId"] in canonical_node_ids
                     for activity in project["supportActivities"]

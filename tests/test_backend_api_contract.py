@@ -4898,9 +4898,11 @@ class BackendApiContractTest(unittest.TestCase):
         project = modeling_import_to_project(import_package)
 
         self.assertEqual([node["name"] for node in project["supportNodes"]], ["基地", "中继", "基层1"])
-        for node in project["supportNodes"]:
-            self.assertEqual(set(node), {"id", "name", "organizationNodeId"})
-            self.assertTrue(str(node["id"]).startswith("support-node-"))
+        self.assertEqual(
+            [node["id"] for node in project["supportNodes"]],
+            ["carrier-deck", "forward-sea-base", "carrier-stock"],
+        )
+        self.assertTrue(all(set(node) == {"id", "name"} for node in project["supportNodes"]))
 
         resource_types = {resource["type"] for resource in project["supportResources"]}
         self.assertEqual(resource_types, {"personnel", "equipment", "spare"})
@@ -5060,7 +5062,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("modelingDictionaries", slim_project)
         self.assertNotIn("validationLevel", slim_project["modelingImportValidation"])
         self.assertEqual([node["name"] for node in slim_project["supportNodes"]], ["基地", "中继", "基层"])
-        self.assertTrue(all("organizationNodeId" in node for node in slim_project["supportNodes"]))
+        self.assertEqual(
+            [node["id"] for node in slim_project["supportNodes"]],
+            ["carrier-deck", "forward-sea-base", "line-team"],
+        )
+        self.assertTrue(all("organizationNodeId" not in node for node in slim_project["supportNodes"]))
         self.assertFalse(any(node.get("id") == "carrier-stock-personnel-mech" for node in slim_project["supportNodes"]))
         self.assertEqual(slim_project["supportResources"], [
             {

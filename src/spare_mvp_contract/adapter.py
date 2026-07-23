@@ -251,8 +251,13 @@ class SimulationAdapter:
             if resource_id.startswith("support-spare-tombstone:"):
                 continue
             product_id = str(resource.get("productId") or "").strip()
-            explicit_organization_ref = str(resource.get("organizationNodeName") or "").strip()
-            organization_ref = explicit_organization_ref or str(resource.get("supportNodeName") or "").strip()
+            explicit_organization_id = str(resource.get("organizationNodeId") or "").strip()
+            explicit_organization_name = str(resource.get("organizationNodeName") or "").strip()
+            organization_ref = (
+                explicit_organization_id
+                or explicit_organization_name
+                or str(resource.get("supportNodeName") or "").strip()
+            )
             canonical_org = organization_ref
             identity_resolved = False
             if organization_ids:
@@ -269,13 +274,16 @@ class SimulationAdapter:
                         support_matches = (
                             {support_ref} if support_ref in support_node_ids else support_node_ids_by_name.get(support_ref, set())
                         )
-                        if not explicit_organization_ref and len(support_matches) == 1:
+                        if not explicit_organization_id and not explicit_organization_name and len(support_matches) == 1:
                             canonical_org = f"support-node:{next(iter(support_matches))}"
                             identity_resolved = True
                         else:
                             errors.append({
                                 "code": "ambiguous_support_resource_organization" if len(matches) > 1 else "unknown_support_resource_organization",
-                                "path": f"supportResources[{index}].{'organizationNodeName' if explicit_organization_ref else 'supportNodeName'}",
+                                "path": (
+                                    f"supportResources[{index}]."
+                                    f"{'organizationNodeId' if explicit_organization_id else 'organizationNodeName' if explicit_organization_name else 'supportNodeName'}"
+                                ),
                                 "message": f"support resource organization {organization_ref or '<empty>'} is not a unique organization node",
                             })
                             continue
@@ -1266,7 +1274,7 @@ class SimulationAdapter:
         raw_nodes = self._dict_list(project.get("supportNodes"))
         resources = self._dict_list(project.get("supportResources"))
         aliases = self._support_node_reference_aliases(project)
-        nodes_by_name: dict[str, dict[str, Any]] = {}
+        nodes_by_id: dict[str, dict[str, Any]] = {}
 
         for raw_node in raw_nodes:
             node = self._aircraft_support_v1_support_node(
@@ -1274,22 +1282,23 @@ class SimulationAdapter:
                 products_by_id,
                 canonical_organization=canonical_organization,
             )
+            node_id = self._support_node_runtime_id(raw_node)
             node_name = self._support_node_runtime_name(raw_node)
-            node["id"] = node_name
+            node["id"] = node_id
             node["name"] = node_name
-            node["organization_node_id"] = str(raw_node.get("organizationNodeId") or "")
+            node["organization_node_id"] = node_id
             if resources and not any(field in raw_node for field in ("capacity", "personnelCapacity", "equipmentCapacity", "inventory")):
                 node["personnel_capacity"] = 0
                 node["equipment_capacity"] = 0
                 node["inventory"] = {}
             node["transport_policies"] = []
-            nodes_by_name[node_name] = node
+            nodes_by_id[node_id] = node
 
         for resource in resources:
-            node_name = self._support_resource_node_name(resource, aliases)
-            if not node_name:
+            node_id = self._support_resource_node_name(resource, aliases)
+            if not node_id:
                 continue
-            node = nodes_by_name.setdefault(node_name, self._empty_aircraft_support_v1_support_node(node_name))
+            node = nodes_by_id.setdefault(node_id, self._empty_aircraft_support_v1_support_node(node_id))
             resource_organization_node_id = str(resource.get("organizationNodeId") or "")
             if resource_organization_node_id:
                 node["organization_node_id"] = resource_organization_node_id
@@ -1307,18 +1316,18 @@ class SimulationAdapter:
                     node["product_names"][product_id] = str(product.get("name") or resource.get("name") or product_id)
 
         if not canonical_organization:
-            for node in nodes_by_name.values():
+            for node in nodes_by_id.values():
                 node["personnel_capacity"] = max(1, int(node.get("personnel_capacity", 0) or 0))
                 node["equipment_capacity"] = max(1, int(node.get("equipment_capacity", 0) or 0))
 
         for policy in self._project_transport_policies(project):
             normalized = self._aircraft_support_v1_transport_policy(policy, aliases, products_by_id)
             destination = str(normalized.get("to") or "")
-            if not destination or destination not in nodes_by_name:
+            if not destination or destination not in nodes_by_id:
                 continue
-            nodes_by_name[destination]["transport_policies"].append(normalized)
+            nodes_by_id[destination]["transport_policies"].append(normalized)
 
-        return list(nodes_by_name.values())
+        return list(nodes_by_id.values())
 
     def _canonical_root_runtime_resource_id(
         self,
@@ -1446,7 +1455,7 @@ class SimulationAdapter:
             for key, quantity in raw_inventory.items()
         }
         return {
-            "id": self._support_node_runtime_name(node),
+            "id": self._support_node_runtime_id(node),
             "name": self._support_node_runtime_name(node),
             "airport": self._optional_string(node.get("airport")) or "",
             "airport_id": self._optional_string(node.get("airportId") or node.get("baseAirportId")) or "",
@@ -1466,13 +1475,13 @@ class SimulationAdapter:
             "transport_policies": copy.deepcopy(self._dict_list(node.get("transportPolicies"))),
             "policy": self._optional_string(node.get("policy")),
             "organization_strategy": self._optional_string(node.get("organizationStrategy")),
-            "organization_node_id": str(node.get("organizationNodeId") or ""),
+            "organization_node_id": self._support_node_runtime_id(node),
         }
 
-    def _empty_aircraft_support_v1_support_node(self, node_name: str) -> dict[str, Any]:
+    def _empty_aircraft_support_v1_support_node(self, node_id: str) -> dict[str, Any]:
         return {
-            "id": node_name,
-            "name": node_name,
+            "id": node_id,
+            "name": node_id,
             "airport": "",
             "airport_id": "",
             "node_type": None,
@@ -1485,8 +1494,11 @@ class SimulationAdapter:
             "transport_policies": [],
             "policy": None,
             "organization_strategy": None,
-            "organization_node_id": "",
+            "organization_node_id": node_id,
         }
+
+    def _support_node_runtime_id(self, node: dict[str, Any]) -> str:
+        return str(node.get("id") or "")
 
     def _support_node_runtime_name(self, node: dict[str, Any]) -> str:
         return str(node.get("name") or node.get("supportNodeName") or node.get("id") or "support-node")
@@ -1501,16 +1513,17 @@ class SimulationAdapter:
     def _support_node_reference_aliases(self, project: dict[str, Any]) -> dict[str, str]:
         aliases: dict[str, str] = {}
         for node in self._dict_list(project.get("supportNodes")):
-            name = self._support_node_runtime_name(node)
+            node_id = self._support_node_runtime_id(node)
             for key in ("id", "name", "organizationNodeId", "supportNodeId"):
                 value = node.get(key)
                 if value not in (None, ""):
-                    aliases[str(value)] = name
-            aliases[name] = name
+                    aliases[str(value)] = node_id
+            aliases[node_id] = node_id
         for resource in self._dict_list(project.get("supportResources")):
             node_name = str(resource.get("supportNodeName") or resource.get("organizationNodeName") or "").strip()
-            if node_name:
-                aliases[node_name] = node_name
+            organization_node_id = str(resource.get("organizationNodeId") or "").strip()
+            if node_name and organization_node_id:
+                aliases[node_name] = organization_node_id
         return aliases
 
     def _project_transport_policies(self, project: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1709,7 +1722,7 @@ class SimulationAdapter:
                 "supportResources[].productId",
                 "supportResources[].supportNodeName",
                 "supportResources[].organizationNodeId",
-                "supportNodes[].organizationNodeId",
+                "supportNodes[].id",
                 "supportOrganization.tree[].id",
                 "supportOrganization.tree[].serviceScope",
                 "supportOrganization.runtimeMode",
