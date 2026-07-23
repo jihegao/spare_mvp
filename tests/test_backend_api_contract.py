@@ -1739,7 +1739,7 @@ class BackendApiContractTest(unittest.TestCase):
                 "name": "Legacy display name",
                 "activityType": "飞行前保障",
                 "planType": "直接准备方案",
-                "resourceId": "legacy-node",
+                "resourceId": "node-a",
                 "requireDevices": 3,
                 "requiredDevices": 2,
                 "requiredPersonnel": 4,
@@ -1775,7 +1775,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("analysisRequests", stored["missionProfile"])
         self.assertNotIn("requireDevices", stored["supportActivities"][0])
         self.assertNotIn("name", stored["supportActivities"][0])
-        self.assertEqual(stored["supportActivities"][0]["resourceId"], "legacy-node")
+        self.assertEqual(stored["supportActivities"][0]["resourceId"], "node-a")
         self.assertNotIn("requiredDevices", stored["supportActivities"][0])
         self.assertNotIn("requiredPersonnel", stored["supportActivities"][0])
         self.assertEqual(stored["supportActivities"][0]["activityName"], "Legacy display name")
@@ -5127,9 +5127,9 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(slim_project["transportPolicies"], [
             {
-                "id": "migrated-transport-b8e701a8c223",
-                "fromOrganizationNodeId": "support-node-1",
-                "toOrganizationNodeId": "support-node-2",
+                "id": "migrated-transport-5dbdfc597270",
+                "fromOrganizationNodeId": "base",
+                "toOrganizationNodeId": "deck",
                 "name": "旧调运策略",
                 "direction": "横向运输",
                 "triggerMode": "临界库存",
