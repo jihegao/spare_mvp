@@ -236,6 +236,68 @@ test("legacy support activity references hydrate into the basic mission page and
   }
 });
 
+test("adding a basic mission for another aircraft resets identity and support activity ownership", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-basic-mission",
+    projectJson: createRuntimeProjectJson({
+      basicMissions: [{
+        id: "mission-j16",
+        missionId: "mission-j16",
+        name: "J16巡逻任务",
+        taskNo: "J16-01",
+        equipmentType: "J16",
+        supportActivityName: "J16使用保障"
+      }],
+      equipment: {
+        model: "J16",
+        wholeMachineModels: ["J16", "J16D"]
+      },
+      supportActivities: [
+        {
+          id: "j16-ops",
+          activityType: "使用保障活动",
+          planType: "直接准备方案",
+          activityName: "J16使用保障",
+          aircraftModel: "J16",
+          activityCodes: []
+        },
+        {
+          id: "j16d-ops",
+          activityType: "使用保障活动",
+          planType: "直接准备方案",
+          activityName: "J16D使用保障",
+          aircraftModel: "J16D",
+          activityCodes: []
+        }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click(
+      "[data-select-basic-mission-equipment]",
+      { selectBasicMissionEquipment: "J16D" }
+    );
+    await runtime.click("[data-basic-mission-add]");
+    await new Promise((resolve) => setTimeout(resolve, 850));
+    await runtime.flush();
+
+    const saveRequest = runtime.requests.findLast((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(saveRequest);
+    const savedProject = JSON.parse(saveRequest.options.body || "{}");
+    const addedMission = savedProject.basicMissions.at(-1);
+    assert.equal(addedMission.id, "basic-mission-2");
+    assert.equal(addedMission.missionId, "basic-mission-2");
+    assert.equal(addedMission.equipmentType, "J16D");
+    assert.equal(addedMission.supportActivityName, "J16D使用保障");
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("support resource page imports a local personnel table", async () => {
   let changeHandler = null;
   const appNode = {

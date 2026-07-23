@@ -476,6 +476,14 @@ export function normalizeProjectJsonBasicMissions(projectJson) {
     seen.add(dedupeKey);
     normalized.push(clonedTask);
   }
+  const seenMissionIds = new Set();
+  for (const task of normalized) {
+    const missionId = String(task.missionId || "").trim();
+    if (missionId && seenMissionIds.has(missionId)) {
+      task.missionId = task.id;
+    }
+    seenMissionIds.add(String(task.missionId || task.id || "").trim());
+  }
   if (normalized.length) {
     projectJson.basicMissions = normalized;
   } else if (!Array.isArray(projectJson.basicMissions)) {

@@ -2177,14 +2177,18 @@ class SimulationAdapterTest(unittest.TestCase):
         target_lru = next(
             component
             for component in project["components"]
-            if component.get("parentId") and str(component.get("productType") or "").upper() == "LRU"
+            if component.get("parentId")
+            and str(component.get("productType") or "").upper() == "LRU"
+            and component.get("aircraftModel") == "J-35"
         )
         target_spare_name = str(target_lru["name"])
         for component in project["components"]:
             if component.get("parentId"):
                 component["failureDistribution"] = {
                     "distributionType": "指数分布",
-                    "parameters": "lambda=0.8" if component.get("id") == target_lru.get("id") else "lambda=0",
+                    # Keep the transport assertion deterministic now that an
+                    # LRU can fail only on its owning aircraft model.
+                    "parameters": "lambda=60" if component.get("id") == target_lru.get("id") else "lambda=0",
                 }
                 component["kOutOfN"] = {"enabled": False, "k": 1, "n": 1}
         for activity in project["supportActivities"]:

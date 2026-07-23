@@ -695,6 +695,20 @@ test("buildBackendProjectJson migrates legacy basicMission into basicMissions", 
   assert.ok("basicMission" in scenario.missionProfile);
 });
 
+test("normalizeProjectJsonForClientDraft repairs duplicate basic mission identities", () => {
+  const normalized = normalizeProjectJsonForClientDraft({
+    basicMissions: [
+      { id: "mission-j16", missionId: "shared-mission", name: "J16任务" },
+      { id: "mission-j16d", missionId: "shared-mission", name: "J16D任务" }
+    ],
+    missionProfile: { compositeTasks: [] },
+    supportActivities: []
+  });
+
+  assert.equal(normalized.basicMissions[0].missionId, "shared-mission");
+  assert.equal(normalized.basicMissions[1].missionId, "mission-j16d");
+});
+
 test("buildBackendProjectJson normalizes periodic task save aliases", () => {
   const scenario = {
     scenarioId: "periodic-canonical-save",

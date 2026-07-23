@@ -149,6 +149,7 @@ class MissionState:
     basic_task_id: str = ""
     basic_task_name: str = ""
     required_aircraft_type: str = ""
+    support_activity_name: str = ""
     group_name: str = ""
     wave_index: int = 1
     day_index: int = 1
@@ -1004,10 +1005,12 @@ class AircraftSupportV1Model:
 
     def _initialize_aircraft_lru_failure_timers(self) -> None:
         for aircraft in self.aircraft:
-            aircraft.lru_failure_remaining_minutes = {
-                str(component.get("id") or "component"): self._sample_lru_failure_minutes(component)
-                for component in self.components
-            }
+            timers: dict[str, float] = {}
+            for component in self.components:
+                sampled_minutes = self._sample_lru_failure_minutes(component)
+                if self._component_applies_to_aircraft(component, aircraft):
+                    timers[str(component.get("id") or "component")] = sampled_minutes
+            aircraft.lru_failure_remaining_minutes = timers
 
     def _sample_lru_failure_minutes(self, component: dict[str, Any]) -> float:
         hourly_rate = _non_negative_float(component.get("failure_rate"), 0.0)
@@ -1373,7 +1376,12 @@ class AircraftSupportV1Model:
     def _activity_kind_matches(self, activity: dict[str, Any], kind: str) -> bool:
         text = f"{activity.get('id', '')} {activity.get('name', '')} {activity.get('activity_type', '')}".lower()
         if kind == "preflight":
-            return "preflight" in text or "飞行前" in text or "直接准备" in text
+            return (
+                "preflight" in text
+                or "飞行前" in text
+                or "直接准备" in text
+                or "使用保障" in text
+            )
         if kind == "repair":
             return "corrective" in text or "repair" in text or "修复性维修" in text or "故障修复" in text
         if kind == "postflight":
@@ -1456,10 +1464,16 @@ class AircraftSupportV1Model:
         for composite in profile.get("composite_tasks") or []:
             composite_id = str(composite.get("id") or "")
             periodic_context = periodic_contexts.get(composite_id, {})
-            for item in composite.get("taskItems") or []:
+            for item_index, item in enumerate(composite.get("taskItems") or []):
                 if not isinstance(item, dict):
                     continue
                 basic = self._basic_mission_for_item(item, basic_missions, default_basic)
+                item_id = str(item.get("id") or "").strip()
+                mission_base_id = item_id or (
+                    f"{composite_id}__item-{item_index + 1}"
+                    if composite_id
+                    else f"mission-{item_index + 1}"
+                )
                 interval = max(1, int(round(_non_negative_float(item.get("intervalHours"), 24) * 60)))
                 first_start = _time_to_minute(item.get("firstWaveTime"), int(basic.get("startHour") or 1) * 60)
                 preflight_notice = self._preflight_notice_minutes(item, basic)
@@ -1476,11 +1490,15 @@ class AircraftSupportV1Model:
                             continue
                         day_index = planned_start // 1440 + 1
                         wave_index = repeat + 1
-                        mission_id = str(item.get("id") or composite.get("id") or f"mission-{len(missions) + 1}")
                         missions.append(
                             MissionState(
-                                mission_id=f"{mission_id}-d{day_index}-w{wave_index}",
-                                name=str(item.get("basicTaskName") or composite.get("name") or basic.get("name") or mission_id),
+                                mission_id=f"{mission_base_id}-d{day_index}-w{wave_index}",
+                                name=str(
+                                    item.get("basicTaskName")
+                                    or composite.get("name")
+                                    or basic.get("name")
+                                    or mission_base_id
+                                ),
                                 planned_start=planned_start,
                                 preparation_start=max(0, planned_start - preflight_notice),
                                 duration_minutes=max(1, duration),
@@ -1497,6 +1515,7 @@ class AircraftSupportV1Model:
                                 basic_task_id=str(item.get("basicMissionId") or basic.get("id") or item.get("id") or ""),
                                 basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
                                 required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
+                                support_activity_name=str(basic.get("supportActivityName") or ""),
                                 group_name=str(item.get("groupName") or ""),
                                 wave_index=wave_index,
                                 day_index=day_index,
@@ -1522,6 +1541,7 @@ class AircraftSupportV1Model:
                     basic_task_id=str(basic.get("id") or basic.get("missionId") or ""),
                     basic_task_name=str(basic.get("name") or "mission"),
                     required_aircraft_type=str(basic.get("equipmentType") or ""),
+                    support_activity_name=str(basic.get("supportActivityName") or ""),
                     day_index=planned_start // 1440 + 1,
                 )
             )
@@ -2029,6 +2049,8 @@ class AircraftSupportV1Model:
             if aircraft.in_flight_failure:
                 continue
             for component in self.components:
+                if not self._component_applies_to_aircraft(component, aircraft):
+                    continue
                 component_id = str(component.get("id") or "component")
                 if component_id in aircraft.component_failure_minutes:
                     continue
@@ -2194,11 +2216,38 @@ class AircraftSupportV1Model:
             created = 0
             for aircraft in available[: max(0, needed)]:
                 aircraft.state = "pre_support"
-                self._create_job(aircraft, self.preflight_activity, kind="preflight", mission_id=mission.mission_id)
+                activity = self._preflight_activity_for_mission(mission, aircraft)
+                self._create_job(aircraft, activity, kind="preflight", mission_id=mission.mission_id)
                 created += 1
             mission.preflight_created = self._mission_preflight_commissioned_count(mission) >= mission.required_aircraft
             if created:
                 self._event("preflight_created", f"{mission.mission_id} created {created} jobs")
+
+    def _preflight_activity_for_mission(
+        self,
+        mission: MissionState,
+        aircraft: AircraftState,
+    ) -> dict[str, Any]:
+        candidates = [
+            activity
+            for activity in self.activities
+            if self._activity_kind_matches(activity, "preflight")
+        ]
+        aircraft_models = _aircraft_type_tokens(aircraft.aircraft_type) | _aircraft_type_tokens(aircraft.model)
+
+        def applies_to_aircraft(activity: dict[str, Any]) -> bool:
+            activity_models = _aircraft_type_tokens(activity.get("aircraft_model"))
+            return not activity_models or bool(activity_models & aircraft_models)
+
+        compatible = [activity for activity in candidates if applies_to_aircraft(activity)]
+        expected_name = mission.support_activity_name.strip().casefold()
+        if expected_name:
+            for activity in compatible:
+                if str(activity.get("name") or "").strip().casefold() == expected_name:
+                    return activity
+        if compatible:
+            return compatible[0]
+        return self.preflight_activity
 
     def _dispatch_due_missions(self) -> None:
         for mission in self.missions:
@@ -2315,13 +2364,7 @@ class AircraftSupportV1Model:
         if not required_tokens:
             return True
         candidate_tokens = _aircraft_type_tokens(aircraft.aircraft_type) | _aircraft_type_tokens(aircraft.model)
-        if not candidate_tokens:
-            return False
-        for candidate in candidate_tokens:
-            for required in required_tokens:
-                if candidate == required or candidate.startswith(required) or required.startswith(candidate):
-                    return True
-        return False
+        return bool(candidate_tokens & required_tokens)
 
     def _aircraft_by_tail(self, tail_number: str) -> AircraftState | None:
         return next((aircraft for aircraft in self.aircraft if aircraft.tail_number == tail_number), None)
@@ -3503,8 +3546,11 @@ class AircraftSupportV1Model:
         return f"{root_id}-{index}"
 
     def _component_applies_to_aircraft(self, component: dict[str, Any], item: AircraftState) -> bool:
-        model = str(component.get("aircraft_model") or "")
-        return not model or model in {item.aircraft_type, item.model}
+        component_models = _aircraft_type_tokens(component.get("aircraft_model"))
+        if not component_models:
+            return True
+        aircraft_models = _aircraft_type_tokens(item.aircraft_type) | _aircraft_type_tokens(item.model)
+        return bool(component_models & aircraft_models)
 
     def _failure_threshold(self, component: dict[str, Any]) -> int:
         k_out = component.get("k_out_of_n") if isinstance(component.get("k_out_of_n"), dict) else {}
@@ -3541,6 +3587,7 @@ class AircraftSupportV1Model:
             "composite_task_name": item.composite_task_name,
             "basic_task_id": item.basic_task_id,
             "basic_task_name": item.basic_task_name or item.name,
+            "support_activity_name": item.support_activity_name,
             "group_name": item.group_name,
             "wave_index": item.wave_index,
             "day_index": item.day_index,

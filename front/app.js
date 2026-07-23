@@ -3828,16 +3828,26 @@ function ensureBasicMissionPhases(mission) {
 
 function addBasicMission() {
   const extras = basicMissionExtras();
-  const index = editableBasicMissionRecords().length + 1;
+  const existingIds = new Set(
+    editableBasicMissionRecords()
+      .map((record) => String(record.task?.id || ""))
+      .filter(Boolean)
+  );
+  let index = editableBasicMissionRecords().length + 1;
+  while (existingIds.has(`basic-mission-${index}`)) index += 1;
   const selected = resolveSelectedBasicMission();
   const sourceTask = selected?.task || primaryBasicMissionRecord();
   const equipmentType = selectedBasicMissionEquipmentType || sourceTask.equipmentType || scenarioEquipmentModel() || "";
+  const missionId = `basic-mission-${index}`;
+  const supportActivityName = operationsSupportActivityOptions(equipmentType)[0]?.value || "";
   const task = {
     ...JSON.parse(JSON.stringify(sourceTask || createEmptyBasicMission())),
-    id: `basic-mission-${index}`,
+    id: missionId,
+    missionId,
     name: `新增基本任务${index}`,
     taskNo: `BM-${String(index).padStart(2, "0")}`,
     equipmentType,
+    supportActivityName,
     taskArea: "未指定任务区域"
   };
   extras.push(task);

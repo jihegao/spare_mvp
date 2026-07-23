@@ -298,6 +298,66 @@ def _canonical_import_inputs() -> dict:
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_composite_items_without_ids_have_distinct_runtime_missions_and_all_complete(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 120
+        inputs["aircraft"] = {"fleet_count": 3, "initial_ready": 3, "models": ["J-15"]}
+        basic = inputs["mission_profile"]["basic_missions"][0]
+        basic["preparationMinutes"] = 0
+        basic["equipmentQuantity"] = 1
+        inputs["mission_profile"]["composite_tasks"] = [
+            {
+                "id": "composite-no-item-ids",
+                "name": "A/B/D formation sorties",
+                "taskItems": [
+                    {
+                        "basicMissionId": "mission-a",
+                        "basicTaskName": "A sortie",
+                        "groupName": "A",
+                        "firstWaveTime": "00:20",
+                        "taskDurationMinutes": 5,
+                        "equipmentQuantity": 1,
+                    },
+                    {
+                        "basicMissionId": "mission-a",
+                        "basicTaskName": "B sortie",
+                        "groupName": "B",
+                        "firstWaveTime": "00:40",
+                        "taskDurationMinutes": 5,
+                        "equipmentQuantity": 1,
+                    },
+                    {
+                        "basicMissionId": "mission-a",
+                        "basicTaskName": "D sortie",
+                        "groupName": "D",
+                        "firstWaveTime": "01:00",
+                        "taskDurationMinutes": 5,
+                        "equipmentQuantity": 1,
+                    },
+                ],
+            }
+        ]
+        for activity in inputs["support_activities"]["activities"]:
+            for job in activity["jobs"]:
+                job["durationMinutes"] = 1
+
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertEqual(len({mission.mission_id for mission in model.missions}), 3)
+        self.assertEqual(
+            [mission.mission_id for mission in model.missions],
+            [
+                "composite-no-item-ids__item-1-d1-w1",
+                "composite-no-item-ids__item-2-d1-w1",
+                "composite-no-item-ids__item-3-d1-w1",
+            ],
+        )
+
+        model.run()
+
+        self.assertEqual([mission.status for mission in model.missions], ["completed", "completed", "completed"])
+        self.assertEqual(model.completed_sorties, 3)
+
     def test_downtime_ledger_uses_unique_direct_cause_intervals(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"] = {"fleet_count": 4, "initial_ready": 4, "models": ["J-15"]}
@@ -671,6 +731,104 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         self.assertEqual(mission.assigned_tail_numbers, ["J15-101"])
         self.assertEqual(model.aircraft[0].state, "available")
+
+    def test_j16_mission_does_not_dispatch_j16d_aircraft_by_prefix(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["assets"] = [
+            {"tailNumber": "J16D-201", "aircraftType": "J16D", "model": "J16D", "initialState": "available"},
+            {"tailNumber": "J16-101", "aircraftType": "J16", "model": "J16", "initialState": "available"},
+        ]
+        inputs["mission_profile"]["basic_missions"][0]["equipmentType"] = "J16"
+        inputs["mission_profile"]["basic_missions"][0]["equipmentQuantity"] = 1
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+
+        model._create_due_preflight_jobs()
+
+        self.assertEqual([job.tail_number for job in model.jobs if job.kind == "preflight"], ["J16-101"])
+        model.aircraft[0].prepared_mission_ids.add(mission.mission_id)
+        model.aircraft[1].state = "available"
+        model.aircraft[1].prepared_mission_ids.add(mission.mission_id)
+
+        model._dispatch_due_missions()
+
+        self.assertEqual(mission.assigned_tail_numbers, ["J16-101"])
+        self.assertEqual(model.aircraft[0].state, "available")
+
+    def test_preflight_uses_the_support_activity_owned_by_each_basic_mission(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["assets"] = [
+            {"tailNumber": "J16-101", "aircraftType": "J16", "model": "J16", "initialState": "available"},
+            {"tailNumber": "J16D-201", "aircraftType": "J16D", "model": "J16D", "initialState": "available"},
+        ]
+        inputs["support_activities"]["activities"][0] = {
+            "id": "j16-preflight",
+            "name": "J16使用保障",
+            "activity_type": "使用保障活动",
+            "aircraft_model": "J16",
+            "resource_id": "deck",
+            "jobs": [{"activityCode": "j16-pf", "durationMinutes": 20, "workName": "J16 preflight"}],
+        }
+        inputs["support_activities"]["activities"].insert(1, {
+            "id": "j16d-preflight",
+            "name": "J16D使用保障",
+            "activity_type": "使用保障活动",
+            "aircraft_model": "J16D",
+            "resource_id": "deck",
+            "jobs": [{"activityCode": "j16d-pf", "durationMinutes": 20, "workName": "J16D preflight"}],
+        })
+        inputs["mission_profile"]["basic_missions"] = [
+            {
+                "id": "mission-j16",
+                "name": "J16 mission",
+                "equipmentType": "J16",
+                "equipmentQuantity": 1,
+                "preparationMinutes": 20,
+                "supportActivityName": "J16使用保障",
+            },
+            {
+                "id": "mission-j16d",
+                "name": "J16D mission",
+                "equipmentType": "J16D",
+                "equipmentQuantity": 1,
+                "preparationMinutes": 20,
+                "supportActivityName": "J16D使用保障",
+            },
+        ]
+        inputs["mission_profile"]["composite_tasks"] = [{
+            "id": "mixed-missions",
+            "taskItems": [
+                {
+                    "id": "j16-wave",
+                    "basicMissionId": "mission-j16",
+                    "equipmentType": "J16",
+                    "equipmentQuantity": 1,
+                    "firstWaveTime": "00:20",
+                },
+                {
+                    "id": "j16d-wave",
+                    "basicMissionId": "mission-j16d",
+                    "equipmentType": "J16D",
+                    "equipmentQuantity": 1,
+                    "firstWaveTime": "00:20",
+                },
+            ],
+        }]
+        model = AircraftSupportV1Model(inputs)
+
+        model._create_due_preflight_jobs()
+
+        jobs_by_tail = {
+            job.tail_number: job.activity_id
+            for job in model.jobs
+            if job.kind == "preflight"
+        }
+        self.assertEqual(
+            jobs_by_tail,
+            {"J16-101": "j16-preflight", "J16D-201": "j16d-preflight"},
+        )
 
     def test_missing_postflight_activity_uses_default_postflight_not_first_activity(self) -> None:
         inputs = _minimal_inputs()
@@ -1262,6 +1420,35 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         self.assertEqual(aircraft.state, "available")
         self.assertIsNone(aircraft.failed_component_id)
+        self.assertEqual(model.snapshot()["lru_failures"], 0)
+
+    def test_lru_failure_timers_and_countdown_are_scoped_to_aircraft_model(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["assets"] = [
+            {"tailNumber": "J16-101", "aircraftType": "J16", "model": "J16", "initialState": "available"},
+            {"tailNumber": "J16D-201", "aircraftType": "J16D", "model": "J16D", "initialState": "available"},
+        ]
+        inputs["equipment_tree"]["components"] = [
+            _runtime_component("j16-root", "", "J16", 0, product_type="system", aircraft_model="J16"),
+            _runtime_component("j16-lru", "j16-root", "J16 LRU", 1000, aircraft_model="J16"),
+            _runtime_component("j16d-root", "", "J16D", 0, product_type="system", aircraft_model="J16D"),
+            _runtime_component("j16d-lru", "j16d-root", "J16D LRU", 1000, aircraft_model="J16D"),
+        ]
+
+        model = AircraftSupportV1Model(inputs)
+        j16, j16d = model.aircraft
+
+        self.assertEqual(set(j16.lru_failure_remaining_minutes), {"j16-lru"})
+        self.assertEqual(set(j16d.lru_failure_remaining_minutes), {"j16d-lru"})
+
+        j16.state = "flying"
+        j16.lru_failure_remaining_minutes["j16-lru"] = 999.0
+        j16.lru_failure_remaining_minutes["j16d-lru"] = 1.0
+        model.minute = 1
+
+        model._evaluate_failures()
+
+        self.assertNotIn("j16d-lru", j16.component_failure_minutes)
         self.assertEqual(model.snapshot()["lru_failures"], 0)
 
     def test_lru_failure_time_is_consumed_during_mission_execution(self) -> None:
