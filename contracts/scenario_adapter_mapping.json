@@ -28,7 +28,7 @@
           "constructor_param": "equipment_tree"
         },
         "support_network": {
-          "source": "project.supportNodes[] plus canonical project.supportOrganization, supportNodes[].organizationNodeId, supportResources[].organizationNodeId, and project.transportPolicies[] organization endpoints",
+          "source": "project.supportNodes[].id uses the same canonical identity as project.supportOrganization.tree[].id; supportResources[].organizationNodeId, supportActivities[].resourceId, and project.transportPolicies[] organization endpoints use that ID namespace",
           "constructor_param": "support_network",
           "behavior": "organization_graph.runtime_mode is persisted from project.supportOrganization.runtimeMode. vertical_lateral uses local first, then enabled direct incoming lateral relations ordered by relation priority/id/source, then the #315 parent chain; vertical preserves #315 local/parent behavior and legacy preserves support-node behavior. Missing runtime_mode falls back to vertical for a non-empty graph and legacy for an empty graph."
         },

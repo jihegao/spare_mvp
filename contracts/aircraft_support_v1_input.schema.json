@@ -165,9 +165,22 @@
           "items": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["id", "name", "personnel_capacity", "equipment_capacity", "inventory", "transport_policies"],
+            "required": ["id", "name", "organization_node_id", "personnel_capacity", "equipment_capacity", "inventory", "transport_policies"],
             "properties": {
-              "organization_node_id": { "type": "string" }
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Canonical supportOrganization tree node ID."
+              },
+              "name": {
+                "type": "string",
+                "description": "Display-only support organization name."
+              },
+              "organization_node_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Compatibility projection of the canonical node ID; the Adapter emits the same value as id."
+              }
             }
           }
         },

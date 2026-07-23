@@ -68,7 +68,6 @@ def minimal_clean_project() -> dict[str, Any]:
             {
                 "id": "node-a",
                 "name": "node A",
-                "organizationNodeId": "node-a",
                 "personnelCapacity": 1,
                 "equipmentCapacity": 1,
                 "inventory": {"product-whole-aircraft": 2},

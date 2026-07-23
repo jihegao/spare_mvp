@@ -214,7 +214,6 @@ _SUPPORT_NODE_FIELDS = {
     "transportPolicies",
     "policy",
     "organizationStrategy",
-    "organizationNodeId",
 }
 _SUPPORT_RESOURCE_FIELDS = {
     "id",
@@ -474,6 +473,12 @@ def normalize_support_organization_contract(
             changes.append(f"{node['_source_path']}.serviceScope.{field}=[](unrestricted)")
     _validate_organization_service_scope(nodes, project)
     aliases = _organization_aliases(nodes, project.get("supportNodes"), name_ids)
+    runtime_node_ids = _canonicalize_support_node_ownership(
+        project.get("supportNodes"),
+        aliases,
+        node_ids,
+        changes,
+    )
 
     relations = _canonical_lateral_relations(
         organization.get("relations"), aliases, node_ids, changes
@@ -486,13 +491,21 @@ def normalize_support_organization_contract(
     _validate_lateral_relation_dag(relations)
 
     policies = _canonical_top_level_transport_policies(project, aliases, node_ids, nodes, changes)
-    _canonicalize_support_node_ownership(project.get("supportNodes"), aliases, node_ids)
+    _canonicalize_support_activity_ownership(project.get("supportActivities"), aliases, node_ids, changes)
     _validate_lateral_runtime_endpoints(
         relations,
-        project.get("supportNodes"),
+        runtime_node_ids,
         runtime_mode=str(runtime_mode or "vertical"),
     )
     _canonicalize_support_resource_ownership(project.get("supportResources"), aliases, node_ids, nodes, changes)
+    _validate_operational_support_node_mappings(
+        project,
+        relations,
+        policies,
+        runtime_node_ids,
+        runtime_mode=str(runtime_mode or "vertical"),
+    )
+    _strip_legacy_support_node_relationships(project.get("supportNodes"))
 
     _strip_organization_internal_paths(canonical_tree)
     organization = {
@@ -856,52 +869,191 @@ def _validate_lateral_relation_siblings(
             )
 
 
-def _canonicalize_support_node_ownership(value: Any, aliases: dict[str, str], node_ids: set[str]) -> None:
+def _canonicalize_support_node_ownership(
+    value: Any,
+    aliases: dict[str, str],
+    node_ids: set[str],
+    changes: list[str],
+) -> set[str]:
+    runtime_node_ids: set[str] = set()
+    legacy_ids: dict[str, int] = {}
     for index, node in enumerate(value if isinstance(value, list) else []):
         if not isinstance(node, dict):
             continue
-        refs = [node.get(field) for field in ("organizationNodeId", "id", "name") if _clean_text(node.get(field))]
-        resolved = {
-            _resolve_organization_ref(ref, aliases, node_ids, f"supportNodes[{index}].organizationNodeId", "unknown_support_node_organization")
-            for ref in refs
-            if _clean_text(ref) in node_ids or _clean_text(ref) in aliases
-        }
+        path = f"supportNodes[{index}]"
+        legacy_id = _clean_text(node.get("id"))
+        if legacy_id:
+            if legacy_id in legacy_ids:
+                raise OrganizationContractError(
+                    "duplicate_support_node_id",
+                    f"{path}.id",
+                    f"support node ID {legacy_id} duplicates supportNodes[{legacy_ids[legacy_id]}].id",
+                )
+            legacy_ids[legacy_id] = index
+
+        resolved_fields: list[tuple[str, str]] = []
+        explicit_ref = _clean_text(node.get("organizationNodeId"))
+        if explicit_ref:
+            resolved_fields.append((
+                "organizationNodeId",
+                _resolve_organization_ref(
+                    explicit_ref,
+                    aliases,
+                    node_ids,
+                    f"{path}.organizationNodeId",
+                    "unknown_support_node_organization",
+                ),
+            ))
+
+        if legacy_id in node_ids or legacy_id in aliases:
+            resolved_fields.append((
+                "id",
+                _resolve_organization_ref(
+                    legacy_id,
+                    aliases,
+                    node_ids,
+                    f"{path}.id",
+                    "unknown_support_node_organization",
+                ),
+            ))
+
+        if not resolved_fields:
+            for field in ("name", "supportNodeName"):
+                ref = _clean_text(node.get(field))
+                if not ref:
+                    continue
+                if ref not in node_ids and ref not in aliases:
+                    continue
+                resolved_fields.append((
+                    field,
+                    _resolve_organization_ref(
+                        ref,
+                        aliases,
+                        node_ids,
+                        f"{path}.{field}",
+                        "unknown_support_node_organization",
+                    ),
+                ))
+                break
+
+        resolved = {organization_id for _field, organization_id in resolved_fields}
         if len(resolved) != 1:
+            conflict_field = next(
+                (
+                    field
+                    for field, organization_id in resolved_fields[1:]
+                    if organization_id != resolved_fields[0][1]
+                ),
+                "organizationNodeId" if explicit_ref else "id",
+            )
             raise OrganizationContractError(
                 "conflicting_support_node_organization" if len(resolved) > 1 else "unknown_support_node_organization",
-                f"supportNodes[{index}].organizationNodeId",
+                f"{path}.{conflict_field}",
                 "support node must link to exactly one organization node",
             )
-        node["organizationNodeId"] = next(iter(resolved))
+        canonical_id = next(iter(resolved))
+        if canonical_id in runtime_node_ids:
+            raise OrganizationContractError(
+                "duplicate_support_node_organization",
+                f"{path}.id",
+                f"organization node {canonical_id} already maps to another runtime support node",
+            )
+        runtime_node_ids.add(canonical_id)
+        if legacy_id != canonical_id:
+            changes.append(f"{path}.id={canonical_id}(migratedOrganizationNodeId)")
+        if "organizationNodeId" in node:
+            changes.append(f"{path}.organizationNodeId->id")
+        node["id"] = canonical_id
+        node.pop("organizationNodeId", None)
+    return runtime_node_ids
+
+
+def _strip_legacy_support_node_relationships(value: Any) -> None:
+    for node in value if isinstance(value, list) else []:
+        if not isinstance(node, dict):
+            continue
         node.pop("lateralSupportNodes", None)
         node.pop("transportPolicies", None)
 
 
 def _validate_lateral_runtime_endpoints(
     relations: list[dict[str, Any]],
-    support_nodes: Any,
+    runtime_node_ids: set[str],
     *,
     runtime_mode: str,
 ) -> None:
     if runtime_mode != "vertical_lateral":
         return
-    mapping_counts: dict[str, int] = {}
-    for node in support_nodes if isinstance(support_nodes, list) else []:
-        if not isinstance(node, dict):
-            continue
-        organization_id = _clean_text(node.get("organizationNodeId"))
-        if organization_id:
-            mapping_counts[organization_id] = mapping_counts.get(organization_id, 0) + 1
     for index, relation in enumerate(relations):
         for field in ("fromOrganizationNodeId", "toOrganizationNodeId"):
             organization_id = relation[field]
-            count = mapping_counts.get(organization_id, 0)
-            if count != 1:
+            if organization_id not in runtime_node_ids:
                 raise OrganizationContractError(
                     "unreachable_lateral_relation_endpoint",
                     f"supportOrganization.relations[{index}].{field}",
-                    f"vertical_lateral relation endpoint {organization_id} must map to exactly one runtime support node; found {count}",
+                    f"vertical_lateral relation endpoint {organization_id} must map to exactly one runtime support node; found 0",
                 )
+
+
+def _canonicalize_support_activity_ownership(
+    value: Any,
+    aliases: dict[str, str],
+    node_ids: set[str],
+    changes: list[str],
+) -> None:
+    for index, activity in enumerate(value if isinstance(value, list) else []):
+        if not isinstance(activity, dict):
+            continue
+        ref = _clean_text(activity.get("resourceId"))
+        if not ref:
+            continue
+        canonical_id = _resolve_organization_ref(
+            ref,
+            aliases,
+            node_ids,
+            f"supportActivities[{index}].resourceId",
+            "unknown_support_activity_organization",
+        )
+        if canonical_id != ref:
+            changes.append(f"supportActivities[{index}].resourceId={canonical_id}(migratedOrganizationAlias)")
+        activity["resourceId"] = canonical_id
+
+
+def _validate_operational_support_node_mappings(
+    project: dict[str, Any],
+    relations: list[dict[str, Any]],
+    policies: list[dict[str, Any]],
+    runtime_node_ids: set[str],
+    *,
+    runtime_mode: str,
+) -> None:
+    refs: list[tuple[str, str]] = []
+    for index, activity in enumerate(project.get("supportActivities", []) if isinstance(project.get("supportActivities"), list) else []):
+        if isinstance(activity, dict) and _clean_text(activity.get("resourceId")):
+            refs.append((f"supportActivities[{index}].resourceId", _clean_text(activity.get("resourceId"))))
+    for index, resource in enumerate(project.get("supportResources", []) if isinstance(project.get("supportResources"), list) else []):
+        if isinstance(resource, dict) and _clean_text(resource.get("organizationNodeId")):
+            refs.append((
+                f"supportResources[{index}].organizationNodeId",
+                _clean_text(resource.get("organizationNodeId")),
+            ))
+    for index, policy in enumerate(policies):
+        for field in ("fromOrganizationNodeId", "toOrganizationNodeId"):
+            refs.append((f"transportPolicies[{index}].{field}", _clean_text(policy.get(field))))
+    if runtime_mode == "vertical_lateral":
+        for index, relation in enumerate(relations):
+            for field in ("fromOrganizationNodeId", "toOrganizationNodeId"):
+                refs.append((
+                    f"supportOrganization.relations[{index}].{field}",
+                    _clean_text(relation.get(field)),
+                ))
+    for path, organization_id in refs:
+        if organization_id and organization_id not in runtime_node_ids:
+            raise OrganizationContractError(
+                "missing_runtime_support_node_mapping",
+                path,
+                f"operational organization node {organization_id} must map to exactly one supportNodes[] row; found 0",
+            )
 
 
 def _canonicalize_support_resource_ownership(
@@ -937,6 +1089,10 @@ def _canonicalize_support_resource_ownership(
         ]
         owner = ""
         for field, ref in refs:
+            if owner and field in {"organizationNodeName", "supportNodeName"}:
+                ref_text = _clean_text(ref)
+                if ref_text not in node_ids and ref_text not in aliases:
+                    continue
             resolved = _resolve_organization_ref(
                 ref,
                 aliases,
@@ -2030,14 +2186,14 @@ def _validate_clean_support_nodes(nodes: list[Any], target: str) -> None:
         path = f"supportNodes.{index}"
         if not isinstance(node, dict):
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
-        for field in ("id", "name", "organizationNodeId"):
+        for field in ("id", "name"):
             if field not in node:
                 raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
             _require_clean_string(node, field, f"{path}.{field}", target)
         extra = sorted(field for field in node if field not in _SUPPORT_NODE_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
-        for field in ("supportNodeName", "airport", "airportId", "baseAirportId", "nodeType", "supportLevel", "policy", "organizationStrategy", "organizationNodeId"):
+        for field in ("supportNodeName", "airport", "airportId", "baseAirportId", "nodeType", "supportLevel", "policy", "organizationStrategy"):
             _validate_optional_clean_string(node, field, f"{path}.{field}", target)
         for field in ("capacity", "personnelCapacity", "equipmentCapacity"):
             _validate_optional_clean_integer(node, field, f"{path}.{field}", target, minimum=0)
@@ -2151,8 +2307,13 @@ def _validate_support_resource_identities(project: dict[str, Any], target: str) 
         if _clean_text(resource.get("id")).startswith("support-spare-tombstone:"):
             continue
         product_id = _clean_text(resource.get("productId"))
-        explicit_organization_ref = _clean_text(resource.get("organizationNodeName"))
-        organization_ref = explicit_organization_ref or _clean_text(resource.get("supportNodeName"))
+        explicit_organization_id = _clean_text(resource.get("organizationNodeId"))
+        explicit_organization_name = _clean_text(resource.get("organizationNodeName"))
+        organization_ref = (
+            explicit_organization_id
+            or explicit_organization_name
+            or _clean_text(resource.get("supportNodeName"))
+        )
         canonical_org = organization_ref
         identity_resolved = False
         if organization_ids:
@@ -2168,14 +2329,14 @@ def _validate_support_resource_identities(project: dict[str, Any], target: str) 
                 if len(matches) == 1:
                     canonical_org = next(iter(matches))
                     identity_resolved = True
-                elif not explicit_organization_ref and len(support_matches) == 1:
+                elif not explicit_organization_id and not explicit_organization_name and len(support_matches) == 1:
                     canonical_org = f"support-node:{next(iter(support_matches))}"
                     identity_resolved = True
                 else:
                     reason = "ambiguous" if len(matches) > 1 else "unknown"
                     raise ValueError(
                         f"clean Project JSON failed {target} schema at supportResources.{index}."
-                        f"{'organizationNodeName' if explicit_organization_ref else 'supportNodeName'}: "
+                        f"{'organizationNodeId' if explicit_organization_id else 'organizationNodeName' if explicit_organization_name else 'supportNodeName'}: "
                         f"{reason} support organization {organization_ref or '<empty>'}"
                     )
         else:
@@ -3151,23 +3312,106 @@ def _legacy_transport_policies_from_support_activities(activities: Any, name_by_
 
 
 def _normalize_support_model_tables(project: dict[str, Any]) -> None:
+    legacy_support_nodes = deepcopy(project.get("supportNodes")) if isinstance(project.get("supportNodes"), list) else []
     legacy_name_by_ref = _legacy_support_node_name_by_ref(project.get("supportNodes"))
     node_scope_by_ref = _support_node_scope_by_ref(project.get("supportNodes"))
-    organization_names, organization_name_by_ref = _normalize_support_organization(project.get("supportOrganization"), legacy_name_by_ref)
+    _organization_names, organization_name_by_ref = _normalize_support_organization(
+        project.get("supportOrganization"),
+        legacy_name_by_ref,
+    )
     name_by_ref = {**legacy_name_by_ref, **organization_name_by_ref}
     node_scope_by_name = _support_node_scope_by_name(node_scope_by_ref, name_by_ref)
-    _normalize_support_resource_refs(project, name_by_ref)
-    support_node_names = organization_names or _support_node_names_from_support_nodes(project.get("supportNodes"))
-    project["supportNodes"] = [
-        {
-            "id": f"support-node-{index + 1}",
-            "name": name,
-            **node_scope_by_name.get(name, {}),
+    organization_id_by_ref, organization_name_by_id = _support_organization_aliases_for_legacy_refs(
+        project.get("supportOrganization"),
+        legacy_support_nodes,
+        name_by_ref,
+    )
+    _normalize_support_resource_refs(project, name_by_ref, organization_id_by_ref)
+    project["supportNodes"] = []
+    for node in legacy_support_nodes:
+        if not isinstance(node, dict) or _is_legacy_support_resource_row(node):
+            continue
+        legacy_id = _clean_text(node.get("id") or node.get("organizationNodeId"))
+        name = _clean_text(node.get("name") or node.get("supportNodeName") or legacy_id)
+        explicit_owner = _clean_text(node.get("organizationNodeId"))
+        migrated_owner = (
+            explicit_owner
+            or organization_id_by_ref.get(legacy_id)
+            or organization_id_by_ref.get(name)
+            or ""
+        )
+        canonical_name = organization_name_by_id.get(migrated_owner) or name
+        normalized_node = {
+            "id": legacy_id,
+            "name": canonical_name,
+            **(
+                node_scope_by_ref.get(legacy_id)
+                or node_scope_by_ref.get(explicit_owner)
+                or node_scope_by_name.get(name)
+                or {}
+            ),
         }
-        for index, name in enumerate(support_node_names)
-    ]
-    _normalize_top_level_transport_policies(project, name_by_ref)
-    _normalize_support_node_refs_in_project(project, name_by_ref)
+        if migrated_owner:
+            normalized_node["organizationNodeId"] = migrated_owner
+        project["supportNodes"].append(normalized_node)
+    _normalize_top_level_transport_policies(project, name_by_ref, organization_id_by_ref)
+    _normalize_support_node_refs_in_project(project, name_by_ref, organization_id_by_ref)
+
+
+def _support_organization_aliases_for_legacy_refs(
+    support_organization: Any,
+    legacy_support_nodes: list[Any],
+    name_by_ref: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    organization = support_organization if isinstance(support_organization, dict) else {}
+    root = organization.get("tree")
+    if not isinstance(root, dict):
+        return {}, {}
+    node_ids: list[str] = []
+    name_ids: dict[str, set[str]] = {}
+    name_by_id: dict[str, str] = {}
+
+    def visit(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        node_id = _clean_text(node.get("id"))
+        name = _clean_text(node.get("name") or node_id)
+        if node_id:
+            node_ids.append(node_id)
+            name_by_id[node_id] = name
+            name_ids.setdefault(name, set()).add(node_id)
+        for child in node.get("children", []) if isinstance(node.get("children"), list) else []:
+            visit(child)
+
+    visit(root)
+    candidates: dict[str, set[str]] = {
+        node_id: {node_id}
+        for node_id in node_ids
+    }
+    for name, ids in name_ids.items():
+        candidates.setdefault(name, set()).update(ids)
+    for ref, name in name_by_ref.items():
+        ids = name_ids.get(_clean_text(name), set())
+        if ids:
+            candidates.setdefault(_clean_text(ref), set()).update(ids)
+    for legacy_node in legacy_support_nodes:
+        if not isinstance(legacy_node, dict):
+            continue
+        explicit = _clean_text(legacy_node.get("organizationNodeId"))
+        owner_ids = candidates.get(explicit, set())
+        if len(owner_ids) != 1:
+            continue
+        owner = next(iter(owner_ids))
+        for field in ("id", "name", "supportNodeName", "organizationNodeId"):
+            ref = _clean_text(legacy_node.get(field))
+            if ref:
+                candidates.setdefault(ref, set()).add(owner)
+    aliases = {
+        ref: next(iter(ids))
+        for ref, ids in candidates.items()
+        if ref and len(ids) == 1
+    }
+    return aliases, name_by_id
 
 
 def _legacy_support_node_name_by_ref(support_nodes: Any) -> dict[str, str]:
@@ -3293,43 +3537,39 @@ def _normalize_support_organization_node(
     return normalized
 
 
-def _normalize_support_resource_refs(project: dict[str, Any], name_by_ref: dict[str, str]) -> None:
+def _normalize_support_resource_refs(
+    project: dict[str, Any],
+    name_by_ref: dict[str, str],
+    organization_id_by_ref: dict[str, str],
+) -> None:
     support_resources = project.get("supportResources")
     if not isinstance(support_resources, list):
         return
     for resource in support_resources:
         if not isinstance(resource, dict):
             continue
+        owner_ref = resource.get("organizationNodeId") or resource.get("organizationNodeName") or resource.get("supportNodeId") or resource.get("supportNodeName")
         resource["supportNodeName"] = _support_node_name_for_ref(
-            resource.get("supportNodeName") or resource.get("supportNodeId") or resource.get("organizationNodeId"),
+            resource.get("supportNodeName") or resource.get("supportNodeId") or owner_ref,
             name_by_ref,
         )
+        organization_id = organization_id_by_ref.get(_clean_text(owner_ref)) or organization_id_by_ref.get(
+            _clean_text(resource.get("supportNodeName"))
+        )
+        if organization_id:
+            resource["organizationNodeId"] = organization_id
         resource.pop("supportNodeId", None)
-        resource.pop("organizationNodeId", None)
-
-
-def _support_node_names_from_support_nodes(support_nodes: Any) -> list[str]:
-    names: list[str] = []
-    if not isinstance(support_nodes, list):
-        return names
-    for node in support_nodes:
-        if not isinstance(node, dict) or _is_legacy_support_resource_row(node):
-            continue
-        name = _clean_text(node.get("name") or node.get("supportNodeName") or node.get("id"))
-        if name and name not in names:
-            names.append(name)
-    return names
 
 
 def _is_legacy_support_resource_row(node: dict[str, Any]) -> bool:
-    node_id = str(node.get("id") or "")
-    return bool(
-        node.get("importedResourceType")
-        or re.search(r"(^|[-_])(personnel|equipment|spare|stock)([-_]|$)", node_id, re.IGNORECASE)
-    )
+    return bool(node.get("importedResourceType"))
 
 
-def _normalize_top_level_transport_policies(project: dict[str, Any], name_by_ref: dict[str, str]) -> None:
+def _normalize_top_level_transport_policies(
+    project: dict[str, Any],
+    name_by_ref: dict[str, str],
+    organization_id_by_ref: dict[str, str],
+) -> None:
     transport_policies = project.get("transportPolicies")
     if not isinstance(transport_policies, list):
         return
@@ -3337,17 +3577,23 @@ def _normalize_top_level_transport_policies(project: dict[str, Any], name_by_ref
     for index, policy in enumerate(transport_policies):
         if not isinstance(policy, dict):
             continue
+        from_ref = _clean_text(policy.get("fromOrganizationNodeId") or policy.get("fromSupportNodeName") or policy.get("from"))
+        to_ref = _clean_text(policy.get("toOrganizationNodeId") or policy.get("toSupportNodeName") or policy.get("to"))
         normalized: dict[str, Any] = {
-            "fromSupportNodeName": _support_node_name_for_ref(policy.get("fromSupportNodeName") or policy.get("from"), name_by_ref),
-            "toSupportNodeName": _support_node_name_for_ref(policy.get("toSupportNodeName") or policy.get("to"), name_by_ref),
             "spareName": _clean_text(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type")),
         }
+        from_organization_id = organization_id_by_ref.get(from_ref)
+        to_organization_id = organization_id_by_ref.get(to_ref)
+        if from_organization_id:
+            normalized["fromOrganizationNodeId"] = from_organization_id
+        else:
+            normalized["fromSupportNodeName"] = _support_node_name_for_ref(from_ref, name_by_ref)
+        if to_organization_id:
+            normalized["toOrganizationNodeId"] = to_organization_id
+        else:
+            normalized["toSupportNodeName"] = _support_node_name_for_ref(to_ref, name_by_ref)
         if _clean_text(policy.get("id")):
             normalized["id"] = _clean_text(policy.get("id"))
-        if _clean_text(policy.get("fromOrganizationNodeId")):
-            normalized["fromOrganizationNodeId"] = _clean_text(policy.get("fromOrganizationNodeId"))
-        if _clean_text(policy.get("toOrganizationNodeId")):
-            normalized["toOrganizationNodeId"] = _clean_text(policy.get("toOrganizationNodeId"))
         if _clean_text(policy.get("productId")):
             normalized["productId"] = _clean_text(policy.get("productId"))
         for field in ("name", "direction", "triggerMode", "criticalInventory", "transferCycleHours", "capacity", "priority", "transportMode", "transportTimeHours"):
@@ -3359,30 +3605,40 @@ def _normalize_top_level_transport_policies(project: dict[str, Any], name_by_ref
     project["transportPolicies"] = normalized_policies
 
 
-def _normalize_support_node_refs_in_project(project: dict[str, Any], name_by_ref: dict[str, str]) -> None:
+def _normalize_support_node_refs_in_project(
+    project: dict[str, Any],
+    name_by_ref: dict[str, str],
+    organization_id_by_ref: dict[str, str],
+) -> None:
     airports = project.get("airports")
     if isinstance(airports, list):
         for airport in airports:
             if isinstance(airport, dict) and "supportNodeId" in airport:
                 airport["supportNodeId"] = _support_node_name_for_ref(airport.get("supportNodeId"), name_by_ref)
     for activity in project.get("supportActivities", []) if isinstance(project.get("supportActivities"), list) else []:
-        _normalize_support_activity_refs(activity, name_by_ref)
+        _normalize_support_activity_refs(activity, name_by_ref, organization_id_by_ref)
 
 
-def _normalize_support_activity_refs(value: Any, name_by_ref: dict[str, str]) -> None:
+def _normalize_support_activity_refs(
+    value: Any,
+    name_by_ref: dict[str, str],
+    organization_id_by_ref: dict[str, str],
+) -> None:
     if isinstance(value, list):
         for item in value:
-            _normalize_support_activity_refs(item, name_by_ref)
+            _normalize_support_activity_refs(item, name_by_ref, organization_id_by_ref)
         return
     if not isinstance(value, dict):
         return
-    for field in ("supportNodeId", "resourceId"):
-        if field in value:
-            value[field] = _support_node_name_for_ref(value.get(field), name_by_ref)
+    if "supportNodeId" in value:
+        value["supportNodeId"] = _support_node_name_for_ref(value.get("supportNodeId"), name_by_ref)
+    if "resourceId" in value:
+        ref = _clean_text(value.get("resourceId"))
+        value["resourceId"] = organization_id_by_ref.get(ref) or _support_node_name_for_ref(ref, name_by_ref)
     if isinstance(value.get("lateralSupportNodes"), list):
         value["lateralSupportNodes"] = [_support_node_name_for_ref(ref, name_by_ref) for ref in value["lateralSupportNodes"]]
     for child in value.values():
-        _normalize_support_activity_refs(child, name_by_ref)
+        _normalize_support_activity_refs(child, name_by_ref, organization_id_by_ref)
 
 
 def _support_node_name_for_ref(value: Any, name_by_ref: dict[str, str]) -> str:
@@ -3421,7 +3677,6 @@ def _strip_legacy_support_node_resource_fields(project: dict[str, Any]) -> None:
         "policy",
         "supportLevel",
         "transportPolicies",
-        "organizationNodeId",
         "importedResourceType",
         "personnelModel",
         "personnelType",

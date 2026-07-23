@@ -114,9 +114,8 @@
   ],
   "supportNodes": [
     {
-      "id": "support-node-1",
-      "name": "node A",
-      "organizationNodeId": "node-a"
+      "id": "node-a",
+      "name": "node A"
     }
   ],
   "supportOrganization": {

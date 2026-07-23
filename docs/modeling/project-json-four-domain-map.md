@@ -55,10 +55,11 @@ Sources:
 
 Interpretation:
 
-- Support nodes are resource scopes where work is performed.
+- Support nodes are resource scopes where work is performed. `supportOrganization.tree[].id` is also the corresponding `supportNodes[].id`; canonical Project JSON has no second runtime-node ID and does not retain `supportNodes[].organizationNodeId`.
 - Support resources add personnel, equipment, and spares to nodes; spare rows reference catalog entries with `productId`.
 - `supportOrganization.tree` is one canonical root. Parent edges derive from `children[]`; `relations[]` contains only lateral DAG edges. Each node has a complete `serviceScope`, where an empty dimension means unrestricted.
-- Support nodes and all resources declare `organizationNodeId`; top-level transport policies use organization-node endpoints. An optional `productId` limits a policy to one product; omission means the policy can carry any product.
+- Support resources declare `organizationNodeId`; support activities use the same ID in `resourceId`; top-level transport policies use organization-node endpoints. Names are display-only. An optional `productId` limits a policy to one product; omission means the policy can carry any product.
+- Legacy runtime IDs and names migrate only when they resolve uniquely to a tree ID. Duplicate runtime rows for one organization, missing rows for operational references, ambiguous names, unknown references, and conflicting legacy/canonical mappings fail closed with field paths.
 - Organization fields form a validated allocation graph. `supportOrganization.runtimeMode` persists as `legacy`, `vertical`, or `vertical_lateral` and compiles to `organization_graph.runtime_mode`. Vertical mode uses local then parent-chain candidates; vertical-lateral inserts enabled direct incoming sibling edges ordered by relation priority, ID, and source before the parent chain. Each direct lateral or vertical hop requires a matching product-specific or wildcard transport policy; capacity is the per-batch bound and times accumulate only along the selected path. Personnel/equipment requests reserve atomically and may split into batches; a task's complete multi-product spare plan commits atomically, and arrivals remain job/task/product-specific until start. Node-scoped policies and name aliases are migration-only.
 
 ## 保障活动

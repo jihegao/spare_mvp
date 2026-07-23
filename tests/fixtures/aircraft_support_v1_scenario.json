@@ -28,7 +28,7 @@
         "supportResources[].productId",
         "supportResources[].supportNodeName",
         "supportResources[].organizationNodeId",
-        "supportNodes[].organizationNodeId",
+        "supportNodes[].id",
         "supportOrganization.tree[].id",
         "supportOrganization.tree[].serviceScope",
         "supportOrganization.runtimeMode",
@@ -65,7 +65,7 @@
         "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities=[1]",
         "ExperimentPlan.config.seed=0",
         "ExperimentPlan.config.stopPolicy=duration",
-        "supportActivities[0].resourceId=node A (unique organization root mapping)",
+        "supportActivities[0].resourceId=node-a (unique organization root mapping)",
         "combatUnit.members[0].preLifeCalendarDays=historicalDefault:0",
         "combatUnit.members[0].preLifeFlightHours=historicalDefault:0",
         "combatUnit.members[0].preLifeTakeoffLandingCount=historicalDefault:0",
@@ -307,7 +307,7 @@
           "replacement_ratio": 0.0,
           "required_devices": 1,
           "required_personnel": 1,
-          "resource_id": "node A",
+          "resource_id": "node-a",
           "runHourInterval": null,
           "spare_quantity": 0,
           "takeoffLandingInterval": null
@@ -320,7 +320,7 @@
           "airport": "",
           "airport_id": "",
           "equipment_capacity": 1,
-          "id": "node A",
+          "id": "node-a",
           "inventory": {
             "product-whole-aircraft": 2
           },

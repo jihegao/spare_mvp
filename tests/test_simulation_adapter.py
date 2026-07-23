@@ -905,8 +905,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIsNone(result["scenario"])
         self.assertEqual(result["provenance"]["model_family"], "aircraft_support_v1")
         issue_codes = {issue["code"] for issue in result["issues"]}
-        self.assertIn("missing_support_resource_reference", issue_codes)
-        self.assertIn("missing_support_activity_predecessor", issue_codes)
+        self.assertEqual(issue_codes, {"unknown_support_activity_organization"})
 
     def test_aircraft_support_v1_compile_gate_resolves_support_activity_job_table(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
@@ -1566,13 +1565,14 @@ class SimulationAdapterTest(unittest.TestCase):
             for component in scenario["simulation_inputs"]["equipment_tree"]["components"]
             if component["id"] == "j15-avionics"
         )
-        self.assertEqual(nodes["基地"]["personnel_capacity"], 5)
-        self.assertEqual(nodes["基地"]["equipment_capacity"], 3)
-        self.assertEqual(nodes["基地"]["inventory"][avionics_product_id], 6)
-        self.assertEqual(nodes["基层"]["inventory"][avionics_product_id], 9)
-        self.assertEqual(nodes["基地"]["transport_policies"][0]["from"], "基层")
-        self.assertEqual(nodes["基地"]["transport_policies"][0]["to"], "基地")
-        self.assertEqual(nodes["基地"]["transport_policies"][0]["product_id"], avionics_product_id)
+        self.assertEqual(nodes["support-node-1"]["name"], "基地")
+        self.assertEqual(nodes["support-node-1"]["personnel_capacity"], 5)
+        self.assertEqual(nodes["support-node-1"]["equipment_capacity"], 3)
+        self.assertEqual(nodes["support-node-1"]["inventory"][avionics_product_id], 6)
+        self.assertEqual(nodes["support-node-2"]["inventory"][avionics_product_id], 9)
+        self.assertEqual(nodes["support-node-1"]["transport_policies"][0]["from"], "support-node-2")
+        self.assertEqual(nodes["support-node-1"]["transport_policies"][0]["to"], "support-node-1")
+        self.assertEqual(nodes["support-node-1"]["transport_policies"][0]["product_id"], avionics_product_id)
 
     def test_aircraft_support_v1_compiles_vertical_organization_runtime_and_defers_only_lateral_edges(self) -> None:
         project = self._load_fixture("aircraft_support_v1_project.json")
@@ -1610,10 +1610,10 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(result["status"], "compiled")
         self.assertEqual(
             result["scenario"]["simulation_inputs"]["support_activities"]["activities"][0]["resource_id"],
-            "node A",
+            "node-a",
         )
         self.assertIn(
-            "supportActivities[0].resourceId=node A (unique organization root mapping)",
+            "supportActivities[0].resourceId=node-a (unique organization root mapping)",
             result["provenance"]["defaults_applied"],
         )
 
@@ -1646,7 +1646,6 @@ class SimulationAdapterTest(unittest.TestCase):
 
         legacy = copy.deepcopy(canonical)
         legacy["supportOrganization"] = {}
-        legacy["supportNodes"][0].pop("organizationNodeId")
         legacy_scenario = self.adapter.compile_scenario(
             legacy,
             model_family="aircraft_support_v1",

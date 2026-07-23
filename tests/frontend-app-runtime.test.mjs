@@ -6078,7 +6078,8 @@ test("logistics transport endpoints render and survive organization renames by s
     assert.equal("fromSupportNodeName" in saved.transportPolicies[0], false);
     assert.equal("toSupportNodeName" in saved.transportPolicies[0], false);
     assert.equal(saved.supportActivities.find((activity) => activity.id === "activity-line")?.resourceId, "org-line");
-    assert.equal(saved.supportNodes.find((node) => node.organizationNodeId === "org-line")?.name, "前沿基层点");
+    assert.equal(saved.supportNodes.find((node) => node.id === "org-line")?.name, "前沿基层点");
+    assert.ok(saved.supportNodes.every((node) => !("organizationNodeId" in node)));
   } finally {
     runtime.restore();
   }

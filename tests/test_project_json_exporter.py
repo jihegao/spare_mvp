@@ -112,10 +112,9 @@ class ProjectJsonExporterTest(unittest.TestCase):
         exported = ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
         self.assertEqual(exported["supportNodes"], [{
-            "id": "support-node-1",
+            "id": "org-line",
             "name": "基层",
             "airport": "Airport A",
-            "organizationNodeId": "org-line",
         }])
 
     def _polluted_project(self) -> dict:
@@ -575,6 +574,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "name": "legacy stock",
             "quantity": 4,
         }]
+        project["supportNodes"] = [{"id": "relay", "name": "中继"}]
 
         with self.assertRaisesRegex(ValueError, "cannot be distributed across multiple leaf organizations"):
             ProjectJsonExporter(target="aircraft_support_v1").export(project)

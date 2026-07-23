@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
-from src.spare_mvp_backend.project_payload import ProjectJsonExporter
+from src.spare_mvp_backend.project_payload import OrganizationContractError, ProjectJsonExporter
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -247,6 +247,52 @@ class SupportOrganizationContractTest(unittest.TestCase):
             ],
         )
 
+    def test_legacy_runtime_ids_export_to_one_canonical_namespace(self) -> None:
+        project = self._project()
+
+        saved = ProjectJsonExporter(repo_root=REPO_ROOT).export(project)
+        scenario = self.adapter.compile_scenario(saved)
+
+        self.assertEqual(
+            {node["id"]: node["name"] for node in saved["supportNodes"]},
+            {"org-a": "甲保障站", "org-b": "乙保障站"},
+        )
+        self.assertTrue(all("organizationNodeId" not in node for node in saved["supportNodes"]))
+        self.assertTrue(all(activity["resourceId"] == "org-a" for activity in saved["supportActivities"]))
+        self.assertEqual(
+            {resource["organizationNodeId"] for resource in saved["supportResources"]},
+            {"org-a", "org-b"},
+        )
+        self.assertEqual(
+            {
+                saved["transportPolicies"][0]["fromOrganizationNodeId"],
+                saved["transportPolicies"][0]["toOrganizationNodeId"],
+            },
+            {"org-a", "org-b"},
+        )
+        runtime_nodes = scenario["simulation_inputs"]["support_network"]["nodes"]
+        self.assertEqual({node["id"] for node in runtime_nodes}, {"org-a", "org-b"})
+        self.assertTrue(all(node["id"] == node["organization_node_id"] for node in runtime_nodes))
+
+    def test_support_node_id_and_owner_conflict_fails_at_id(self) -> None:
+        project = self._project()
+        project["supportNodes"][0]["id"] = "org-b"
+
+        self._assert_blocked_at(project, "supportNodes[0].id")
+
+    def test_operational_organization_reference_requires_runtime_row(self) -> None:
+        project = self._project()
+        project["supportOrganization"]["runtimeMode"] = "vertical"
+        project["supportNodes"] = [
+            node for node in project["supportNodes"]
+            if node["organizationNodeId"] != "org-b"
+        ]
+
+        self._assert_blocked_at(project, "supportResources[1].organizationNodeId")
+        with self.assertRaises(OrganizationContractError) as raised:
+            ProjectJsonExporter(repo_root=REPO_ROOT).export(project)
+        self.assertEqual(raised.exception.path, "supportResources[1].organizationNodeId")
+
     def test_vertical_lateral_mode_consumes_enabled_edges_and_removes_runtime_deferment(self) -> None:
         # Arrange.
         project = self._project()
@@ -287,11 +333,15 @@ class SupportOrganizationContractTest(unittest.TestCase):
                 self.assertEqual(result["status"], "blocked")
                 self.assertEqual(
                     result["issues"][0]["code"],
-                    "unreachable_lateral_relation_endpoint",
+                    "unreachable_lateral_relation_endpoint"
+                    if mapping_count == 0
+                    else "duplicate_support_node_organization",
                 )
                 self.assertEqual(
                     result["issues"][0]["field_path"],
-                    "supportOrganization.relations[0].toOrganizationNodeId",
+                    "supportOrganization.relations[0].toOrganizationNodeId"
+                    if mapping_count == 0
+                    else "supportNodes[2].id",
                 )
 
     def test_missing_lateral_enabled_defaults_true_but_invalid_value_blocks(self) -> None:
