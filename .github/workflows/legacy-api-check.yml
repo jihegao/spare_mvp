@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  legacy-api-check:
+  frontend-contract-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -22,6 +22,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install backend dependencies
         run: python3 -m pip install .
@@ -29,17 +31,73 @@ jobs:
       - name: Run frontend contract tests
         run: npm test
 
+  legacy-api-source-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Run explicit legacy API source guard
         run: npm run test:legacy-api-check
 
-      - name: Run backend HTTP API contract tests
-        run: python3 -m unittest tests.test_backend_http_api -v
+  backend-contract-tests:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Backend HTTP API contract tests
+            test-modules: tests.test_backend_http_api
+          - name: Backend Project contract and fixture drift tests
+            test-modules: >-
+              tests.test_backend_api_contract
+              tests.test_project_json_exporter
+              tests.test_importable_project_json_templates
+              tests.test_clean_project_golden_fixtures
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - name: Run backend Project contract and fixture drift tests
-        run: >-
-          python3 -m unittest
-          tests.test_backend_api_contract
-          tests.test_project_json_exporter
-          tests.test_importable_project_json_templates
-          tests.test_clean_project_golden_fixtures
-          -v
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install backend dependencies
+        run: python3 -m pip install .
+
+      - name: Run ${{ matrix.name }}
+        run: python3 -m unittest ${{ matrix.test-modules }} -v
+
+  legacy-api-check:
+    name: legacy-api-check
+    if: ${{ always() }}
+    needs:
+      - frontend-contract-tests
+      - legacy-api-source-guard
+      - backend-contract-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify parallel checks succeeded
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend-contract-tests.result }}
+          SOURCE_GUARD_RESULT: ${{ needs.legacy-api-source-guard.result }}
+          BACKEND_RESULT: ${{ needs.backend-contract-tests.result }}
+        run: |
+          for result in \
+            "$FRONTEND_RESULT" \
+            "$SOURCE_GUARD_RESULT" \
+            "$BACKEND_RESULT"
+          do
+            if [ "$result" != "success" ]; then
+              exit 1
+            fi
+          done
