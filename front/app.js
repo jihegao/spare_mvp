@@ -198,7 +198,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     subtitle: "按产品独立变化的最小携行清单搜索",
     settingSubject: "产品独立变化",
     settingMethod: "最小携行清单搜索",
-    metricLabels: ["建议携行总数", "高优先级备件", "总体备件利用率"]
+    metricLabels: ["建议携行总数", "高优先级备件", "满足下限备件", "总体备件利用率"]
   },
   mission_reliability: {
     experimentId: "project_baseline_at_current_granularity",
@@ -19599,7 +19599,7 @@ function analysisXlsxPayloadForPage(page, result) {
       summary: liteMesaAnalysisVisibleMetrics(definition, result.metrics || []).map(([label, value]) => [label, value, ""]),
       detail_sections: [{
         title: "携行清单明细",
-        columns: ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "需求次数", "短缺次数", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
+        columns: ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "需求次数", "短缺次数", "备件满足率", "满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
         rows: rows.map((row) => [
           row.aircraftModel || "未指定机型",
           carryListProductDisplayName(row, productsById),
@@ -19608,6 +19608,10 @@ function analysisXlsxPayloadForPage(page, result) {
           row.carriedQuantity,
           row.demand,
           row.shortage,
+          pct(row.satisfactionRate),
+          pct(row.minimumSatisfactionRate),
+          row.satisfactionConstraintMet ? "满足" : "未满足",
+          carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin),
           carryUtilizationDisplay(row.utilization),
           row.lifeLimited ? "是" : "否",
           row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-",
@@ -20203,10 +20207,36 @@ function normalizeCarryListAnalysisRows(rows) {
     const usedQuantity = nonnegativeFiniteAnalysisNumber(row.usedQuantity ?? row.used_quantity);
     const legacyUtilization = nonnegativeFiniteAnalysisNumber(row.utilization);
     const hasRawQuantities = usedQuantity !== null && carriedQuantity !== null;
+    const demand = nonnegativeFiniteAnalysisNumber(row.demand) ?? 0;
+    const shortage = nonnegativeFiniteAnalysisNumber(row.shortage) ?? 0;
+    const minimumSatisfactionRate = Math.max(
+      0,
+      Math.min(1, Number(row.minimumSatisfactionRate ?? row.minimum_satisfaction_rate ?? 0.9) || 0)
+    );
+    const satisfactionRate = Math.max(
+      0,
+      Math.min(
+        1,
+        Number(row.satisfactionRate ?? row.satisfaction_rate ?? (
+          demand > 0 ? Math.max(0, demand - shortage) / demand : 1
+        )) || 0
+      )
+    );
     return {
       ...row,
+      demand,
+      shortage,
       usedQuantity,
       carriedQuantity,
+      minimumSatisfactionRate,
+      satisfactionRate,
+      satisfactionConstraintMet: row.satisfactionConstraintMet ?? row.satisfaction_constraint_met
+        ?? satisfactionRate + Number.EPSILON >= minimumSatisfactionRate,
+      satisfactionConstraintMargin: Number(
+        row.satisfactionConstraintMargin
+        ?? row.satisfaction_constraint_margin
+        ?? satisfactionRate - minimumSatisfactionRate
+      ),
       utilization: hasRawQuantities
         ? (carriedQuantity > 0 ? usedQuantity / carriedQuantity : null)
         : legacyUtilization
@@ -20390,6 +20420,13 @@ function carryUtilizationDisplay(value) {
   return Number.isFinite(utilization) ? `${(utilization * 100).toFixed(2)}%` : "不可计算";
 }
 
+function carrySatisfactionConstraintMarginDisplay(value) {
+  const margin = Number(value);
+  if (!Number.isFinite(margin)) return "不可用";
+  const prefix = margin > 0 ? "+" : "";
+  return `${prefix}${(margin * 100).toFixed(2)}%`;
+}
+
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
     return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存运行中生成分析摘要。</p></div>`;
@@ -20424,8 +20461,8 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
         <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
       </div>
       <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
-        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="10">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th>备件满足率</th><th>约束状态</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
+        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="12">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
     `;
   }

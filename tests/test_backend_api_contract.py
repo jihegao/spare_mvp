@@ -3453,7 +3453,7 @@ class BackendApiContractTest(unittest.TestCase):
         carry = self.api.run_lite_mesa_analysis(
             project,
             analysis_type="carry_list",
-            settings={"samples": 1, "seed": 20260705},
+            settings={"samples": 1, "seed": 20260705, "missionConfidenceTarget": 0.73},
         )
 
         expected_types = ["发动机备件", "液压备件", "航电模块"]
@@ -3462,7 +3462,9 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(all(row["productId"] for row in shortfall["rows"] + carry["rows"]))
         self.assertTrue(all("aircraftModel" in row for row in carry["rows"]))
         self.assertTrue(all("lifeLimited" in row and "lifeLandings" in row and "lifeHours" in row for row in carry["rows"]))
-        self.assertIn(["备件满足率下限", "0.90"], carry["metrics"])
+        self.assertIn(["备件满足率下限", "0.73"], carry["metrics"])
+        self.assertTrue(all(row["minimumSatisfactionRate"] == 0.73 for row in carry["rows"]))
+        self.assertTrue(all(row["satisfactionConstraintMet"] for row in carry["rows"]))
         self.assertNotIn("aircraft_support_v1_spares", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
         self.assertNotIn("前出备件", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
         self.assertNotIn("仓库备件", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
@@ -3472,8 +3474,28 @@ class BackendApiContractTest(unittest.TestCase):
         result = _lite_mesa_carry_list_result(
             {
                 "data": [
-                    {"product_id": "spare-a", "recommended_quantity": 1, "used_quantity": 1, "carried_quantity": 1},
-                    {"product_id": "spare-b", "recommended_quantity": 9, "used_quantity": 1, "carried_quantity": 9},
+                    {
+                        "product_id": "spare-a",
+                        "recommended_quantity": 1,
+                        "used_quantity": 1,
+                        "carried_quantity": 1,
+                        "demand_count": 10,
+                        "shortage_count": 1,
+                        "satisfaction_rate": 0.9,
+                        "satisfaction_constraint_met": True,
+                        "satisfaction_constraint_margin": 0,
+                    },
+                    {
+                        "product_id": "spare-b",
+                        "recommended_quantity": 9,
+                        "used_quantity": 1,
+                        "carried_quantity": 9,
+                        "demand_count": 10,
+                        "shortage_count": 0,
+                        "satisfaction_rate": 1,
+                        "satisfaction_constraint_met": True,
+                        "satisfaction_constraint_margin": 0.1,
+                    },
                 ]
             },
             {"shortage_events": 0},
@@ -3485,7 +3507,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(result["spare_carried_total"], 10)
         self.assertAlmostEqual(result["overall_spare_utilization"], 0.2)
         self.assertIn(["总体备件利用率", "20.00%"], result["metrics"])
+        self.assertIn(["满足下限备件", "2/2"], result["metrics"])
         self.assertAlmostEqual(result["rows"][1]["utilization"], 1 / 9)
+        self.assertEqual(result["rows"][0]["satisfactionRate"], 0.9)
+        self.assertTrue(result["rows"][0]["satisfactionConstraintMet"])
+        self.assertEqual(result["rows"][0]["satisfactionConstraintMargin"], 0)
 
         zero_total = _lite_mesa_carry_list_result(
             {"data": [{"product_id": "spare-zero", "recommended_quantity": 0, "used_quantity": 0, "carried_quantity": 0}]},
@@ -3599,10 +3625,15 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(shortfall_row["demand_count"], 1)
         self.assertEqual(shortfall_row["filled_count"], 1)
         self.assertEqual(shortfall_row["shortage_count"], 1)
-        self.assertEqual(carry_row["shortage_count"], 1)
+        self.assertEqual(carry_row["shortage_count"], 0)
+        self.assertEqual(carry_row["observed_shortage_count"], 1)
+        self.assertEqual(carry_row["recommended_quantity"], 1)
         self.assertEqual(carry_row["used_quantity"], 1)
-        self.assertEqual(carry_row["carried_quantity"], 7)
-        self.assertAlmostEqual(carry_row["utilization"], 1 / 7)
+        self.assertEqual(carry_row["carried_quantity"], 1)
+        self.assertEqual(carry_row["satisfaction_rate"], 1)
+        self.assertTrue(carry_row["satisfaction_constraint_met"])
+        self.assertAlmostEqual(carry_row["satisfaction_constraint_margin"], 0.1)
+        self.assertEqual(carry_row["utilization"], 1)
 
     def test_aircraft_support_carry_capacity_uses_only_successful_samples_after_partial_failure(self) -> None:
         projections = self.adapter._aircraft_support_v1_analysis_projections(
@@ -3622,9 +3653,77 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
         carry_row = projections["carry_list"]["data"][0]
-        self.assertEqual(carry_row["recommended_quantity"], 4)
-        self.assertEqual(carry_row["carried_quantity"], 8)
-        self.assertNotEqual(carry_row["carried_quantity"], 12)
+        self.assertEqual(carry_row["recommended_quantity"], 0)
+        self.assertEqual(carry_row["carried_quantity"], 0)
+        self.assertEqual(carry_row["satisfaction_rate"], 1)
+        self.assertTrue(carry_row["satisfaction_constraint_met"])
+
+    def test_aircraft_support_carry_quantity_uses_requested_satisfaction_constraint(self) -> None:
+        sample_demands = (2, 18)
+        samples = [
+            {
+                "sample_index": sample_index,
+                "events": [
+                    {
+                        "event": "spare_shortage",
+                        "details": {
+                            "job_id": f"job-{sample_index}",
+                            "aircraft_model": "J-15",
+                            "resource_id": "carrier-deck",
+                            "spare_type": "航电模块",
+                            "required_quantity": sample_demand,
+                        },
+                    }
+                ],
+            }
+            for sample_index, sample_demand in enumerate(sample_demands)
+        ]
+        simulation_inputs = {
+            "mission_profile": {
+                "airports": [{"id": "carrier-deck", "supportNodeId": "carrier-deck"}],
+            },
+            "aircraft": {"assets": [{"tail_number": "J15-001", "model": "J-15", "airport": "carrier-deck"}]},
+            "support_network": {
+                "nodes": [{"id": "carrier-deck", "inventory": {"航电模块": 20}}],
+            },
+        }
+
+        low_target = self.adapter._aircraft_support_v1_analysis_projections(
+            {"planned_sorties": 2},
+            "base-artifact",
+            samples=samples,
+            simulation_inputs=simulation_inputs,
+            carry_minimum_satisfaction_rate=0.5,
+        )["carry_list"]["data"][0]
+        high_target = self.adapter._aircraft_support_v1_analysis_projections(
+            {"planned_sorties": 2},
+            "base-artifact",
+            samples=samples,
+            simulation_inputs=simulation_inputs,
+            carry_minimum_satisfaction_rate=0.9,
+        )["carry_list"]["data"][0]
+
+        self.assertEqual(low_target["demand_count"], 20)
+        self.assertEqual(low_target["recommended_quantity"], 8)
+        self.assertEqual(low_target["carried_quantity"], 16)
+        self.assertEqual(low_target["used_quantity"], 10)
+        self.assertEqual(low_target["utilization"], 0.625)
+        self.assertEqual(low_target["satisfaction_rate"], 0.5)
+        self.assertEqual(low_target["observed_filled_count"], 0)
+        self.assertEqual(low_target["observed_shortage_count"], 2)
+        self.assertEqual(low_target["observed_fill_rate"], 0.0)
+        self.assertTrue(low_target["satisfaction_constraint_met"])
+        self.assertEqual(low_target["minimum_satisfaction_rate"], 0.5)
+        self.assertEqual(high_target["recommended_quantity"], 16)
+        self.assertEqual(high_target["carried_quantity"], 32)
+        self.assertEqual(high_target["used_quantity"], 18)
+        self.assertEqual(high_target["utilization"], 0.5625)
+        self.assertEqual(high_target["satisfaction_rate"], 0.9)
+        self.assertEqual(high_target["observed_filled_count"], 0)
+        self.assertEqual(high_target["observed_shortage_count"], 2)
+        self.assertEqual(high_target["observed_fill_rate"], 0.0)
+        self.assertTrue(high_target["satisfaction_constraint_met"])
+        self.assertEqual(high_target["minimum_satisfaction_rate"], 0.9)
 
     def test_aircraft_support_spare_projection_keeps_the_aircraft_model_for_each_spare(self) -> None:
         projections = self.adapter._aircraft_support_v1_analysis_projections(
@@ -3724,9 +3823,10 @@ class BackendApiContractTest(unittest.TestCase):
         )
         self.assertNotIn("全部机型", {row["aircraft_model"] for row in rows})
         carry_by_product = {row["product_id"]: row for row in projections["carry_list"]["data"]}
-        self.assertEqual(carry_by_product["product-j15-engine"]["utilization"], 0.0)
-        self.assertEqual(carry_by_product["product-j35-radar"]["utilization"], 0.0)
-        self.assertIsNone(carry_by_product["product-j15-zero"]["utilization"])
+        self.assertTrue(all(row["recommended_quantity"] == 0 for row in carry_by_product.values()))
+        self.assertTrue(all(row["satisfaction_rate"] == 1.0 for row in carry_by_product.values()))
+        self.assertTrue(all(row["satisfaction_constraint_met"] for row in carry_by_product.values()))
+        self.assertTrue(all(row["utilization"] is None for row in carry_by_product.values()))
 
     def test_run_service_submits_aircraft_support_v1_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()

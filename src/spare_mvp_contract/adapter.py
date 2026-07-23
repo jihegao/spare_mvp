@@ -3275,7 +3275,10 @@ class SimulationAdapter:
         metrics: dict[str, Any],
         samples: list[dict[str, Any]],
         simulation_inputs: dict[str, Any],
+        *,
+        minimum_satisfaction_rate: float = 0.9,
     ) -> list[dict[str, Any]]:
+        satisfaction_target = min(1.0, max(0.0, float(minimum_satisfaction_rate)))
         scoped_nodes = self._aircraft_support_v1_scoped_support_nodes(simulation_inputs)
         scoped_node_ids = {str(node.get("id") or "") for node in scoped_nodes if str(node.get("id") or "")}
         modeled_aircraft_models = self._aircraft_support_v1_modeled_aircraft_models(simulation_inputs)
@@ -3325,11 +3328,45 @@ class SimulationAdapter:
             filled_count = consumed_quantity
             fill_rate = filled_count / demand_count if demand_count > 0 else 1.0
             type_shortage_probability = min(1.0, shortage_count / planned_sorties)
-            risk_level = self._aircraft_support_v1_spare_risk_level(fill_rate, type_shortage_probability)
-            replenish_quantity = int(math.ceil(shortage_quantity / sample_count)) if shortage_quantity > 0 else 0
-            recommended_quantity = max(0, baseline_quantity + replenish_quantity)
+            sample_demand_quantities = [
+                max(0.0, float(quantity or 0))
+                for quantity in (row_stats.get("sample_demand_quantities") or {}).values()
+            ]
+            required_filled_quantity = demand_count * satisfaction_target
+            minimum_quantity = 0
+            maximum_quantity = int(math.ceil(max(sample_demand_quantities, default=0.0)))
+            while minimum_quantity < maximum_quantity:
+                candidate_quantity = (minimum_quantity + maximum_quantity) // 2
+                candidate_filled_quantity = sum(
+                    min(quantity, float(candidate_quantity))
+                    for quantity in sample_demand_quantities
+                )
+                if candidate_filled_quantity + 1e-12 >= required_filled_quantity:
+                    maximum_quantity = candidate_quantity
+                else:
+                    minimum_quantity = candidate_quantity + 1
+            recommended_quantity = minimum_quantity
             carry_capacity = recommended_quantity * sample_count
-            carry_utilization = max(0.0, consumed_quantity / carry_capacity) if carry_capacity > 0 else None
+            projected_filled_quantity = sum(
+                min(quantity, float(recommended_quantity))
+                for quantity in sample_demand_quantities
+            )
+            projected_satisfaction_rate = (
+                projected_filled_quantity / demand_count
+                if demand_count > 0
+                else 1.0
+            )
+            projected_shortage_quantity = max(0.0, demand_count - projected_filled_quantity)
+            projected_shortage_probability = min(1.0, projected_shortage_quantity / planned_sorties)
+            risk_level = self._aircraft_support_v1_spare_risk_level(
+                projected_satisfaction_rate,
+                projected_shortage_probability,
+            )
+            carry_utilization = (
+                projected_filled_quantity / carry_capacity
+                if carry_capacity > 0
+                else None
+            )
             rows.append(
                 {
                     "aircraft_model": aircraft_model,
@@ -3343,9 +3380,16 @@ class SimulationAdapter:
                     "filled_count": filled_count,
                     "shortage_count": shortage_count,
                     "fill_rate": min(1.0, max(0.0, fill_rate)),
+                    "projected_filled_count": projected_filled_quantity,
+                    "projected_shortage_count": projected_shortage_quantity,
+                    "projected_satisfaction_rate": projected_satisfaction_rate,
+                    "minimum_satisfaction_rate": satisfaction_target,
+                    "satisfaction_constraint_met": projected_satisfaction_rate + 1e-12 >= satisfaction_target,
+                    "satisfaction_constraint_margin": projected_satisfaction_rate - satisfaction_target,
                     "utilization": min(1.0, consumed_quantity / max(1.0, float(baseline_quantity))),
                     "carry_utilization": carry_utilization,
-                    "shortage_probability": type_shortage_probability,
+                    "shortage_probability": projected_shortage_probability,
+                    "observed_shortage_probability": type_shortage_probability,
                     "mean_transport_delay": mean_transport_delay if shortage_count > 0 else 0.0,
                     "in_transit_count": 0,
                     "risk_level": risk_level,
@@ -3489,12 +3533,12 @@ class SimulationAdapter:
         self,
         samples: list[dict[str, Any]],
         scoped_node_ids: set[str],
-    ) -> dict[tuple[str, str], dict[str, float]]:
+    ) -> dict[tuple[str, str], dict[str, Any]]:
         demand_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
         filled_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
         shortage_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
-        for sample in samples:
-            sample_key = str(sample.get("sample_index", sample.get("seed", "")))
+        for sample_position, sample in enumerate(samples):
+            sample_key = str(sample.get("sample_index", sample.get("seed", sample_position)))
             for event_index, event in enumerate(sample.get("events") or []):
                 if not isinstance(event, dict):
                     continue
@@ -3548,13 +3592,18 @@ class SimulationAdapter:
                         demand_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
                         required,
                     )
-        stats: dict[tuple[str, str], dict[str, float]] = {}
+        stats: dict[tuple[str, str], dict[str, Any]] = {}
         for spare_key in sorted(set(demand_quantities) | set(filled_quantities) | set(shortage_quantities)):
+            sample_demands: dict[str, float] = {}
+            for demand_key, quantity in demand_quantities.get(spare_key, {}).items():
+                sample_key = demand_key[0]
+                sample_demands[sample_key] = sample_demands.get(sample_key, 0.0) + quantity
             stats[spare_key] = {
                 "consumed_quantity": sum(filled_quantities.get(spare_key, {}).values()),
                 "shortage_count": float(len(shortage_quantities.get(spare_key, {}))),
                 "shortage_quantity": sum(shortage_quantities.get(spare_key, {}).values()),
                 "demand_quantity": sum(demand_quantities.get(spare_key, {}).values()),
+                "sample_demand_quantities": sample_demands,
             }
         return stats
 
@@ -3573,6 +3622,7 @@ class SimulationAdapter:
         run_id: str = "",
         validation_scope: dict[str, Any] | None = None,
         simulation_inputs: dict[str, Any] | None = None,
+        carry_minimum_satisfaction_rate: float = 0.9,
     ) -> dict[str, dict[str, Any]]:
         projection_applicability = {
             projection_type: self._aircraft_support_v1_projection_applicability(projection_type, validation_scope or {})
@@ -3636,6 +3686,7 @@ class SimulationAdapter:
             metrics,
             samples or [],
             simulation_inputs if isinstance(simulation_inputs, dict) else {},
+            minimum_satisfaction_rate=carry_minimum_satisfaction_rate,
         )
         mission_wave_rows = self._aircraft_support_v1_mission_reliability_series(
             metrics=metrics,
@@ -3710,18 +3761,25 @@ class SimulationAdapter:
                         "spare_type": row["spare_type"],
                         "baseline_quantity": row["baseline_quantity"],
                         "recommended_quantity": row["recommended_quantity"],
-                        "used_quantity": row["used_quantity"],
+                        "used_quantity": row["projected_filled_count"],
                         "carried_quantity": row["carried_quantity"],
                         "recommended_multiplier": (
                             row["recommended_quantity"] / row["baseline_quantity"]
                             if row["baseline_quantity"] > 0
-                            else max(1.0, 1.0 + row["shortage_probability"])
+                            else float(row["recommended_quantity"])
                         ),
                         "demand_count": row["demand_count"],
-                        "shortage_count": row["shortage_count"],
+                        "filled_count": row["projected_filled_count"],
+                        "shortage_count": row["projected_shortage_count"],
+                        "observed_filled_count": row["filled_count"],
+                        "observed_shortage_count": row["shortage_count"],
+                        "observed_fill_rate": row["fill_rate"],
+                        "satisfaction_rate": row["projected_satisfaction_rate"],
+                        "satisfaction_constraint_met": row["satisfaction_constraint_met"],
+                        "satisfaction_constraint_margin": row["satisfaction_constraint_margin"],
                         "utilization": row["carry_utilization"],
                         "risk_level": row["risk_level"],
-                        "minimum_satisfaction_rate": 0.9,
+                        "minimum_satisfaction_rate": row["minimum_satisfaction_rate"],
                         "hide_zero_demand": True,
                         "life_limited": False,
                         "life_landings": 0,
