@@ -66,6 +66,8 @@ Interpretation:
 Sources:
 
 - `supportActivities[]`
+- `supportActivities[].planType`
+- `supportActivities[].planGroupId`
 - `supportActivities[].activityCodes[]`
 - `supportActivities[].predecessors`
 - `supportActivityJobs[]`
@@ -77,6 +79,8 @@ Interpretation:
 - One use-support plan is three phase rows sharing `planGroupId`: direct preparation, relaunch preparation, and postflight inspection. Each phase owns its own `activityCodes` and `predecessors`; the referenced `supportActivityJobs[]` definitions remain reusable and may be shared across phases.
 - A legacy single `使用保障方案` row migrates deterministically to direct preparation. Missing relaunch and postflight rows are created with empty references, so migration never invents phase membership by copying the legacy list.
 - A regressed legacy three-row save with recognizable relaunch/postflight suffixes but collapsed `planType`/`planGroupId` is regrouped before ordinary migration, preventing accidental expansion into nine rows.
+- This three-phase structure is currently an authoring/persistence contract. `planGroupId` and phase-valued `planType` are not emitted into `aircraft_support_v1_input`, and this change does not add relaunch scheduling to the model. Existing runtime preflight/postflight selection remains unchanged; runtime phase semantics require a separate model-input contract.
+- Corrective/preventive `planType` values remain a maintenance-classification compatibility input in `SimulationAdapter`; that limited use must not be interpreted as consumption of the three use-support phase values.
 - Preventive activities are the only threshold source for aircraft pre-life: `calendarDayInterval`, `runHourInterval`, and `takeoffLandingInterval` map to days, flight hours, and takeoff/landing cycles. Zero/null disables that dimension; model/equipment scope must resolve exactly and conflicting applicable thresholds fail closed.
 - Top-level `supportActivityJobs[]` contains reusable work steps keyed by `activityCode`; each activity selects steps via `activityCodes`, and each structured spare requirement references `products[]` through `spare[].productId`.
 - `supportActivities[].predecessors` encodes DAG ordering and must be preserved when compiling or explaining.

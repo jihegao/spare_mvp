@@ -1592,7 +1592,6 @@ const OPERATIONS_SUPPORT_PHASE_TYPES = new Set(
 function materializeOperationsSupportActivityPhases(projectJson) {
   const activities = Array.isArray(projectJson?.supportActivities) ? projectJson.supportActivities : [];
   if (!activities.length) return;
-  inferLegacyCollapsedOperationsSupportPhases(activities);
   const usedIds = new Set(
     activities
       .map((activity) => normalizedText(activity?.id))
@@ -1603,26 +1602,25 @@ function materializeOperationsSupportActivityPhases(projectJson) {
       .map((activity) => normalizedText(activity?.activityName || activity?.name))
       .filter(Boolean)
   );
+  const knownJobCodes = knownSupportActivityJobCodes(projectJson);
+  const records = operationsSupportPhaseRecords(activities);
+  assignOperationsSupportPlanGroups(records);
   const groups = new Map();
 
-  for (const [index, activity] of activities.entries()) {
-    if (!isOperationsSupportActivityForContract(activity)) continue;
-    const rawPlanType = normalizedText(activity.planType);
-    const phaseType = OPERATIONS_SUPPORT_PHASE_TYPES.has(rawPlanType)
-      ? rawPlanType
-      : "直接准备方案";
-    const planGroupId = normalizedText(activity.planGroupId)
-      || uniqueOperationsSupportGroupId(activity, index, groups);
+  for (const record of records) {
+    const { activity, index, phaseType, planGroupId } = record;
     activity.planType = phaseType;
     activity.planGroupId = planGroupId;
     activity.activityName ||= activity.name || activity.id || `使用保障方案${index + 1}`;
-    activity.activityCodes = Array.isArray(activity.activityCodes)
-      ? activity.activityCodes.map((code) => normalizedText(code)).filter(Boolean)
-      : [];
-    activity.predecessors = normalizePhasePredecessors(activity.predecessors, activity.activityCodes);
+    normalizeOperationsPhaseReferences(activity, index, knownJobCodes);
     if (!groups.has(planGroupId)) groups.set(planGroupId, new Map());
     const phaseRows = groups.get(planGroupId);
-    if (!phaseRows.has(phaseType)) phaseRows.set(phaseType, activity);
+    if (phaseRows.has(phaseType)) {
+      throw new Error(
+        `supportActivities.${index}.planType: duplicate ${phaseType} in operations support plan group ${planGroupId}`
+      );
+    }
+    phaseRows.set(phaseType, activity);
   }
 
   for (const [planGroupId, phaseRows] of groups) {
@@ -1668,86 +1666,200 @@ function materializeOperationsSupportActivityPhases(projectJson) {
   }
 }
 
-function inferLegacyCollapsedOperationsSupportPhases(activities) {
-  const legacyRows = activities.filter((activity) => (
-    isOperationsSupportActivityForContract(activity)
-    && normalizedText(activity.planType) === "使用保障方案"
-    && !normalizedText(activity.planGroupId)
-  ));
-  const rowsById = new Map();
-  const rowsByName = new Map();
-  for (const row of legacyRows) {
-    const id = normalizedText(row.id);
-    const name = normalizedText(row.activityName || row.name);
-    if (id) {
-      if (!rowsById.has(id)) rowsById.set(id, []);
-      rowsById.get(id).push(row);
+function operationsSupportPhaseRecords(activities) {
+  const records = [];
+  for (const [index, activity] of activities.entries()) {
+    if (!isOperationsSupportActivityForContract(activity)) continue;
+    const evidence = legacyOperationsPhaseEvidence(activity, index);
+    const rawPlanType = normalizedText(activity.planType);
+    const explicitPhaseType = OPERATIONS_SUPPORT_PHASE_TYPES.has(rawPlanType)
+      ? rawPlanType
+      : "";
+    if (explicitPhaseType && evidence.phaseTypes.size > 0 && !evidence.phaseTypes.has(explicitPhaseType)) {
+      throw new Error(
+        `supportActivities.${index}: planType ${explicitPhaseType} conflicts with legacy phase identity`
+      );
     }
-    if (name) {
-      if (!rowsByName.has(name)) rowsByName.set(name, []);
-      rowsByName.get(name).push(row);
+    if (evidence.phaseTypes.size > 1) {
+      throw new Error(`supportActivities.${index}: ambiguous legacy operations support phase identity`);
     }
+    const inferredPhaseType = evidence.phaseTypes.values().next().value || "";
+    records.push({
+      activity,
+      index,
+      phaseType: explicitPhaseType || inferredPhaseType || "直接准备方案",
+      explicitGroupId: normalizedText(activity.planGroupId),
+      evidenceKeys: evidence.keys,
+      groupIdCandidates: evidence.groupIdCandidates,
+      hasPhaseEvidence: Boolean(inferredPhaseType)
+    });
   }
-  for (const row of legacyRows) {
-    const phase = inferredLegacyOperationsPhase(row);
-    if (!phase || phase.planType === "直接准备方案") continue;
-    const directMatches = [
-      ...(phase.baseId ? rowsById.get(phase.baseId) || [] : []),
-      ...(phase.baseName ? rowsByName.get(phase.baseName) || [] : [])
-    ].filter((candidate, index, matches) => candidate !== row && matches.indexOf(candidate) === index);
-    if (directMatches.length !== 1) continue;
-    const direct = directMatches[0];
-    const planGroupId = normalizedText(direct.id || direct.activityName || direct.name);
-    if (!planGroupId) continue;
-    direct.planType = "直接准备方案";
-    direct.planGroupId = planGroupId;
-    row.planType = phase.planType;
-    row.planGroupId = planGroupId;
-  }
+  return records;
 }
 
-function inferredLegacyOperationsPhase(activity) {
+function legacyOperationsPhaseEvidence(activity, index) {
   const id = normalizedText(activity?.id);
   const name = normalizedText(activity?.activityName || activity?.name);
-  for (const config of OPERATIONS_SUPPORT_PHASE_CONFIGS.filter((item) => item.planType !== "直接准备方案")) {
+  const aircraftModel = normalizedText(activity?.aircraftModel);
+  const phaseTypes = new Set();
+  const keys = new Set();
+  const groupIdCandidates = new Set();
+  const addEvidence = (kind, base, phaseType) => {
+    const normalizedBase = normalizedText(base);
+    if (!normalizedBase) return;
+    phaseTypes.add(phaseType);
+    keys.add(`${kind}:${aircraftModel}:${normalizedBase}`);
+    groupIdCandidates.add(normalizedBase);
+  };
+  for (const config of OPERATIONS_SUPPORT_PHASE_CONFIGS) {
     const idSuffix = `-${config.idSuffix}`;
     const nameSuffix = `（${config.nameSuffix}）`;
     if (id.endsWith(idSuffix)) {
-      return {
-        planType: config.planType,
-        baseId: id.slice(0, -idSuffix.length),
-        baseName: name.endsWith(nameSuffix) ? name.slice(0, -nameSuffix.length) : ""
-      };
+      addEvidence("id", id.slice(0, -idSuffix.length), config.planType);
     }
     if (name.endsWith(nameSuffix)) {
-      return {
-        planType: config.planType,
-        baseId: "",
-        baseName: name.slice(0, -nameSuffix.length)
-      };
+      addEvidence("name", name.slice(0, -nameSuffix.length), config.planType);
     }
   }
-  return null;
+  for (const [suffix, phaseType] of [
+    ["飞行前准备活动", "直接准备方案"],
+    ["再次出动准备活动", "再次出动准备方案"],
+    ["飞行后检查活动", "飞行后检查方案"]
+  ]) {
+    if (name.endsWith(suffix)) {
+      addEvidence("name", name.slice(0, -suffix.length), phaseType);
+    }
+  }
+  const inferredPhaseType = phaseTypes.size === 1 ? phaseTypes.values().next().value : "";
+  if (!inferredPhaseType || inferredPhaseType === "直接准备方案") {
+    if (id) {
+      keys.add(`id:${aircraftModel}:${id}`);
+      groupIdCandidates.add(id);
+    }
+    if (name) {
+      keys.add(`name:${aircraftModel}:${name}`);
+      groupIdCandidates.add(name);
+    }
+  }
+  if (!keys.size) groupIdCandidates.add(`operations-support-plan-${index + 1}`);
+  return { phaseTypes, keys: [...keys], groupIdCandidates: [...groupIdCandidates] };
+}
+
+function assignOperationsSupportPlanGroups(records) {
+  if (!records.length) return;
+  const parent = records.map((_, index) => index);
+  const find = (index) => {
+    let root = index;
+    while (parent[root] !== root) root = parent[root];
+    while (parent[index] !== index) {
+      const next = parent[index];
+      parent[index] = root;
+      index = next;
+    }
+    return root;
+  };
+  const join = (left, right) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
+  };
+  const groupBuckets = new Map();
+  const evidenceBuckets = new Map();
+  records.forEach((record, recordIndex) => {
+    if (record.explicitGroupId) {
+      if (!groupBuckets.has(record.explicitGroupId)) groupBuckets.set(record.explicitGroupId, []);
+      groupBuckets.get(record.explicitGroupId).push(recordIndex);
+    }
+    for (const key of record.evidenceKeys) {
+      if (!evidenceBuckets.has(key)) evidenceBuckets.set(key, []);
+      evidenceBuckets.get(key).push(recordIndex);
+    }
+  });
+  for (const bucket of groupBuckets.values()) {
+    bucket.slice(1).forEach((recordIndex) => join(bucket[0], recordIndex));
+  }
+  for (const bucket of evidenceBuckets.values()) {
+    const shouldJoin = bucket.length > 1 && bucket.some((recordIndex) => (
+      records[recordIndex].phaseType !== "直接准备方案"
+      || records[recordIndex].hasPhaseEvidence
+    ));
+    if (shouldJoin) bucket.slice(1).forEach((recordIndex) => join(bucket[0], recordIndex));
+  }
+
+  const components = new Map();
+  records.forEach((record, recordIndex) => {
+    const root = find(recordIndex);
+    if (!components.has(root)) components.set(root, []);
+    components.get(root).push(record);
+  });
+  const usedGroupIds = new Map();
+  for (const component of components.values()) {
+    const explicitGroupIds = new Set(component.map((record) => record.explicitGroupId).filter(Boolean));
+    if (explicitGroupIds.size > 1) {
+      throw new Error(
+        `supportActivities.${component[0].index}.planGroupId: ambiguous operations support plan grouping`
+      );
+    }
+    const rowByPhase = new Map();
+    for (const record of component) {
+      if (rowByPhase.has(record.phaseType)) {
+        throw new Error(
+          `supportActivities.${record.index}.planType: duplicate ${record.phaseType} in one operations support plan`
+        );
+      }
+      if (
+        record.phaseType !== "直接准备方案"
+        && !record.explicitGroupId
+        && !record.hasPhaseEvidence
+      ) {
+        throw new Error(
+          `supportActivities.${record.index}.planGroupId: cannot infer operations support plan group`
+        );
+      }
+      rowByPhase.set(record.phaseType, record);
+    }
+    const direct = rowByPhase.get("直接准备方案");
+    const inferredGroupId = normalizedText(
+      direct?.activity?.id
+      || direct?.activity?.activityName
+      || direct?.activity?.name
+    ) || [...new Set(component.flatMap((record) => record.groupIdCandidates))]
+      .sort((left, right) => left.localeCompare(right, "zh-CN"))[0]
+      || `operations-support-plan-${Math.min(...component.map((record) => record.index)) + 1}`;
+    const planGroupId = explicitGroupIds.values().next().value || inferredGroupId;
+    const priorComponent = usedGroupIds.get(planGroupId);
+    if (priorComponent && priorComponent !== component) {
+      throw new Error(
+        `supportActivities.${component[0].index}.planGroupId: ambiguous inferred operations support plan group ${planGroupId}`
+      );
+    }
+    usedGroupIds.set(planGroupId, component);
+    for (const record of component) record.planGroupId = planGroupId;
+  }
 }
 
 function isOperationsSupportActivityForContract(activity) {
   if (!activity || typeof activity !== "object" || Array.isArray(activity)) return false;
   const planType = normalizedText(activity.planType);
   if (planType === "使用保障方案" || OPERATIONS_SUPPORT_PHASE_TYPES.has(planType)) return true;
+  if (planType) return false;
   const activityType = normalizedText(activity.activityType).toLowerCase();
   return /使用保障|飞行前保障|operations|preflight|relaunch|postflight/.test(activityType);
 }
 
-function uniqueOperationsSupportGroupId(activity, index, groups) {
-  const base = normalizedText(activity.id || activity.activityName || activity.name)
-    || `operations-support-plan-${index + 1}`;
-  let candidate = base;
-  let suffix = 2;
-  while (groups.has(candidate)) {
-    candidate = `${base}-${suffix}`;
-    suffix += 1;
+function knownSupportActivityJobCodes(projectJson) {
+  const codes = new Set();
+  const addJobs = (jobs) => {
+    for (const job of Array.isArray(jobs) ? jobs : []) {
+      const code = normalizedText(job?.activityCode);
+      if (code) codes.add(code);
+    }
+  };
+  addJobs(projectJson?.supportActivityJobs);
+  for (const activity of Array.isArray(projectJson?.supportActivities) ? projectJson.supportActivities : []) {
+    addJobs(activity?.jobs);
   }
-  return candidate;
+  return codes;
 }
 
 function uniqueSupportActivityId(base, usedIds) {
@@ -1772,17 +1884,77 @@ function uniqueSupportActivityName(base, usedNames) {
   return candidate;
 }
 
-function normalizePhasePredecessors(rawPredecessors, activityCodes) {
-  const codeSet = new Set(activityCodes);
+function normalizeOperationsPhaseReferences(activity, index, knownJobCodes) {
+  const path = `supportActivities.${index}`;
+  const hasActivityCodes = Object.hasOwn(activity, "activityCodes");
+  if (hasActivityCodes && !Array.isArray(activity.activityCodes)) {
+    throw new Error(`${path}.activityCodes: expected an array`);
+  }
+  const activityCodes = [];
+  const codeSet = new Set();
+  for (const [codeIndex, rawCode] of (hasActivityCodes ? activity.activityCodes : []).entries()) {
+    if (typeof rawCode !== "string" || !rawCode.trim()) {
+      throw new Error(`${path}.activityCodes.${codeIndex}: expected a non-empty string`);
+    }
+    const code = rawCode.trim();
+    if (codeSet.has(code)) {
+      throw new Error(`${path}.activityCodes.${codeIndex}: duplicate activity code ${code}`);
+    }
+    if (knownJobCodes.size > 0 && !knownJobCodes.has(code)) {
+      throw new Error(`${path}.activityCodes.${codeIndex}: unknown support activity job code ${code}`);
+    }
+    codeSet.add(code);
+    activityCodes.push(code);
+  }
+
+  const hasPredecessors = Object.hasOwn(activity, "predecessors");
+  if (
+    hasPredecessors
+    && (
+      !activity.predecessors
+      || typeof activity.predecessors !== "object"
+      || Array.isArray(activity.predecessors)
+    )
+  ) {
+    throw new Error(`${path}.predecessors: expected an object`);
+  }
+  const rawPredecessors = hasPredecessors ? activity.predecessors : {};
+  const predecessorsByCode = new Map();
+  for (const [rawCode, rawValues] of Object.entries(rawPredecessors)) {
+    const code = normalizedText(rawCode);
+    if (!code || !codeSet.has(code)) {
+      throw new Error(`${path}.predecessors.${rawCode}: unknown activity code ${rawCode}`);
+    }
+    if (predecessorsByCode.has(code)) {
+      throw new Error(`${path}.predecessors.${rawCode}: duplicate activity code ${code}`);
+    }
+    if (!Array.isArray(rawValues)) {
+      throw new Error(`${path}.predecessors.${rawCode}: expected an array`);
+    }
+    const values = [];
+    const seenValues = new Set();
+    for (const [valueIndex, rawValue] of rawValues.entries()) {
+      if (typeof rawValue !== "string" || !rawValue.trim()) {
+        throw new Error(`${path}.predecessors.${rawCode}.${valueIndex}: expected a non-empty string`);
+      }
+      const value = rawValue.trim();
+      if (!codeSet.has(value)) {
+        throw new Error(`${path}.predecessors.${rawCode}.${valueIndex}: unknown activity code ${value}`);
+      }
+      if (seenValues.has(value)) {
+        throw new Error(`${path}.predecessors.${rawCode}.${valueIndex}: duplicate predecessor ${value}`);
+      }
+      seenValues.add(value);
+      values.push(value);
+    }
+    predecessorsByCode.set(code, values);
+  }
   const predecessors = {};
   for (const code of activityCodes) {
-    predecessors[code] = Array.isArray(rawPredecessors?.[code])
-      ? rawPredecessors[code]
-        .map((value) => normalizedText(value))
-        .filter((value) => value && codeSet.has(value))
-      : [];
+    predecessors[code] = predecessorsByCode.get(code) || [];
   }
-  return predecessors;
+  activity.activityCodes = activityCodes;
+  activity.predecessors = predecessors;
 }
 
 const MAINTENANCE_METHOD_VALUES = Object.freeze(["non_replacement", "replacement"]);
@@ -1895,17 +2067,18 @@ function ensureUniqueSupportActivityNames(projectJson) {
 function canonicalSupportActivityPlanType(activity = {}) {
   const planType = String(activity.planType || "").trim();
   const activityType = String(activity.activityType || "").trim();
-  const combined = `${planType} ${activityType}`.toLowerCase();
-  if (planType === "修复性维修方案" || /修复性维修|corrective/.test(combined)) return "修复性维修方案";
-  if (planType === "预防性维修方案" || /预防性维修|preventive/.test(combined)) return "预防性维修方案";
-  if (planType === "后勤保障方案" || planType === "后勤保障活动方案" || /后勤保障|logistics/.test(combined)) return "后勤保障方案";
-  if (OPERATIONS_SUPPORT_PHASE_TYPES.has(planType)) return planType;
-  if (
-    planType === "使用保障方案"
-    || /飞行前保障|使用保障|operations|preflight|relaunch|postflight/.test(combined)
-  ) {
-    return "使用保障方案";
+  if (planType) {
+    if (planType === "修复性维修方案") return "修复性维修方案";
+    if (planType === "预防性维修方案") return "预防性维修方案";
+    if (planType === "后勤保障方案" || planType === "后勤保障活动方案") return "后勤保障方案";
+    if (planType === "使用保障方案" || OPERATIONS_SUPPORT_PHASE_TYPES.has(planType)) return planType;
+    return planType;
   }
+  const inferredType = activityType.toLowerCase();
+  if (/修复性维修|corrective/.test(inferredType)) return "修复性维修方案";
+  if (/预防性维修|preventive/.test(inferredType)) return "预防性维修方案";
+  if (/后勤保障|logistics/.test(inferredType)) return "后勤保障方案";
+  if (/飞行前保障|使用保障|operations|preflight|relaunch|postflight/.test(inferredType)) return "使用保障方案";
   return "使用保障方案";
 }
 

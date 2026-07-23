@@ -1721,7 +1721,6 @@ class SimulationAdapter:
                 "supportActivityJobs[]",
                 "supportActivities[].aircraftModel",
                 "supportActivities[].equipmentId",
-                "supportActivities[].planType",
                 "supportActivities[].calendarDayInterval",
                 "supportActivities[].runHourInterval",
                 "supportActivities[].takeoffLandingInterval",

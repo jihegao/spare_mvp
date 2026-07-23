@@ -738,8 +738,8 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         invalid_plan_type = self._polluted_project()
         invalid_plan_type["supportActivities"][0]["activityType"] = ""
         invalid_plan_type["supportActivities"][0]["planType"] = "自定义保障方案"
-        clean = self._export_with_old_jsonschema(invalid_plan_type)
-        self.assertEqual(clean["supportActivities"][0]["planType"], "使用保障方案")
+        with self.assertRaisesRegex(ValueError, "unexpected plan type"):
+            self._export_with_old_jsonschema(invalid_plan_type)
 
     def test_exporter_materializes_legacy_operations_plan_as_three_independent_phase_references(self) -> None:
         project = self._polluted_project()
@@ -802,6 +802,116 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
             {row["planType"] for row in repaired_phases},
             {"直接准备方案", "再次出动准备方案", "飞行后检查方案"},
         )
+
+    def test_exporter_groups_real_legacy_operations_phase_names_deterministically(self) -> None:
+        rows = [
+            {
+                "id": "ops-support-j15-4",
+                "activityName": "J-15飞行前准备活动",
+                "activityType": "使用保障",
+                "planType": "使用保障方案",
+                "aircraftModel": "J-15",
+                "equipmentId": "aircraft-root",
+                "jobs": [],
+            },
+            {
+                "id": "ops-support-j15-5",
+                "activityName": "J-15再次出动准备活动",
+                "activityType": "使用保障",
+                "planType": "使用保障方案",
+                "aircraftModel": "J-15",
+                "equipmentId": "aircraft-root",
+                "jobs": [],
+            },
+            {
+                "id": "ops-support-j15-6",
+                "activityName": "J-15飞行后检查活动",
+                "activityType": "使用保障",
+                "planType": "使用保障方案",
+                "aircraftModel": "J-15",
+                "equipmentId": "aircraft-root",
+                "jobs": [],
+            },
+        ]
+        results = []
+        for ordered_rows in (rows, list(reversed(rows))):
+            project = self._polluted_project()
+            project["supportActivities"] = deepcopy(ordered_rows)
+            project["basicMissions"][0]["supportActivityName"] = "J-15飞行前准备活动"
+            clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+            operations = sorted(clean["supportActivities"], key=lambda row: row["id"])
+            self.assertEqual(len(operations), 3)
+            self.assertEqual(len({row["planGroupId"] for row in operations}), 1)
+            self.assertEqual(
+                {row["planType"] for row in operations},
+                {"直接准备方案", "再次出动准备方案", "飞行后检查方案"},
+            )
+            results.append([
+                (row["id"], row["planType"], row["planGroupId"])
+                for row in operations
+            ])
+        self.assertEqual(results[0], results[1])
+
+    def test_exporter_rejects_ambiguous_or_duplicate_operations_phases(self) -> None:
+        for duplicate_rows in (
+            [
+                {
+                    "id": "direct-a",
+                    "activityName": "方案A",
+                    "activityType": "使用保障",
+                    "planType": "使用保障方案",
+                    "jobs": [],
+                },
+                {
+                    "id": "direct-b",
+                    "activityName": "方案A",
+                    "activityType": "使用保障",
+                    "planType": "使用保障方案",
+                    "jobs": [],
+                },
+                {
+                    "id": "relaunch",
+                    "activityName": "方案A（再次出动准备）",
+                    "activityType": "使用保障",
+                    "planType": "使用保障方案",
+                    "jobs": [],
+                },
+            ],
+            [
+                {
+                    "id": "direct-a",
+                    "activityName": "方案A",
+                    "activityType": "使用保障",
+                    "planType": "直接准备方案",
+                    "planGroupId": "group-a",
+                    "jobs": [],
+                },
+                {
+                    "id": "direct-b",
+                    "activityName": "方案B",
+                    "activityType": "使用保障",
+                    "planType": "直接准备方案",
+                    "planGroupId": "group-a",
+                    "jobs": [],
+                },
+            ],
+        ):
+            with self.subTest(rows=duplicate_rows):
+                project = self._polluted_project()
+                project["supportActivities"] = duplicate_rows
+                with self.assertRaisesRegex(ValueError, "duplicate operations support phase"):
+                    ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        conflicting = self._polluted_project()
+        conflicting["supportActivities"] = [{
+            "id": "legacy-relaunch",
+            "activityName": "J-15再次出动准备活动",
+            "activityType": "使用保障",
+            "planType": "直接准备方案",
+            "jobs": [],
+        }]
+        with self.assertRaisesRegex(ValueError, "conflicting operations support phase evidence"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(conflicting)
 
     def test_exporter_materializes_and_round_trips_maintenance_method_defaults(self) -> None:
         project = self._polluted_project()
@@ -912,6 +1022,24 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
             ProjectJsonExporter(target="aircraft_support_v1").export(non_maintenance)
 
     def test_aircraft_support_v1_exporter_rejects_invalid_support_activity_references(self) -> None:
+        invalid_shapes = (
+            ("activityCodes", "JOB-1", "expected string array"),
+            ("activityCodes", ["JOB-1", "JOB-1"], "duplicate activity code"),
+            ("predecessors", [], "expected string array map"),
+            ("predecessors", {"OTHER-JOB": []}, "predecessor key is outside activityCodes"),
+            ("predecessors", {"JOB-1": ["JOB-1", "JOB-1"]}, "duplicate predecessor"),
+        )
+        for field, value, message in invalid_shapes:
+            with self.subTest(field=field, value=value):
+                invalid = self._polluted_project()
+                invalid["supportActivities"][0].pop("jobs", None)
+                invalid["supportActivities"][0]["activityCodes"] = ["JOB-1"]
+                invalid["supportActivities"][0]["predecessors"] = {"JOB-1": []}
+                invalid["supportActivities"][0][field] = value
+                invalid["supportActivityJobs"] = [{"activityCode": "JOB-1"}]
+                with self.assertRaisesRegex(ValueError, message):
+                    ProjectJsonExporter(target="aircraft_support_v1").export(invalid)
+
         unknown_job = self._polluted_project()
         unknown_job["supportActivities"][0]["jobs"] = []
         unknown_job["supportActivities"][0]["activityCodes"] = ["missing-job"]

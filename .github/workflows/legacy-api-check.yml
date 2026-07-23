@@ -34,3 +34,12 @@ jobs:
 
       - name: Run backend HTTP API contract tests
         run: python3 -m unittest tests.test_backend_http_api -v
+
+      - name: Run backend Project contract and fixture drift tests
+        run: >-
+          python3 -m unittest
+          tests.test_backend_api_contract
+          tests.test_project_json_exporter
+          tests.test_importable_project_json_templates
+          tests.test_clean_project_golden_fixtures
+          -v

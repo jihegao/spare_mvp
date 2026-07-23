@@ -1033,7 +1033,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertNotIn("maintenance_methods", runtime_activity)
         self.assertNotIn("replacement_ratio", runtime_activity)
 
-    def test_aircraft_support_v1_compiles_operations_phase_local_job_references(self) -> None:
+    def test_aircraft_support_v1_accepts_authoring_phase_rows_without_runtime_phase_contract(self) -> None:
         project = self._load_fixture("aircraft_support_v1_project.json")
         activity = project["supportActivities"][0]
         activity.update({
@@ -1050,12 +1050,28 @@ class SimulationAdapterTest(unittest.TestCase):
             target="aircraft_support_v1",
             repo_root=REPO_ROOT,
         ).export(project)
+        clean_activities = clean_project["supportActivities"]
+        self.assertEqual(
+            [item["planType"] for item in clean_activities],
+            ["直接准备方案", "再次出动准备方案", "飞行后检查方案"],
+        )
+        self.assertEqual(len({item["planGroupId"] for item in clean_activities}), 1)
+        self.assertEqual([len(item["activityCodes"]) for item in clean_activities], [1, 0, 0])
+
         scenario = self.adapter.compile_scenario(clean_project, model_family="aircraft_support_v1")
         runtime_activities = scenario["simulation_inputs"]["support_activities"]["activities"]
 
         self.assertEqual(len(runtime_activities), 3)
         self.assertEqual([len(item["jobs"]) for item in runtime_activities], [1, 0, 0])
         self.assertEqual(len({item["name"] for item in runtime_activities}), 3)
+        for runtime_activity in runtime_activities:
+            self.assertNotIn("planType", runtime_activity)
+            self.assertNotIn("plan_type", runtime_activity)
+            self.assertNotIn("planGroupId", runtime_activity)
+            self.assertNotIn("plan_group_id", runtime_activity)
+        consumed = scenario["compiled_from"]["mapping_provenance"]["consumed_fields"]
+        self.assertNotIn("supportActivities[].planType", consumed)
+        self.assertNotIn("supportActivities[].planGroupId", consumed)
         input_schema = json.loads(
             (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
         )
