@@ -78,6 +78,7 @@ jobs:
         run: python3 -m unittest ${{ matrix.test-modules }} -v
 
   legacy-api-check:
+    name: legacy-api-check
     if: ${{ always() }}
     needs:
       - frontend-contract-tests
