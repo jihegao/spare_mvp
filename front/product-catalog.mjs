@@ -183,25 +183,13 @@ export function updateSharedProductParameter(project, productId, parameterPath, 
 }
 
 function synchronizeFixedDistributionMtbf(product) {
-  if (!product || typeof product !== "object" || !isFixedDistribution(product.failureDistribution)) return;
-  const distributionValue = positiveNumber(product.failureDistribution.value);
-  const legacyMtbf = positiveNumber(product.mtbfHours);
-  if (distributionValue !== null) {
-    product.mtbfHours = distributionValue;
-  } else if (legacyMtbf !== null) {
-    product.failureDistribution.value = legacyMtbf;
-  }
+  normalizeFixedMtbfRepresentations(product);
 }
 
 function isFixedDistribution(distribution) {
   if (!distribution || typeof distribution !== "object" || Array.isArray(distribution)) return false;
   const type = cleanText(distribution.distributionType || distribution.distribution_type).toLocaleLowerCase();
   return type.includes("fixed") || type.includes("固定");
-}
-
-function positiveNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : null;
 }
 
 export function componentsSharingProduct(project, productId) {
