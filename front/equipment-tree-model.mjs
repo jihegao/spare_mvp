@@ -277,15 +277,16 @@ export function addEquipmentNodeForSelectionModel({ scenario, selection }) {
   }
 
   const aircraftModel = selectedState.aircraftModel || wholeMachineModelsForScenario(scenario)[0] || scenario.equipment.model || "装备";
-  const parentId = selectedState.kind === "aircraft" ? "aircraft-root" : selectedState.component.id;
+  const parentStorageId = selectedState.kind === "aircraft" ? "" : selectedState.component.id;
+  const parentDisplayId = selectedState.kind === "aircraft" ? "aircraft-root" : parentStorageId;
   const siblingCount = scenario.components.filter((component) => (
     componentBelongsToAircraftModel(component, aircraftModel)
-    && String(component.parentId || "aircraft-root") === String(parentId)
+    && String(component.parentId || "aircraft-root") === String(parentDisplayId)
   )).length;
   const newComponent = {
-    id: nextEquipmentComponentId(scenario, aircraftModel, parentId),
+    id: nextEquipmentComponentId(scenario, aircraftModel, parentDisplayId),
     aircraftModel,
-    parentId,
+    parentId: parentStorageId,
     name: selectedState.kind === "aircraft" ? `新增分系统${siblingCount + 1}` : `新增子系统${siblingCount + 1}`,
     productType: selectedState.kind === "aircraft" ? "非LRU" : "LRU",
     failureModel: "随机",

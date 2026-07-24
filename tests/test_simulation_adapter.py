@@ -1617,6 +1617,25 @@ class SimulationAdapterTest(unittest.TestCase):
             result["provenance"]["defaults_applied"],
         )
 
+    def test_project_exporter_roundtrip_keeps_support_activity_resource_as_canonical_id(self) -> None:
+        project = self._load_fixture("aircraft_support_v1_project.json")
+        project["supportActivities"][0]["resourceId"] = "node A"
+
+        exporter = ProjectJsonExporter()
+        first_export = exporter.export(project)
+        second_export = exporter.export(first_export)
+
+        self.assertEqual(first_export["supportActivities"][0]["resourceId"], "node-a")
+        self.assertEqual(second_export["supportActivities"][0]["resourceId"], "node-a")
+
+        result = self.adapter.compile_scenario_with_gate(second_export, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "compiled")
+        self.assertEqual(
+            result["scenario"]["simulation_inputs"]["support_activities"]["activities"][0]["resource_id"],
+            "node-a",
+        )
+
     def test_canonical_blank_activity_resource_blocks_when_root_has_no_runtime_mapping(self) -> None:
         project = self._load_fixture("aircraft_support_v1_project.json")
         project["supportOrganization"]["tree"] = {

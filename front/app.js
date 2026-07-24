@@ -792,6 +792,7 @@ let solaraVisualizationProjectIdOverrideFingerprint = "";
 let solaraVisualizationProjectSyncInFlightKey = "";
 let solaraVisualizationProjectSyncError = "";
 let solaraVisualizationProjectSyncErrorKey = "";
+let solaraVisualizationProjectSyncIssues = [];
 let solaraVisualizationProjectSyncRequestId = 0;
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
@@ -3036,10 +3037,14 @@ function bindEvents() {
     const input = event.target.closest("[data-path]");
     if (!input) return;
     if (input.dataset.sharedProductComponentId && updateSharedEquipmentProductParameter(input)) {
+      const inputValue = parseInput(input);
+      setPath(scenario, input.dataset.path, inputValue);
+      normalizeEquipmentDistributionForDistributionTypeChange(input.dataset.path);
       render();
       return;
     }
     setPath(scenario, input.dataset.path, parseInput(input));
+    normalizeEquipmentDistributionForDistributionTypeChange(input.dataset.path);
     normalizeEquipmentKOutOfNForPath(input.dataset.path);
     updatePreviewResultsThroughApiClient();
     if (isCurrentModelingPage()) markProjectDraftChanged();
@@ -7180,6 +7185,8 @@ function createOperationsSupportActivityForAircraftModel(aircraftModel, config =
     activityType: "使用保障",
     planType: config.planType,
     planGroupId,
+    equipmentId: operationsSupportDefaultEquipmentId(model),
+    resourceId: operationsSupportDefaultRuntimeNodeId(),
     activityName: `${model}${config.activitySuffix || `保障活动${suffix}`}`,
     aircraftModel: model,
     maxWorkTimeRefMinutes: config.maxWorkTimeRefMinutes ?? 30
@@ -8867,6 +8874,35 @@ function supportActivityRuntimeNodeField(activity, activityIndex) {
     return `<option value="${htmlEscape(value)}" ${value === selectedRef ? "selected" : ""}>${htmlEscape(option.label)}</option>`;
   }).join("");
   return `<label>运行保障点<select data-path="supportActivities.${activityIndex}.resourceId"${attrText}>${options}</select></label>`;
+}
+
+function operationsSupportDefaultEquipmentId(aircraftModel) {
+  const model = String(aircraftModel || "").trim();
+  const components = Array.isArray(scenario.components) ? scenario.components : [];
+  const componentForModel = (component) => (
+    String(component?.id || "").trim()
+    && (!model || !component.aircraftModel || String(component.aircraftModel || "").trim() === model)
+  );
+  const wholeCandidates = components.filter((component) => (
+    componentForModel(component) && String(component.productType || "").trim() === "whole"
+  ));
+  if (wholeCandidates.length === 1) return String(wholeCandidates[0].id || "").trim();
+  const candidateComponents = components.filter(componentForModel).map((component) => String(component.id || "").trim()).filter(Boolean);
+  if (candidateComponents.length === 1) return candidateComponents[0];
+  const rootComponent = components.find((component) => (
+    componentForModel(component) && String(component.id || "").trim() === "aircraft-root"
+  ));
+  if (!rootComponent) return "";
+  return "aircraft-root";
+}
+
+function operationsSupportDefaultRuntimeNodeId() {
+  const candidates = (scenario.supportNodes || [])
+    .map((node) => String(node?.id || node?.organizationNodeId || "").trim())
+    .filter(Boolean);
+  const uniqueCandidates = Array.from(new Set(candidates));
+  if (uniqueCandidates.length !== 1) return "";
+  return uniqueCandidates[0];
 }
 
 function operationsSupportPlanTypeConfigs() {
@@ -12150,11 +12186,29 @@ async function resolveSelectedExperimentPlanProjectJsonForRun() {
   return buildBackendProjectJson(hydratedProjectJson, currentProject);
 }
 
-async function syncSelectedProjectJsonForSolaraVisualization({ contextKey, parentProjectId, fingerprint }) {
+async function syncSelectedProjectJsonForSolaraVisualization({
+  context,
+  contextKey,
+  parentProjectId,
+  fingerprint
+}) {
   const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
   const saved = await backendApi.saveProject(projectJson);
   if (!visualSimulationSyncRequestMatches({ contextKey, parentProjectId, fingerprint })) {
     return { saved, applied: false };
+  }
+  const selectedContext = context || selectedVisualSimulationExperimentPlanContext(getFeaturePageById(selectedFeatureId));
+  if (!selectedContext) return { saved, applied: false };
+  const selectedPlanId = String(selectedContext.plan?.experiment_plan_id || selectedContext.experiment_plan_id || "").trim();
+  const preflightResult = selectedPlanId
+    ? await backendApi.compileExperimentPlanPreflight(
+      saved.project_id,
+      selectedPlanId,
+      FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
+    )
+    : await backendApi.compileProjectPreflight(saved.project_id, FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY);
+  if (!isProjectCompilePreflightSuccessful(preflightResult)) {
+    throw compilePreflightError(preflightResult, "Solara 可视化预检未通过");
   }
   savedProject = saved || savedProject;
   solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || parentProjectId || "").trim();
@@ -12203,6 +12257,7 @@ function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
   solaraVisualizationProjectIdOverrideFingerprint = "";
   solaraVisualizationProjectSyncError = "";
   solaraVisualizationProjectSyncErrorKey = "";
+  solaraVisualizationProjectSyncIssues = [];
   if (persist) persistSelectedRunContextKey();
 }
 
@@ -13631,6 +13686,15 @@ async function saveCurrentExperimentPlanThroughApi() {
     experimentPlan = existingExperimentPlanId
       ? await backendApi.updateExperimentPlan(savedProject.project_id, existingExperimentPlanId, runIntent.experimentPlanConfig)
       : await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
+    const preflightResult = await backendApi.compileExperimentPlanPreflight(
+      savedProject.project_id,
+      experimentPlan.experiment_plan_id,
+      FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
+    );
+    if (!isProjectCompilePreflightSuccessful(preflightResult)) {
+      backendApiStatus = `实验方案编译预检未通过：${compilePreflightErrorMessageFromDetails(preflightResult)}`;
+      return;
+    }
     await refreshExperimentPlanList(savedProject.project_id, { force: true });
     experimentPlanManagementMode = "list";
     selectedExperimentPlanKeys = new Set([experimentPlanSelectionKey(experimentPlan)]);
@@ -13743,6 +13807,18 @@ async function startSingleRunThroughApi() {
       : `单次正式运行已提交：${backendRun.run_id || "等待 run_id"} / ${runStatusLabel(backendRun)}`;
     return backendRun;
   } catch (err) {
+    const preflightMessage = compilePreflightErrorMessageFromDetails(err?.details || err);
+    if (preflightMessage) {
+      savedProject = null;
+      backendRun = null;
+      backendRunResult = null;
+      backendArtifactManifest = null;
+      backendRunChain = null;
+      forgetLastBackendRun();
+      experimentRunStatus = "阻断";
+      backendApiStatus = `单次正式运行被阻断：${preflightMessage}`;
+      return null;
+    }
     savedProject = null;
     backendRun = null;
     backendRunResult = null;
@@ -13856,6 +13932,26 @@ async function startMonteCarloRunThroughApi({
     });
     return backendRun;
   } catch (err) {
+    const preflightMessage = compilePreflightErrorMessageFromDetails(err?.details || err);
+    if (preflightMessage) {
+      savedProject = null;
+      backendRun = null;
+      backendRunResult = null;
+      backendArtifactManifest = null;
+      backendRunChain = null;
+      forgetLastBackendRun();
+      experimentRunStatus = "阻断";
+      backendApiStatus = `正式 Monte Carlo run 被阻断：${preflightMessage}`;
+      if (!existingExperiment?.runId) {
+        syncMonteCarloExperimentRun(monteCarloExperimentId, {
+          status: "运行失败",
+          progress: 0,
+          runType,
+          source: "backend:submit-error"
+        });
+      }
+      return null;
+    }
     savedProject = null;
     backendRun = null;
     backendRunResult = null;
@@ -16184,6 +16280,61 @@ function modelingImportIssuesFromEnvelope(envelope) {
   ]);
 }
 
+function projectCompilePreflightIssuesFromEnvelope(envelope) {
+  const issues = Array.isArray(envelope?.issues) ? envelope.issues : [];
+  const warnings = Array.isArray(envelope?.warnings) ? envelope.warnings : [];
+  return dedupeModelingImportIssues([
+    ...issues.map((issue) => normalizeProjectCompilePreflightIssue(issue, "error")),
+    ...warnings.map((issue) => normalizeProjectCompilePreflightIssue(issue, "warning"))
+  ]);
+}
+
+function isProjectCompilePreflightSuccessful(result) {
+  return String(result?.status || "").toLowerCase() === "compiled";
+}
+
+function compilePreflightErrorMessageFromDetails(details = {}) {
+  const envelope = typeof details === "object" && details !== null ? details : {};
+  const hasCompileEnvelope = "status" in envelope || Array.isArray(envelope.issues) || Array.isArray(envelope.warnings);
+  if (!hasCompileEnvelope) return "";
+  if (!isProjectCompilePreflightSuccessful(envelope)) {
+    const issues = projectCompilePreflightIssuesFromEnvelope(envelope);
+    const blockers = issues.filter((issue) => issue.severity !== "warning");
+    const primary = blockers[0] || issues[0];
+    if (primary?.field_path || primary?.message) {
+      const prefix = primary.field_path || primary.page || "Project JSON";
+      return `${prefix}：${primary.message}`;
+    }
+    return `项目编译预检未通过：${envelope.status || "blocked"}`;
+  }
+  return "";
+}
+
+function compilePreflightError(result, context = "项目编译预检未通过") {
+  const message = compilePreflightErrorMessageFromDetails(result);
+  const err = new Error(message ? `${context}：${message}` : `${context}失败（${String(result?.status || "blocked")}）`);
+  err.code = "compile_preflight_blocked";
+  err.details = {
+    status: result?.status || "blocked",
+    issues: Array.isArray(result?.issues) ? result.issues : [],
+    warnings: Array.isArray(result?.warnings) ? result.warnings : [],
+    ...(result?.model_family ? { model_family: result.model_family } : {}),
+    ...(result?.project_id ? { project_id: result.project_id } : {})
+  };
+  return err;
+}
+
+function normalizeProjectCompilePreflightIssue(issue, fallbackSeverity) {
+  return {
+    code: issue?.code || "-",
+    severity: issue?.severity || fallbackSeverity,
+    page: issue?.page || "Project JSON",
+    object_id: issue?.object_id || issue?.objectId || "project-json",
+    field_path: issue?.field_path || issue?.path || "-",
+    message: issue?.message || "-"
+  };
+}
+
 function normalizeModelingImportDisplayIssue(issue, fallbackSeverity) {
   return {
     code: issue?.code || "-",
@@ -16378,6 +16529,9 @@ function renderVisualSimulation(page) {
   const syncMessage = solaraVisualizationProjectSyncErrorKey === syncKey && solaraVisualizationProjectSyncError
     ? `实验方案数据准备失败：${solaraVisualizationProjectSyncError}。请重新选择方案后重试。`
     : "正在准备实验方案数据，完成后将自动加载推演页面。";
+  const syncIssueDisplay = solaraVisualizationProjectSyncErrorKey === syncKey && solaraVisualizationProjectSyncIssues.length
+    ? `<div class="compact">${renderModelingImportIssueDisplay(solaraVisualizationProjectSyncIssues)}</div>`
+    : "";
   return `
     <div class="mesa-visual-shell">
       <section class="lite-mesa-hero mesa-visual-toolbar">
@@ -16399,6 +16553,7 @@ function renderVisualSimulation(page) {
           referrerpolicy="no-referrer"
         ></iframe>` : `<div class="visual-simulation-plan-empty" data-visual-simulation-plan-empty>
           <strong>${htmlEscape(context ? syncMessage : emptyMessage)}</strong>
+          ${syncIssueDisplay}
           ${!context && backendExperimentPlansLoaded && !backendExperimentPlansLoadError && availablePlanCount === 0 ? `<button type="button" class="btn-secondary" data-plan-list-link>前往实验方案管理</button>` : ""}
         </div>`}
       </div>
@@ -16465,9 +16620,11 @@ function ensureSelectedVisualSimulationProjectSynced(page) {
   solaraVisualizationProjectSyncInFlightKey = syncKey;
   solaraVisualizationProjectSyncError = "";
   solaraVisualizationProjectSyncErrorKey = "";
+  solaraVisualizationProjectSyncIssues = [];
   visualizationReplayStatus = `正在准备实验方案：${context.name}`;
   syncSelectedProjectJsonForSolaraVisualization({
     contextKey: context.key,
+    context,
     parentProjectId,
     fingerprint
   })
@@ -16480,7 +16637,12 @@ function ensureSelectedVisualSimulationProjectSynced(page) {
         requestId !== solaraVisualizationProjectSyncRequestId
         || !visualSimulationSyncRequestMatches({ contextKey: context.key, parentProjectId, fingerprint })
       ) return;
-      solaraVisualizationProjectSyncError = err && err.message ? err.message : "后端接口不可用";
+      const compileIssues = projectCompilePreflightIssuesFromEnvelope(err?.details);
+      const preflightMessage = compilePreflightErrorMessageFromDetails(err?.details);
+      solaraVisualizationProjectSyncError = preflightMessage
+        ? `${preflightMessage}`
+        : err && err.message ? err.message : "后端接口不可用";
+      solaraVisualizationProjectSyncIssues = compileIssues.length ? compileIssues : [];
       solaraVisualizationProjectSyncErrorKey = syncKey;
       visualizationReplayStatus = `实验方案数据准备失败：${solaraVisualizationProjectSyncError}`;
     })
@@ -20932,6 +21094,42 @@ function normalizeEquipmentKOutOfNForPath(path) {
     return;
   }
   component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1, n: quantity, k: Number(previousK) };
+}
+
+function normalizeEquipmentDistributionForDistributionTypeChange(path) {
+  const match = String(path || "").match(/^components\.(\d+)\.(failure|repair)Distribution\.distributionType$/);
+  if (!match) return;
+  const index = Number(match[1]);
+  const distributionKind = match[2] === "failure" ? "failureDistribution" : "repairDistribution";
+  const metric = distributionKind === "failureDistribution" ? "mtbf" : "mttr";
+  const component = scenario.components?.[index];
+  if (!component || typeof component[distributionKind] !== "object" || Array.isArray(component[distributionKind])) return;
+  const distribution = component[distributionKind];
+  const distributionType = equipmentDistributionType(distribution.distributionType, metric);
+  distribution.distributionType = distributionType;
+  const allowedKeys = distributionKeysForType(distributionType, metric);
+  Object.keys(distribution).forEach((key) => {
+    if (key === "distributionType") return;
+    if (!allowedKeys.has(key)) {
+      delete distribution[key];
+    }
+  });
+}
+
+function distributionKeysForType(type, metric = "mttr") {
+  if (type === "固定值") {
+    return metric === "mtbf" ? new Set(["value"]) : new Set();
+  }
+  if (type === "指数分布") {
+    return new Set(["rate"]);
+  }
+  if (type === "正态分布") {
+    return new Set(["mean", "variance"]);
+  }
+  if (type === "均匀分布") {
+    return new Set(["min", "max"]);
+  }
+  return new Set();
 }
 
 function parseNumberList(value) {

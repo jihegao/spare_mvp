@@ -58,6 +58,30 @@ export function bindExperimentPlanId(intent, experimentPlanId) {
   };
 }
 
+function isCompilePreflightReady(result) {
+  return String(result?.status || "").toLowerCase() === "compiled";
+}
+
+function compilePreflightError(result) {
+  const issues = Array.isArray(result?.issues) ? result.issues : [];
+  const blockers = issues.filter((issue) => issue?.severity !== "warning");
+  const firstIssue = blockers[0] || issues[0];
+  const field = firstIssue?.field_path || firstIssue?.page || "Project JSON";
+  const message = firstIssue?.message
+    ? `${field}：${firstIssue.message}`
+    : `形式化编译预检未通过：${String(result?.status || "blocked")}`;
+  const err = new Error(message);
+  err.code = "compile_preflight_blocked";
+  err.details = {
+    status: result?.status || "blocked",
+    issues: issues,
+    warnings: Array.isArray(result?.warnings) ? result.warnings : [],
+    ...(result?.model_family ? { model_family: result.model_family } : {}),
+    ...(result?.project_id ? { project_id: result.project_id } : {})
+  };
+  return err;
+}
+
 export async function submitRunIntent(apiClient, options) {
   const intent = buildRunIntent(options);
   const savedProject = await apiClient.saveProject(buildBackendProjectJson(intent.projectJson));
@@ -66,6 +90,14 @@ export async function submitRunIntent(apiClient, options) {
     ...intent.experimentPlanConfig,
     modeling_snapshot_id: modelingSnapshot.snapshot_id
   });
+  const preflightResult = await apiClient.compileExperimentPlanPreflight(
+    savedProject.project_id,
+    experimentPlan.experiment_plan_id,
+    options.modelFamily
+  );
+  if (!isCompilePreflightReady(preflightResult)) {
+    throw compilePreflightError(preflightResult);
+  }
   const boundIntent = bindExperimentPlanId(intent, experimentPlan.experiment_plan_id);
   const run = await apiClient.submitRun({
     ...boundIntent.runRequest,

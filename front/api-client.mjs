@@ -103,6 +103,20 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     validateModelingImport(importPackage) {
       return request({ method: "POST", path: "/modeling-imports/validate", body: importPackage });
     },
+    compileProjectPreflight(projectId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
+      return request({
+        method: "POST",
+        path: `/projects/${encodeURIComponent(projectId)}/compile-preflight`,
+        body: { model_family: modelFamily }
+      });
+    },
+    compileExperimentPlanPreflight(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
+      return request({
+        method: "POST",
+        path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}/compile-preflight`,
+        body: { model_family: modelFamily }
+      });
+    },
     listProjectDataTemplates({ state = "published" } = {}) {
       const query = state ? `?state=${encodeURIComponent(state)}` : "";
       return request({ method: "GET", path: `/project-data-templates${query}` });
