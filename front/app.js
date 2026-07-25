@@ -705,6 +705,8 @@ let liteMesaMonteCarloSettings = {
 let liteMesaMonteCarloResult = null;
 let liteMesaMonteCarloStatus = "等待运行分析。";
 let liteMesaMonteCarloRequestEpoch = 0;
+const DEFAULT_LITE_MESA_ANALYSIS_SAMPLES = 4;
+const DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES = 4;
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
 let liteMesaAnalysisResults = {};
 let liteMesaAnalysisRequestEpoch = 0;
@@ -12278,8 +12280,6 @@ function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
 }
 
 function resetRunContextToCurrentProject() {
-  liteMesaMonteCarloRequestEpoch += 1;
-  liteMesaAnalysisRequestEpoch += 1;
   replaceSelectedRunContextKey(
     experimentPlanContextOptions().find((option) => option.kind === "current-project")?.key || "",
     { persist: true }
@@ -12295,9 +12295,7 @@ function resetRunContextToCurrentProject() {
     seed: seed > 0 ? Math.trunc(seed) : 20260621,
     parallelCores: experiment.parallelCores ?? 1
   };
-  liteMesaMonteCarloResult = null;
-  liteMesaAnalysisResults = {};
-  analysisXlsxExportState = {};
+  invalidateSelectedRunContextResults("运行上下文已更新，请重新运行。");
   liteMesaMonteCarloStatus = "已切换运行来源：当前项目";
 }
 
@@ -20215,18 +20213,36 @@ function liteMesaAnalysisDefinitionForPage(page) {
 
 function createDefaultLiteMesaAnalysisSettings() {
   return {
-    spare_shortfall: { samples: 27, seed: 20260621 },
-    carry_list: { samples: 24, seed: 20260621, missionConfidenceTarget: 0.9 },
-    mission_reliability: { samples: 27, seed: 20260621 },
-    downtime_factors: { samples: 1, seed: 20260621, topN: 4 }
+    spare_shortfall: {
+      samples: DEFAULT_LITE_MESA_ANALYSIS_SAMPLES,
+      seed: 20260621,
+      parallelCores: DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES
+    },
+    carry_list: {
+      samples: DEFAULT_LITE_MESA_ANALYSIS_SAMPLES,
+      seed: 20260621,
+      parallelCores: DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES,
+      missionConfidenceTarget: 0.9
+    },
+    mission_reliability: {
+      samples: DEFAULT_LITE_MESA_ANALYSIS_SAMPLES,
+      seed: 20260621,
+      parallelCores: DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES
+    },
+    downtime_factors: {
+      samples: DEFAULT_LITE_MESA_ANALYSIS_SAMPLES,
+      seed: 20260621,
+      parallelCores: DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES,
+      topN: 4
+    }
   };
 }
 
 function liteMesaAnalysisEffectiveSettings(definition) {
-  return {
-    ...(liteMesaAnalysisSettings[definition.analysisType] || {}),
-    ...selectedExperimentPlanRunSettings()
-  };
+  const analysisSettings = liteMesaAnalysisSettings[definition.analysisType] || {};
+  const context = selectedExperimentPlanContext();
+  if (context?.kind !== "experiment-plan") return { ...analysisSettings };
+  return { ...analysisSettings, ...selectedExperimentPlanRunSettings() };
 }
 
 function renderLiteMesaAnalysisSettings(definition, settings, result = null) {
@@ -20249,7 +20265,7 @@ function liteMesaAnalysisSettingItems(definition, settings, result = null) {
   const resultStatus = liteMesaAnalysisResultHeader(definition, result);
   const items = [
     ["运行状态", resultStatus],
-    ["样本量", settings.samples ?? 27],
+    ["样本量", settings.samples ?? DEFAULT_LITE_MESA_ANALYSIS_SAMPLES],
     ["随机种子", settings.seed ?? 20260621]
   ];
   if (definition.analysisType === "carry_list") {
@@ -20307,7 +20323,10 @@ async function runLiteMesaAnalysisPage(page) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const analysisSource = captureAnalysisSourceIdentity();
   const settings = liteMesaAnalysisEffectiveSettings(definition);
-  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(settings.samples) || 1)));
+  const samples = Math.max(
+    1,
+    Math.min(1000, Math.trunc(Number(settings.samples) || DEFAULT_LITE_MESA_ANALYSIS_SAMPLES))
+  );
   const seed = Math.trunc(Number(settings.seed) || 1);
   const normalizedSettings = {
     ...settings,

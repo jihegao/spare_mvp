@@ -185,19 +185,19 @@ test("frontend API client keeps lite Mesa analysis route while visualization sid
   assert.equal("runIndependentMesaVisualization" in client, false);
   assert.equal(typeof client.runLiteMesaAnalysis, "function");
 
-  const result = await client.runLiteMesaAnalysis(
-    { project_id: "project-ui" },
-    "mission_reliability",
-    { samples: 2, seed: 20260705 }
+    const result = await client.runLiteMesaAnalysis(
+      { project_id: "project-ui" },
+      "mission_reliability",
+      { samples: 4, seed: 20260705, parallelCores: 4 }
   );
 
   assert.equal(result.source, "lite_mesa_aircraft_support_v1");
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["POST /mesa-analysis-runs"]);
   assert.deepEqual(calls[0].body, {
-    project: { project_id: "project-ui" },
-    analysis_type: "mission_reliability",
-    settings: { samples: 2, seed: 20260705 },
-    model_family: "aircraft_support_v1"
+      project: { project_id: "project-ui" },
+      analysis_type: "mission_reliability",
+      settings: { samples: 4, seed: 20260705, parallelCores: 4 },
+      model_family: "aircraft_support_v1"
   });
   assert.equal(calls[0].timeoutMs, 210000);
 });
