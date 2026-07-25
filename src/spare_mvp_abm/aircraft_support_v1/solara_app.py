@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import html
 import json
+import math
 import os
 import re
 import time
@@ -12,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlparse
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import ProxyHandler, Request, build_opener
 
 import solara
 from mesa.visualization.solara_viz import update_counter
@@ -33,7 +35,7 @@ LOCAL_BACKEND_OPENER = build_opener(ProxyHandler({}))
 METRICS_PANEL_TITLE = "指标"
 VISUAL_TAB_LABELS = ["飞机视图", "任务视图", "保障视图"]
 CONTROL_PANEL_TITLE = "运行控制"
-PLAY_INTERVAL_LABEL = "刷新间隔(ms)"
+PLAY_INTERVAL_LABEL = "播放速度(x)"
 RENDER_INTERVAL_LABEL = "渲染周期帧数"
 RESET_BUTTON_LABEL = "重置"
 STEP_BUTTON_LABEL = "单步推进"
@@ -156,6 +158,166 @@ def _load_backend_project_json(project_id: str) -> dict[str, Any]:
     return payload
 
 
+def _normalize_visualization_session_id(value: Any) -> str:
+    session_id = str(value or "").strip()
+    if (
+        not session_id
+        or len(session_id) > 200
+        or not re.fullmatch(r"[A-Za-z0-9._:-]+", session_id)
+    ):
+        raise ValueError("可视化会话编号无效")
+    return session_id
+
+
+def _normalize_visualization_session_token(value: Any) -> str:
+    token = str(value or "").strip()
+    if (
+        not token
+        or len(token) > 4096
+        or any(character.isspace() or ord(character) < 33 or ord(character) > 126 for character in token)
+    ):
+        raise ValueError("可视化会话 capability token 无效")
+    return token
+
+
+def _normalize_playback_speed(value: Any) -> float:
+    try:
+        speed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("可视化会话 playback_speed 无效") from exc
+    if not math.isfinite(speed) or speed <= 0:
+        raise ValueError("可视化会话 playback_speed 无效")
+    return speed
+
+
+def _canonical_json_sha256(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _load_backend_visualization_session(
+    visualization_session_id: str,
+    visualization_session_token: str,
+) -> dict[str, Any]:
+    session_id = _normalize_visualization_session_id(visualization_session_id)
+    capability_token = _normalize_visualization_session_token(
+        visualization_session_token
+    )
+    url = f"{_backend_api_base()}/visualization-sessions/{quote(session_id, safe='')}"
+    request = Request(
+        url,
+        headers={"Authorization": f"VisualizationSession {capability_token}"},
+        method="GET",
+    )
+    try:
+        with LOCAL_BACKEND_OPENER.open(request, timeout=5) as response:  # nosec B310 - local managed backend endpoint.
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"可视化会话 {session_id} 已过期或不可用：{exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"可视化会话响应数据必须是对象：{session_id}")
+    return payload
+
+
+def _required_session_text(payload: dict[str, Any], key: str) -> str:
+    raw_value = payload.get(key)
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        raise ValueError(f"可视化会话缺少 {key}")
+    return raw_value.strip()
+
+
+def _required_session_int(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    minimum: int = 1,
+) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ValueError(f"可视化会话 {key} 无效")
+    return value
+
+
+def _visualization_session_inputs(
+    visualization_session_id: str,
+    visualization_session_token: str,
+    playback_speed: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    requested_session_id = _normalize_visualization_session_id(visualization_session_id)
+    capability_token = _normalize_visualization_session_token(
+        visualization_session_token
+    )
+    normalized_playback_speed = _normalize_playback_speed(playback_speed)
+    payload = _load_backend_visualization_session(
+        requested_session_id,
+        capability_token,
+    )
+    returned_session_id = _required_session_text(payload, "visualization_session_id")
+    if returned_session_id != requested_session_id:
+        raise ValueError("可视化会话响应编号与请求不一致")
+
+    context_key = _required_session_text(payload, "context_key")
+    input_fingerprint = _required_session_text(payload, "input_fingerprint")
+    duration_minutes = _required_session_int(payload, "duration_minutes")
+    tick_minutes = _required_session_int(payload, "tick_minutes")
+    max_steps = _required_session_int(payload, "max_steps")
+    frame_sample_every_steps = _required_session_int(payload, "frame_sample_every_steps")
+    seed = _required_session_int(payload, "seed", minimum=0)
+
+    raw_inputs = payload.get("simulation_inputs")
+    if not isinstance(raw_inputs, dict):
+        raise ValueError("可视化会话缺少已编译 simulation_inputs")
+    inputs = copy.deepcopy(raw_inputs)
+    if not re.fullmatch(r"[0-9a-f]{64}", input_fingerprint):
+        raise ValueError("可视化会话 input_fingerprint 格式无效")
+    if _canonical_json_sha256(inputs) != input_fingerprint:
+        raise ValueError("可视化会话 simulation_inputs 指纹不匹配")
+    time_config = inputs.get("time")
+    if not isinstance(time_config, dict):
+        raise ValueError("可视化会话 simulation_inputs.time 无效")
+    for key, expected in (
+        ("duration_minutes", duration_minutes),
+        ("tick_minutes", tick_minutes),
+    ):
+        actual = time_config.get(key)
+        if isinstance(actual, bool) or not isinstance(actual, int) or actual != expected:
+            raise ValueError(f"可视化会话 canonical {key} 不一致")
+    actual_seed = inputs.get("seed")
+    if isinstance(actual_seed, bool) or not isinstance(actual_seed, int) or actual_seed != seed:
+        raise ValueError("可视化会话 canonical seed 不一致")
+
+    path = (
+        f"{_backend_api_base()}/visualization-sessions/"
+        f"{quote(requested_session_id, safe='')}"
+    )
+    inputs["source_context"] = {
+        "source": "visualization_session",
+        "visualization_session_id": requested_session_id,
+        "context_key": context_key,
+        "input_fingerprint": input_fingerprint,
+    }
+    return inputs, {
+        "source": "backend_visualization_session",
+        "path": path,
+        "visualization_session_id": requested_session_id,
+        "context_key": context_key,
+        "input_fingerprint": input_fingerprint,
+        "runtime": {
+            "duration_minutes": duration_minutes,
+            "tick_minutes": tick_minutes,
+            "max_steps": max_steps,
+            "frame_sample_every_steps": frame_sample_every_steps,
+            "seed": seed,
+            "playback_speed": normalized_playback_speed,
+        },
+    }
+
+
 def _load_project_source(project_id: str | None = None) -> dict[str, Any]:
     if project_id:
         project = _load_backend_project_json(project_id)
@@ -205,6 +367,33 @@ def _query_runtime_config(query: dict[str, list[str]]) -> dict[str, Any]:
     }
 
 
+def _query_input_request(
+    query: dict[str, list[str]],
+) -> tuple[str, str, dict[str, Any]]:
+    if "visualization_session_id" in query:
+        session_ids = query.get("visualization_session_id") or []
+        session_tokens = query.get("visualization_session_token") or []
+        playback_speeds = query.get("playback_speed") or []
+        if len(session_ids) != 1:
+            raise ValueError("必须且只能提供一个可视化会话编号")
+        if len(session_tokens) != 1:
+            raise ValueError("必须且只能提供一个可视化会话 capability token")
+        if len(playback_speeds) != 1:
+            raise ValueError("必须且只能提供一个 playback_speed")
+        return (
+            "visualization_session",
+            _normalize_visualization_session_id(session_ids[0]),
+            {
+                "visualization_session_token": (
+                    _normalize_visualization_session_token(session_tokens[0])
+                ),
+                "playback_speed": _normalize_playback_speed(playback_speeds[0]),
+            },
+        )
+    project_id = str((query.get("project_id") or [""])[-1] or "").strip()
+    return "project", project_id, _query_runtime_config(query)
+
+
 def _model_inputs(
     project_id: str | None = None,
     runtime_config: dict[str, Any] | None = None,
@@ -246,6 +435,22 @@ def _safe_model_inputs(
         return None, None, str(exc)
 
 
+def _safe_visualization_session_inputs(
+    visualization_session_id: str,
+    visualization_session_token: str,
+    playback_speed: Any,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str]:
+    try:
+        inputs, source = _visualization_session_inputs(
+            visualization_session_id,
+            visualization_session_token,
+            playback_speed,
+        )
+        return inputs, source, ""
+    except Exception as exc:
+        return None, None, str(exc)
+
+
 @solara.component
 def MetricsPanel(model: AircraftSupportV1Model) -> None:
     update_counter.get()
@@ -281,7 +486,17 @@ def _metrics_rows(model: AircraftSupportV1Model, metrics: dict[str, Any] | None 
 
 
 def _frame(model: AircraftSupportV1Model) -> dict[str, Any]:
-    return model.visualization_frame(run_id="solara-session", step=model.steps)
+    session_id = str(getattr(model, "_visualization_session_id", "") or "")
+    input_fingerprint = str(getattr(model, "_input_fingerprint", "") or "")
+    frame = model.visualization_frame(
+        run_id=session_id or "solara-session",
+        step=model.steps,
+    )
+    if session_id:
+        frame["visualization_session_id"] = session_id
+    if input_fingerprint:
+        frame["input_fingerprint"] = input_fingerprint
+    return frame
 
 
 def _state_label(state: Any) -> str:
@@ -587,7 +802,19 @@ def _event_row_html(event: dict[str, Any]) -> str:
 
 
 def _new_model(inputs: dict[str, Any]) -> AircraftSupportV1Model:
-    return AircraftSupportV1Model(copy.deepcopy(inputs))
+    model = AircraftSupportV1Model(copy.deepcopy(inputs))
+    source_context = (
+        inputs.get("source_context")
+        if isinstance(inputs.get("source_context"), dict)
+        else {}
+    )
+    model._visualization_session_id = str(  # noqa: SLF001
+        source_context.get("visualization_session_id") or ""
+    )
+    model._input_fingerprint = str(  # noqa: SLF001
+        source_context.get("input_fingerprint") or ""
+    )
+    return model
 
 
 def _reset_model_in_place(model: AircraftSupportV1Model, inputs: dict[str, Any]) -> None:
@@ -601,23 +828,74 @@ def _notify_model_changed() -> None:
     update_counter.set(update_counter.get() + 1)
 
 
+def _playback_delay_seconds(playback_speed: Any) -> float:
+    try:
+        speed = float(playback_speed)
+    except (TypeError, ValueError):
+        speed = 1.0
+    if not math.isfinite(speed) or speed <= 0:
+        speed = 1.0
+    return 1.0 / speed
+
+
+def _step_model_once(
+    model: AircraftSupportV1Model,
+    *,
+    max_steps: int,
+    frame_sample_every_steps: int,
+) -> bool:
+    normalized_max_steps = max(1, int(max_steps or 1))
+    sample_every = max(1, int(frame_sample_every_steps or 1))
+    if not model.running:
+        return False
+    if model.steps >= normalized_max_steps:
+        model.running = False
+        return True
+    model.step()
+    if model.steps >= normalized_max_steps:
+        model.running = False
+    return model.steps % sample_every == 0 or not model.running
+
+
 @solara.component
-def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: dict[str, Any]) -> None:
+def ControlPanel(
+    model_state: solara.Reactive[AircraftSupportV1Model],
+    inputs: dict[str, Any],
+    runtime: dict[str, Any] | None = None,
+) -> None:
     update_counter.get()
-    play_interval = solara.use_reactive(250)
-    render_interval = solara.use_reactive(10)
+    runtime_config = runtime or {}
+    initial_playback_speed = float(runtime_config.get("playback_speed") or 1.0)
+    initial_frame_sample = max(
+        1,
+        int(runtime_config.get("frame_sample_every_steps") or 1),
+    )
+    max_steps = max(
+        1,
+        int(
+            runtime_config.get("max_steps")
+            or inputs.get("time", {}).get("requested_steps")
+            or math.ceil(
+                int(inputs.get("time", {}).get("duration_minutes") or 1)
+                / max(1, int(inputs.get("time", {}).get("tick_minutes") or 1))
+            )
+        ),
+    )
+    playback_speed = solara.use_reactive(initial_playback_speed)
+    render_interval = solara.use_reactive(initial_frame_sample)
     playing = solara.use_reactive(False)
 
     def step_once() -> None:
         model = model_state.value
-        step_count = max(1, int(render_interval.value or 1))
-        for _ in range(step_count):
-            if not model.running:
-                break
-            model.step()
+        should_publish = _step_model_once(
+            model,
+            max_steps=max_steps,
+            frame_sample_every_steps=render_interval.value,
+        )
         if not model.running:
             playing.set(False)
-        _notify_model_changed()
+        if should_publish:
+            _notify_model_changed()
 
     def reset_model() -> None:
         playing.set(False)
@@ -629,7 +907,7 @@ def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: d
 
     def play_loop() -> None:
         while playing.value and model_state.value.running:
-            time.sleep(max(1, int(play_interval.value or 1)) / 1000)
+            time.sleep(_playback_delay_seconds(playback_speed.value))
             # Reset/pause may occur while this worker is sleeping.  Recheck
             # before advancing so an already-scheduled iteration cannot step
             # the freshly reset model.
@@ -643,13 +921,13 @@ def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: d
         with solara.Card(CONTROL_PANEL_TITLE, margin=0):
             with solara.Row(classes=["sim-control-content"], gap="16px", style="width:100%; flex-wrap:wrap; align-items:flex-end;"):
                 with solara.Column(gap="0px", style="flex:1 1 220px; min-width:180px;"):
-                    solara.SliderInt(
+                    solara.SliderFloat(
                         label=PLAY_INTERVAL_LABEL,
-                        value=play_interval,
-                        on_value=play_interval.set,
-                        min=1,
-                        max=500,
-                        step=10,
+                        value=playback_speed,
+                        on_value=playback_speed.set,
+                        min=0.1,
+                        max=max(10.0, initial_playback_speed),
+                        step=0.1,
                     )
                 with solara.Column(gap="0px", style="flex:1 1 220px; min-width:180px;"):
                     solara.SliderInt(
@@ -973,14 +1251,37 @@ VISUAL_SIMULATION_STYLE = """
 @solara.component
 def Page() -> None:
     router = solara.use_router()
-    query = parse_qs(router.search or "")
-    project_id = str((query.get("project_id") or [""])[-1] or "").strip()
-    runtime_config = _query_runtime_config(query)
-    runtime_config_key = json.dumps(runtime_config, ensure_ascii=False, sort_keys=True)
-    inputs, _source, error = solara.use_memo(
-        lambda: _safe_model_inputs(project_id, runtime_config=runtime_config),
-        [project_id, runtime_config_key],
-    )
+    query = parse_qs(router.search or "", keep_blank_values=True)
+    try:
+        input_mode, input_id, runtime_config = _query_input_request(query)
+    except ValueError as exc:
+        solara.Markdown(f"### Solara 推演输入加载失败\n\n{exc}")
+        return
+    if input_mode == "visualization_session":
+        capability_token = runtime_config["visualization_session_token"]
+        playback_speed = runtime_config["playback_speed"]
+        input_loader = lambda: _safe_visualization_session_inputs(
+            input_id,
+            capability_token,
+            playback_speed,
+        )
+        token_fingerprint = hashlib.sha256(
+            capability_token.encode("utf-8")
+        ).hexdigest()
+        input_key = (
+            f"visualization-session:{input_id}:"
+            f"{token_fingerprint}:{playback_speed}"
+        )
+    else:
+        input_loader = lambda: _safe_model_inputs(
+            input_id,
+            runtime_config=runtime_config,
+        )
+        input_key = (
+            f"project:{input_id}:"
+            f"{json.dumps(runtime_config, ensure_ascii=False, sort_keys=True)}"
+        )
+    inputs, source, error = solara.use_memo(input_loader, [input_key])
     if error or inputs is None:
         solara.Markdown(f"### Solara 推演输入加载失败\n\n{error or '未知错误'}")
         return
@@ -990,7 +1291,7 @@ def Page() -> None:
     """)
     model_state = solara.use_reactive(_new_model(inputs))  # noqa: SH101
     with solara.Column(classes=["visual-simulation-page"], gap="12px", style="width:100%;"):
-        ControlPanel(model_state, inputs)
+        ControlPanel(model_state, inputs, runtime=(source or {}).get("runtime"))
         with solara.Row(classes=["sim-layout"], gap="12px", style="width:100%; flex-wrap:wrap;"):
             with solara.Column(classes=["sim-left-rail"], gap="12px"):
                 MetricsPanel(model_state.value)

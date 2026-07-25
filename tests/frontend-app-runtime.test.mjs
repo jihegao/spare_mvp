@@ -2102,46 +2102,35 @@ test("product catalog collapse handles zero, one, and multiple products", async 
   }
 });
 
-test("visual Mesa page renders Solara iframe shell", async () => {
+test("visual Mesa page renders current Project controls before creating a Solara session", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans: [{
-      experiment_plan_id: "plan-visual-shell",
-      config: {
-        name: "可视化壳层方案",
-        steps: 5,
-        samples: 1,
-        seed: 11,
-        projectJson: createRuntimeProjectJson({ project_id: "project-visual-shell" })
-      }
-    }]
+    projectJson: createRuntimeProjectJson()
   });
 
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-visual-shell" }
-    );
-
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"|刷新推演|visual-frame-toolbar/);
     const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "mesa-visual-toolbar");
-    assert.match(visualHero, /class="lite-mesa-hero mesa-visual-toolbar"/);
-    assert.match(visualHero, /<h3>可视化推演<\/h3>/);
-    assert.match(visualHero, /<p>Runtime 项目<\/p>/);
-    assert.match(visualHero, /data-current-experiment-plan/);
-    assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
-    assert.match(runtime.appNode.innerHTML, /class="solara-visualization-frame"/);
-    assert.match(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
-    assert.match(runtime.appNode.innerHTML, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /Solara 可视化内嵌页/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /mesa-control-deck|mesa-control-status|仿真状态/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /飞机保障独立 Mesa 仿真/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /点击可视化推演后直接读取当前 Project/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<div class="mesa-clock"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /独立 Mesa/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-control="play"|data-mesa-view|data-mesa-timeline/);
+    assert.match(visualHero, /运行上下文/);
+    assert.match(visualHero, /当前项目：Runtime 项目/);
+    assert.match(runtime.appNode.innerHTML, /data-visualization-session-start/);
+    assert.match(runtime.appNode.innerHTML, /data-visualization-setting="seed"[^>]*value="20260621"/);
+    assert.match(runtime.appNode.innerHTML, /data-visualization-setting="frameSampleEverySteps"[^>]*value="1"/);
+    assert.match(runtime.appNode.innerHTML, /data-visualization-setting="playbackSpeed"[^>]*value="1"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /class="solara-visualization-frame"|<iframe/);
+
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    const request = runtime.requests.find((item) => item.url === "/api/visualization-sessions");
+    const body = JSON.parse(request.options.body || "{}");
+    assert.equal(body.context.kind, "current_project");
+    assert.equal(body.context.project.project_id, "project-runtime");
+    assert.equal(body.seed, 20260621);
+    assert.equal(body.frameSampleEverySteps, 1);
+    assert.equal(body.playbackSpeed, 1);
+    const iframeSrc = runtime.appNode.innerHTML.match(/<iframe[\s\S]*?src="([^"]+)"/)?.[1] || "";
+    assert.match(iframeSrc, /visualization_session_id=visual-session-runtime-1/);
+    assert.match(iframeSrc, /visualization_session_token=visual-token-runtime-1/);
+    assert.match(iframeSrc, /playback_speed=1/);
+    assert.doesNotMatch(iframeSrc, /project_id|experiment_plan|samples|parallel|embedded|reload|authorization|access_token|Bearer|m4-runtime-token/);
   } finally {
     runtime.restore();
   }
@@ -2303,8 +2292,12 @@ test("aircraft mission reliability page runs explicitly and exports retained sum
     }),
     experimentPlans: [{
       experiment_plan_id: "plan-reliability-j16",
-      status: "draft",
+      canonical_fingerprint: "canonical:plan-reliability-j16",
+      status: "frozen",
       config: {
+        samples: 4,
+        parallelCores: 4,
+        seed: 20260621,
         name: "J-16 可靠性方案",
         projectJson: createRuntimeProjectJson({
           project_id: "project-runtime-j16",
@@ -6670,32 +6663,23 @@ test("experiment plan editor blocks invalid parallel cores before save", async (
   }
 });
 
-test("Monte Carlo launch blocks an invalid saved parallel core value", async () => {
+test("Monte Carlo launch blocks an invalid frozen parallel core value", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans: [{
-      experiment_plan_id: "plan-invalid-parallel",
-      status: "draft",
-      config: {
-        name: "旧版非法并行方案",
-        samples: 2,
-        seed: 77,
-        parallelCores: 0,
-        projectJson: createRuntimeProjectJson({ project_id: "project-invalid-parallel" })
-      }
-    }]
+    experimentPlans: [frozenRuntimePlan({
+      id: "plan-invalid-parallel",
+      name: "非法并行冻结方案",
+      projectJson: createRuntimeProjectJson({ project_id: "project-invalid-parallel" }),
+      samples: 2,
+      parallelCores: 33,
+      seed: 77
+    })]
   });
-
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-invalid-parallel" }
-    );
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-invalid-parallel" });
+    assert.match(runtime.appNode.innerHTML, /并行核心数必须是 1-32 之间的整数/);
     await runtime.click("[data-lite-mesa-action='run']");
     assert.equal(runtime.requests.some((request) => request.url === "/api/mesa-analysis-runs"), false);
-    assert.match(runtime.appNode.innerHTML, /并行核心数必须是 1-32 之间的正整数/);
   } finally {
     runtime.restore();
   }
@@ -6738,364 +6722,194 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
   }
 });
 
-test("visual simulation shows a plan-only empty state without saving or mounting an iframe", async () => {
-  const runtime = await setupRuntimeApp({
-    hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson()
-  });
-
+test("visual simulation starts with current Project and does not save or mount an iframe", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-visual-mesa-page" });
   try {
-    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
-    assert.match(visualShell, /<span>实验方案<\/span>/);
-    assert.match(visualShell, /aria-label="实验方案" disabled/);
-    assert.match(visualShell, /暂无实验方案，请先在实验方案管理中创建并保存方案/);
-    assert.match(visualShell, /data-plan-list-link>前往实验方案管理<\/button>/);
-    assert.doesNotMatch(visualShell, /运行上下文|当前项目|已保存实验方案|<optgroup/);
-    assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
-    assert.doesNotMatch(visualShell, /data-mesa-control="reload-solara"|刷新推演|visual-frame-toolbar/);
-    assert.doesNotMatch(visualShell, /title="Solara 可视化推演"|<iframe/);
-    assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
-    assert.equal(
-      runtime.requests.some((request) => request.url === "/api/runs"),
-      false,
-      "visual page load should not auto-start retired formal visualization"
-    );
-
-    assert.equal(
-      runtime.requests.some((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST"),
-      false,
-      "visual refresh without a saved plan must not save or start a Project"
-    );
-    assert.equal(
-      runtime.requests.some((request) => request.url === "/api/runs"),
-      false,
-      "Solara refresh must not submit retired /api/runs"
-    );
-    assert.equal(
-      runtime.requests.some((request) => request.url === "/api/mesa-analysis-runs"),
-      false,
-      "Solara iframe page is driven by the sidecar, not the lite Mesa summary endpoint"
-    );
-    assert.equal(
-      runtime.requests.some((request) => (
-        request.url === "/api/projects/project-runtime/experiment-plans"
-        && (request.options.method || "GET") === "POST"
-      )),
-      false,
-      "current Project visualization must not auto-create an ExperimentPlan"
-    );
-    assert.doesNotMatch(runtime.appNode.innerHTML, /reload=/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /Solara Mesa iframe|iframe:/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /mesa-control-deck|mesa-control-status|仿真状态|推演由 Solara/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /启动回放|data-mesa-timeline|Lite Mesa 仿真未返回 run_id/);
+    assert.match(runtime.appNode.innerHTML, /运行上下文[\s\S]*当前项目：Runtime 项目/);
+    assert.match(runtime.appNode.innerHTML, /data-visualization-session-start/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /title="Solara 可视化推演"|<iframe/);
+    assert.equal(runtime.requests.some((request) => request.url === "/api/visualization-sessions"), false);
+    assert.equal(runtime.requests.some((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST"), false);
+    assert.equal(runtime.requests.some((request) => request.url === "/api/projects/project-runtime/experiment-plans" && (request.options.method || "GET") === "POST"), false);
   } finally {
     runtime.restore();
   }
 });
 
-test("visual simulation does not depend on lite Mesa run id", async () => {
-  const planProjectJson = createRuntimeProjectJson({ project_id: "project-visual-no-run-id" });
+test("visual simulation sends frozen plan identity and uses the returned session id", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans: [{
-      experiment_plan_id: "plan-no-run-id",
-      config: { name: "无 run id 方案", steps: 5, samples: 2, seed: 22, projectJson: planProjectJson }
-    }],
-    liteMesaAnalysisResponseOverrides: { run_id: "" }
+    experimentPlans: [frozenRuntimePlan({
+      id: "plan-no-run-id",
+      name: "冻结可视化方案",
+      projectJson: createRuntimeProjectJson({ project_id: "project-visual-no-run-id" }),
+      samples: 2,
+      parallelCores: 2,
+      seed: 22,
+      fingerprint: "canonical:no-run-id"
+    })]
   });
-
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-no-run-id" }
-    );
-    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-no-run-id/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /reload=/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /后端项目重新编译推演输入|后端 Project 重新编译推演输入/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /Lite Mesa 仿真未返回 run_id/);
-    assert.equal(
-      runtime.requests.some((request) => request.url === "/api/runs"),
-      false,
-      "visual Mesa session must not fall back to retired /api/runs"
-    );
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-no-run-id" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    const body = JSON.parse(runtime.requests.find((request) => request.url === "/api/visualization-sessions").options.body || "{}");
+    assert.deepEqual(body.context, {
+      kind: "frozen_plan",
+      projectId: "project-runtime",
+      experimentPlanId: "plan-no-run-id",
+      planFingerprint: "canonical:no-run-id"
+    });
+    assert.match(runtime.appNode.innerHTML, /visualization_session_id=visual-session-runtime-1/);
+    assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-1/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /experiment_plan_id=|project_id=project-visual-no-run-id|plan_samples|plan_seed/);
   } finally {
     runtime.restore();
   }
 });
 
-test("visual simulation applies saved plan runtime settings without changing current Project settings", async () => {
-  const currentProjectJson = createRuntimeProjectJson({
-    experiment: { name: "当前项目实验", steps: 11, samples: 2, seed: 22 }
-  });
-  const planProjectJson = createRuntimeProjectJson({
-    project_id: "project-visual-plan",
-    projectInfo: { name: "可视化方案 Project", baseCode: "VIS" }
-  });
-  delete planProjectJson.experiment;
-  const runtime = await setupRuntimeApp({
-    hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: currentProjectJson,
-    experimentPlans: [{
-      experiment_plan_id: "plan-visual",
-      status: "draft",
-      config: {
-        name: "可视化保存方案",
-        steps: 77,
-        samples: 8,
-        seed: 88,
-        projectJson: planProjectJson
-      }
-    }]
-  });
-
+test("visual session invalidation distinguishes playback from seed and frame sampling", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-visual-mesa-page" });
   try {
-    assert.match(runtime.appNode.innerHTML, /<option value="" selected>请选择实验方案<\/option>/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    assert.match(runtime.appNode.innerHTML, /<iframe/);
+    assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-1/);
+    assert.match(runtime.appNode.innerHTML, /最大时长<input[^>]*value="1440"[^>]*readonly/);
+    assert.match(runtime.appNode.innerHTML, /最大步数<input[^>]*readonly/);
 
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-visual" }
-    );
-    assert.match(runtime.appNode.innerHTML, /<option value="plan-visual" selected>可视化保存方案<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /project_id=project-visual-plan/);
-    const planProjectSave = runtime.requests
-      .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(planProjectSave.project_id, "project-visual-plan");
-    assert.equal("experiment" in planProjectSave, false, "saved plan visualization must keep Project persistence clean");
-    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-visual/);
-    assert.match(runtime.appNode.innerHTML, /plan_steps=77/);
-    assert.match(runtime.appNode.innerHTML, /plan_samples=8/);
-    assert.match(runtime.appNode.innerHTML, /plan_seed=88/);
-    assert.equal(
-      runtime.requests.some((request) => (
-        request.url === "/api/projects/project-runtime/experiment-plans"
-        && (request.options.method || "GET") === "POST"
-      )),
-      false,
-      "visualization refresh must not create an ExperimentPlan"
-    );
+    await runtime.change("[data-visualization-setting]", { visualizationSetting: "playbackSpeed" }, { value: "1.5", type: "number" });
+    assert.match(runtime.appNode.innerHTML, /<iframe/);
+    assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-1/);
+    assert.match(runtime.appNode.innerHTML, /playback_speed=1.5/);
+
+    await runtime.change("[data-visualization-setting]", { visualizationSetting: "seed" }, { value: "99", type: "number" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /visualization_session_token|visual-token-runtime-1/);
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    assert.match(runtime.appNode.innerHTML, /<iframe/);
+    assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-2/);
+    await runtime.change("[data-visualization-setting]", { visualizationSetting: "frameSampleEverySteps" }, { value: "3", type: "number" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /visualization_session_token|visual-token-runtime-2/);
   } finally {
     runtime.restore();
   }
 });
 
-test("visual simulation resyncs an updated stable plan fingerprint and skips unchanged refreshes", async () => {
-  const planProjectJson = createRuntimeProjectJson({
-    project_id: "project-visual-fingerprint",
-    supportResources: [{
-      id: "spare-fingerprint",
-      supportNodeName: "基层",
-      type: "spare",
-      name: "航电模块",
-      model: "AV-1",
-      productId: "product-av-1",
-      quantity: 2
-    }]
-  });
-  delete planProjectJson.experiment;
-  const experimentPlans = [{
-    experiment_plan_id: "plan-stable-fingerprint",
-    status: "draft",
-    config: {
-      name: "稳定标识方案",
-      steps: 12,
-      samples: 3,
-      seed: 1203,
-      projectJson: planProjectJson
-    }
-  }];
+test("current Project modeling mutation invalidates visualization session identity and stale responses", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans
+    projectJson: createRuntimeProjectJson({
+      basicMissions: [{
+        id: "basic-visual-mutation",
+        name: "可视化失效任务",
+        equipmentType: "J-15",
+        taskDurationMinutes: 90,
+        minRequiredSorties: 1,
+        supportActivityName: "飞行前保障"
+      }],
+      supportActivities: [{
+        id: "support-visual-mutation",
+        activityType: "使用保障",
+        activityName: "飞行前保障"
+      }]
+    }),
+    visualizationSessionResponseDelayMs: 25
   });
-  const branchProjectSaves = () => runtime.requests
-    .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
-    .map((request) => JSON.parse(request.options.body || "{}"))
-    .filter((body) => body.project_id === "project-visual-fingerprint");
-
   try {
+    const pendingSession = runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    await runtime.setHash("feature=spare-planning-basic-mission");
     await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-stable-fingerprint" }
+      "[data-path]",
+      { path: "basicMissions.0.taskArea" },
+      { value: "变更后的任务区域", type: "text" }
     );
-    assert.equal(branchProjectSaves().length, 1);
-    assert.equal(branchProjectSaves()[0].supportResources[0].quantity, 2);
-    assert.match(runtime.appNode.innerHTML, /plan_steps=12/);
-
-    await runtime.setHash("feature=spare-planning-experiment-plan-management");
-    await runtime.click(
-      "[data-experiment-plan-edit]",
-      { experimentPlanEdit: "plan-stable-fingerprint", experimentPlanName: "稳定标识方案" }
-    );
-    await runtime.change(
-      "[data-experiment-plan-path]",
-      { experimentPlanPath: "experiment.steps" },
-      { value: "24", type: "number" }
-    );
-    await runtime.change(
-      "[data-experiment-plan-path]",
-      { experimentPlanPath: "supportResources.0.quantity" },
-      { value: "9", type: "number" }
-    );
-    await runtime.click("[data-save-plan]");
-
-    const updateRequest = runtime.requests.find((request) => (
-      request.url === "/api/projects/project-runtime/experiment-plans/plan-stable-fingerprint"
-      && (request.options.method || "GET") === "PUT"
-    ));
-    assert.ok(updateRequest);
-    const updateBody = JSON.parse(updateRequest.options.body || "{}");
-    assert.equal(updateBody.config.steps, 24);
-    assert.equal(updateBody.config.projectJson.supportResources[0].quantity, 9);
-
+    await pendingSession;
     await runtime.setHash("feature=spare-planning-visual-mesa-page");
-    assert.equal(branchProjectSaves().length, 2, "same-ID changed content must save the branch Project again");
-    assert.equal(branchProjectSaves()[1].supportResources[0].quantity, 9);
-    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-stable-fingerprint/);
-    assert.match(runtime.appNode.innerHTML, /plan_steps=24/);
-    assert.match(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /visualization_session_id|visualization_session_token|visual-token-runtime/);
+    assert.match(runtime.appNode.innerHTML, /当前项目建模数据已更新|重新创建可视化会话/);
+  } finally {
+    runtime.restore();
+  }
+});
 
+test("visual simulation invalidates session and stale response after a frozen fingerprint update", async () => {
+  const experimentPlans = [frozenRuntimePlan({
+    id: "plan-stable-fingerprint",
+    name: "稳定标识方案",
+    projectJson: createRuntimeProjectJson({ project_id: "project-visual-fingerprint" }),
+    samples: 3,
+    parallelCores: 2,
+    seed: 1203,
+    fingerprint: "canonical:fingerprint-a"
+  })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    experimentPlans,
+    visualizationSessionResponseDelayMs: 25
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-stable-fingerprint" });
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    experimentPlans[0] = {
+      ...experimentPlans[0],
+      canonical_fingerprint: "canonical:fingerprint-b",
+      config: { ...experimentPlans[0].config, seed: 1204 }
+    };
     await runtime.setHash("feature=spare-planning-experiment-plan-management");
     await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
     await runtime.setHash("feature=spare-planning-visual-mesa-page");
-    assert.equal(branchProjectSaves().length, 2, "unchanged force refresh must reuse the matching fingerprint");
-    assert.match(runtime.appNode.innerHTML, /plan_steps=24/);
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
+    assert.match(runtime.appNode.innerHTML, /指纹已更新|配置已更新|重新创建可视化会话/);
   } finally {
     runtime.restore();
   }
 });
 
-test("visual simulation distinguishes duplicate plan names by stable IDs and switches Project branches atomically", async () => {
+test("visual simulation distinguishes duplicate frozen plan names by identity", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson(),
     experimentPlans: [
-      {
-        experiment_plan_id: "plan-duplicate-a",
-        config: {
-          name: "重名方案",
-          steps: 11,
-          samples: 2,
-          seed: 101,
-          projectJson: createRuntimeProjectJson({ project_id: "project-duplicate-a" })
-        }
-      },
-      {
-        experiment_plan_id: "plan-duplicate-b",
-        config: {
-          name: "重名方案",
-          steps: 22,
-          samples: 3,
-          seed: 202,
-          projectJson: createRuntimeProjectJson({ project_id: "project-duplicate-b" })
-        }
-      }
+      frozenRuntimePlan({ id: "plan-duplicate-a", name: "同名冻结方案", projectJson: createRuntimeProjectJson(), fingerprint: "canonical:a" }),
+      frozenRuntimePlan({ id: "plan-duplicate-b", name: "同名冻结方案", projectJson: createRuntimeProjectJson(), fingerprint: "canonical:b" })
     ]
   });
-
   try {
-    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
-    assert.equal((visualShell.match(/>重名方案<\/option>/g) || []).length, 2);
-    assert.match(visualShell, /<option value="plan-duplicate-a"\s*>重名方案<\/option>/);
-    assert.match(visualShell, /<option value="plan-duplicate-b"\s*>重名方案<\/option>/);
-    assert.doesNotMatch(visualShell, /current-project:|<optgroup|已保存实验方案/);
-
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-duplicate-b" }
-    );
-    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-b/);
-    assert.match(runtime.appNode.innerHTML, /project_id=project-duplicate-b/);
-    assert.match(runtime.appNode.innerHTML, /plan_steps=22/);
-    let saved = runtime.requests
-      .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(saved.project_id, "project-duplicate-b");
-
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-duplicate-a" }
-    );
-    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-a/);
-    assert.match(runtime.appNode.innerHTML, /project_id=project-duplicate-a/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /experiment_plan_id=plan-duplicate-b/);
-    saved = runtime.requests
-      .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(saved.project_id, "project-duplicate-a");
+    assert.equal((runtime.appNode.innerHTML.match(/同名冻结方案/g) || []).length, 2);
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-duplicate-b" });
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    const body = JSON.parse(runtime.requests.find((request) => request.url === "/api/visualization-sessions").options.body || "{}");
+    assert.equal(body.context.experimentPlanId, "plan-duplicate-b");
+    assert.equal(body.context.planFingerprint, "canonical:b");
   } finally {
     runtime.restore();
   }
 });
 
-test("visual simulation clears a saved Project override when shared context changes on another analysis page", async () => {
+test("visual simulation clears its session when shared run context changes on another page", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans: [
-      {
-        experiment_plan_id: "plan-cross-page-a",
-        config: {
-          name: "跨页方案A",
-          steps: 11,
-          samples: 2,
-          seed: 101,
-          projectJson: createRuntimeProjectJson({ project_id: "project-cross-page-a" })
-        }
-      },
-      {
-        experiment_plan_id: "plan-cross-page-b",
-        config: {
-          name: "跨页方案B",
-          steps: 22,
-          samples: 3,
-          seed: 202,
-          projectJson: createRuntimeProjectJson({ project_id: "project-cross-page-b" })
-        }
-      }
-    ]
+    experimentPlans: [frozenRuntimePlan({ id: "plan-cross-page", name: "跨页冻结方案", projectJson: createRuntimeProjectJson(), fingerprint: "canonical:cross" })]
   });
-
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-cross-page-a" }
-    );
-    assert.match(runtime.appNode.innerHTML, /project_id=project-cross-page-a/);
-
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    assert.match(runtime.appNode.innerHTML, /<iframe/);
+    assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-1/);
     await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-cross-page-b" }
-    );
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-cross-page" });
     await runtime.setHash("feature=spare-planning-visual-mesa-page");
-
-    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
-    assert.match(visualShell, /experiment_plan_id=plan-cross-page-b/);
-    assert.match(visualShell, /project_id=project-cross-page-b/);
-    assert.match(visualShell, /plan_steps=22/);
-    assert.match(visualShell, /plan_samples=3/);
-    assert.match(visualShell, /plan_seed=202/);
-    assert.doesNotMatch(visualShell, /project_id=project-cross-page-a|experiment_plan_id=plan-cross-page-a/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /visualization_session_token|visual-token-runtime-1/);
+    assert.match(runtime.appNode.innerHTML, /重新创建可视化会话/);
   } finally {
     runtime.restore();
   }
 });
 
-test("visual experiment plan list ignores a stale response from the previous Project", async () => {
+test("visual experiment plan list ignores a stale frozen-plan response from the previous Project", async () => {
   const projectAPlans = createRuntimeDeferred();
   const projectBPlans = createRuntimeDeferred();
   const projectA = createRuntimeProjectJson({ project_id: "project-race-a" });
@@ -7104,52 +6918,27 @@ test("visual experiment plan list ignores a stale response from the previous Pro
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: projectA,
     backendProjects: [
-      {
-        project_id: "project-race-a",
-        experiment_name: "竞态项目A",
-        base_code: "RA",
-        summary: "runtime race A",
-        updated_at: "2026-07-18 00:00:00"
-      },
-      {
-        project_id: "project-race-b",
-        experiment_name: "竞态项目B",
-        base_code: "RB",
-        summary: "runtime race B",
-        updated_at: "2026-07-18 00:00:00"
-      }
+      runtimeBackendProjectEntry("project-race-a", "竞态项目A"),
+      runtimeBackendProjectEntry("project-race-b", "竞态项目B")
     ],
-    projectJsonById: {
-      "project-race-a": projectA,
-      "project-race-b": projectB
-    },
+    projectJsonById: { "project-race-a": projectA, "project-race-b": projectB },
     experimentPlanListsByProject: {
       "project-race-a": projectAPlans.promise,
       "project-race-b": projectBPlans.promise
     }
   });
-
   try {
-    assert.ok(runtime.requests.some((request) => request.url === "/api/projects/project-race-a/experiment-plans"));
     await runtime.click("[data-project-list]", { projectList: "" });
     await runtime.click("[data-enter-workbench]", { projectId: "race-b" });
     await runtime.setHash("feature=spare-planning-visual-mesa-page");
-    assert.ok(runtime.requests.some((request) => request.url === "/api/projects/project-race-b/experiment-plans"));
-
-    projectBPlans.resolve([{
-      experiment_plan_id: "plan-race-b",
-      config: { name: "项目B方案", projectJson: projectB }
-    }]);
+    projectBPlans.resolve([frozenRuntimePlan({ id: "plan-race-b", name: "项目B冻结方案", projectJson: projectB, fingerprint: "canonical:race-b" })]);
     await runtime.flush();
-    assert.match(runtime.appNode.innerHTML, /<option value="plan-race-b"\s*>项目B方案<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-race-b"\s*>项目B冻结方案<\/option>/);
 
-    projectAPlans.resolve([{
-      experiment_plan_id: "plan-race-a-stale",
-      config: { name: "项目A迟到方案", projectJson: projectA }
-    }]);
+    projectAPlans.resolve([frozenRuntimePlan({ id: "plan-race-a-stale", name: "项目A迟到冻结方案", projectJson: projectA, fingerprint: "canonical:race-a" })]);
     await runtime.flush();
-    assert.match(runtime.appNode.innerHTML, /<option value="plan-race-b"\s*>项目B方案<\/option>/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /plan-race-a-stale|项目A迟到方案/);
+    assert.match(runtime.appNode.innerHTML, /plan-race-b/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /plan-race-a-stale|项目A迟到冻结方案/);
   } finally {
     projectAPlans.resolve([]);
     projectBPlans.resolve([]);
@@ -7157,410 +6946,196 @@ test("visual experiment plan list ignores a stale response from the previous Pro
   }
 });
 
-test("visual experiment plan list keeps a stored plan through HTTP 500 and restores it after retry", async () => {
-  const planProjectJson = createRuntimeProjectJson({ project_id: "project-retry-plan" });
+test("visual frozen-plan list keeps stored identity through HTTP 500 and restores after retry", async () => {
   let listRequestCount = 0;
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson(),
     experimentPlanListsByProject: {
       "project-runtime": () => {
         listRequestCount += 1;
-        if (listRequestCount === 1) {
-          return jsonResponse(
-            { message: "方案服务暂时不可用" },
-            { ok: false, status: 500 }
-          );
-        }
-        return [{
-          experiment_plan_id: "plan-retry-stored",
-          config: {
-            name: "重试恢复方案",
-            steps: 33,
-            samples: 4,
-            seed: 303,
-            projectJson: planProjectJson
-          }
-        }];
+        if (listRequestCount === 1) return jsonResponse({ message: "方案服务暂时不可用" }, { ok: false, status: 500 });
+        return [frozenRuntimePlan({
+          id: "plan-retry-stored",
+          name: "重试恢复冻结方案",
+          projectJson: createRuntimeProjectJson(),
+          samples: 4,
+          parallelCores: 2,
+          seed: 303,
+          fingerprint: "canonical:retry"
+        })];
       }
     },
-    storageEntries: [[
-      "spare-mvp:selectedRunContextByProject",
-      JSON.stringify({ "project-runtime": "plan-retry-stored" })
-    ]]
+    storageEntries: [["spare-mvp:selectedRunContextByProject", JSON.stringify({ "project-runtime": "plan-retry-stored" })]]
   });
-
   try {
-    await runtime.flush();
-    const failedVisualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
-    assert.match(failedVisualShell, /实验方案列表加载失败/);
-    assert.doesNotMatch(failedVisualShell, /暂无实验方案，请先在实验方案管理中创建并保存方案/);
-    assert.doesNotMatch(failedVisualShell, /data-mesa-control="reload-solara"|刷新推演|visual-frame-toolbar/);
-    assert.doesNotMatch(failedVisualShell, /title="Solara 可视化推演"|<iframe/);
-    assert.equal(
-      JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
-      "plan-retry-stored",
-      "a transient list failure must not clear the persisted stable plan ID"
-    );
+    assert.match(runtime.appNode.innerHTML, /方案列表加载失败/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
+    assert.equal(JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"], "plan-retry-stored");
 
     await runtime.setHash("feature=spare-planning-experiment-plan-management");
     await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
     await runtime.setHash("feature=spare-planning-visual-mesa-page");
-
-    const recoveredVisualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
-    assert.match(recoveredVisualShell, /<option value="plan-retry-stored" selected>重试恢复方案<\/option>/);
-    assert.match(recoveredVisualShell, /experiment_plan_id=plan-retry-stored/);
-    assert.match(recoveredVisualShell, /project_id=project-retry-plan/);
-    assert.match(recoveredVisualShell, /plan_steps=33/);
-    assert.match(recoveredVisualShell, /plan_samples=4/);
-    assert.match(recoveredVisualShell, /plan_seed=303/);
-
-    assert.ok(runtime.requests.some((request) => (
-      request.url === "/api/projects"
-      && (request.options.method || "GET") === "POST"
-      && JSON.parse(request.options.body || "{}").project_id === "project-retry-plan"
-    )));
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-retry-stored" selected>重试恢复冻结方案<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    const body = JSON.parse(runtime.requests.find((request) => request.url === "/api/visualization-sessions").options.body || "{}");
+    assert.equal(body.context.experimentPlanId, "plan-retry-stored");
+    assert.equal(body.context.planFingerprint, "canonical:retry");
   } finally {
     runtime.restore();
   }
 });
 
-test("visual simulation restores a saved plan ID and clears it after the plan is deleted", async () => {
+test("visual simulation restores a frozen plan ID and clears session after deletion", async () => {
   const experimentPlans = [
-    {
-      experiment_plan_id: "plan-restored-visual",
-      config: {
-        name: "恢复后删除方案",
-        projectJson: createRuntimeProjectJson({ project_id: "project-restored-visual" })
-      }
-    },
-    {
-      experiment_plan_id: "plan-surviving-visual",
-      config: {
-        name: "保留方案",
-        projectJson: createRuntimeProjectJson({ project_id: "project-surviving-visual" })
-      }
-    }
+    frozenRuntimePlan({ id: "plan-restored-visual", name: "恢复后删除冻结方案", projectJson: createRuntimeProjectJson(), fingerprint: "canonical:restored" }),
+    frozenRuntimePlan({ id: "plan-surviving-visual", name: "保留冻结方案", projectJson: createRuntimeProjectJson(), fingerprint: "canonical:surviving" })
   ];
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
-    projectJson: createRuntimeProjectJson(),
     experimentPlans,
-    storageEntries: [[
-      "spare-mvp:selectedRunContextByProject",
-      JSON.stringify({ "project-runtime": "plan-restored-visual" })
-    ]]
+    storageEntries: [["spare-mvp:selectedRunContextByProject", JSON.stringify({ "project-runtime": "plan-restored-visual" })]]
   });
-
   try {
-    await runtime.flush();
-    assert.match(runtime.appNode.innerHTML, /<option value="plan-restored-visual" selected>恢复后删除方案<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-restored-visual/);
-
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-restored-visual" selected>恢复后删除冻结方案<\/option>/);
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    assert.match(runtime.appNode.innerHTML, /<iframe/);
     await runtime.click("[data-plan-list-link]", { planListLink: "" });
-    await runtime.click(
-      "[data-experiment-plan-delete]",
-      { experimentPlanDelete: "plan-restored-visual" }
-    );
+    await runtime.click("[data-experiment-plan-delete]", { experimentPlanDelete: "plan-restored-visual" });
     await runtime.setHash("feature=spare-planning-visual-mesa-page");
-
-    const visualShell = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<div class="mesa-visual-shell">'));
-    assert.match(visualShell, /<option value="" selected>请选择实验方案<\/option>/);
-    assert.match(visualShell, /<option value="plan-surviving-visual"\s*>保留方案<\/option>/);
-    assert.doesNotMatch(visualShell, /恢复后删除方案|title="Solara 可视化推演"/);
-
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-surviving-visual" }
-    );
-    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-surviving-visual/);
+    assert.match(runtime.appNode.innerHTML, /当前项目：Runtime 项目/);
+    assert.match(runtime.appNode.innerHTML, /保留冻结方案/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /恢复后删除冻结方案|<iframe/);
   } finally {
     runtime.restore();
   }
 });
 
-test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis requests", async () => {
-  const planProjectJson = createRuntimeProjectJson({
-    project_id: "project-runtime-plan-a",
-    projectInfo: { name: "方案A Project", baseCode: "PLA" }
-  });
-  delete planProjectJson.experiment;
+test("run context dropdown drives editable current MC and read-only frozen requests", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans: [{
-      experiment_plan_id: "plan-a",
-      status: "draft",
-      config: {
-        name: "方案A",
-        samples: 4,
-        seed: 404,
-        parallelCores: 3,
-        projectJson: planProjectJson
-      }
-    }]
-  });
-
-  try {
-    assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
-    const monteCarloHero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-    assert.match(monteCarloHero, /<h3>蒙特卡洛分析<\/h3>/);
-    assert.match(monteCarloHero, /data-current-experiment-plan/);
-    assert.doesNotMatch(monteCarloHero, /后端 Mesa 仿真分析|lite-mesa-hero-meter/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid/);
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-a" }
-    );
-    const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-    assert.doesNotMatch(settingsPanel, /样本量|随机种子|data-lite-mesa-field/);
-    await runtime.click("[data-lite-mesa-action='run']");
-
-    const monteCarloRequest = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .find((body) => body.analysis_type === "mission_reliability");
-    assert.ok(monteCarloRequest, "Monte Carlo detail should use lightweight Mesa analysis route");
-    const monteCarloBody = monteCarloRequest;
-    assert.equal(monteCarloBody.analysis_type, "mission_reliability");
-    assert.equal(monteCarloBody.project.project_id, "project-runtime-plan-a");
-    assert.equal(monteCarloBody.settings.samples, 4);
-    assert.equal(monteCarloBody.settings.seed, 404);
-    assert.equal(monteCarloBody.settings.parallelCores, 3);
-    assert.match(runtime.appNode.innerHTML, /出动架次率/);
-    assert.match(runtime.appNode.innerHTML, />0\.84</);
-    assert.doesNotMatch(runtime.appNode.innerHTML, />84%<\/strong>|>84%<\/td>|>75%<\/strong>|>75%<\/td>/);
-    assert.match(runtime.appNode.innerHTML, /平均备件延误时间/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /mean_transport_delay/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /短缺事件/);
-
-    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-a" }
-    );
-    await runtime.click("[data-lite-mesa-analysis-action='run']");
-
-    const analysisRequests = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"));
-    const analysisBody = analysisRequests.at(-1);
-    assert.equal(analysisBody.analysis_type, "spare_shortfall");
-    assert.equal(analysisBody.project.project_id, "project-runtime-plan-a");
-    assert.equal(
-      runtime.requests.some((request) => request.url === "/api/runs"),
-      false,
-      "lightweight Mesa pages must not submit formal runs"
-    );
-  } finally {
-    runtime.restore();
-  }
-});
-
-test("editing the selected saved plan resyncs Monte Carlo settings and invalidates cross-page results", async () => {
-  const experimentPlans = [{
-    experiment_plan_id: "plan-edited-runtime",
-    status: "draft",
-    config: {
-      name: "待编辑运行方案",
-      samples: 4,
+    experimentPlans: [frozenRuntimePlan({
+      id: "plan-a",
+      name: "冻结方案 A",
+      projectJson: createRuntimeProjectJson({ project_id: "project-runtime-plan-a" }),
+      samples: 8,
+      parallelCores: 3,
       seed: 404,
-      parallelCores: 2,
-      projectJson: createRuntimeProjectJson({ project_id: "project-edited-runtime" })
-    }
-  }];
+      fingerprint: "canonical:plan-a"
+    })]
+  });
+  try {
+    const currentSettings = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+    assert.match(currentSettings, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.match(currentSettings, /data-lite-mesa-field="parallelCores"[^>]*value="4"/);
+    assert.match(currentSettings, /data-lite-mesa-field="seed"[^>]*value="20260621"/);
+    assert.doesNotMatch(currentSettings, /data-lite-mesa-field="samples"[^>]*readonly/);
+    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "6", type: "number" });
+    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "parallelCores" }, { value: "2", type: "number" });
+    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "seed" }, { value: "99", type: "number" });
+    await runtime.click("[data-lite-mesa-action='run']");
+    const currentBody = JSON.parse(runtime.requests.findLast((request) => request.url === "/api/mesa-analysis-runs").options.body || "{}");
+    assert.equal(currentBody.context.kind, "current_project");
+    assert.equal(currentBody.context.project.project_id, "project-runtime");
+    assert.deepEqual(currentBody.settings, { samples: 6, seed: 99, parallelCores: 2 });
+
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-a" });
+    const frozenSettings = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+    assert.match(frozenSettings, /value="8"[^>]*readonly/);
+    assert.match(frozenSettings, /value="3"[^>]*readonly/);
+    assert.match(frozenSettings, /value="404"[^>]*readonly/);
+    assert.match(frozenSettings, /冻结方案参数只读/);
+    await runtime.click("[data-lite-mesa-action='run']");
+    const frozenBody = JSON.parse(runtime.requests.findLast((request) => request.url === "/api/mesa-analysis-runs").options.body || "{}");
+    assert.deepEqual(frozenBody.context, {
+      kind: "frozen_plan",
+      projectId: "project-runtime",
+      experimentPlanId: "plan-a",
+      planFingerprint: "canonical:plan-a"
+    });
+    assert.equal("settings" in frozenBody, false);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("frozen experiment plan is visibly non-editable", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    experimentPlans: [frozenRuntimePlan({ id: "plan-frozen-edit", name: "不可编辑冻结方案", projectJson: createRuntimeProjectJson() })]
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /不可编辑冻结方案/);
+    assert.match(runtime.appNode.innerHTML, /已冻结，不可编辑/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-edit="plan-frozen-edit"/);
+    await runtime.click("[data-experiment-plan-edit]", { experimentPlanEdit: "plan-frozen-edit", experimentPlanName: "不可编辑冻结方案" });
+    assert.match(runtime.appNode.innerHTML, /冻结方案不可编辑/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-save-plan/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("an in-flight Monte Carlo response cannot restore results from an updated frozen fingerprint", async () => {
+  const experimentPlans = [frozenRuntimePlan({
+    id: "plan-inflight",
+    name: "并发冻结方案",
+    projectJson: createRuntimeProjectJson(),
+    samples: 3,
+    parallelCores: 2,
+    seed: 303,
+    fingerprint: "canonical:inflight-a"
+  })];
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans
+    experimentPlans,
+    liteMesaAnalysisResponseDelayMs: 25
   });
-
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-edited-runtime" }
-    );
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-inflight" });
     await runtime.click("[data-lite-mesa-action='run']");
-    assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
-
-    await runtime.setHash("feature=mission-reliability-task-reliability");
-    await runtime.click("[data-lite-mesa-analysis-action='run']");
-    assert.match(
-      runtime.appNode.innerHTML,
-      /data-analysis-xlsx-export="mission-reliability-task-reliability"\s*>导出 Excel<\/button>/
-    );
-
     experimentPlans[0] = {
       ...experimentPlans[0],
-      status: "completed",
-      run_count: 3,
-      runs: [{ run_id: "run-status-only" }]
+      canonical_fingerprint: "canonical:inflight-b",
+      config: { ...experimentPlans[0].config, seed: 304 }
     };
     await runtime.setHash("feature=spare-planning-experiment-plan-management");
     await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
     await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
-    assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
-    await runtime.setHash("feature=mission-reliability-task-reliability");
-    assert.match(
-      runtime.appNode.innerHTML,
-      /data-analysis-xlsx-export="mission-reliability-task-reliability"\s*>导出 Excel<\/button>/
-    );
-
-    await runtime.setHash("feature=spare-planning-experiment-plan-management");
-    await runtime.click(
-      "[data-experiment-plan-edit]",
-      { experimentPlanEdit: "plan-edited-runtime", experimentPlanName: "待编辑运行方案" }
-    );
-    await runtime.change(
-      "[data-experiment-plan-path]",
-      { experimentPlanPath: "experiment.samples" },
-      { value: "7", type: "number" }
-    );
-    await runtime.change(
-      "[data-experiment-plan-path]",
-      { experimentPlanPath: "experiment.parallelCores" },
-      { value: "5", type: "number" }
-    );
-    await runtime.change("[data-experiment-seed-policy]", {}, { value: "fixed" });
-    await runtime.change("[data-experiment-seed-base]", {}, { value: "707", type: "number" });
-    await runtime.click("[data-save-plan]");
-
-    const updateBody = JSON.parse(runtime.requests.findLast((request) => (
-      request.url === "/api/projects/project-runtime/experiment-plans/plan-edited-runtime"
-      && (request.options.method || "GET") === "PUT"
-    )).options.body || "{}");
-    assert.equal(updateBody.config.samples, 7);
-    assert.equal(updateBody.config.seed, 707);
-    assert.equal(updateBody.config.parallelCores, 5);
-
-    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
-    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
-    await runtime.click("[data-lite-mesa-action='run']");
-
-    const monteCarloBody = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .filter((body) => body.analysis_type === "mission_reliability")
-      .at(-1);
-    assert.equal(monteCarloBody.settings.samples, 7);
-    assert.equal(monteCarloBody.settings.seed, 707);
-    assert.equal(monteCarloBody.settings.parallelCores, 5);
-    assert.equal(monteCarloBody.project.experiment.samples, 7);
-    assert.equal(monteCarloBody.project.experiment.seed, 707);
-    assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>7<\/strong>/);
-    assert.match(runtime.appNode.innerHTML, /成功样本[\s\S]*<strong>7<\/strong>/);
-    assert.match(runtime.appNode.innerHTML, /失败样本[\s\S]*<strong>0<\/strong>/);
-    assert.match(runtime.appNode.innerHTML, /<td>任务可靠度<\/td>[\s\S]*<td>7<\/td>/);
-
-    await runtime.setHash("feature=mission-reliability-task-reliability");
-    assert.match(
-      runtime.appNode.innerHTML,
-      /data-analysis-xlsx-export="mission-reliability-task-reliability" disabled>导出 Excel<\/button>/
-    );
-    assert.doesNotMatch(runtime.appNode.innerHTML, /分析结果已生成：4 个样本/);
-    await runtime.click("[data-lite-mesa-analysis-action='run']");
-    const analysisBody = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .filter((body) => body.analysis_type === "mission_reliability")
-      .at(-1);
-    assert.equal(analysisBody.settings.samples, 7);
-    assert.equal(analysisBody.settings.seed, 707);
-  } finally {
-    runtime.restore();
-  }
-});
-
-test("an in-flight Monte Carlo response cannot restore results from an edited plan fingerprint", async () => {
-  const experimentPlans = [{
-    experiment_plan_id: "plan-inflight-edit",
-    status: "draft",
-    config: {
-      name: "运行中编辑方案",
-      samples: 3,
-      seed: 303,
-      parallelCores: 1,
-      projectJson: createRuntimeProjectJson({ project_id: "project-inflight-edit" })
-    }
-  }];
-  const runtime = await setupRuntimeApp({
-    hash: "feature=spare-planning-monte-carlo-experiment-detail",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans,
-    liteMesaAnalysisResponseDelayMs: 40
-  });
-
-  try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-inflight-edit" }
-    );
-    await runtime.click("[data-lite-mesa-action='run']");
-
-    await runtime.setHash("feature=spare-planning-experiment-plan-management");
-    await runtime.click(
-      "[data-experiment-plan-edit]",
-      { experimentPlanEdit: "plan-inflight-edit", experimentPlanName: "运行中编辑方案" }
-    );
-    await runtime.change(
-      "[data-experiment-plan-path]",
-      { experimentPlanPath: "experiment.samples" },
-      { value: "6", type: "number" }
-    );
-    await runtime.click("[data-save-plan]");
-
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    await new Promise((resolve) => setTimeout(resolve, 35));
     await runtime.flush();
-    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
     assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>3<\/strong>/);
-    assert.match(runtime.appNode.innerHTML, /实验方案配置已更新/);
+    assert.match(runtime.appNode.innerHTML, /配置已更新|重新运行/);
   } finally {
     runtime.restore();
   }
 });
 
-test("saved run context survives a cold workbench restore", async () => {
-  const projectJson = createRuntimeProjectJson({ project_id: "project-runtime" });
+test("frozen run context survives a cold workbench restore", async () => {
   const runtime = await setupRuntimeApp({
-    hash: "feature=spare-planning-carry-list-analysis",
-    projectJson,
-    experimentPlans: [{
-      experiment_plan_id: "plan-restored",
-      status: "draft",
-      config: {
-        name: "恢复方案",
-        samples: 13,
-        seed: 1313,
-        projectJson: createRuntimeProjectJson({ project_id: "project-runtime" })
-      }
-    }],
-    storageEntries: [[
-      "spare-mvp:selectedRunContextByProject",
-      JSON.stringify({ "project-runtime": "plan-restored" })
-    ]]
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    experimentPlans: [frozenRuntimePlan({
+      id: "plan-restored",
+      name: "恢复冻结方案",
+      projectJson: createRuntimeProjectJson(),
+      samples: 12,
+      parallelCores: 3,
+      seed: 1212,
+      fingerprint: "canonical:restored-run"
+    })],
+    storageEntries: [["spare-mvp:selectedRunContextByProject", JSON.stringify({ "project-runtime": "plan-restored" })]]
   });
-
   try {
-    await runtime.flush();
-    await runtime.flush();
-    assert.match(runtime.appNode.innerHTML, /<option value="plan-restored" selected>恢复方案<\/option>/);
-    const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-    assert.match(settingsPanel, /样本量[\s\S]*<strong>13<\/strong>/);
-    assert.match(settingsPanel, /随机种子[\s\S]*<strong>1313<\/strong>/);
-    await runtime.click("[data-lite-mesa-analysis-action='run']");
-    const analysisRun = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(analysisRun.settings.samples, 13);
-    assert.equal(analysisRun.settings.seed, 1313);
+    assert.match(runtime.appNode.innerHTML, /<option value="plan-restored" selected>恢复冻结方案<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /value="12"[^>]*readonly/);
+    assert.match(runtime.appNode.innerHTML, /value="3"[^>]*readonly/);
+    assert.match(runtime.appNode.innerHTML, /value="1212"[^>]*readonly/);
+    await runtime.click("[data-lite-mesa-action='run']");
+    const body = JSON.parse(runtime.requests.find((request) => request.url === "/api/mesa-analysis-runs").options.body || "{}");
+    assert.equal(body.context.kind, "frozen_plan");
+    assert.equal(body.context.experimentPlanId, "plan-restored");
+    assert.equal("settings" in body, false);
   } finally {
     runtime.restore();
   }
@@ -7596,7 +7171,7 @@ test("run context defaults to current Project and excludes unsaved or invalid ex
     const contextBar = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     assert.match(contextBar, /运行上下文/);
     assert.match(contextBar, /当前项目：运行来源项目/);
-    assert.match(contextBar, /0 个已保存方案/);
+    assert.match(contextBar, /0 个已冻结方案/);
     assert.doesNotMatch(contextBar, /当前草稿|尚未保存的内存分支|无持久化标识方案|已保存实验方案/);
 
     await runtime.click("[data-lite-mesa-analysis-action='run']");
@@ -7605,8 +7180,8 @@ test("run context defaults to current Project and excludes unsaved or invalid ex
       .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"))
       .at(-1);
-    assert.equal(analysisBody.project.project_id, "project-runtime");
-    assert.equal(analysisBody.project.projectInfo.name, "运行来源项目");
+    assert.equal(analysisBody.context.project.project_id, "project-runtime");
+    assert.equal(analysisBody.context.project.projectInfo.name, "运行来源项目");
     assert.equal(
       runtime.requests.some((request) => (
         request.url === "/api/projects/project-runtime/experiment-plans"
@@ -7662,248 +7237,109 @@ test("experiment plan list selection editing and saving do not change the run co
       .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"))
       .at(-1);
-    assert.equal(analysisBody.project.project_id, "project-runtime");
-    assert.notEqual(analysisBody.project.project_id, "project-management-plan");
+    assert.equal(analysisBody.context.project.project_id, "project-runtime");
+    assert.notEqual(analysisBody.context.project.project_id, "project-management-plan");
   } finally {
     runtime.restore();
   }
 });
 
-test("editing current modeling data resets a persisted saved-plan analysis context", async () => {
-  const currentProjectJson = createRuntimeProjectJson();
-  currentProjectJson.components = [{
-    id: "component-current",
-    parentId: "aircraft-root",
-    aircraftModel: "J-15",
-    name: "当前项目航电",
-    productType: "LRU",
-    quantity: 1
-  }];
-  currentProjectJson.supportActivities.push({
-    id: "corrective-current",
-    activityType: "修复性维修",
-    planType: "修复性维修方案",
-    activityName: "当前项目修复方案",
-    aircraftModel: "J-15",
-    maintenanceMethods: ["non_replacement"],
-    replacementRatio: 0,
-    activityCodes: [],
-    predecessors: {}
-  });
-  const savedPlanProjectJson = JSON.parse(JSON.stringify(currentProjectJson));
+test("editing current modeling data resets a persisted frozen-plan analysis context", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-spare-shortfall-analysis",
-    projectJson: currentProjectJson,
-    experimentPlans: [{
-      experiment_plan_id: "plan-stale-after-model-edit",
-      status: "draft",
-      config: {
-        name: "修改前方案快照",
-        samples: 8,
-        seed: 808,
-        projectJson: savedPlanProjectJson
-      }
-    }]
+    experimentPlans: [frozenRuntimePlan({ id: "plan-stale-after-model-edit", name: "待失效冻结方案", projectJson: createRuntimeProjectJson(), fingerprint: "canonical:stale" })],
+    storageEntries: [["spare-mvp:selectedRunContextByProject", JSON.stringify({ "project-runtime": "plan-stale-after-model-edit" })]]
   });
-
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-stale-after-model-edit" }
-    );
     assert.match(runtime.appNode.innerHTML, /<option value="plan-stale-after-model-edit" selected/);
-
-    await runtime.setHash("feature=spare-planning-corrective-maintenance-activity");
-    await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-current" });
-    await runtime.change(
-      "[data-maintenance-method]",
-      { maintenanceActivityIndex: "1", maintenanceMethod: "replacement" },
-      { checked: true, type: "checkbox" }
-    );
-
-    assert.equal(
-      JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
-      "current-project:project-runtime"
-    );
+    await runtime.setHash("feature=spare-planning-basic-mission");
+    await runtime.change("[data-path]", { path: "basicMissions.0.taskDurationMinutes" }, { value: "360", type: "number" });
     await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
-    assert.match(runtime.appNode.innerHTML, /<option value="current-project:project-runtime" selected/);
+    assert.match(runtime.appNode.innerHTML, /当前项目：Runtime 项目/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="plan-stale-after-model-edit" selected/);
-
     await runtime.click("[data-lite-mesa-analysis-action='run']");
-    const analysisBody = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    const corrective = analysisBody.project.supportActivities.find((activity) => activity.id === "corrective-current");
-    assert.deepEqual(corrective.maintenanceMethods, ["non_replacement", "replacement"]);
-    assert.equal(analysisBody.settings.samples, 4, "analysis must restore current-project defaults instead of the stale plan's 8 samples");
-    assert.equal(analysisBody.settings.parallelCores, 4);
+    const body = JSON.parse(runtime.requests.findLast((request) => request.url === "/api/mesa-analysis-runs").options.body || "{}");
+    assert.equal(body.context.kind, "current_project");
+    assert.equal(body.context.project.project_id, "project-runtime");
   } finally {
     runtime.restore();
   }
 });
 
-test("switching from a saved plan to a Project without experiment resets Monte Carlo settings", async () => {
+test("switching from a frozen plan to current Project resets MC to 4 4 20260621", async () => {
   const currentProjectJson = createRuntimeProjectJson();
   delete currentProjectJson.experiment;
-  const planProjectJson = createRuntimeProjectJson({
-    project_id: "project-settings-plan",
-    projectInfo: { name: "参数方案 Project", baseCode: "SET" }
-  });
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
     projectJson: currentProjectJson,
-    experimentPlans: [{
-      experiment_plan_id: "plan-settings",
-      status: "draft",
-      config: {
-        name: "参数方案",
-        samples: 19,
-        seed: 1919,
-        projectJson: planProjectJson
-      }
-    }]
+    experimentPlans: [frozenRuntimePlan({ id: "plan-settings", name: "参数冻结方案", projectJson: createRuntimeProjectJson(), samples: 19, parallelCores: 3, seed: 1919 })]
   });
-
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-settings" }
-    );
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
-    await runtime.click("[data-lite-mesa-action='run']");
-    const planAnalysisBody = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(planAnalysisBody.project.project_id, "project-settings-plan");
-    assert.equal(planAnalysisBody.settings.samples, 19);
-    assert.equal(planAnalysisBody.settings.seed, 1919);
-
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "current-project:project-runtime" }
-    );
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
-
-    await runtime.click("[data-lite-mesa-action='run']");
-    const analysisBody = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(analysisBody.project.project_id, "project-runtime");
-    assert.equal(analysisBody.settings.samples, 4);
-    assert.equal(analysisBody.settings.seed, 20260621);
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-settings" });
+    assert.match(runtime.appNode.innerHTML, /value="19"[^>]*readonly/);
+    assert.match(runtime.appNode.innerHTML, /value="3"[^>]*readonly/);
+    assert.match(runtime.appNode.innerHTML, /value="1919"[^>]*readonly/);
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "current-project:project-runtime" });
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="parallelCores"[^>]*value="4"/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="seed"[^>]*value="20260621"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /冻结方案参数只读/);
   } finally {
     runtime.restore();
   }
 });
 
-test("refreshing away the selected saved plan resets the run context and Monte Carlo settings", async () => {
-  const currentProjectJson = createRuntimeProjectJson();
-  delete currentProjectJson.experiment;
-  const experimentPlans = [{
-    experiment_plan_id: "plan-disappearing",
-    status: "draft",
-    config: {
-      name: "即将失效的方案",
-      samples: 23,
-      seed: 2323,
-      projectJson: createRuntimeProjectJson({ project_id: "project-disappearing-plan" })
-    }
-  }];
+test("refreshing away the selected frozen plan resets context and MC settings", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-disappearing", name: "即将失效冻结方案", projectJson: createRuntimeProjectJson(), samples: 23, parallelCores: 2, seed: 2323 })];
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
-    projectJson: currentProjectJson,
     experimentPlans
   });
-
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-disappearing" }
-    );
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
-
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-disappearing" });
+    assert.match(runtime.appNode.innerHTML, /value="23"[^>]*readonly/);
     experimentPlans.splice(0);
     await runtime.setHash("feature=spare-planning-experiment-plan-management");
     await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
-    await runtime.flush();
     await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
-
     assert.match(runtime.appNode.innerHTML, /当前项目：Runtime 项目/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /即将失效的方案/);
-    assert.equal(
-      JSON.parse(localStorage.getItem("spare-mvp:selectedRunContextByProject"))["project-runtime"],
-      "current-project:project-runtime",
-      "an authoritative empty list must clear a persisted missing plan ID"
-    );
-
-    await runtime.click("[data-lite-mesa-action='run']");
-    const analysisBody = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(analysisBody.project.project_id, "project-runtime");
-    assert.equal(analysisBody.settings.samples, 4);
-    assert.equal(analysisBody.settings.seed, 20260621);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="parallelCores"[^>]*value="4"/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="seed"[^>]*value="20260621"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /即将失效冻结方案/);
   } finally {
     runtime.restore();
   }
 });
 
-test("task reliability keeps selected-plan runtime behavior without rendering its selector", async () => {
-  const planProjectJson = createRuntimeProjectJson({
-    project_id: "project-runtime-analysis-plan",
-    projectInfo: { name: "分析方案 Project", baseCode: "APL" }
-  });
+test("task reliability submits frozen context without frontend overrides", async () => {
   const runtime = await setupRuntimeApp({
-    hash: "feature=mission-reliability-downtime-factor-analysis",
-    projectJson: createRuntimeProjectJson(),
-    experimentPlans: [{
-      experiment_plan_id: "plan-analysis",
-      status: "draft",
-      config: {
-        name: "分析方案",
-        samples: 4,
-        seed: 404,
-        projectJson: planProjectJson
-      }
-    }]
+    hash: "feature=mission-reliability-task-reliability",
+    experimentPlans: [frozenRuntimePlan({
+      id: "plan-analysis",
+      name: "分析冻结方案",
+      projectJson: createRuntimeProjectJson(),
+      samples: 4,
+      parallelCores: 2,
+      seed: 404,
+      fingerprint: "canonical:analysis"
+    })]
   });
-
   try {
-    await runtime.change(
-      "[data-current-experiment-plan]",
-      { currentExperimentPlan: "" },
-      { value: "plan-analysis" }
-    );
+    await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-analysis" });
     for (const [featureId, analysisType] of [
       ["mission-reliability-task-reliability", "mission_reliability"],
       ["mission-reliability-downtime-factor-analysis", "downtime_factors"]
     ]) {
-      await runtime.setHash(`feature=${featureId}`);
-
-      const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-      assert.match(settingsPanel, /样本量[\s\S]*<strong>4<\/strong>/);
-      assert.match(settingsPanel, /随机种子[\s\S]*<strong>404<\/strong>/);
-      assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
-      assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan|运行上下文/);
-
+      await runtime.setHash("feature=" + featureId);
+      assert.match(runtime.appNode.innerHTML, /运行上下文/);
       await runtime.click("[data-lite-mesa-analysis-action='run']");
-      const analysisBody = runtime.requests
-        .filter((request) => request.url === "/api/mesa-analysis-runs")
-        .map((request) => JSON.parse(request.options.body || "{}"))
-        .at(-1);
-      assert.equal(analysisBody.analysis_type, analysisType);
-      assert.equal(analysisBody.project.project_id, "project-runtime-analysis-plan");
-      assert.equal(analysisBody.settings.samples, 4);
-      assert.equal(analysisBody.settings.seed, 404);
+      const body = JSON.parse(runtime.requests.findLast((request) => request.url === "/api/mesa-analysis-runs").options.body || "{}");
+      assert.equal(body.analysis_type, analysisType);
+      assert.equal(body.context.kind, "frozen_plan");
+      assert.equal(body.context.experimentPlanId, "plan-analysis");
+      assert.equal(body.context.planFingerprint, "canonical:analysis");
+      assert.equal("settings" in body, false);
     }
   } finally {
     runtime.restore();
@@ -7920,8 +7356,12 @@ test("mission reliability and downtime analysis keep current Project as default 
     projectJson: createRuntimeProjectJson(),
     experimentPlans: [{
       experiment_plan_id: "plan-default-analysis",
-      status: "draft",
+      canonical_fingerprint: "canonical:plan-default-analysis",
+      status: "frozen",
       config: {
+        samples: 4,
+        parallelCores: 4,
+        seed: 20260621,
         name: "默认分析方案",
         samples: 40,
         seed: 20260621,
@@ -7956,7 +7396,7 @@ test("mission reliability and downtime analysis keep current Project as default 
         .map((request) => JSON.parse(request.options.body || "{}"))
         .at(-1);
       assert.equal(analysisBody.analysis_type, analysisType);
-      assert.equal(analysisBody.project.project_id, "project-runtime");
+      assert.equal(analysisBody.context.project.project_id, "project-runtime");
       assert.equal(analysisBody.settings.samples, defaultSamples);
       assert.equal(analysisBody.settings.seed, 20260621);
       assert.equal(analysisBody.settings.parallelCores, 4);
@@ -8026,7 +7466,7 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
   try {
     assert.match(runtime.appNode.innerHTML, /蒙特卡洛分析/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field|样本量|随机种子/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[\s\S]*data-lite-mesa-field="seed"/);
 
     await runtime.click("[data-lite-mesa-action='run']");
 
@@ -8181,6 +7621,24 @@ test("permission menu visibility toggles every leaf role and persists through th
 
 let runtimeImportCounter = 0;
 
+function frozenRuntimePlan({
+  id,
+  name,
+  projectJson,
+  samples = 4,
+  parallelCores = 4,
+  seed = 20260621,
+  fingerprint = `canonical:${id}`,
+  config = {}
+}) {
+  return {
+    experiment_plan_id: id,
+    status: "frozen",
+    canonical_fingerprint: fingerprint,
+    config: { name, samples, parallelCores, seed, projectJson, ...config }
+  };
+}
+
 function runtimeBackendProjectEntry(projectId, experimentName = "Runtime 项目") {
   return {
     project_id: projectId,
@@ -8204,6 +7662,8 @@ async function setupRuntimeApp({
   systemConfigPayload = {},
   liteMesaAnalysisResponseOverrides = {},
   liteMesaAnalysisResponseDelayMs = 0,
+  visualizationSessionResponseOverrides = {},
+  visualizationSessionResponseDelayMs = 0,
   analysisXlsxExportError = "",
   analysisXlsxExportDelayMs = 0,
   projectSaveHandler = null,
@@ -8231,6 +7691,7 @@ async function setupRuntimeApp({
   const runtimeRuns = new Map();
   let createProjectFromImportCount = 0;
   let projectSaveCount = 0;
+  let visualizationSessionCount = 0;
   const storage = new Map([
     ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })],
     ...storageEntries
@@ -8387,6 +7848,25 @@ async function setupRuntimeApp({
         config: body.config || {}
       });
     }
+    const experimentPlanFreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/freeze$/);
+    if (experimentPlanFreezeMatch && method === "POST") {
+      const experimentPlanId = decodeURIComponent(experimentPlanFreezeMatch[2]);
+      const plan = experimentPlans.find((item) => item.experiment_plan_id === experimentPlanId);
+      if (plan) {
+        plan.status = "frozen";
+        plan.canonical_fingerprint = plan.canonical_fingerprint || `canonical:${experimentPlanId}`;
+      }
+      return jsonResponse({
+        project_id: decodeURIComponent(experimentPlanFreezeMatch[1]),
+        experiment_plan_id: experimentPlanId,
+        status: "frozen",
+        canonical_fingerprint: plan?.canonical_fingerprint || `canonical:${experimentPlanId}`
+      });
+    }
+    const experimentPlanCompileMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/compile-preflight/);
+    if (experimentPlanCompileMatch && method === "POST") {
+      return jsonResponse({ ok: true, status: "compiled", errors: [] });
+    }
     const experimentPlanItemMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)$/);
     if (experimentPlanItemMatch && method === "PUT") {
       const body = JSON.parse(options.body || "{}");
@@ -8532,7 +8012,23 @@ async function setupRuntimeApp({
       else backendProjectCatalog.unshift(catalogEntry);
 	      return jsonResponse({ project_id: body.project_id || "project-runtime", project_version: "project-v0.1" });
 	    }
-	    if (url === "/api/mesa-analysis-runs" && method === "POST") {
+	    if (url === "/api/visualization-sessions" && method === "POST") {
+      if (visualizationSessionResponseDelayMs > 0) {
+        await new Promise((resolve) => previousSetTimeout(resolve, visualizationSessionResponseDelayMs));
+      }
+      visualizationSessionCount += 1;
+      const body = JSON.parse(options.body || "{}");
+      return jsonResponse({
+        visualization_session_id: `visual-session-runtime-${visualizationSessionCount}`,
+        session_access_token: `visual-token-runtime-${visualizationSessionCount}`,
+        fingerprint: body.context?.planFingerprint || `current-session-${visualizationSessionCount}`,
+        duration_minutes: 1440,
+        tick: 1,
+        maxSteps: 96,
+        ...visualizationSessionResponseOverrides
+      });
+    }
+    if (url === "/api/mesa-analysis-runs" && method === "POST") {
 	      if (liteMesaAnalysisResponseDelayMs > 0) {
 	        await new Promise((resolve) => previousSetTimeout(resolve, liteMesaAnalysisResponseDelayMs));
 	      }
@@ -8567,8 +8063,8 @@ async function setupRuntimeApp({
 	        status: "session_complete",
 	        source: "lite_mesa_aircraft_support_v1",
 	        run_id: runId,
-	        project_id: body.project?.project_id || "project-runtime",
-	        scenario_id: body.project?.scenarioId || "scenario-runtime",
+	        project_id: body.context?.project?.project_id || body.context?.projectId || "project-runtime",
+	        scenario_id: body.context?.project?.scenarioId || "scenario-runtime",
 	        scenario_version: "scenario-v0.1",
 	        model_family: body.model_family || "aircraft_support_v1",
 	        model_id: "AircraftSupportV1Model",

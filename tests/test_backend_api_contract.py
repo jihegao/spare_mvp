@@ -294,10 +294,402 @@ class BackendApiContractTest(unittest.TestCase):
     def test_lite_mesa_analysis_defaults_to_four_samples(self) -> None:
         settings = _normalize_lite_mesa_analysis_settings({})
         self.assertEqual(settings["samples"], 4)
-        self.assertEqual(settings["parallelCores"], 1)
+        self.assertEqual(settings["parallelCores"], 4)
+        self.assertEqual(settings["seed"], 20260621)
         self.assertEqual(settings["sampleTimeoutSeconds"], 60)
-        self.assertEqual(settings["sessionTimeoutSeconds"], 300)
+        self.assertEqual(settings["sessionTimeoutSeconds"], 180)
         self.assertNotIn("maxTimeWindow", _normalize_lite_mesa_analysis_settings({"maxTimeWindow": 1}))
+
+    def test_experiment_plan_freeze_is_canonical_and_immutable(self) -> None:
+        project = small_aircraft_support_project("project-freeze-canonical")
+        saved = self.api.save_project(project)
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "freeze canonical",
+                "projectJson": project,
+                "samples": 2,
+                "parallelCores": 2,
+                "seed": 349350,
+            },
+        )
+
+        frozen = self.api.freeze_experiment_plan(saved["project_id"], plan["experiment_plan_id"])
+
+        self.assertEqual(frozen["status"], "frozen")
+        self.assertEqual(len(frozen["canonical_fingerprint"]), 64)
+        self.assertTrue(frozen["frozen_at"].endswith("Z"))
+        self.assertEqual(frozen["config"]["samples"], 2)
+        self.assertEqual(frozen["config"]["parallelCores"], 2)
+        self.assertEqual(frozen["config"]["seed"], 349350)
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.update_experiment_plan(
+                saved["project_id"],
+                plan["experiment_plan_id"],
+                {"name": "must not update", "steps": 9},
+            )
+        self.assertEqual(ctx.exception.code, "experiment_plan_frozen")
+
+    def test_frozen_plan_analysis_uses_authoritative_values_and_rejects_draft(self) -> None:
+        project = small_aircraft_support_project("project-frozen-analysis")
+        saved = self.api.save_project(project)
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "frozen analysis",
+                "projectJson": project,
+                "samples": 2,
+                "parallelCores": 2,
+                "seed": 20260349,
+            },
+        )
+        context = {
+            "type": "frozen_plan",
+            "project_id": saved["project_id"],
+            "experiment_plan_id": plan["experiment_plan_id"],
+        }
+        with self.assertRaises(BackendApiError) as draft_ctx:
+            self.api.run_lite_mesa_analysis(
+                analysis_type="mission_reliability",
+                context=context,
+            )
+        self.assertEqual(draft_ctx.exception.code, "experiment_plan_not_frozen")
+        frozen = self.api.freeze_experiment_plan(saved["project_id"], plan["experiment_plan_id"])
+        context["planFingerprint"] = frozen["canonical_fingerprint"]
+
+        payload = self.api.run_lite_mesa_analysis(
+            analysis_type="mission_reliability",
+            settings={"samples": 1, "parallelCores": 1, "seed": 1},
+            context=context,
+        )
+
+        self.assertEqual(payload["context"], context)
+        self.assertNotEqual(payload["fingerprint"], frozen["canonical_fingerprint"])
+        self.assertEqual(payload["execution_fingerprint"], payload["fingerprint"])
+        self.assertTrue(payload["analysis_session_id"].startswith("analysis-session-"))
+        self.assertEqual(payload["sample_count"], 2)
+        self.assertEqual(payload["parallel_cores"], 2)
+        self.assertEqual(payload["seed_list"], [20260349, 20260350])
+        different_effective_settings = self.api.run_lite_mesa_analysis(
+            analysis_type="mission_reliability",
+            settings={
+                "samples": 1,
+                "parallelCores": 1,
+                "seed": 1,
+                "topN": 5,
+            },
+            context=context,
+        )
+        self.assertNotEqual(
+            different_effective_settings["execution_fingerprint"],
+            payload["execution_fingerprint"],
+        )
+        self.assertEqual(different_effective_settings["sample_count"], 2)
+        self.assertEqual(different_effective_settings["parallel_cores"], 2)
+        self.assertEqual(different_effective_settings["seed_list"], [20260349, 20260350])
+        with self.assertRaises(BackendApiError) as override_ctx:
+            self.api.run_lite_mesa_analysis(
+                project,
+                analysis_type="mission_reliability",
+                context=context,
+            )
+        self.assertEqual(override_ctx.exception.code, "frozen_plan_client_override")
+
+    def test_visualization_session_compiles_without_persistence_and_plan_delete_revokes_it(self) -> None:
+        project = small_aircraft_support_project("project-visualization-session")
+        saved = self.api.save_project(project)
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "visual session", "projectJson": project, "seed": 350},
+        )
+        frozen = self.api.freeze_experiment_plan(saved["project_id"], plan["experiment_plan_id"])
+        before = self._run_side_effect_counts()
+        context = {
+            "type": "frozen_plan",
+            "project_id": saved["project_id"],
+            "experiment_plan_id": plan["experiment_plan_id"],
+            "planFingerprint": frozen["canonical_fingerprint"],
+        }
+
+        session = self.api.create_visualization_session(
+            context=context,
+            playback_speed=1.5,
+            actor_user_id="owner-user",
+        )
+        loaded = self.api.get_visualization_session(
+            session["visualization_session_id"],
+            actor_user_id="owner-user",
+        )
+
+        self.assertEqual(
+            loaded,
+            {key: value for key, value in session.items() if key != "session_access_token"},
+        )
+        self.assertEqual(session["context"], context)
+        self.assertEqual(session["session_id"], session["visualization_session_id"])
+        self.assertTrue(session["context_key"].startswith("frozen_plan:"))
+        self.assertGreaterEqual(len(session["session_access_token"]), 64)
+        self.assertNotIn("session_access_token", loaded)
+        self.assertEqual(session["seed"], 350)
+        self.assertEqual(session["playback_speed"], 1.5)
+        self.assertEqual(len(session["input_fingerprint"]), 64)
+        self.assertGreater(session["duration_minutes"], 0)
+        self.assertEqual(session["tick_minutes"], 1)
+        self.assertGreater(session["max_steps"], 0)
+        self.assertGreater(session["frame_sample_every_steps"], 0)
+        self.assertEqual(session["simulation_inputs"]["seed"], 350)
+        self.assertEqual(self._run_side_effect_counts(), before)
+
+        deleted = self.api.delete_experiment_plan(
+            saved["project_id"],
+            plan["experiment_plan_id"],
+            actor_user_id="user-admin",
+        )
+        self.assertEqual(
+            deleted["revoked_visualization_session_ids"],
+            [session["visualization_session_id"]],
+        )
+        with self.assertRaises(KeyError):
+            self.api.get_visualization_session(
+                session["visualization_session_id"],
+                actor_user_id="owner-user",
+            )
+
+    def test_visualization_session_store_enforces_owner_global_lru_and_ttl(self) -> None:
+        from src.spare_mvp_backend.execution_context import VisualizationSessionStore
+
+        now = [0.0]
+        store = VisualizationSessionStore(
+            ttl_seconds=10,
+            max_sessions=2,
+            max_sessions_per_owner=1,
+            clock=lambda: now[0],
+        )
+        first = store.create({"context_key": "first"}, owner_user_id="owner-a")
+        now[0] = 1.0
+        second = store.create({"context_key": "second"}, owner_user_id="owner-a")
+        with self.assertRaises(KeyError):
+            store.get(first["visualization_session_id"], actor_user_id="owner-a")
+
+        now[0] = 2.0
+        third = store.create({"context_key": "third"}, owner_user_id="owner-b")
+        store.get(second["visualization_session_id"], actor_user_id="owner-a")
+        now[0] = 3.0
+        fourth = store.create({"context_key": "fourth"}, owner_user_id="owner-c")
+        with self.assertRaises(KeyError):
+            store.get(third["visualization_session_id"], actor_user_id="owner-b")
+        self.assertEqual(
+            store.get(
+                fourth["visualization_session_id"],
+                session_access_token=fourth["session_access_token"],
+            )["context_key"],
+            "fourth",
+        )
+
+        now[0] = 20.0
+        with self.assertRaises(KeyError):
+            store.get(second["visualization_session_id"], actor_user_id="owner-a")
+
+    def test_experiment_plan_freeze_compare_and_swap_rejects_concurrent_update(self) -> None:
+        project = small_aircraft_support_project("project-freeze-cas")
+        saved = self.api.save_project(project)
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "before race", "projectJson": project, "seed": 349},
+        )
+        original_cas = self.repository.compare_and_swap_freeze_experiment_plan
+
+        def concurrent_update(frozen_plan, *, expected_plan):
+            self.api.update_experiment_plan(
+                saved["project_id"],
+                plan["experiment_plan_id"],
+                {"name": "concurrent winner", "projectJson": project, "seed": 350},
+            )
+            return original_cas(frozen_plan, expected_plan=expected_plan)
+
+        with mock.patch.object(
+            self.repository,
+            "compare_and_swap_freeze_experiment_plan",
+            side_effect=concurrent_update,
+        ), self.assertRaises(BackendApiError) as ctx:
+            self.api.freeze_experiment_plan(saved["project_id"], plan["experiment_plan_id"])
+
+        self.assertEqual(ctx.exception.code, "experiment_plan_version_conflict")
+        current = self.repository.get_experiment_plan(plan["experiment_plan_id"])
+        self.assertEqual(current["status"], "draft")
+        self.assertEqual(current["config"]["name"], "concurrent winner")
+        self.assertEqual(current["config"]["seed"], 350)
+
+    def test_frozen_visualization_rechecks_plan_after_compile(self) -> None:
+        project = small_aircraft_support_project("project-visualization-recheck")
+        saved = self.api.save_project(project)
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "delete during compile", "projectJson": project, "seed": 350},
+        )
+        frozen = self.api.freeze_experiment_plan(saved["project_id"], plan["experiment_plan_id"])
+        original_compile = self.adapter.compile_scenario_with_gate
+
+        def compile_then_delete(*args, **kwargs):
+            result = original_compile(*args, **kwargs)
+            self.repository.delete_experiment_plan_with_runs(
+                saved["project_id"],
+                plan["experiment_plan_id"],
+                actor_user_id="user-admin",
+            )
+            return result
+
+        with mock.patch.object(
+            self.adapter,
+            "compile_scenario_with_gate",
+            side_effect=compile_then_delete,
+        ), self.assertRaises(BackendApiError) as ctx:
+            self.api.create_visualization_session(
+                context={
+                    "type": "frozen_plan",
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "planFingerprint": frozen["canonical_fingerprint"],
+                },
+                actor_user_id="owner-user",
+            )
+
+        self.assertEqual(ctx.exception.code, "frozen_plan_changed")
+
+    def test_frozen_context_rejects_stale_plan_fingerprint_after_same_id_rebuild(self) -> None:
+        project = small_aircraft_support_project("project-frozen-rebuild")
+        saved = self.api.save_project(project)
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "original plan", "projectJson": project, "seed": 349},
+        )
+        original = self.api.freeze_experiment_plan(
+            saved["project_id"],
+            plan["experiment_plan_id"],
+        )
+        stale_context = {
+            "type": "frozen_plan",
+            "project_id": saved["project_id"],
+            "experiment_plan_id": plan["experiment_plan_id"],
+            "planFingerprint": original["canonical_fingerprint"],
+        }
+        self.api.delete_experiment_plan(
+            saved["project_id"],
+            plan["experiment_plan_id"],
+            actor_user_id="user-admin",
+        )
+        rebuilt_draft = copy.deepcopy(original)
+        rebuilt_draft["status"] = "draft"
+        rebuilt_draft["config"]["seed"] = 350
+        rebuilt_draft.pop("canonical_fingerprint", None)
+        rebuilt_draft.pop("frozen_at", None)
+        self.repository.upsert_experiment_plan(rebuilt_draft)
+        rebuilt = self.api.freeze_experiment_plan(
+            saved["project_id"],
+            plan["experiment_plan_id"],
+        )
+        self.assertNotEqual(
+            rebuilt["canonical_fingerprint"],
+            original["canonical_fingerprint"],
+        )
+
+        with self.assertRaises(BackendApiError) as analysis_ctx:
+            self.api.run_lite_mesa_analysis(
+                analysis_type="mission_reliability",
+                context=stale_context,
+            )
+        self.assertEqual(
+            analysis_ctx.exception.code,
+            "frozen_plan_fingerprint_mismatch",
+        )
+        with self.assertRaises(BackendApiError) as visualization_ctx:
+            self.api.create_visualization_session(
+                context=stale_context,
+                actor_user_id="owner-user",
+            )
+        self.assertEqual(
+            visualization_ctx.exception.code,
+            "frozen_plan_fingerprint_mismatch",
+        )
+
+    def test_frozen_visualization_create_and_plan_delete_share_atomic_boundary(self) -> None:
+        thread_connection = sqlite3.connect(":memory:", check_same_thread=False)
+        self.addCleanup(thread_connection.close)
+        initialize_database(thread_connection)
+        thread_repository = ContractRepository(thread_connection)
+        thread_api = BackendApi(
+            thread_repository,
+            RecordingAdapter(),
+            output_dir=Path(self.tempdir.name) / "session-delete-race",
+        )
+        project = small_aircraft_support_project("project-session-delete-race")
+        saved = thread_api.save_project(project)
+        plan = thread_api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "session delete race", "projectJson": project, "seed": 350},
+        )
+        frozen = thread_api.freeze_experiment_plan(
+            saved["project_id"],
+            plan["experiment_plan_id"],
+        )
+        context = {
+            "type": "frozen_plan",
+            "project_id": saved["project_id"],
+            "experiment_plan_id": plan["experiment_plan_id"],
+            "planFingerprint": frozen["canonical_fingerprint"],
+        }
+        store_create_entered = threading.Event()
+        release_store_create = threading.Event()
+        delete_finished = threading.Event()
+        original_store_create = thread_api.visualization_session_store.create
+        results: dict[str, Any] = {}
+
+        def blocked_store_create(*args, **kwargs):
+            store_create_entered.set()
+            if not release_store_create.wait(timeout=5):
+                raise TimeoutError("test did not release visualization session create")
+            return original_store_create(*args, **kwargs)
+
+        def create_session() -> None:
+            results["session"] = thread_api.create_visualization_session(
+                context=context,
+                actor_user_id="owner-user",
+            )
+
+        def delete_plan() -> None:
+            results["delete"] = thread_api.delete_experiment_plan(
+                saved["project_id"],
+                plan["experiment_plan_id"],
+                actor_user_id="user-admin",
+            )
+            delete_finished.set()
+
+        with mock.patch.object(
+            thread_api.visualization_session_store,
+            "create",
+            side_effect=blocked_store_create,
+        ):
+            create_thread = threading.Thread(target=create_session)
+            create_thread.start()
+            self.assertTrue(store_create_entered.wait(timeout=5))
+            delete_thread = threading.Thread(target=delete_plan)
+            delete_thread.start()
+            self.assertFalse(delete_finished.wait(timeout=0.1))
+            release_store_create.set()
+            create_thread.join(timeout=5)
+            delete_thread.join(timeout=5)
+
+        self.assertFalse(create_thread.is_alive())
+        self.assertFalse(delete_thread.is_alive())
+        self.assertEqual(
+            results["delete"]["revoked_visualization_session_ids"],
+            [results["session"]["visualization_session_id"]],
+        )
+        with self.assertRaises(KeyError):
+            thread_api.get_visualization_session(
+                results["session"]["visualization_session_id"],
+                actor_user_id="owner-user",
+            )
 
     def test_save_project_accepts_committed_case_large_template_directly(self) -> None:
         project = json.loads((REPO_ROOT / "exports" / "project-case-large.json").read_text(encoding="utf-8"))

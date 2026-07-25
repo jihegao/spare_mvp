@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from uuid import uuid4
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
+from src.spare_mvp_backend.execution_context import VisualizationSessionStore
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_contract.adapter import SimulationAdapter
@@ -70,6 +71,8 @@ def create_backend_server(
     initialize_database(anchor_connection)
     adapter = SimulationAdapter(root)
     run_lifecycle_lock = threading.Lock()
+    visualization_session_store = VisualizationSessionStore()
+    visualization_session_lifecycle_lock = threading.RLock()
 
     class BackendRequestHandler(BaseHTTPRequestHandler):
         server_version = "SpareMvpBackend/0.1"
@@ -102,6 +105,8 @@ def create_backend_server(
                     adapter,
                     output_dir=artifact_dir,
                     run_lifecycle_lock=run_lifecycle_lock,
+                    visualization_session_store=visualization_session_store,
+                    visualization_session_lifecycle_lock=visualization_session_lifecycle_lock,
                 )
                 payload = self._dispatch()
                 if isinstance(payload, dict) and "__sse_stream__" in payload:
@@ -118,11 +123,19 @@ def create_backend_server(
                     status = 401
                 elif exc.code == "forbidden":
                     status = 403
+                elif exc.code == "visualization_session_forbidden":
+                    status = 403
                 elif exc.code == "run_deleted":
                     status = 410
                 elif exc.code == "request_too_large":
                     status = 413
-                elif exc.code in {"project_already_exists", "project_version_conflict"}:
+                elif exc.code in {
+                    "project_already_exists",
+                    "project_version_conflict",
+                    "experiment_plan_frozen",
+                    "experiment_plan_version_conflict",
+                    "frozen_plan_changed",
+                }:
                     status = 409
                 self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
             except RetiredRouteError as exc:
@@ -260,6 +273,15 @@ def create_backend_server(
                     model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
                     experiment_plan_id=parts[3],
                 )
+            if (
+                self.command == "POST"
+                and len(parts) == 5
+                and parts[0] == "projects"
+                and parts[2] == "experiment-plans"
+                and parts[4] == "freeze"
+            ):
+                self._require_user()
+                return api.freeze_experiment_plan(parts[1], parts[3])
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
             if self.command == "PUT" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "replace":
@@ -313,14 +335,88 @@ def create_backend_server(
             if self.command == "POST" and route == "/mesa-analysis-runs":
                 self._require_user()
                 project_json = body.get("project") if isinstance(body.get("project"), dict) else body.get("projectJson")
-                if not isinstance(project_json, dict):
+                context = body.get("context") if isinstance(body.get("context"), dict) else None
+                if context is None and not isinstance(project_json, dict):
                     project_json = body
                 settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
                 return api.run_lite_mesa_analysis(
-                    project_json,
+                    project_json if isinstance(project_json, dict) else None,
                     analysis_type=str(body.get("analysis_type") or body.get("analysisType") or ""),
                     settings=settings,
                     model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
+                    context=context,
+                )
+            if self.command == "POST" and route == "/visualization-sessions":
+                actor = self._require_user()
+                context = body.get("context") if isinstance(body.get("context"), dict) else None
+                if context is None:
+                    project_json = body.get("project") if isinstance(body.get("project"), dict) else body.get("projectJson")
+                    context = {"type": "current_project", "project": project_json}
+                settings = dict(body.get("settings")) if isinstance(body.get("settings"), dict) else {}
+                if "seed" in body:
+                    settings["seed"] = body["seed"]
+                frame_sample_every_steps = body.get(
+                    "frameSampleEverySteps",
+                    body.get(
+                        "frame_sample_every_steps",
+                        settings.get(
+                            "frameSampleEverySteps",
+                            settings.get("frame_sample_every_steps"),
+                        ),
+                    ),
+                )
+                playback_speed = body.get(
+                    "playbackSpeed",
+                    body.get(
+                        "playback_speed",
+                        settings.get(
+                            "playbackSpeed",
+                            settings.get("playback_speed", 1.0),
+                        ),
+                    ),
+                )
+                return api.create_visualization_session(
+                    context=context,
+                    settings=settings,
+                    model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
+                    playback_speed=playback_speed,
+                    actor_user_id=actor["user_id"],
+                    frame_sample_every_steps=frame_sample_every_steps,
+                )
+            if self.command == "GET" and len(parts) == 2 and parts[0] == "visualization-sessions":
+                authorization = self.headers.get("authorization") or ""
+                capability_prefix = "VisualizationSession "
+                if authorization.startswith(capability_prefix):
+                    return api.get_visualization_session(
+                        parts[1],
+                        session_access_token=authorization.removeprefix(capability_prefix).strip(),
+                    )
+                actor = self._require_user()
+                return api.get_visualization_session(
+                    parts[1],
+                    actor_user_id=actor["user_id"],
+                    actor_role=actor["role"],
+                )
+            if self.command == "GET" and route == "/visualization-sessions":
+                query = parse_qs(urlparse(self.path).query)
+                session_id = str((query.get("session_id") or query.get("sessionId") or [""])[-1]).strip()
+                if not session_id:
+                    raise BackendApiError(
+                        "bad_visualization_session_request",
+                        "session_id query parameter is required",
+                    )
+                authorization = self.headers.get("authorization") or ""
+                capability_prefix = "VisualizationSession "
+                if authorization.startswith(capability_prefix):
+                    return api.get_visualization_session(
+                        session_id,
+                        session_access_token=authorization.removeprefix(capability_prefix).strip(),
+                    )
+                actor = self._require_user()
+                return api.get_visualization_session(
+                    session_id,
+                    actor_user_id=actor["user_id"],
+                    actor_role=actor["role"],
                 )
             if self.command == "POST" and route == "/runs":
                 self._require_user()

@@ -205,6 +205,19 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}`
       });
     },
+    freezeExperimentPlan(projectId, experimentPlanId) {
+      return request({
+        method: "POST",
+        path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}/freeze`
+      });
+    },
+    createVisualizationSession(payload) {
+      return request({
+        method: "POST",
+        path: "/visualization-sessions",
+        body: payload
+      });
+    },
     submitRun(runRequest) {
       return request({
         method: "POST",
@@ -213,17 +226,24 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         timeoutMs: RUN_SUBMIT_TIMEOUT_MS
       });
     },
-    runLiteMesaAnalysis(projectJson, analysisType, settings = {}, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
+    runLiteMesaAnalysis(
+      context,
+      analysisType,
+      settings = {},
+      modelFamily = DEFAULT_FORMAL_MODEL_FAMILY,
+      timeoutSettings = settings
+    ) {
+      const frozenPlan = context?.kind === "frozen_plan";
       return request({
         method: "POST",
         path: "/mesa-analysis-runs",
         body: {
-          project: projectJson,
+          context,
           analysis_type: analysisType,
-          settings,
+          ...(!frozenPlan ? { settings } : {}),
           model_family: modelFamily
         },
-        timeoutMs: liteMesaAnalysisRequestTimeoutMs(settings)
+        timeoutMs: liteMesaAnalysisRequestTimeoutMs(timeoutSettings)
       });
     },
     startSimulationRun(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {

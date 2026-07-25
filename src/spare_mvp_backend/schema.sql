@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS experiment_plans (
   schema_version TEXT NOT NULL,
   project_version TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'draft',
+  canonical_fingerprint TEXT,
+  frozen_at TEXT,
   payload_json TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

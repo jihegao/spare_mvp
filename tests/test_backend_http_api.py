@@ -1369,6 +1369,205 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_freeze_context_and_visualization_session_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                auth_token = self._login_token(base_url, "data", "data")
+                admin_token = self._login_token(base_url, "admin", "admin")
+                project = small_aircraft_support_project("project-http-frozen-context")
+                saved = self._json(base_url, "POST", "/projects", project, auth_token=auth_token)
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {
+                        "config": {
+                            "name": "http frozen context",
+                            "projectJson": project,
+                            "samples": 1,
+                            "parallelCores": 1,
+                            "seed": 349350,
+                        }
+                    },
+                    auth_token=auth_token,
+                )
+                plan_route = (
+                    f"/projects/{quote(saved['project_id'], safe='')}/experiment-plans/"
+                    f"{quote(plan['experiment_plan_id'], safe='')}"
+                )
+                frozen = self._json(
+                    base_url,
+                    "POST",
+                    f"{plan_route}/freeze",
+                    auth_token=auth_token,
+                )
+                context = {
+                    "type": "frozen_plan",
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "planFingerprint": frozen["canonical_fingerprint"],
+                }
+                analysis = self._json(
+                    base_url,
+                    "POST",
+                    "/mesa-analysis-runs",
+                    {
+                        "context": context,
+                        "analysis_type": "mission_reliability",
+                        "settings": {"samples": 4, "parallelCores": 4, "seed": 1},
+                    },
+                    auth_token=auth_token,
+                )
+                session = self._json(
+                    base_url,
+                    "POST",
+                    "/visualization-sessions",
+                    {"context": context, "playback_speed": 2},
+                    auth_token=auth_token,
+                )
+                current_session = self._json(
+                    base_url,
+                    "POST",
+                    "/visualization-sessions",
+                    {
+                        "context": {
+                            "type": "current_project",
+                            "project": project,
+                        },
+                        "settings": {
+                            "seed": 1,
+                            "frameSampleEverySteps": 2,
+                            "playbackSpeed": 1.0,
+                        },
+                        "seed": 20260350,
+                        "frameSampleEverySteps": 7,
+                        "playbackSpeed": 2.5,
+                    },
+                    auth_token=auth_token,
+                )
+                loaded = self._json(
+                    base_url,
+                    "GET",
+                    f"/visualization-sessions/{quote(session['visualization_session_id'], safe='')}",
+                    auth_token=auth_token,
+                )
+                other_token = self._login_token(base_url, "user", "user")
+                cross_user_status, cross_user_error = self._json_error_with_status(
+                    base_url,
+                    "GET",
+                    f"/visualization-sessions/{quote(session['visualization_session_id'], safe='')}",
+                    auth_token=other_token,
+                )
+                from urllib.error import HTTPError
+                from urllib.request import Request, urlopen
+
+                capability_request = Request(
+                    (
+                        f"{base_url}/visualization-sessions/"
+                        f"{quote(session['visualization_session_id'], safe='')}"
+                    ),
+                    headers={
+                        "Authorization": (
+                            "VisualizationSession "
+                            f"{session['session_access_token']}"
+                        )
+                    },
+                    method="GET",
+                )
+                with urlopen(capability_request, timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
+                    capability_loaded = json.loads(response.read().decode("utf-8"))
+                wrong_capability_request = Request(
+                    (
+                        f"{base_url}/visualization-sessions/"
+                        f"{quote(session['visualization_session_id'], safe='')}"
+                    ),
+                    headers={"Authorization": "VisualizationSession wrong-token"},
+                    method="GET",
+                )
+                try:
+                    urlopen(wrong_capability_request, timeout=HTTP_TEST_TIMEOUT_SECONDS)
+                except HTTPError as exc:
+                    wrong_capability_status = exc.code
+                    wrong_capability_error = json.loads(exc.read().decode("utf-8"))
+                else:
+                    self.fail("wrong visualization capability token was accepted")
+                update_status, update_error = self._json_error_with_status(
+                    base_url,
+                    "PUT",
+                    plan_route,
+                    {"config": {"name": "forbidden update"}},
+                    auth_token=auth_token,
+                )
+
+                self.assertEqual(frozen["status"], "frozen")
+                self.assertEqual(analysis["context"], context)
+                self.assertNotEqual(analysis["fingerprint"], frozen["canonical_fingerprint"])
+                self.assertEqual(analysis["execution_fingerprint"], analysis["fingerprint"])
+                self.assertEqual(analysis["seed_list"], [349350])
+                self.assertEqual(analysis["parallel_cores"], 1)
+                self.assertEqual(session["session_id"], session["visualization_session_id"])
+                self.assertTrue(session["context_key"].startswith("frozen_plan:"))
+                self.assertEqual(len(session["input_fingerprint"]), 64)
+                self.assertIn("session_access_token", session)
+                self.assertNotIn("session_access_token", loaded)
+                self.assertEqual(loaded, capability_loaded)
+                self.assertEqual(session["seed"], 349350)
+                self.assertEqual(current_session["seed"], 20260350)
+                self.assertEqual(current_session["frame_sample_every_steps"], 7)
+                self.assertEqual(current_session["playback_speed"], 2.5)
+                self.assertEqual(
+                    current_session["simulation_inputs"]["seed"],
+                    20260350,
+                )
+                self.assertEqual(
+                    current_session["simulation_inputs"]["time"]["sample_every_minutes"],
+                    7 * current_session["tick_minutes"],
+                )
+                self.assertEqual(cross_user_status, 403)
+                self.assertEqual(
+                    cross_user_error["code"],
+                    "visualization_session_forbidden",
+                )
+                self.assertEqual(wrong_capability_status, 403)
+                self.assertEqual(
+                    wrong_capability_error["code"],
+                    "visualization_session_forbidden",
+                )
+                self.assertEqual(update_status, 409)
+                self.assertEqual(update_error["code"], "experiment_plan_frozen")
+
+                deleted = self._json(
+                    base_url,
+                    "DELETE",
+                    plan_route,
+                    auth_token=admin_token,
+                )
+                missing_status, missing = self._json_error_with_status(
+                    base_url,
+                    "GET",
+                    f"/visualization-sessions/{quote(session['visualization_session_id'], safe='')}",
+                    auth_token=auth_token,
+                )
+                self.assertEqual(
+                    deleted["revoked_visualization_session_ids"],
+                    [session["visualization_session_id"]],
+                )
+                self.assertEqual(missing_status, 404)
+                self.assertEqual(missing["code"], "not_found")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_canonical_runs_reject_forged_import_source_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
