@@ -170,11 +170,18 @@ test("frontend API client exposes M7 run artifact management routes", async () =
   assert.equal(downloadRequest.responseType, "blob");
 });
 
-test("frontend API client keeps lite Mesa analysis route while visualization sidecar stays retired", async () => {
+test("frontend API client sends current and frozen run contexts without frozen setting overrides", async () => {
   const calls = [];
   const client = createBackendApiClient({
     transport: async (request) => {
       calls.push(request);
+      if (request.path === "/visualization-sessions") {
+        return {
+          visualization_session_id: "visual-api-session",
+          session_access_token: "visual-api-token",
+          playback_speed: 1.5
+        };
+      }
       if (request.path === "/mesa-analysis-runs") {
         return { status: "session_complete", source: "lite_mesa_aircraft_support_v1" };
       }
@@ -185,20 +192,46 @@ test("frontend API client keeps lite Mesa analysis route while visualization sid
   assert.equal("runIndependentMesaVisualization" in client, false);
   assert.equal(typeof client.runLiteMesaAnalysis, "function");
 
-    const result = await client.runLiteMesaAnalysis(
-      { project_id: "project-ui" },
+  const result = await client.runLiteMesaAnalysis(
+      { kind: "current_project", project: { project_id: "project-ui" } },
       "mission_reliability",
       { samples: 4, seed: 20260705, parallelCores: 4 }
   );
+  await client.runLiteMesaAnalysis(
+    { kind: "frozen_plan", projectId: "project-ui", experimentPlanId: "plan-frozen" },
+    "mission_reliability",
+    { samples: 99, seed: 1, parallelCores: 31 },
+    undefined,
+    { samples: 24, seed: 20260621, parallelCores: 1 }
+  );
+  const visualizationSession = await client.createVisualizationSession({
+    context: { kind: "current_project", project: { project_id: "project-ui" } },
+    seed: 20260705,
+    frameSampleEverySteps: 2,
+    playbackSpeed: 1.5
+  });
 
   assert.equal(result.source, "lite_mesa_aircraft_support_v1");
-  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["POST /mesa-analysis-runs"]);
+  assert.equal(visualizationSession.visualization_session_id, "visual-api-session");
+  assert.equal(visualizationSession.session_access_token, "visual-api-token");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "POST /mesa-analysis-runs",
+    "POST /mesa-analysis-runs",
+    "POST /visualization-sessions"
+  ]);
   assert.deepEqual(calls[0].body, {
-      project: { project_id: "project-ui" },
+      context: { kind: "current_project", project: { project_id: "project-ui" } },
       analysis_type: "mission_reliability",
       settings: { samples: 4, seed: 20260705, parallelCores: 4 },
       model_family: "aircraft_support_v1"
   });
+  assert.deepEqual(calls[1].body, {
+    context: { kind: "frozen_plan", projectId: "project-ui", experimentPlanId: "plan-frozen" },
+    analysis_type: "mission_reliability",
+    model_family: "aircraft_support_v1"
+  });
+  assert.equal("settings" in calls[1].body, false);
+  assert.equal(calls[1].timeoutMs, 930000);
   assert.equal(calls[0].timeoutMs, 210000);
 });
 
@@ -249,7 +282,7 @@ test("frontend API client saves and lists aircraft mission reliability snapshots
   assert.deepEqual(calls[0].body.snapshot, snapshot);
 });
 
-test("frontend API client lists and deletes experiment plans through project routes", async () => {
+test("frontend API client lists, freezes, and deletes experiment plans through project routes", async () => {
   const calls = [];
   const client = createBackendApiClient({
     transport: async (request) => {
@@ -260,17 +293,23 @@ test("frontend API client lists and deletes experiment plans through project rou
       if (request.path === "/projects/project-ui/experiment-plans/plan-ui" && request.method === "DELETE") {
         return { experiment_plan_id: "plan-ui", deleted: true, soft_deleted_run_ids: ["run-ui"] };
       }
+      if (request.path === "/projects/project-ui/experiment-plans/plan-ui/freeze" && request.method === "POST") {
+        return { experiment_plan_id: "plan-ui", status: "frozen", plan_fingerprint: "sha256:plan" };
+      }
       throw new Error(`unexpected request ${request.method} ${request.path}`);
     }
   });
 
   const plans = await client.listExperimentPlans("project-ui");
+  const frozen = await client.freezeExperimentPlan("project-ui", "plan-ui");
   const deleted = await client.deleteExperimentPlan("project-ui", "plan-ui");
 
   assert.equal(plans.experiment_plans[0].experiment_plan_id, "plan-ui");
+  assert.equal(frozen.status, "frozen");
   assert.deepEqual(deleted.soft_deleted_run_ids, ["run-ui"]);
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "GET /projects/project-ui/experiment-plans",
+    "POST /projects/project-ui/experiment-plans/plan-ui/freeze",
     "DELETE /projects/project-ui/experiment-plans/plan-ui"
   ]);
 });

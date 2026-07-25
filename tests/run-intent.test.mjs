@@ -307,6 +307,10 @@ test("submitRunIntent sends user-edited Monte Carlo samples and seed in experime
       calls.push({ method: "createExperimentPlan", projectId, config });
       return { experiment_plan_id: "plan-edited" };
     },
+    compileExperimentPlanPreflight: async (projectId, experimentPlanId) => {
+      calls.push({ method: "compileExperimentPlanPreflight", projectId, experimentPlanId });
+      return { ok: true, status: "compiled", errors: [] };
+    },
     submitRun: async (request) => {
       calls.push({ method: "submitRun", request });
       return { run_id: "run-edited", status: "queued", ...request };
@@ -374,6 +378,10 @@ test("submitRunIntent keeps composite task quantities on basic missions through 
     createExperimentPlan: async (projectId, config) => {
       calls.push({ method: "createExperimentPlan", projectId, config });
       return { experiment_plan_id: "plan-edited-quantity" };
+    },
+    compileExperimentPlanPreflight: async (projectId, experimentPlanId) => {
+      calls.push({ method: "compileExperimentPlanPreflight", projectId, experimentPlanId });
+      return { ok: true, status: "compiled", errors: [] };
     },
     submitRun: async (request) => {
       calls.push({ method: "submitRun", request });

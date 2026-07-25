@@ -21,8 +21,20 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     """Create the current schema and upgrade compatible historical databases."""
     connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
     apply_compatibility_migrations(connection)
+    _ensure_experiment_plan_freeze_columns(connection)
     _seed_m4_users(connection)
     connection.commit()
+
+
+def _ensure_experiment_plan_freeze_columns(connection: sqlite3.Connection) -> None:
+    columns = {
+        str(row[1])
+        for row in connection.execute("PRAGMA table_info(experiment_plans)").fetchall()
+    }
+    if "canonical_fingerprint" not in columns:
+        connection.execute("ALTER TABLE experiment_plans ADD COLUMN canonical_fingerprint TEXT")
+    if "frozen_at" not in columns:
+        connection.execute("ALTER TABLE experiment_plans ADD COLUMN frozen_at TEXT")
 
 
 class ContractRepository:
@@ -757,21 +769,24 @@ class ContractRepository:
         return published
 
     def upsert_experiment_plan(self, plan: dict[str, Any]) -> None:
-        self.connection.execute(
+        cursor = self.connection.execute(
             """
             INSERT INTO experiment_plans (
               experiment_plan_id, project_id, modeling_snapshot_id, schema_version, project_version,
-              status, payload_json, updated_at
+              status, canonical_fingerprint, frozen_at, payload_json, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(experiment_plan_id) DO UPDATE SET
               project_id = excluded.project_id,
               modeling_snapshot_id = excluded.modeling_snapshot_id,
               schema_version = excluded.schema_version,
               project_version = excluded.project_version,
               status = excluded.status,
+              canonical_fingerprint = excluded.canonical_fingerprint,
+              frozen_at = excluded.frozen_at,
               payload_json = excluded.payload_json,
               updated_at = CURRENT_TIMESTAMP
+            WHERE experiment_plans.status != 'frozen'
             """,
             (
                 _required(plan, "experiment_plan_id"),
@@ -780,9 +795,47 @@ class ContractRepository:
                 _required(plan, "schema_version"),
                 _required(plan, "project_version"),
                 plan.get("status", "draft"),
+                plan.get("canonical_fingerprint"),
+                plan.get("frozen_at"),
                 _to_json(plan),
             ),
         )
+        if cursor.rowcount == 0:
+            self.connection.rollback()
+            raise ValueError("frozen ExperimentPlan cannot be updated")
+        self.connection.commit()
+
+    def compare_and_swap_freeze_experiment_plan(
+        self,
+        frozen_plan: dict[str, Any],
+        *,
+        expected_plan: dict[str, Any],
+    ) -> None:
+        cursor = self.connection.execute(
+            """
+            UPDATE experiment_plans
+            SET status = 'frozen',
+                canonical_fingerprint = ?,
+                frozen_at = ?,
+                payload_json = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE experiment_plan_id = ?
+              AND project_id = ?
+              AND status = 'draft'
+              AND payload_json = ?
+            """,
+            (
+                _required(frozen_plan, "canonical_fingerprint"),
+                _required(frozen_plan, "frozen_at"),
+                _to_json(frozen_plan),
+                _required(frozen_plan, "experiment_plan_id"),
+                _required(frozen_plan, "project_id"),
+                _to_json(expected_plan),
+            ),
+        )
+        if cursor.rowcount != 1:
+            self.connection.rollback()
+            raise ValueError("ExperimentPlan changed while it was being frozen")
         self.connection.commit()
 
     def upsert_modeling_snapshot(self, snapshot: dict[str, Any]) -> None:

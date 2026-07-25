@@ -49,8 +49,11 @@ test("Solara visualization URL can be overridden from query or local storage", (
   );
 });
 
-test("Solara iframe URL carries visual simulation context without using legacy sidecar names", () => {
+test("Solara iframe URL carries only visualization session identity, token, and playback speed", () => {
   const url = buildSolaraVisualizationUrl("http://127.0.0.1:8765/", {
+    visualizationSessionId: "session-ui",
+    visualizationSessionToken: "token-ui.secret",
+    playbackSpeed: 1.5,
     projectId: "project-ui",
     featureId: "spare-planning-visual-mesa-page",
     experimentPlanId: "plan-a",
@@ -58,19 +61,16 @@ test("Solara iframe URL carries visual simulation context without using legacy s
     planSteps: 77,
     planSamples: 8,
     planSeed: 88,
-    reload: 2
+    reload: 2,
+    authorization: "Bearer m4-secret",
+    accessToken: "m4-secret"
   });
 
   assert.match(url, /^http:\/\/127\.0\.0\.1:8765\/\?/);
-  assert.match(url, /embedded=1/);
-  assert.match(url, /project_id=project-ui/);
-  assert.match(url, /feature_id=spare-planning-visual-mesa-page/);
-  assert.match(url, /experiment_plan_name=/);
-  assert.match(url, /experiment_plan_id=plan-a/);
-  assert.match(url, /plan_steps=77/);
-  assert.match(url, /plan_samples=8/);
-  assert.match(url, /plan_seed=88/);
-  assert.match(url, /reload=2/);
+  assert.match(url, /visualization_session_id=session-ui/);
+  assert.match(url, /visualization_session_token=token-ui.secret/);
+  assert.match(url, /playback_speed=1.5/);
+  assert.doesNotMatch(url, /embedded|project_id|feature_id|experiment_plan|plan_steps|plan_samples|plan_seed|reload|authorization|access_token|Bearer|m4-secret/);
   assert.doesNotMatch(url, /8521|independent-mesa|mesa-visualization-runs/);
 });
 

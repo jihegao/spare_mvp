@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import base64
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -19,6 +20,14 @@ from uuid import uuid4
 
 from src.spare_mvp_backend.analysis_xlsx import AnalysisXlsxError, export_analysis_snapshot_xlsx
 from src.spare_mvp_backend.errors import BackendApiError
+from src.spare_mvp_backend.execution_context import (
+    DEFAULT_CONTEXT_PARALLEL_CORES,
+    DEFAULT_CONTEXT_SAMPLES,
+    DEFAULT_CONTEXT_SEED,
+    ResolvedExecutionContext,
+    VisualizationSessionStore,
+    canonical_fingerprint,
+)
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_parallel_cores
 from src.spare_mvp_backend.project_payload import (
@@ -88,12 +97,18 @@ class BackendApi:
         adapter: SimulationAdapter,
         output_dir: Path | str,
         run_lifecycle_lock: threading.Lock | None = None,
+        visualization_session_store: VisualizationSessionStore | None = None,
+        visualization_session_lifecycle_lock: threading.RLock | None = None,
     ) -> None:
         self.repository = repository
         self.adapter = adapter
         self.output_dir = Path(output_dir)
         lifecycle_lock = run_lifecycle_lock or threading.Lock()
         self.run_service = RunService(repository, adapter, self.output_dir, run_lifecycle_lock=lifecycle_lock)
+        self.visualization_session_store = visualization_session_store or VisualizationSessionStore()
+        self.visualization_session_lifecycle_lock = (
+            visualization_session_lifecycle_lock or threading.RLock()
+        )
 
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
         failure_distribution_errors = project_failure_distribution_errors(project_json)
@@ -853,6 +868,13 @@ class BackendApi:
                 project_id=project_id,
                 experiment_plan_id=experiment_plan_id,
             )
+        if existing.get("status") == "frozen":
+            raise BackendApiError(
+                "experiment_plan_frozen",
+                "Frozen ExperimentPlan cannot be updated",
+                project_id=project_id,
+                experiment_plan_id=experiment_plan_id,
+            )
         return self._upsert_experiment_plan(
             project_id,
             config,
@@ -898,8 +920,131 @@ class BackendApi:
             "status": status,
             "config": plan_config,
         }
-        self.repository.upsert_experiment_plan(plan)
+        try:
+            self.repository.upsert_experiment_plan(plan)
+        except ValueError as exc:
+            raise BackendApiError(
+                "experiment_plan_frozen",
+                "Frozen ExperimentPlan cannot be updated",
+                project_id=project_id,
+                experiment_plan_id=plan["experiment_plan_id"],
+            ) from exc
         return plan
+
+    def freeze_experiment_plan(self, project_id: str, experiment_plan_id: str) -> dict[str, Any]:
+        try:
+            plan = self.repository.get_experiment_plan(experiment_plan_id)
+        except KeyError as exc:
+            raise BackendApiError(
+                "experiment_plan_not_found",
+                "ExperimentPlan not found",
+                project_id=project_id,
+                experiment_plan_id=experiment_plan_id,
+            ) from exc
+        if plan.get("project_id") != project_id:
+            raise BackendApiError(
+                "experiment_plan_project_mismatch",
+                "ExperimentPlan does not belong to project",
+                project_id=project_id,
+                experiment_plan_id=experiment_plan_id,
+            )
+        if plan.get("status") == "frozen":
+            return plan
+
+        config = copy.deepcopy(plan.get("config") or {})
+        project_key = "projectJson" if "projectJson" in config else "project_json" if "project_json" in config else ""
+        if project_key:
+            project = config.get(project_key)
+            if not isinstance(project, dict) or not project:
+                raise BackendApiError(
+                    "experiment_plan_freeze_invalid",
+                    "ExperimentPlan config.projectJson must be a non-empty object",
+                    experiment_plan_id=experiment_plan_id,
+                    field="config.projectJson",
+                )
+        else:
+            snapshot_id = str(plan.get("modeling_snapshot_id") or "").strip()
+            if not snapshot_id:
+                raise BackendApiError(
+                    "experiment_plan_freeze_invalid",
+                    "ExperimentPlan must reference a modeling snapshot",
+                    experiment_plan_id=experiment_plan_id,
+                    field="modeling_snapshot_id",
+                )
+            try:
+                snapshot = self.repository.get_modeling_snapshot(snapshot_id)
+            except KeyError as exc:
+                raise BackendApiError(
+                    "experiment_plan_freeze_invalid",
+                    "ExperimentPlan modeling snapshot was not found",
+                    experiment_plan_id=experiment_plan_id,
+                    modeling_snapshot_id=snapshot_id,
+                ) from exc
+            if snapshot.get("project_id") != project_id or not isinstance(snapshot.get("project"), dict):
+                raise BackendApiError(
+                    "experiment_plan_freeze_invalid",
+                    "ExperimentPlan modeling snapshot does not contain the plan Project",
+                    experiment_plan_id=experiment_plan_id,
+                    modeling_snapshot_id=snapshot_id,
+                )
+            project = snapshot["project"]
+
+        frozen_project = strip_project_sweep(materialize_scenario_composition(copy.deepcopy(project)))
+        if str(frozen_project.get("project_id") or "") != project_id:
+            raise BackendApiError(
+                "experiment_plan_project_mismatch",
+                "ExperimentPlan Project JSON does not match the owning project",
+                project_id=project_id,
+                embedded_project_id=frozen_project.get("project_id"),
+                experiment_plan_id=experiment_plan_id,
+            )
+        runtime_settings = _normalize_frozen_runtime_settings(config)
+        compile_result = self.adapter.compile_scenario_with_gate(
+            frozen_project,
+            model_family=ACTIVE_FORMAL_MODEL_FAMILY,
+            runtime_config={"seed": runtime_settings["seed"]},
+        )
+        if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
+            raise BackendApiError(
+                "experiment_plan_freeze_blocked",
+                "ExperimentPlan Project did not pass the SimulationAdapter compile gate",
+                project_id=project_id,
+                experiment_plan_id=experiment_plan_id,
+                issues=compile_result.get("issues", []),
+                errors=compile_result.get("errors", []),
+            )
+
+        config.pop("project_json", None)
+        config["projectJson"] = frozen_project
+        config.update(runtime_settings)
+        fingerprint = canonical_fingerprint(
+            {
+                "projectJson": frozen_project,
+                "samples": runtime_settings["samples"],
+                "parallelCores": runtime_settings["parallelCores"],
+                "seed": runtime_settings["seed"],
+            }
+        )
+        frozen = {
+            **plan,
+            "status": "frozen",
+            "config": config,
+            "canonical_fingerprint": fingerprint,
+            "frozen_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        try:
+            self.repository.compare_and_swap_freeze_experiment_plan(
+                frozen,
+                expected_plan=plan,
+            )
+        except ValueError as exc:
+            raise BackendApiError(
+                "experiment_plan_version_conflict",
+                "ExperimentPlan changed while it was being frozen; reload and retry",
+                project_id=project_id,
+                experiment_plan_id=experiment_plan_id,
+            ) from exc
+        return frozen
 
     def list_experiment_plans(self, project_id: str) -> dict[str, Any]:
         return {
@@ -922,11 +1067,16 @@ class BackendApi:
             resource_id=experiment_plan_id,
         )
         try:
-            return self.run_service.delete_experiment_plan(
-                project_id,
-                experiment_plan_id,
-                actor_user_id=actor_user_id,
-            )
+            with self.visualization_session_lifecycle_lock:
+                deleted = self.run_service.delete_experiment_plan(
+                    project_id,
+                    experiment_plan_id,
+                    actor_user_id=actor_user_id,
+                )
+                deleted["revoked_visualization_session_ids"] = (
+                    self.visualization_session_store.delete_for_experiment_plan(experiment_plan_id)
+                )
+                return deleted
         except KeyError as exc:
             raise BackendApiError(
                 "experiment_plan_not_found",
@@ -959,17 +1109,22 @@ class BackendApi:
 
     def run_lite_mesa_analysis(
         self,
-        project_json: dict[str, Any],
+        project_json: dict[str, Any] | None = None,
         *,
         analysis_type: str,
         settings: dict[str, Any] | None = None,
         model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
+        context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Run a current-project Mesa analysis in memory without formal run persistence."""
+        """Run a draft or frozen-plan Mesa analysis without formal persistence."""
         analysis_started = time.perf_counter()
         normalized_analysis_type = _normalize_analysis_type(analysis_type)
+        resolved_context = self._resolve_execution_context(project_json=project_json, context=context)
+        requested_settings = copy.deepcopy(settings or {})
+        if resolved_context.context["type"] == "frozen_plan":
+            requested_settings.update(resolved_context.runtime_settings)
         try:
-            normalized_settings = _normalize_lite_mesa_analysis_settings(settings or {})
+            normalized_settings = _normalize_lite_mesa_analysis_settings(requested_settings)
         except RunServiceError as exc:
             raise self._run_service_error_to_backend_error(exc) from exc
         if model_family != ACTIVE_FORMAL_MODEL_FAMILY:
@@ -979,12 +1134,21 @@ class BackendApi:
                 model_family=model_family,
                 replacement_model_family=ACTIVE_FORMAL_MODEL_FAMILY,
             )
-        if not isinstance(project_json, dict) or not project_json:
-            raise BackendApiError(
-                "bad_lite_mesa_analysis_request",
-                "current Project JSON is required for lite Mesa analysis",
-            )
-        project = strip_project_sweep(materialize_scenario_composition(project_json))
+        project = copy.deepcopy(resolved_context.project)
+        fingerprint = canonical_fingerprint(
+            {
+                "context_fingerprint": resolved_context.fingerprint,
+                "analysis_type": normalized_analysis_type,
+                "model_family": model_family,
+                "effective_settings": normalized_settings,
+            }
+        )
+        context_metadata = {
+            "analysis_session_id": f"analysis-session-{uuid4().hex}",
+            "context": copy.deepcopy(resolved_context.context),
+            "fingerprint": fingerprint,
+            "execution_fingerprint": fingerprint,
+        }
         compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
         if not callable(compile_gate):
             raise BackendApiError(
@@ -995,7 +1159,7 @@ class BackendApi:
         compile_result = compile_gate(project, model_family=model_family)
         compile_seconds = time.perf_counter() - compile_started
         if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
-            return _blocked_lite_mesa_analysis_payload(
+            payload = _blocked_lite_mesa_analysis_payload(
                 project=project,
                 analysis_type=normalized_analysis_type,
                 model_family=model_family,
@@ -1005,6 +1169,8 @@ class BackendApi:
                 errors=compile_result.get("errors", []),
                 provenance=compile_result.get("provenance", {}),
             )
+            payload.update(context_metadata)
+            return payload
 
         scenario = copy.deepcopy(compile_result["scenario"])
         scenario.get("compiled_from", {}).setdefault("mapping_provenance", compile_result.get("provenance", {}))
@@ -1061,6 +1227,7 @@ class BackendApi:
                 total_sample_count=normalized_settings["samples"],
                 failed_sample_count=len(failed_samples),
             )
+            payload.update(context_metadata)
             return payload
 
         aggregation_started = time.perf_counter()
@@ -1143,6 +1310,7 @@ class BackendApi:
                 copy.deepcopy(sample.get("organization_dispatch_summary") or {}) for sample in samples
             ],
             "metric_moments": metric_moments,
+            **context_metadata,
             "projection": projections[normalized_analysis_type],
             "metrics": page_result["metrics"],
             "result_fields": page_result.get("result_fields", []),
@@ -1176,6 +1344,303 @@ class BackendApi:
         }
         timings["total_seconds"] = time.perf_counter() - analysis_started
         return payload
+
+    def create_visualization_session(
+        self,
+        *,
+        context: dict[str, Any],
+        settings: dict[str, Any] | None = None,
+        model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
+        playback_speed: Any = 1.0,
+        actor_user_id: str,
+        frame_sample_every_steps: Any | None = None,
+    ) -> dict[str, Any]:
+        if model_family != ACTIVE_FORMAL_MODEL_FAMILY:
+            raise BackendApiError(
+                "unsupported_visualization_model_family",
+                f"visualization sessions support only {ACTIVE_FORMAL_MODEL_FAMILY}",
+                model_family=model_family,
+            )
+        resolved = self._resolve_execution_context(context=context)
+        requested_settings = copy.deepcopy(settings or {})
+        if frame_sample_every_steps is None:
+            frame_sample_every_steps = requested_settings.get(
+                "frameSampleEverySteps",
+                requested_settings.get("frame_sample_every_steps"),
+            )
+        if resolved.context["type"] == "frozen_plan":
+            requested_settings.update(resolved.runtime_settings)
+        try:
+            normalized_settings = _normalize_lite_mesa_analysis_settings(requested_settings)
+        except RunServiceError as exc:
+            raise self._run_service_error_to_backend_error(exc) from exc
+        try:
+            normalized_playback_speed = float(playback_speed)
+        except (TypeError, ValueError) as exc:
+            raise BackendApiError(
+                "bad_visualization_session_request",
+                "playback_speed must be a positive number",
+                field="playback_speed",
+            ) from exc
+        if not math.isfinite(normalized_playback_speed) or normalized_playback_speed <= 0:
+            raise BackendApiError(
+                "bad_visualization_session_request",
+                "playback_speed must be a positive number",
+                field="playback_speed",
+            )
+
+        compile_result = self.adapter.compile_scenario_with_gate(
+            copy.deepcopy(resolved.project),
+            model_family=model_family,
+            runtime_config={"seed": normalized_settings["seed"]},
+        )
+        if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
+            raise BackendApiError(
+                "visualization_session_compile_blocked",
+                "Execution context did not pass the SimulationAdapter compile gate",
+                issues=compile_result.get("issues", []),
+                errors=compile_result.get("errors", []),
+            )
+        inputs = copy.deepcopy(compile_result["scenario"]["simulation_inputs"])
+        inputs["seed"] = normalized_settings["seed"]
+        time_config = inputs.get("time") if isinstance(inputs.get("time"), dict) else {}
+        duration_minutes = _positive_session_int(
+            time_config.get("duration_minutes"),
+            "simulation_inputs.time.duration_minutes",
+        )
+        tick_minutes = _positive_session_int(
+            time_config.get("tick_minutes"),
+            "simulation_inputs.time.tick_minutes",
+        )
+        sample_every_minutes = _positive_session_int(
+            time_config.get("sample_every_minutes", tick_minutes),
+            "simulation_inputs.time.sample_every_minutes",
+        )
+        if frame_sample_every_steps is None:
+            normalized_frame_sample_every_steps = max(
+                1,
+                math.ceil(sample_every_minutes / tick_minutes),
+            )
+        else:
+            normalized_frame_sample_every_steps = _positive_visualization_int(
+                frame_sample_every_steps,
+                "frameSampleEverySteps",
+            )
+            time_config["sample_every_minutes"] = (
+                normalized_frame_sample_every_steps * tick_minutes
+            )
+        session_payload = {
+            "context": copy.deepcopy(resolved.context),
+            "context_key": _execution_context_key(resolved),
+            "fingerprint": resolved.fingerprint,
+            "input_fingerprint": canonical_fingerprint(inputs),
+            "duration_minutes": duration_minutes,
+            "tick_minutes": tick_minutes,
+            "max_steps": math.ceil(duration_minutes / tick_minutes),
+            "frame_sample_every_steps": normalized_frame_sample_every_steps,
+            "seed": normalized_settings["seed"],
+            "playback_speed": normalized_playback_speed,
+            "simulation_inputs": inputs,
+        }
+        if resolved.experiment_plan_id is None:
+            return self.visualization_session_store.create(
+                session_payload,
+                owner_user_id=actor_user_id,
+            )
+        with self.visualization_session_lifecycle_lock:
+            self._assert_frozen_context_still_current(resolved)
+            return self.visualization_session_store.create(
+                session_payload,
+                owner_user_id=actor_user_id,
+                experiment_plan_id=resolved.experiment_plan_id,
+            )
+
+    def get_visualization_session(
+        self,
+        visualization_session_id: str,
+        *,
+        actor_user_id: str | None = None,
+        actor_role: str | None = None,
+        session_access_token: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            return self.visualization_session_store.get(
+                visualization_session_id,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+                session_access_token=session_access_token,
+            )
+        except PermissionError as exc:
+            raise BackendApiError(
+                "visualization_session_forbidden",
+                "Visualization session access was denied",
+                visualization_session_id=visualization_session_id,
+            ) from exc
+
+    def _assert_frozen_context_still_current(self, resolved: ResolvedExecutionContext) -> None:
+        if resolved.experiment_plan_id is None:
+            return
+        try:
+            current = self.repository.get_experiment_plan(resolved.experiment_plan_id)
+        except KeyError as exc:
+            raise BackendApiError(
+                "frozen_plan_changed",
+                "Frozen ExperimentPlan was deleted while visualization inputs were compiling",
+                experiment_plan_id=resolved.experiment_plan_id,
+            ) from exc
+        if (
+            current.get("status") != "frozen"
+            or current.get("canonical_fingerprint") != resolved.fingerprint
+        ):
+            raise BackendApiError(
+                "frozen_plan_changed",
+                "Frozen ExperimentPlan changed while visualization inputs were compiling",
+                experiment_plan_id=resolved.experiment_plan_id,
+            )
+
+    def _resolve_execution_context(
+        self,
+        *,
+        project_json: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> ResolvedExecutionContext:
+        descriptor = copy.deepcopy(context) if isinstance(context, dict) else {}
+        context_type = str(
+            descriptor.get("type")
+            or descriptor.get("kind")
+            or descriptor.get("source")
+            or ("current_project" if project_json is not None else "")
+        ).strip()
+        if context_type == "current_project":
+            if any(
+                descriptor.get(key)
+                for key in ("experiment_plan_id", "experimentPlanId", "plan_id", "planId")
+            ):
+                raise BackendApiError(
+                    "bad_execution_context",
+                    "current_project context cannot reference an ExperimentPlan",
+                )
+            candidate = (
+                descriptor.get("project")
+                or descriptor.get("projectJson")
+                or descriptor.get("project_json")
+                or project_json
+            )
+            if not isinstance(candidate, dict) or not candidate:
+                raise BackendApiError(
+                    "bad_execution_context",
+                    "current_project context requires request-local Project JSON",
+                )
+            project = strip_project_sweep(materialize_scenario_composition(copy.deepcopy(candidate)))
+            runtime_settings = {
+                "samples": DEFAULT_CONTEXT_SAMPLES,
+                "parallelCores": DEFAULT_CONTEXT_PARALLEL_CORES,
+                "seed": DEFAULT_CONTEXT_SEED,
+            }
+            return ResolvedExecutionContext(
+                context={"type": "current_project"},
+                project=project,
+                runtime_settings=runtime_settings,
+                fingerprint=canonical_fingerprint({"projectJson": project, **runtime_settings}),
+            )
+        if context_type != "frozen_plan":
+            raise BackendApiError(
+                "bad_execution_context",
+                "context.type must be current_project or frozen_plan",
+                context_type=context_type,
+            )
+        if project_json is not None or any(
+            key in descriptor for key in ("project", "projectJson", "project_json")
+        ):
+            raise BackendApiError(
+                "frozen_plan_client_override",
+                "frozen_plan context does not accept client Project JSON",
+            )
+        experiment_plan_id = str(
+            descriptor.get("experiment_plan_id")
+            or descriptor.get("experimentPlanId")
+            or descriptor.get("plan_id")
+            or descriptor.get("planId")
+            or ""
+        ).strip()
+        if not experiment_plan_id:
+            raise BackendApiError(
+                "bad_execution_context",
+                "frozen_plan context requires experiment_plan_id",
+                field="context.experiment_plan_id",
+            )
+        try:
+            plan = self.repository.get_experiment_plan(experiment_plan_id)
+        except KeyError as exc:
+            raise BackendApiError(
+                "experiment_plan_not_found",
+                "ExperimentPlan not found",
+                experiment_plan_id=experiment_plan_id,
+            ) from exc
+        requested_project_id = str(
+            descriptor.get("project_id") or descriptor.get("projectId") or ""
+        ).strip()
+        if requested_project_id and requested_project_id != plan.get("project_id"):
+            raise BackendApiError(
+                "experiment_plan_project_mismatch",
+                "ExperimentPlan does not belong to requested project",
+                project_id=requested_project_id,
+                experiment_plan_id=experiment_plan_id,
+            )
+        if plan.get("status") != "frozen":
+            raise BackendApiError(
+                "experiment_plan_not_frozen",
+                "frozen_plan context requires a frozen ExperimentPlan",
+                experiment_plan_id=experiment_plan_id,
+                status=plan.get("status"),
+            )
+        config = plan.get("config") if isinstance(plan.get("config"), dict) else {}
+        project = config.get("projectJson")
+        fingerprint = str(plan.get("canonical_fingerprint") or "")
+        if not isinstance(project, dict) or not project or not fingerprint:
+            raise BackendApiError(
+                "invalid_frozen_plan",
+                "Frozen ExperimentPlan is missing its canonical Project snapshot or fingerprint",
+                experiment_plan_id=experiment_plan_id,
+            )
+        requested_fingerprint = str(
+            descriptor.get("planFingerprint")
+            or descriptor.get("plan_fingerprint")
+            or ""
+        ).strip()
+        if not requested_fingerprint:
+            raise BackendApiError(
+                "frozen_plan_fingerprint_required",
+                "frozen_plan context requires planFingerprint",
+                experiment_plan_id=experiment_plan_id,
+                field="context.planFingerprint",
+            )
+        if requested_fingerprint != fingerprint:
+            raise BackendApiError(
+                "frozen_plan_fingerprint_mismatch",
+                "frozen_plan planFingerprint does not match the current ExperimentPlan",
+                experiment_plan_id=experiment_plan_id,
+            )
+        runtime_settings = _normalize_frozen_runtime_settings(config)
+        expected_fingerprint = canonical_fingerprint({"projectJson": project, **runtime_settings})
+        if fingerprint != expected_fingerprint:
+            raise BackendApiError(
+                "invalid_frozen_plan",
+                "Frozen ExperimentPlan fingerprint does not match its canonical payload",
+                experiment_plan_id=experiment_plan_id,
+            )
+        return ResolvedExecutionContext(
+            context={
+                "type": "frozen_plan",
+                "project_id": plan["project_id"],
+                "experiment_plan_id": experiment_plan_id,
+                "planFingerprint": fingerprint,
+            },
+            project=copy.deepcopy(project),
+            runtime_settings=runtime_settings,
+            fingerprint=fingerprint,
+            experiment_plan_id=experiment_plan_id,
+        )
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_run(run_id)
@@ -1852,6 +2317,8 @@ def _normalize_experiment_plan_config(config: dict[str, Any]) -> dict[str, Any]:
 def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str, Any]:
     samples = _bounded_int(settings.get("samples"), default=4, minimum=1, maximum=1000)
     seed = _optional_int(settings.get("seed"))
+    if seed is None:
+        seed = DEFAULT_CONTEXT_SEED
     confidence_target = _bounded_float(
         settings.get("missionConfidenceTarget"),
         default=0.9,
@@ -1862,6 +2329,7 @@ def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str
     parallel_cores = normalize_monte_carlo_parallel_cores(
         settings.get("parallelCores"),
         field_path="settings.parallelCores",
+        default=DEFAULT_CONTEXT_PARALLEL_CORES,
     )
     sample_timeout_seconds = _bounded_int(
         settings.get("sampleTimeoutSeconds"),
@@ -1893,6 +2361,93 @@ def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str
         "sessionTimeoutSeconds": session_timeout_seconds,
         "write_event_snapshots": bool(settings.get("write_event_snapshots")),
     }
+
+
+def _normalize_frozen_runtime_settings(config: dict[str, Any]) -> dict[str, int]:
+    return {
+        "samples": _strict_context_int(
+            config.get("samples", DEFAULT_CONTEXT_SAMPLES),
+            field="config.samples",
+            minimum=1,
+            maximum=1000,
+        ),
+        "parallelCores": _strict_context_int(
+            config.get("parallelCores", DEFAULT_CONTEXT_PARALLEL_CORES),
+            field="config.parallelCores",
+            minimum=1,
+            maximum=32,
+        ),
+        "seed": _strict_context_int(
+            config.get("seed", DEFAULT_CONTEXT_SEED),
+            field="config.seed",
+            minimum=0,
+            maximum=2_147_483_647,
+        ),
+    }
+
+
+def _strict_context_int(value: Any, *, field: str, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool):
+        parsed = None
+    else:
+        try:
+            number = float(value)
+            parsed = int(number) if math.isfinite(number) and number.is_integer() else None
+        except (TypeError, ValueError):
+            parsed = None
+    if parsed is None or parsed < minimum or parsed > maximum:
+        raise BackendApiError(
+            "experiment_plan_freeze_invalid",
+            f"{field} must be an integer between {minimum} and {maximum}",
+            field=field,
+            minimum=minimum,
+            maximum=maximum,
+        )
+    return parsed
+
+
+def _positive_session_int(value: Any, field: str) -> int:
+    if isinstance(value, bool):
+        parsed = 0
+    else:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = 0
+    if parsed < 1:
+        raise BackendApiError(
+            "visualization_session_compile_invalid",
+            f"{field} must be a positive integer",
+            field=field,
+        )
+    return parsed
+
+
+def _positive_visualization_int(value: Any, field: str) -> int:
+    if isinstance(value, bool):
+        parsed = None
+    else:
+        try:
+            number = float(value)
+            parsed = int(number) if math.isfinite(number) and number.is_integer() else None
+        except (TypeError, ValueError):
+            parsed = None
+    if parsed is None or parsed < 1:
+        raise BackendApiError(
+            "bad_visualization_session_request",
+            f"{field} must be a positive integer",
+            field=field,
+        )
+    return parsed
+
+
+def _execution_context_key(resolved: ResolvedExecutionContext) -> str:
+    if resolved.experiment_plan_id:
+        return (
+            f"frozen_plan:{resolved.experiment_plan_id}:"
+            f"{resolved.fingerprint}"
+        )
+    return f"current_project:{resolved.fingerprint}"
 
 
 def _run_lite_mesa_analysis_samples(

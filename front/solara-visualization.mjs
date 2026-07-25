@@ -105,10 +105,22 @@ export function buildSolaraVisualizationUrl(baseUrl, context = {}) {
   } catch {
     url = new URL(DEFAULT_SOLARA_VISUALIZATION_URL);
   }
-  url.searchParams.set("embedded", "1");
-  for (const [key, value] of Object.entries(context)) {
-    if (value === undefined || value === null || value === "") continue;
-    url.searchParams.set(toSnakeCase(key), String(value));
+  url.search = "";
+  const visualizationSessionId = String(
+    context.visualizationSessionId || context.visualization_session_id || ""
+  ).trim();
+  if (visualizationSessionId) {
+    url.searchParams.set("visualization_session_id", visualizationSessionId);
+  }
+  const visualizationSessionToken = String(
+    context.visualizationSessionToken || context.visualization_session_token || ""
+  ).trim();
+  if (visualizationSessionToken) {
+    url.searchParams.set("visualization_session_token", visualizationSessionToken);
+  }
+  const playbackSpeed = Number(context.playbackSpeed ?? context.playback_speed);
+  if (Number.isFinite(playbackSpeed) && playbackSpeed > 0) {
+    url.searchParams.set("playback_speed", String(playbackSpeed));
   }
   return url.toString();
 }

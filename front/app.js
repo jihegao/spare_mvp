@@ -58,6 +58,16 @@ import {
   visualizationShortageReasonLabel
 } from "./solara-visualization.mjs";
 import {
+  buildBackendRunContext,
+  buildRunContextOptions,
+  buildVisualizationSessionRequest,
+  DEFAULT_CURRENT_MONTE_CARLO_SETTINGS,
+  DEFAULT_VISUALIZATION_SESSION_SETTINGS,
+  frozenMonteCarloSettings,
+  isRunnableFrozenExperimentPlan,
+  shouldInvalidateVisualizationSession
+} from "./run-context.mjs";
+import {
   cloneScenario,
   defaultScenario,
   runMonteCarlo
@@ -697,11 +707,7 @@ let currentAnalysisResults = createEmptyCurrentAnalysisResults(currentAnalysisPr
 let currentAnalysisResultLoaded = {};
 let currentAnalysisResultLoadInFlight = {};
 let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
-let liteMesaMonteCarloSettings = {
-  samples: Number(scenario.experiment?.samples || 4),
-  seed: Number(scenario.experiment?.seed || 20260621),
-  parallelCores: normalizeMonteCarloParallelCores(scenario.experiment?.parallelCores)
-};
+let liteMesaMonteCarloSettings = { ...DEFAULT_CURRENT_MONTE_CARLO_SETTINGS };
 let liteMesaMonteCarloResult = null;
 let liteMesaMonteCarloStatus = "等待运行分析。";
 let liteMesaMonteCarloRequestEpoch = 0;
@@ -796,6 +802,9 @@ let solaraVisualizationProjectSyncError = "";
 let solaraVisualizationProjectSyncErrorKey = "";
 let solaraVisualizationProjectSyncIssues = [];
 let solaraVisualizationProjectSyncRequestId = 0;
+let visualizationSession = null;
+let visualizationSessionRequestEpoch = 0;
+let visualizationSessionSettings = { ...DEFAULT_VISUALIZATION_SESSION_SETTINGS };
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -2247,9 +2256,21 @@ function bindEvents() {
       return;
     }
 
+    const experimentPlanFreezeButton = event.target.closest("[data-experiment-plan-freeze]");
+    if (experimentPlanFreezeButton) {
+      freezeExperimentPlanFromList(experimentPlanFreezeButton.dataset.experimentPlanFreeze || "").finally(() => render());
+      return;
+    }
+
     const experimentPlanDeleteButton = event.target.closest("[data-experiment-plan-delete]");
     if (experimentPlanDeleteButton) {
       deleteExperimentPlanFromList(experimentPlanDeleteButton.dataset.experimentPlanDelete || "").finally(() => render());
+      return;
+    }
+
+    const visualizationSessionStartButton = event.target.closest("[data-visualization-session-start]");
+    if (visualizationSessionStartButton) {
+      startVisualizationSessionThroughApi().finally(() => render());
       return;
     }
 
@@ -2758,6 +2779,16 @@ function bindEvents() {
     const currentExperimentPlanSelect = event.target.closest("[data-current-experiment-plan]");
     if (currentExperimentPlanSelect) {
       selectCurrentExperimentPlan(currentExperimentPlanSelect.value);
+      render();
+      return;
+    }
+
+    const visualizationSettingInput = event.target.closest("[data-visualization-setting]");
+    if (visualizationSettingInput) {
+      updateVisualizationSessionSetting(
+        visualizationSettingInput.dataset.visualizationSetting,
+        parseInput(visualizationSettingInput)
+      );
       render();
       return;
     }
@@ -3571,9 +3602,6 @@ function shouldEmbedExperimentPlanContextInComponent(page) {
 
 function renderExperimentPlanContextDropdown(page) {
   ensureExperimentPlanListLoaded();
-  if (isVisualSimulationPage(page)) {
-    return renderVisualSimulationExperimentPlanDropdown(page);
-  }
   const options = experimentPlanContextOptions(page);
   const selectedKey = selectedExperimentPlanContextKey(options);
   const currentProjectOption = options.find((option) => option.kind === "current-project");
@@ -3581,14 +3609,14 @@ function renderExperimentPlanContextDropdown(page) {
   const status = backendExperimentPlansLoadError
     ? "方案列表加载失败"
     : backendExperimentPlansLoaded
-    ? `${savedPlanOptions.length} 个已保存方案`
+    ? `${savedPlanOptions.length} 个已冻结方案`
     : "方案列表加载中";
   return `
     <label class="page-head-current-context experiment-plan-context-select">
       <span>运行上下文</span>
       <select data-current-experiment-plan>
         ${currentProjectOption ? `<option value="${htmlEscape(currentProjectOption.key)}" ${currentProjectOption.key === selectedKey ? "selected" : ""}>${htmlEscape(currentProjectOption.name)}</option>` : ""}
-        ${savedPlanOptions.length ? `<optgroup label="已保存实验方案">${savedPlanOptions.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}</optgroup>` : ""}
+        ${savedPlanOptions.length ? `<optgroup label="已冻结实验方案">${savedPlanOptions.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}</optgroup>` : ""}
       </select>
       <small>${htmlEscape(status)}</small>
     </label>
@@ -3596,7 +3624,7 @@ function renderExperimentPlanContextDropdown(page) {
 }
 
 function visualSimulationExperimentPlanOptions(page = getFeaturePageById(selectedFeatureId)) {
-  return experimentPlanContextOptions(page).filter((option) => option.kind === "experiment-plan");
+  return experimentPlanContextOptions(page);
 }
 
 function selectedVisualSimulationExperimentPlanContext(page = getFeaturePageById(selectedFeatureId)) {
@@ -3605,18 +3633,12 @@ function selectedVisualSimulationExperimentPlanContext(page = getFeaturePageById
 
 function renderVisualSimulationExperimentPlanDropdown(page) {
   const options = visualSimulationExperimentPlanOptions(page);
-  const selected = selectedVisualSimulationExperimentPlanContext(page);
-  const placeholder = backendExperimentPlansLoadError
-    ? "实验方案列表加载失败"
-    : backendExperimentPlansLoaded
-    ? options.length ? "请选择实验方案" : "暂无实验方案"
-    : "实验方案列表加载中";
+  const selectedKey = selectedExperimentPlanContextKey(options);
   return `
     <label class="page-head-current-context experiment-plan-context-select">
-      <span>实验方案</span>
-      <select data-current-experiment-plan aria-label="实验方案" ${options.length ? "" : "disabled"}>
-        <option value="" ${selected ? "" : "selected"}>${placeholder}</option>
-        ${options.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selected?.key ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}
+      <span>运行上下文</span>
+      <select data-current-experiment-plan aria-label="运行上下文">
+        ${options.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}
       </select>
     </label>
   `;
@@ -12042,7 +12064,10 @@ function renderExperimentPlanList(page) {
               <td>${htmlEscape(plan.run_count ?? 0)}</td>
               <td><span class="badge">${htmlEscape(plan.status)}</span></td>
               <td class="table-action-cell">
-                <button type="button" class="inline-action" data-experiment-plan-edit="${htmlEscape(plan.experiment_plan_id)}" data-experiment-plan-name="${htmlEscape(plan.name)}">编辑</button>
+                ${String(plan.status || "").toLowerCase() === "frozen"
+                  ? `<span class="badge">已冻结，不可编辑</span>`
+                  : `<button type="button" class="inline-action" data-experiment-plan-edit="${htmlEscape(plan.experiment_plan_id)}" data-experiment-plan-name="${htmlEscape(plan.name)}">编辑</button>
+                    <button type="button" class="btn-secondary" data-experiment-plan-freeze="${htmlEscape(plan.experiment_plan_id)}">冻结</button>`}
                 <button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>
               </td>
             </tr>
@@ -12115,29 +12140,13 @@ function currentProjectJsonForExperimentContext() {
 function experimentPlanContextOptions(page = getFeaturePageById(selectedFeatureId)) {
   const currentProjectJson = currentProjectJsonForExperimentContext();
   const projectName = String(currentProjectJson.projectInfo?.name || currentProject?.name || currentProjectJson.experiment?.name || "未选择项目").trim();
-  const currentProjectOption = {
-    key: `current-project:${String(currentBackendProjectId() || currentProject?.id || "none").trim()}`,
-    name: `当前项目：${projectName || "未选择项目"}`,
-    kind: "current-project",
-    plan: null,
+  return buildRunContextOptions({
+    projectId: currentBackendProjectId() || currentProject?.id || "",
+    projectName,
     projectJson: buildBackendProjectJson(currentProjectJson, currentProject),
+    plans: backendExperimentPlans,
     module: page.module
-  };
-  const backendOptions = backendExperimentPlans.filter((plan) => String(plan?.experiment_plan_id || "").trim()).map((plan) => {
-    const config = plan?.config || {};
-    const projectJson = config.projectJson && typeof config.projectJson === "object" && !Array.isArray(config.projectJson)
-      ? config.projectJson
-      : null;
-    return {
-      key: experimentPlanSelectionKey(plan),
-      name: config.name || projectJson?.experiment?.name || plan.experiment_plan_id || "未命名方案",
-      kind: "experiment-plan",
-      plan,
-      projectJson,
-      module: page.module
-    };
   });
-  return [currentProjectOption, ...backendOptions];
 }
 
 function selectedExperimentPlanContextKey(options = experimentPlanContextOptions()) {
@@ -12240,30 +12249,14 @@ async function syncSelectedProjectJsonForSolaraVisualization({
 
 function selectedExperimentPlanRunSettings() {
   const context = selectedExperimentPlanContext();
-  const config = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
-    ? context.plan.config
-    : {};
-  const projectJson = context?.projectJson && typeof context.projectJson === "object" && !Array.isArray(context.projectJson)
-    ? context.projectJson
-    : {};
-  const experiment = projectJson.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
-    ? projectJson.experiment
-    : {};
-  const samples = positiveExperimentNumber(config.samples, positiveExperimentNumber(experiment.samples, 0));
-  const seed = positiveExperimentNumber(config.seed, positiveExperimentNumber(experiment.seed, 0));
-  const configuredParallelCores = config.parallelCores ?? experiment.parallelCores ?? 1;
-  let parallelCoresError = "";
-  try {
-    normalizeMonteCarloParallelCores(configuredParallelCores);
-  } catch (err) {
-    parallelCoresError = err.message;
+  if (context?.kind !== "experiment-plan") {
+    return { ...liteMesaMonteCarloSettings, validationError: "", parallelCoresError: "" };
   }
-  return {
-    ...(samples > 0 ? { samples: Math.max(1, Math.min(1000, Math.trunc(samples))) } : {}),
-    ...(seed > 0 ? { seed: Math.trunc(seed) } : {}),
-    parallelCores: configuredParallelCores,
-    parallelCoresError
-  };
+  try {
+    return { ...frozenMonteCarloSettings(context), validationError: "", parallelCoresError: "" };
+  } catch (err) {
+    return { validationError: err.message, parallelCoresError: err.message };
+  }
 }
 
 function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
@@ -12276,6 +12269,7 @@ function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
   solaraVisualizationProjectSyncError = "";
   solaraVisualizationProjectSyncErrorKey = "";
   solaraVisualizationProjectSyncIssues = [];
+  invalidateVisualizationSession("运行上下文已更新，请重新创建可视化会话。");
   if (persist) persistSelectedRunContextKey();
 }
 
@@ -12284,23 +12278,16 @@ function resetRunContextToCurrentProject() {
     experimentPlanContextOptions().find((option) => option.kind === "current-project")?.key || "",
     { persist: true }
   );
-  const projectJson = currentProjectJsonForExperimentContext();
-  const experiment = projectJson?.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
-    ? projectJson.experiment
-    : {};
-  const samples = positiveExperimentNumber(experiment.samples, 0);
-  const seed = positiveExperimentNumber(experiment.seed, 0);
-  liteMesaMonteCarloSettings = {
-    samples: samples > 0 ? Math.max(1, Math.min(1000, Math.trunc(samples))) : 4,
-    seed: seed > 0 ? Math.trunc(seed) : 20260621,
-    parallelCores: experiment.parallelCores ?? 1
-  };
+  liteMesaMonteCarloSettings = { ...DEFAULT_CURRENT_MONTE_CARLO_SETTINGS };
   invalidateSelectedRunContextResults("运行上下文已更新，请重新运行。");
   liteMesaMonteCarloStatus = "已切换运行来源：当前项目";
 }
 
 function resetSavedRunContextAfterProjectMutation() {
-  if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) return;
+  if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) {
+    invalidateVisualizationSession("当前项目建模数据已更新，请重新创建可视化会话。");
+    return;
+  }
   resetRunContextToCurrentProject();
   liteMesaMonteCarloStatus = "当前项目建模数据已更新，已切换运行来源：当前项目";
   aircraftMissionReliabilityState.status = "当前项目建模数据已更新，请重新运行。";
@@ -12344,12 +12331,9 @@ function syncSelectedRunContextAfterPlanRefresh() {
   const contentChanged = Boolean(selectedRunContextFingerprint);
   selectedRunContextFingerprint = nextFingerprint;
   const planRunSettings = selectedExperimentPlanRunSettings();
-  liteMesaMonteCarloSettings = {
-    samples: Number(planRunSettings.samples) > 0 ? Number(planRunSettings.samples) : 4,
-    seed: Number(planRunSettings.seed) > 0 ? Number(planRunSettings.seed) : 20260621,
-    parallelCores: planRunSettings.parallelCores
-  };
+  if (!planRunSettings.validationError) liteMesaMonteCarloSettings = { ...planRunSettings };
   if (contentChanged) {
+    invalidateVisualizationSession("实验方案指纹已更新，请重新创建可视化会话。");
     invalidateSelectedRunContextResults("实验方案配置已更新，请重新运行。");
     liteMesaMonteCarloStatus = `实验方案配置已更新：${context.name}，请重新运行 Mesa 分析。`;
   }
@@ -12368,16 +12352,9 @@ function resetMissingRunContextAfterPlanRefresh() {
 
 function selectCurrentExperimentPlan(planKey) {
   const page = getFeaturePageById(selectedFeatureId);
-  const options = isVisualSimulationPage(page)
-    ? visualSimulationExperimentPlanOptions(page)
-    : experimentPlanContextOptions(page);
+  const options = experimentPlanContextOptions(page);
   const selected = options.find((option) => option.key === planKey) || null;
-  if (!selected) {
-    if (!isVisualSimulationPage(page)) return;
-    replaceSelectedRunContextKey("", { persist: true });
-    visualizationReplayStatus = "请选择实验方案后开始推演";
-    return;
-  }
+  if (!selected) return;
   replaceSelectedRunContextKey(selected.key, { persist: true });
   if (isVisualSimulationPage(page)) {
     visualizationReplayStatus = `已选择实验方案：${selected.name}`;
@@ -12392,14 +12369,14 @@ function selectCurrentExperimentPlan(planKey) {
   liteMesaAnalysisResults = {};
   aircraftMissionReliabilityState.result = null;
   aircraftMissionReliabilityState.status = "运行上下文已更新，请重新运行。";
-  const planRunSettings = selectedExperimentPlanRunSettings();
-  liteMesaMonteCarloSettings = {
-    samples: Number(planRunSettings.samples) > 0 ? Number(planRunSettings.samples) : 4,
-    seed: Number(planRunSettings.seed) > 0 ? Number(planRunSettings.seed) : 20260621,
-    parallelCores: planRunSettings.parallelCores
-  };
-  if (planRunSettings.parallelCoresError) {
-    liteMesaMonteCarloStatus = `无法运行：${planRunSettings.parallelCoresError}`;
+  if (selected.kind === "current-project") {
+    liteMesaMonteCarloSettings = { ...DEFAULT_CURRENT_MONTE_CARLO_SETTINGS };
+  } else {
+    const planRunSettings = selectedExperimentPlanRunSettings();
+    if (!planRunSettings.validationError) liteMesaMonteCarloSettings = { ...planRunSettings };
+    if (planRunSettings.validationError) {
+      liteMesaMonteCarloStatus = `无法运行：${planRunSettings.validationError}`;
+    }
   }
   selectedRunContextFingerprint = experimentPlanRunContextFingerprint(selected);
 }
@@ -12421,8 +12398,13 @@ function openNewExperimentPlanEditor() {
 }
 
 function openExperimentPlanEditorFromList(experimentPlanId, planName) {
-  experimentPlanManagementMode = "editor";
   const backendPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId);
+  if (String(backendPlan?.status || "").toLowerCase() === "frozen") {
+    experimentPlanListStatus = "冻结方案不可编辑；如需调整，请新建方案后再冻结。";
+    experimentPlanManagementMode = "list";
+    return;
+  }
+  experimentPlanManagementMode = "editor";
   const branchDraft = experimentPlanDraftFromBackendPlan(backendPlan);
   if (branchDraft) {
     experimentPlanDraft = branchDraft;
@@ -13575,6 +13557,21 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
   }
 }
 
+async function freezeExperimentPlanFromList(experimentPlanId) {
+  if (!experimentPlanId) {
+    experimentPlanListStatus = "请先保存方案，再执行冻结。";
+    return;
+  }
+  const projectId = currentBackendProjectId();
+  try {
+    await backendApi.freezeExperimentPlan(projectId, experimentPlanId);
+    experimentPlanListStatus = `方案 ${experimentPlanId} 已冻结，后续不可编辑。`;
+    await refreshExperimentPlanList(projectId, { force: true });
+  } catch (err) {
+    experimentPlanListStatus = `冻结方案失败：${formatBackendError(err)}`;
+  }
+}
+
 function isCurrentModelingPage() {
   return getFeaturePageById(selectedFeatureId).secondary === "仿真建模";
 }
@@ -13679,6 +13676,10 @@ function projectDraftSaveFailureText(err) {
 }
 
 async function saveCurrentExperimentPlanThroughApi() {
+  if (String(experimentPlan?.status || "").toLowerCase() === "frozen") {
+    backendApiStatus = "实验方案保存失败：冻结方案不可编辑";
+    return;
+  }
   const parallelCoresError = experimentPlanParallelCoresError();
   if (parallelCoresError) {
     backendApiStatus = `实验方案保存失败：${parallelCoresError}`;
@@ -14270,54 +14271,53 @@ function ensureVisualizationRunListLoaded() {
     });
 }
 
-async function startLiteMesaVisualizationThroughApi() {
-  if (!currentProject) {
-    visualizationReplayStatus = "启动仿真失败：请先创建或选择项目。";
-    return null;
+function invalidateVisualizationSession(message = "") {
+  visualizationSessionRequestEpoch += 1;
+  visualizationSession = null;
+  if (message) visualizationReplayStatus = message;
+}
+
+function updateVisualizationSessionSetting(field, value) {
+  if (field === "seed") {
+    visualizationSessionSettings.seed = Math.max(0, Math.trunc(Number(value) || 0));
+  } else if (field === "frameSampleEverySteps") {
+    visualizationSessionSettings.frameSampleEverySteps = Math.max(1, Math.trunc(Number(value) || 1));
+  } else if (field === "playbackSpeed") {
+    visualizationSessionSettings.playbackSpeed = Math.max(0.1, Number(value) || 1);
+  } else {
+    return;
   }
-  if (independentMesaVisualizationInFlight) {
-    visualizationReplayStatus = "仿真正在启动，请等待当前请求返回";
-    return null;
+  if (shouldInvalidateVisualizationSession(field)) {
+    invalidateVisualizationSession("可视化运行参数已更新，请重新创建会话。");
   }
-  independentMesaVisualizationInFlight = true;
-  stopVisualizationRunStream("正在启动仿真，M9.2 在线订阅已停止");
-  stopVisualizationReplay();
-  visualizationReplayStatus = "正在通过 Lite Mesa 启动可视化仿真";
+}
+
+async function startVisualizationSessionThroughApi() {
+  const requestEpoch = ++visualizationSessionRequestEpoch;
+  const requestContextKey = selectedExperimentPlanContextKey();
+  const requestContextFingerprint = selectedRunContextRequestFingerprint();
   try {
-    const settings = selectedExperimentPlanRunSettings();
-    const seed = Math.trunc(Number(settings.seed) || 20260621);
-    const response = await backendApi.runLiteMesaAnalysis(
-      selectedExperimentPlanProjectJson(),
-      "mission_reliability",
-      { ...settings, samples: 1, seed }
+    const payload = buildVisualizationSessionRequest(
+      selectedExperimentPlanContext(),
+      visualizationSessionSettings
     );
-    const responseSeries = response?.visualization_state_series;
-    const runId = response?.run_id || responseSeries?.run_id || response?.experiment_id || "";
-    visualizationSelectedRunId = runId;
-    visualizationStateSeries = responseSeries
-      ? normalizeVisualizationStateSeriesPayload(responseSeries, {
-        runId,
-        artifactId: responseSeries.artifact_manifest_id || (runId ? `lite-mesa-analysis-manifest-${runId}` : "lite-mesa-analysis-manifest")
-      })
-      : null;
-    visualizationReplayIndex = 0;
-    visualizationReplayPlaying = false;
-    backendApiStatus = runId ? `Lite Mesa 仿真已完成：${runId}` : "Lite Mesa 仿真已完成";
-    visualizationReplayStatus = responseSeries
-      ? `${backendApiStatus}，已加载静态状态`
-      : `${backendApiStatus}，未返回 state_series`;
-    render();
-    return { run_id: runId, status: response.status || "session_complete" };
+    visualizationReplayStatus = "正在创建可视化会话";
+    const response = await backendApi.createVisualizationSession(payload);
+    if (
+      requestEpoch !== visualizationSessionRequestEpoch
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+    ) return null;
+    visualizationSession = response;
+    visualizationReplayStatus = `可视化会话已创建：${response.visualization_session_id || response.session_id || response.id}`;
+    return response;
   } catch (err) {
-    visualizationStateSeries = null;
-    visualizationReplayIndex = 0;
-    visualizationReplayPlaying = false;
-    backendApiStatus = `仿真失败：${formatBackendError(err)}`;
-    visualizationReplayStatus = backendApiStatus;
-    render();
+    if (
+      requestEpoch !== visualizationSessionRequestEpoch
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+    ) return null;
+    visualizationSession = null;
+    visualizationReplayStatus = `可视化会话创建失败：${formatBackendError(err)}`;
     return null;
-  } finally {
-    independentMesaVisualizationInFlight = false;
   }
 }
 
@@ -16503,49 +16503,29 @@ function visualizationBlockedState() {
 
 function renderVisualSimulation(page) {
   const projectName = currentProject?.name || "当前项目";
-  const context = selectedVisualSimulationExperimentPlanContext(page);
-  const experimentPlanName = context?.name || "";
-  const planConfig = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
-    ? context.plan.config
-    : {};
-  const planRuntimeContext = context
-    ? {
-        experimentPlanId: context.plan.experiment_plan_id,
-        planSteps: planConfig.steps,
-        planSamples: planConfig.samples,
-        planSeed: planConfig.seed
-      }
-    : {};
-  const contextProjectId = String(context?.projectJson?.project_id || "").trim();
-  const contextFingerprint = context ? visualSimulationPlanFingerprint(context) : "";
-  const contextOverrideProjectId = context && (
-    solaraVisualizationProjectIdOverrideContextKey === context?.key
-    && solaraVisualizationProjectIdOverrideParentProjectId === currentBackendProjectId()
-    && solaraVisualizationProjectIdOverrideFingerprint === contextFingerprint
-  ) ? solaraVisualizationProjectIdOverride : "";
-  ensureSelectedVisualSimulationProjectSynced(page);
-  const solaraUrl = contextOverrideProjectId ? buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
-    projectId: contextOverrideProjectId || contextProjectId || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
-    projectName,
-    featureId: page.id,
-    experimentPlanName,
-    ...planRuntimeContext
-  }) : "";
-  const availablePlanCount = visualSimulationExperimentPlanOptions(page).length;
-  const emptyMessage = backendExperimentPlansLoadError
-    ? `实验方案列表加载失败：${backendExperimentPlansLoadError}`
-    : backendExperimentPlansLoaded
-    ? availablePlanCount
-      ? "请选择实验方案后开始推演"
-      : "暂无实验方案，请先在实验方案管理中创建并保存方案"
-    : "实验方案列表加载中";
-  const syncKey = context ? visualSimulationProjectSyncKey(context) : "";
-  const syncMessage = solaraVisualizationProjectSyncErrorKey === syncKey && solaraVisualizationProjectSyncError
-    ? `实验方案数据准备失败：${solaraVisualizationProjectSyncError}。请重新选择方案后重试。`
-    : "正在准备实验方案数据，完成后将自动加载推演页面。";
-  const syncIssueDisplay = solaraVisualizationProjectSyncErrorKey === syncKey && solaraVisualizationProjectSyncIssues.length
-    ? `<div class="compact">${renderModelingImportIssueDisplay(solaraVisualizationProjectSyncIssues)}</div>`
+  const visualizationSessionId = String(
+    visualizationSession?.visualization_session_id
+    || visualizationSession?.session_id
+    || visualizationSession?.id
+    || ""
+  ).trim();
+  const visualizationSessionToken = String(
+    visualizationSession?.session_access_token
+    || visualizationSession?.visualization_session_token
+    || ""
+  ).trim();
+  const solaraUrl = visualizationSessionId && visualizationSessionToken
+    ? buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
+        visualizationSessionId,
+        visualizationSessionToken,
+        playbackSpeed: visualizationSessionSettings.playbackSpeed
+      })
     : "";
+  const duration = visualizationSession?.duration_minutes
+    ?? visualizationSession?.duration
+    ?? visualizationSession?.maxDuration
+    ?? "-";
+  const maxSteps = visualizationSession?.maxSteps ?? visualizationSession?.max_steps ?? "-";
   return `
     <div class="mesa-visual-shell">
       <section class="lite-mesa-hero mesa-visual-toolbar">
@@ -16557,6 +16537,15 @@ function renderVisualSimulation(page) {
           ${renderExperimentPlanContextDropdown(page)}
         </div>
       </section>
+      <section class="lite-mesa-settings visualization-session-settings">
+        <label>随机种子<input data-visualization-setting="seed" type="number" min="0" step="1" value="${htmlEscape(visualizationSessionSettings.seed)}"></label>
+        <label>帧采样间隔<input data-visualization-setting="frameSampleEverySteps" type="number" min="1" step="1" value="${htmlEscape(visualizationSessionSettings.frameSampleEverySteps)}"></label>
+        <label>播放速度<input data-visualization-setting="playbackSpeed" type="number" min="0.1" step="0.1" value="${htmlEscape(visualizationSessionSettings.playbackSpeed)}"></label>
+        <label>最大时长<input type="text" value="${htmlEscape(duration)}" readonly></label>
+        <label>最大步数<input type="text" value="${htmlEscape(maxSteps)}" readonly></label>
+        <button type="button" class="btn-primary" data-visualization-session-start>创建可视化会话</button>
+        <p class="inline-status">${htmlEscape(visualizationReplayStatus)}</p>
+      </section>
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
         ${solaraUrl ? `<iframe
           class="solara-visualization-frame"
@@ -16566,9 +16555,7 @@ function renderVisualSimulation(page) {
           loading="eager"
           referrerpolicy="no-referrer"
         ></iframe>` : `<div class="visual-simulation-plan-empty" data-visual-simulation-plan-empty>
-          <strong>${htmlEscape(context ? syncMessage : emptyMessage)}</strong>
-          ${syncIssueDisplay}
-          ${!context && backendExperimentPlansLoaded && !backendExperimentPlansLoadError && availablePlanCount === 0 ? `<button type="button" class="btn-secondary" data-plan-list-link>前往实验方案管理</button>` : ""}
+          <strong>请选择运行上下文并创建可视化会话</strong>
         </div>`}
       </div>
     </div>
@@ -18540,6 +18527,12 @@ function renderLiteMesaMonteCarloAnalysis(page) {
   const counts = result?.metricMoments || {};
   const projectName = currentProject?.name || "当前项目";
   const experimentPlanName = selectedExperimentPlanName();
+  const runContext = selectedExperimentPlanContext();
+  const frozenPlan = runContext?.kind === "experiment-plan";
+  const runSettings = selectedExperimentPlanRunSettings();
+  const settingsError = runSettings.validationError || "";
+  const displayedSettings = settingsError ? liteMesaMonteCarloSettings : runSettings;
+  const readonly = frozenPlan ? "readonly" : "";
   return `
     <div class="lite-mesa-workbench">
       <section class="lite-mesa-hero">
@@ -18556,7 +18549,12 @@ function renderLiteMesaMonteCarloAnalysis(page) {
           <div class="section-head">
             <h3>实验设置</h3>
           </div>
-          <button type="button" class="btn-primary" data-lite-mesa-action="run">运行分析</button>
+          <label>样本数<input data-lite-mesa-field="samples" type="number" min="1" max="1000" step="1" value="${htmlEscape(displayedSettings.samples ?? "")}" ${readonly}></label>
+          <label>并行核心数<input data-lite-mesa-field="parallelCores" type="number" min="1" max="32" step="1" value="${htmlEscape(displayedSettings.parallelCores ?? "")}" ${readonly}></label>
+          <label>随机种子<input data-lite-mesa-field="seed" type="number" min="0" step="1" value="${htmlEscape(displayedSettings.seed ?? "")}" ${readonly}></label>
+          ${frozenPlan ? `<p class="inline-status">冻结方案参数只读</p>` : ""}
+          ${settingsError ? `<p class="inline-status error">${htmlEscape(settingsError)}</p>` : ""}
+          <button type="button" class="btn-primary" data-lite-mesa-action="run" ${settingsError ? "disabled" : ""}>运行分析</button>
           <p class="inline-status">${htmlEscape(liteMesaMonteCarloStatus)}</p>
         </section>
         <section class="lite-mesa-results">
@@ -18618,6 +18616,7 @@ function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
 }
 
 function updateLiteMesaMonteCarloSetting(field, value) {
+  if (selectedExperimentPlanContext()?.kind === "experiment-plan") return;
   if (field === "samples") {
     liteMesaMonteCarloSettings = {
       ...liteMesaMonteCarloSettings,
@@ -18630,6 +18629,12 @@ function updateLiteMesaMonteCarloSetting(field, value) {
       seed: Math.trunc(Number(value) || 1)
     };
   }
+  if (field === "parallelCores") {
+    liteMesaMonteCarloSettings = {
+      ...liteMesaMonteCarloSettings,
+      parallelCores: Math.max(1, Math.min(32, Math.trunc(Number(value) || 1)))
+    };
+  }
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = "设置已更新，等待重新运行 Mesa 分析。";
 }
@@ -18638,11 +18643,18 @@ async function runLiteMesaMonteCarloAnalysis() {
   const requestEpoch = ++liteMesaMonteCarloRequestEpoch;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();
-  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(liteMesaMonteCarloSettings.samples) || 1)));
-  const seed = Math.trunc(Number(liteMesaMonteCarloSettings.seed) || 1);
+  const selectedContext = selectedExperimentPlanContext();
+  const planRunSettings = selectedExperimentPlanRunSettings();
+  if (planRunSettings.validationError) {
+    liteMesaMonteCarloResult = null;
+    liteMesaMonteCarloStatus = `Mesa 分析失败：${planRunSettings.validationError}`;
+    return;
+  }
+  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(planRunSettings.samples) || 1)));
+  const seed = Math.trunc(Number(planRunSettings.seed) || 0);
   let parallelCores;
   try {
-    parallelCores = normalizeMonteCarloParallelCores(liteMesaMonteCarloSettings.parallelCores);
+    parallelCores = normalizeMonteCarloParallelCores(planRunSettings.parallelCores);
   } catch (err) {
     liteMesaMonteCarloResult = null;
     liteMesaMonteCarloStatus = `Mesa 分析失败：${err.message}`;
@@ -18652,24 +18664,14 @@ async function runLiteMesaMonteCarloAnalysis() {
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = `正在运行 Mesa 分析（样本 ${samples}，Base seed ${seed}，并行核心 ${parallelCores}）`;
   try {
-    const selectedProjectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
-    if (
-      requestEpoch !== liteMesaMonteCarloRequestEpoch
-      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
-    ) return;
-    const projectJson = {
-      ...selectedProjectJson,
-      experiment: {
-        ...(selectedProjectJson.experiment || {}),
-        samples,
-        seed
-      }
-    };
-    const response = await backendApi.runLiteMesaAnalysis(projectJson, "mission_reliability", {
-      samples,
-      seed,
-      parallelCores
-    });
+    const backendContext = buildBackendRunContext(selectedContext);
+    const response = await backendApi.runLiteMesaAnalysis(
+      backendContext,
+      "mission_reliability",
+      selectedContext?.kind === "current-project" ? { samples, seed, parallelCores } : {},
+      undefined,
+      { samples, seed, parallelCores }
+    );
     if (
       requestEpoch !== liteMesaMonteCarloRequestEpoch
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
@@ -20350,12 +20352,15 @@ async function runLiteMesaAnalysisPage(page) {
     }
   };
   try {
-    const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
-    if (
-      requestEpoch !== liteMesaAnalysisRequestEpoch
-      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
-    ) return;
-    const response = await backendApi.runLiteMesaAnalysis(projectJson, definition.analysisType, normalizedSettings);
+    const context = selectedExperimentPlanContext();
+    const backendContext = buildBackendRunContext(context);
+    const response = await backendApi.runLiteMesaAnalysis(
+      backendContext,
+      definition.analysisType,
+      context?.kind === "current-project" ? normalizedSettings : {},
+      undefined,
+      normalizedSettings
+    );
     if (
       requestEpoch !== liteMesaAnalysisRequestEpoch
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)

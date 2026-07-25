@@ -1,18 +1,54 @@
 import ast
 import copy
+import hashlib
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
 from src.spare_mvp_abm.aircraft_support_v1 import solara_app
-from src.spare_mvp_abm.aircraft_support_v1.solara_app import _load_backend_project_json, _model_inputs, _query_runtime_config
+from src.spare_mvp_abm.aircraft_support_v1.solara_app import (
+    _load_backend_project_json,
+    _model_inputs,
+    _query_runtime_config,
+)
 
 
 class AircraftSupportV1SolaraTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.default_inputs, cls.default_source = _model_inputs()
+
+    def _visualization_session_payload(self, **overrides: object) -> dict:
+        inputs = copy.deepcopy(self.default_inputs)
+        inputs["time"] = {
+            **inputs.get("time", {}),
+            "duration_minutes": 60,
+            "tick_minutes": 5,
+        }
+        inputs["seed"] = 17
+        input_fingerprint = hashlib.sha256(
+            json.dumps(
+                inputs,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        payload = {
+            "visualization_session_id": "viz-session-349",
+            "context_key": "project:349",
+            "input_fingerprint": input_fingerprint,
+            "duration_minutes": 60,
+            "tick_minutes": 5,
+            "max_steps": 12,
+            "frame_sample_every_steps": 3,
+            "seed": 17,
+            "simulation_inputs": inputs,
+        }
+        payload.update(overrides)
+        return payload
 
     def test_model_step_advances_for_solara_controller(self) -> None:
         inputs = dict(self.default_inputs)
@@ -76,6 +112,280 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "backend unavailable"):
                 _model_inputs("missing-project")
 
+    def test_session_query_takes_strict_precedence_over_legacy_project_and_plan_values(self) -> None:
+        request = solara_app._query_input_request({
+            "visualization_session_id": ["viz-session-349"],
+            "visualization_session_token": ["capability-token-349"],
+            "playback_speed": ["2.5"],
+            "project_id": ["must-not-be-read"],
+            "experiment_plan_id": ["must-not-be-read"],
+            "plan_steps": ["999"],
+            "plan_samples": ["999"],
+            "plan_seed": ["999"],
+            "parallelCores": ["64"],
+            "aggregation": ["mean"],
+        })
+
+        self.assertEqual(
+            request,
+            (
+                "visualization_session",
+                "viz-session-349",
+                {
+                    "visualization_session_token": "capability-token-349",
+                    "playback_speed": 2.5,
+                },
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "只能提供一个"):
+            solara_app._query_input_request({
+                "visualization_session_id": ["viz-one", "viz-two"],
+                "visualization_session_token": ["capability-token-349"],
+                "playback_speed": ["1"],
+            })
+        with self.assertRaisesRegex(ValueError, "编号无效"):
+            solara_app._query_input_request({
+                "visualization_session_id": [""],
+                "visualization_session_token": ["capability-token-349"],
+                "playback_speed": ["1"],
+                "project_id": ["must-not-fallback"],
+            })
+        with self.assertRaisesRegex(ValueError, "capability token"):
+            solara_app._query_input_request({
+                "visualization_session_id": ["viz-session-349"],
+                "playback_speed": ["1"],
+                "project_id": ["must-not-fallback"],
+            })
+
+    def test_session_inputs_use_backend_compilation_and_canonical_runtime_without_env_override(self) -> None:
+        payload = self._visualization_session_payload()
+
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    solara_app.SOLARA_DURATION_MINUTES_ENV: "9999",
+                    solara_app.SOLARA_SEED_ENV: "9999",
+                },
+            ),
+            patch(
+                "src.spare_mvp_abm.aircraft_support_v1.solara_app._load_backend_visualization_session",
+                return_value=payload,
+            ) as loader,
+            patch(
+                "src.spare_mvp_abm.aircraft_support_v1.solara_app.SimulationAdapter",
+            ) as adapter,
+            patch(
+                "src.spare_mvp_abm.aircraft_support_v1.solara_app._load_backend_project_json",
+            ) as project_loader,
+        ):
+            inputs, source = solara_app._visualization_session_inputs(
+                "viz-session-349",
+                "capability-token-349",
+                2.5,
+            )
+
+        loader.assert_called_once_with(
+            "viz-session-349",
+            "capability-token-349",
+        )
+        adapter.assert_not_called()
+        project_loader.assert_not_called()
+        self.assertEqual(inputs["time"]["duration_minutes"], 60)
+        self.assertEqual(inputs["time"]["tick_minutes"], 5)
+        self.assertEqual(inputs["seed"], 17)
+        self.assertEqual(
+            inputs["source_context"],
+            {
+                "source": "visualization_session",
+                "visualization_session_id": "viz-session-349",
+                "context_key": "project:349",
+                "input_fingerprint": payload["input_fingerprint"],
+            },
+        )
+        self.assertEqual(source["runtime"]["max_steps"], 12)
+        self.assertEqual(source["runtime"]["frame_sample_every_steps"], 3)
+        self.assertEqual(source["runtime"]["playback_speed"], 2.5)
+        self.assertNotIn("project_id", inputs["source_context"])
+        self.assertNotIn("experiment_plan_id", inputs["source_context"])
+        self.assertNotIn("capability-token-349", repr((inputs, source)))
+
+    def test_session_inputs_fail_closed_for_expired_or_inconsistent_session(self) -> None:
+        with patch(
+            "src.spare_mvp_abm.aircraft_support_v1.solara_app._load_backend_visualization_session",
+            side_effect=RuntimeError("expired"),
+        ):
+            inputs, source, error = solara_app._safe_visualization_session_inputs(
+                "viz-session-349",
+                "capability-token-349",
+                1,
+            )
+
+        self.assertIsNone(inputs)
+        self.assertIsNone(source)
+        self.assertIn("expired", error)
+
+        inconsistent = self._visualization_session_payload(duration_minutes=61)
+        with patch(
+            "src.spare_mvp_abm.aircraft_support_v1.solara_app._load_backend_visualization_session",
+            return_value=inconsistent,
+        ):
+            inputs, source, error = solara_app._safe_visualization_session_inputs(
+                "viz-session-349",
+                "capability-token-349",
+                1,
+            )
+
+        self.assertIsNone(inputs)
+        self.assertIsNone(source)
+        self.assertIn("canonical duration_minutes 不一致", error)
+
+    def test_session_get_uses_capability_authorization_without_exposing_token(self) -> None:
+        payload = self._visualization_session_payload()
+        response = unittest.mock.MagicMock()
+        response.read.return_value = json.dumps(payload).encode("utf-8")
+        opener = unittest.mock.MagicMock()
+        opener.open.return_value.__enter__.return_value = response
+
+        with patch(
+            "src.spare_mvp_abm.aircraft_support_v1.solara_app.LOCAL_BACKEND_OPENER",
+            opener,
+        ):
+            loaded = solara_app._load_backend_visualization_session(
+                "viz-session-349",
+                "capability-token-349",
+            )
+
+        request = opener.open.call_args.args[0]
+        self.assertEqual(
+            request.get_header("Authorization"),
+            "VisualizationSession capability-token-349",
+        )
+        self.assertNotIn("capability-token-349", request.full_url)
+        self.assertEqual(loaded, payload)
+
+        opener.open.side_effect = OSError("session unavailable")
+        with self.assertRaises(RuntimeError) as raised:
+            solara_app._load_backend_visualization_session(
+                "viz-session-349",
+                "capability-token-349",
+            )
+        self.assertNotIn("capability-token-349", str(raised.exception))
+
+    def test_session_response_requires_canonical_field_names(self) -> None:
+        payload = self._visualization_session_payload()
+        payload["session_id"] = payload.pop("visualization_session_id")
+        payload["fingerprint"] = payload.pop("input_fingerprint")
+
+        with patch(
+            "src.spare_mvp_abm.aircraft_support_v1.solara_app._load_backend_visualization_session",
+            return_value=payload,
+        ):
+            inputs, source, error = solara_app._safe_visualization_session_inputs(
+                "viz-session-349",
+                "capability-token-349",
+                1,
+            )
+
+        self.assertIsNone(inputs)
+        self.assertIsNone(source)
+        self.assertIn("visualization_session_id", error)
+
+    def test_session_inputs_fail_closed_when_compiled_inputs_are_tampered(self) -> None:
+        payload = self._visualization_session_payload()
+        payload["simulation_inputs"]["seed"] = 18
+
+        with patch(
+            "src.spare_mvp_abm.aircraft_support_v1.solara_app._load_backend_visualization_session",
+            return_value=payload,
+        ):
+            inputs, source, error = solara_app._safe_visualization_session_inputs(
+                "viz-session-349",
+                "capability-token-349",
+                1,
+            )
+
+        self.assertIsNone(inputs)
+        self.assertIsNone(source)
+        self.assertIn("simulation_inputs 指纹不匹配", error)
+
+    def test_single_tick_and_frame_sampling_are_independent(self) -> None:
+        inputs = copy.deepcopy(self.default_inputs)
+        inputs["time"] = {
+            **inputs.get("time", {}),
+            "duration_minutes": 20,
+            "tick_minutes": 1,
+        }
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertFalse(
+            solara_app._step_model_once(
+                model,
+                max_steps=5,
+                frame_sample_every_steps=3,
+            )
+        )
+        self.assertEqual(model.steps, 1)
+        self.assertEqual(model.minute, 1)
+        self.assertFalse(
+            solara_app._step_model_once(
+                model,
+                max_steps=5,
+                frame_sample_every_steps=3,
+            )
+        )
+        self.assertEqual(model.steps, 2)
+        self.assertTrue(
+            solara_app._step_model_once(
+                model,
+                max_steps=5,
+                frame_sample_every_steps=3,
+            )
+        )
+        self.assertEqual(model.steps, 3)
+        self.assertEqual(model.minute, 3)
+
+        solara_app._step_model_once(
+            model,
+            max_steps=5,
+            frame_sample_every_steps=3,
+        )
+        self.assertTrue(
+            solara_app._step_model_once(
+                model,
+                max_steps=5,
+                frame_sample_every_steps=3,
+            )
+        )
+        self.assertEqual(model.steps, 5)
+        self.assertFalse(model.running)
+
+    def test_playback_speed_only_changes_refresh_delay(self) -> None:
+        self.assertEqual(solara_app._playback_delay_seconds(1), 1.0)
+        self.assertEqual(solara_app._playback_delay_seconds(2), 0.5)
+        self.assertEqual(solara_app._playback_delay_seconds(4), 0.25)
+
+    def test_session_provenance_is_published_in_visualization_frames(self) -> None:
+        payload = self._visualization_session_payload()
+        with patch(
+            "src.spare_mvp_abm.aircraft_support_v1.solara_app._load_backend_visualization_session",
+            return_value=payload,
+        ):
+            inputs, _source = solara_app._visualization_session_inputs(
+                "viz-session-349",
+                "capability-token-349",
+                1,
+            )
+
+        frame = solara_app._frame(solara_app._new_model(inputs))
+
+        self.assertEqual(frame["run_id"], "viz-session-349")
+        self.assertEqual(frame["visualization_session_id"], "viz-session-349")
+        self.assertEqual(
+            frame["input_fingerprint"],
+            payload["input_fingerprint"],
+        )
+
     def test_model_inputs_apply_validated_plan_runtime_config_without_mutating_project(self) -> None:
         project = copy.deepcopy(self.default_source["project"])
         project["project_id"] = "project-solara-runtime"
@@ -120,7 +430,7 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         self.assertEqual(solara_app.METRICS_PANEL_TITLE, "指标")
         self.assertEqual(solara_app.VISUAL_TAB_LABELS, ["飞机视图", "任务视图", "保障视图"])
         self.assertEqual(solara_app.CONTROL_PANEL_TITLE, "运行控制")
-        self.assertEqual(solara_app.PLAY_INTERVAL_LABEL, "刷新间隔(ms)")
+        self.assertEqual(solara_app.PLAY_INTERVAL_LABEL, "播放速度(x)")
         self.assertEqual(solara_app.RENDER_INTERVAL_LABEL, "渲染周期帧数")
         self.assertEqual(solara_app.RESET_BUTTON_LABEL, "重置")
         self.assertEqual(solara_app.STEP_BUTTON_LABEL, "单步推进")
@@ -152,12 +462,12 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
 
         page_source = source[source.index("def Page()") :]
         self.assertNotIn("solara.AppBar", page_source)
-        control_index = page_source.index("ControlPanel(model_state, inputs)")
+        control_index = page_source.index("ControlPanel(model_state, inputs, runtime=")
         layout_index = page_source.index('classes=["sim-layout"]')
         left_rail_index = page_source.index('classes=["sim-left-rail"]')
         self.assertLess(control_index, layout_index)
         self.assertLess(layout_index, left_rail_index)
-        self.assertEqual(page_source.count("ControlPanel(model_state, inputs)"), 1)
+        self.assertEqual(page_source.count("ControlPanel(model_state, inputs, runtime="), 1)
 
     def test_reset_restores_model_state_without_replacing_its_reactive_reference(self) -> None:
         inputs = copy.deepcopy(self.default_inputs)
