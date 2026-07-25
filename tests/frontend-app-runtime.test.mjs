@@ -2252,15 +2252,13 @@ test("configurable result analysis pages omit Mesa from visible copy", async () 
     try {
       assert.match(runtime.appNode.innerHTML, /分析设定/);
       assert.match(runtime.appNode.innerHTML, /分析结果明细/);
-      const isDowntime = featureId === "mission-reliability-downtime-factor-analysis";
       assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
       assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
       assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid/);
       assert.doesNotMatch(runtime.appNode.innerHTML, /输出边界|持久化/);
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
       assert.doesNotMatch(settingsPanel, /样本量 \/ 随机种子只读/);
-      const expectedSamples = isDowntime ? "1" : "27";
-      assert.match(settingsPanel, new RegExp(`样本量[\\s\\S]*<strong>${expectedSamples}<\\/strong>`));
+      assert.match(settingsPanel, /样本量[\s\S]*<strong>4<\/strong>/);
       assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
       assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
       for (const hiddenLabel of ["项目", "当前项目", "分析对象", "结果内容"]) {
@@ -2439,8 +2437,9 @@ test("spare shortfall analysis restores context and settings while preserving re
       .map((request) => JSON.parse(request.options.body || "{}"))
       .at(-1);
     assert.equal(analysisRun.analysis_type, "spare_shortfall");
-    assert.equal(analysisRun.settings.samples, 27);
+    assert.equal(analysisRun.settings.samples, 4);
     assert.equal(analysisRun.settings.seed, 20260621);
+    assert.equal(analysisRun.settings.parallelCores, 4);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">[\s\S]*分析结果已生成/);
   } finally {
     runtime.restore();
@@ -2890,7 +2889,7 @@ test("carry list analysis restores context and complete settings while preservin
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">[\s\S]*<h3>飞机转场携行清单分析<\/h3>[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">/);
     assert.match(runtime.appNode.innerHTML, /运行状态[\s\S]*样本量[\s\S]*随机种子[\s\S]*优化方向[\s\S]*备件满足率下限/);
-    assert.match(runtime.appNode.innerHTML, /样本量[\s\S]*<strong>24<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /样本量[\s\S]*<strong>4<\/strong>/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /样本量 \/ 随机种子只读/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
     assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">运行分析<\/button>[\s\S]*等待运行/);
@@ -2907,7 +2906,8 @@ test("carry list analysis restores context and complete settings while preservin
       .map((request) => JSON.parse(request.options.body || "{}"))
       .at(-1);
     assert.equal(analysisRun.analysis_type, "carry_list");
-    assert.equal(analysisRun.settings.samples, 24);
+    assert.equal(analysisRun.settings.samples, 4);
+    assert.equal(analysisRun.settings.parallelCores, 4);
     assert.equal(analysisRun.settings.missionConfidenceTarget, 0.73);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">[\s\S]*分析结果已生成/);
   } finally {
@@ -3079,7 +3079,8 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
       .find((body) => body.analysis_type === "downtime_factors");
     assert.ok(analysisRequest, "downtime analysis should submit a lightweight Mesa analysis request");
     assert.equal(analysisRequest.model_family, "aircraft_support_v1");
-    assert.equal(analysisRequest.settings.samples, 1);
+    assert.equal(analysisRequest.settings.samples, 4);
+    assert.equal(analysisRequest.settings.parallelCores, 4);
     assert.equal(analysisRequest.settings.topN, 7);
     assert.match(runtime.appNode.innerHTML, /分析结果已生成|分析完成/);
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
@@ -7736,7 +7737,8 @@ test("editing current modeling data resets a persisted saved-plan analysis conte
       .at(-1);
     const corrective = analysisBody.project.supportActivities.find((activity) => activity.id === "corrective-current");
     assert.deepEqual(corrective.maintenanceMethods, ["non_replacement", "replacement"]);
-    assert.equal(analysisBody.settings.samples, 27, "analysis must restore current-project defaults instead of the stale plan's 8 samples");
+    assert.equal(analysisBody.settings.samples, 4, "analysis must restore current-project defaults instead of the stale plan's 8 samples");
+    assert.equal(analysisBody.settings.parallelCores, 4);
   } finally {
     runtime.restore();
   }
@@ -7930,8 +7932,8 @@ test("mission reliability and downtime analysis keep current Project as default 
 
   try {
     for (const [featureId, analysisType, defaultSamples] of [
-      ["mission-reliability-task-reliability", "mission_reliability", 27],
-      ["mission-reliability-downtime-factor-analysis", "downtime_factors", 1]
+      ["mission-reliability-task-reliability", "mission_reliability", 4],
+      ["mission-reliability-downtime-factor-analysis", "downtime_factors", 4]
     ]) {
       await runtime.setHash(`feature=${featureId}`);
       await runtime.flush();
@@ -7957,6 +7959,7 @@ test("mission reliability and downtime analysis keep current Project as default 
       assert.equal(analysisBody.project.project_id, "project-runtime");
       assert.equal(analysisBody.settings.samples, defaultSamples);
       assert.equal(analysisBody.settings.seed, 20260621);
+      assert.equal(analysisBody.settings.parallelCores, 4);
     }
   } finally {
     runtime.restore();

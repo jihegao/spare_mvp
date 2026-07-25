@@ -2995,6 +2995,21 @@ test("independent Mesa result analysis pages consume only session settings and s
 
   assert.match(appSource, /let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings\(\)/);
   assert.match(appSource, /let liteMesaAnalysisResults = \{\}/);
+  assert.match(appSource, /const DEFAULT_LITE_MESA_ANALYSIS_SAMPLES = 4/);
+  assert.match(appSource, /const DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES = 4/);
+  const analysisSettingsSource = appSource.slice(
+    appSource.indexOf("function createDefaultLiteMesaAnalysisSettings"),
+    appSource.indexOf("function renderLiteMesaAnalysisSettings")
+  );
+  for (const analysisType of ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]) {
+    assert.match(
+      analysisSettingsSource,
+      new RegExp(`${analysisType}:\\s*\\{[\\s\\S]*?samples: DEFAULT_LITE_MESA_ANALYSIS_SAMPLES[\\s\\S]*?parallelCores: DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES`)
+    );
+  }
+  assert.match(analysisSettingsSource, /context\?\.kind !== "experiment-plan"/);
+  assert.match(analysisSettingsSource, /return \{ \.\.\.analysisSettings \}/);
+  assert.match(analysisSettingsSource, /return \{ \.\.\.analysisSettings, \.\.\.selectedExperimentPlanRunSettings\(\) \}/);
   assert.match(appSource, /data-current-experiment-plan/);
   assert.match(mesaSource, /async function runLiteMesaAnalysisPage/);
   assert.match(mesaSource, /backendApi\.runLiteMesaAnalysis/);
