@@ -705,6 +705,8 @@ let liteMesaMonteCarloSettings = {
 let liteMesaMonteCarloResult = null;
 let liteMesaMonteCarloStatus = "等待运行分析。";
 let liteMesaMonteCarloRequestEpoch = 0;
+const DEFAULT_LITE_MESA_ANALYSIS_SAMPLES = 4;
+const DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES = 4;
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
 let liteMesaAnalysisResults = {};
 let liteMesaAnalysisRequestEpoch = 0;
@@ -20208,9 +20210,6 @@ function liteMesaAnalysisDefinitionForPage(page) {
     ...(LITE_MESA_ANALYSIS_DEFINITIONS[analysisType] || LITE_MESA_ANALYSIS_DEFINITIONS.mission_reliability)
   };
 }
-
-const DEFAULT_LITE_MESA_ANALYSIS_SAMPLES = 4;
-const DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES = 4;
 
 function createDefaultLiteMesaAnalysisSettings() {
   return {
