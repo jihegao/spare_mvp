@@ -8,6 +8,11 @@
     "test:legacy-api-check": "node --test tests/legacy-api-check.test.mjs",
     "serve": "python3 -m http.server 4173",
     "start:system": "bash scripts/start-system.sh start",
-    "stop:system": "bash scripts/stop-system.sh"
+    "stop:system": "bash scripts/stop-system.sh",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
   }
 }
