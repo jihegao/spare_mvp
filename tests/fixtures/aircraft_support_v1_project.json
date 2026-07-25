@@ -43,7 +43,7 @@
       "aircraftModel": "J-15",
       "failureDistribution": {
         "distributionType": "指数分布",
-        "parameters": "lambda=0.01"
+        "rate": 0.01
       },
       "id": "whole-aircraft",
       "kOutOfN": {

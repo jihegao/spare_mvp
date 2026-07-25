@@ -66,6 +66,7 @@
         "ExperimentPlan.config.seed=0",
         "ExperimentPlan.config.stopPolicy=duration",
         "supportActivities[0].resourceId=node-a (unique organization root mapping)",
+        "failureDistribution.rate=canonical",
         "combatUnit.members[0].preLifeCalendarDays=historicalDefault:0",
         "combatUnit.members[0].preLifeFlightHours=historicalDefault:0",
         "combatUnit.members[0].preLifeTakeoffLandingCount=historicalDefault:0",
@@ -184,7 +185,7 @@
           "aircraft_model": "J-15",
           "failure_distribution": {
             "distributionType": "指数分布",
-            "parameters": "lambda=0.01"
+            "rate": 0.01
           },
           "failure_rate": 0.01,
           "id": "whole-aircraft",

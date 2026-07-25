@@ -4137,6 +4137,138 @@ test("shared equipment product parameters cancel without persistence and confirm
   }
 });
 
+test("exponential MTBF edits save one rate for exact product references and rehydrate the same hours", async () => {
+  const projectId = "project-exponential-mtbf-runtime";
+  const runtime = await setupRuntimeApp({
+    confirmResponses: [false, true],
+    projectJson: createRuntimeProjectJson({
+      project_id: projectId,
+      equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35"], quantity: 2 },
+      products: [
+        {
+          id: "product-engine",
+          name: "共享发动机",
+          failureDistribution: { distributionType: "指数分布", rate: 0.002 }
+        },
+        {
+          id: "PRODUCT-ENGINE",
+          name: "大小写不同发动机",
+          failureDistribution: { distributionType: "指数分布", rate: 0.0333333333333333 }
+        }
+      ],
+      components: [
+        {
+          id: "j15-engine",
+          name: "J-15发动机",
+          aircraftModel: "J-15",
+          parentId: "aircraft-root",
+          productId: "product-engine",
+          productType: "LRU",
+          quantity: 1
+        },
+        {
+          id: "j35-engine",
+          name: "J-35发动机",
+          aircraftModel: "J-35",
+          parentId: "aircraft-root",
+          productId: "product-engine",
+          productType: "LRU",
+          quantity: 1
+        },
+        {
+          id: "case-sensitive-engine",
+          name: "大小写不同发动机",
+          aircraftModel: "J-35",
+          parentId: "aircraft-root",
+          productId: "PRODUCT-ENGINE",
+          productType: "LRU",
+          quantity: 1
+        }
+      ]
+    }),
+    backendProjects: [runtimeBackendProjectEntry(projectId, "指数 MTBF 运行时项目")]
+  });
+  let savedProject;
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(
+      runtime,
+      /data-path="components\.0\.failureDistribution\.rate"[^>]*data-equipment-mtbf-hours="true"[^>]*value="500"/,
+      "rate=0.002 should display as 500 MTBF hours"
+    );
+
+    await runtime.change("[data-path]", {
+      path: "components.0.failureDistribution.rate",
+      sharedProductComponentId: "j15-engine",
+      equipmentMtbfHours: "true"
+    }, { value: "200", type: "number" });
+    assert.match(runtime.confirmMessages[0], /J-15-J-15发动机.*J-35-J-35发动机/);
+    assert.doesNotMatch(runtime.confirmMessages[0], /大小写不同发动机/);
+
+    await runtime.click("[data-project-draft-save]");
+    const cancelledSave = await waitForProjectSave(runtime, (body) => (
+      body.project_id === projectId
+      && body.products?.find((product) => product.id === "product-engine")?.failureDistribution?.rate === 0.002
+    ), "cancelled exponential MTBF edit should preserve the original rate");
+    assert.deepEqual(
+      cancelledSave.products.find((product) => product.id === "product-engine").failureDistribution,
+      { distributionType: "指数分布", rate: 0.002 }
+    );
+    assert.equal(cancelledSave.components.find((component) => component.id === "j15-engine").failureDistribution.rate, 0.002);
+    assert.equal(cancelledSave.components.find((component) => component.id === "j35-engine").failureDistribution.rate, 0.002);
+    assert.equal(cancelledSave.components.find((component) => component.id === "case-sensitive-engine").failureDistribution.rate, 0.0333333333333333);
+
+    await runtime.change("[data-path]", {
+      path: "components.0.failureDistribution.rate",
+      sharedProductComponentId: "j15-engine",
+      equipmentMtbfHours: "true"
+    }, { value: "200", type: "number" });
+    await runtime.click("[data-project-draft-save]");
+    savedProject = await waitForProjectSave(runtime, (body) => (
+      body.project_id === projectId
+      && body.products?.find((product) => product.id === "product-engine")?.failureDistribution?.rate === 0.005
+    ), "confirmed exponential MTBF edit should save rate=0.005");
+
+    for (const item of [
+      savedProject.products.find((product) => product.id === "product-engine"),
+      savedProject.components.find((component) => component.id === "j15-engine"),
+      savedProject.components.find((component) => component.id === "j35-engine")
+    ]) {
+      assert.deepEqual(item.failureDistribution, { distributionType: "指数分布", rate: 0.005 });
+      assert.equal(Object.hasOwn(item, "mtbfHours"), false);
+    }
+    assert.deepEqual(
+      savedProject.products.find((product) => product.id === "PRODUCT-ENGINE").failureDistribution,
+      { distributionType: "指数分布", rate: 0.0333333333333333 }
+    );
+    assert.equal(
+      savedProject.components.find((component) => component.id === "case-sensitive-engine").failureDistribution.rate,
+      0.0333333333333333
+    );
+    assert.equal(runtime.confirmMessages.length, 2);
+  } finally {
+    runtime.restore();
+  }
+
+  const rehydrated = await setupRuntimeApp({
+    projectJson: savedProject,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "指数 MTBF 运行时项目")]
+  });
+  try {
+    await rehydrated.click("[data-enter-workbench]", { projectId });
+    await rehydrated.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(
+      rehydrated,
+      /data-path="components\.0\.failureDistribution\.rate"[^>]*data-equipment-mtbf-hours="true"[^>]*value="200"/,
+      "saved rate=0.005 should rehydrate as the same 200 MTBF hours"
+    );
+  } finally {
+    rehydrated.restore();
+  }
+});
+
 test("fixed MTBF inputs preserve explicit invalid value and mean precedence on rehydrate", async () => {
   const products = [
     { id: "value-negative", mtbfHours: 1300, failureDistribution: { distributionType: "固定值", value: -1 } },
@@ -8745,6 +8877,8 @@ function eventTarget(selector, dataset = {}, props = {}) {
     type: props.type || "",
     tagName: props.tagName || "",
     selectedOptions: props.selectedOptions || [],
+    setCustomValidity: props.setCustomValidity || (() => {}),
+    reportValidity: props.reportValidity || (() => {}),
     closest(candidate) {
       return candidate === selector ? this : null;
     }

@@ -1,28 +1,18 @@
-import { ensureProductForComponent, normalizeProjectProducts } from "./product-catalog.mjs";
+import {
+  ensureProductForComponent,
+  exponentialFailureDistributionForMtbf,
+  exponentialMtbfHoursForDistribution,
+  normalizeProjectProducts
+} from "./product-catalog.mjs";
 
 const AIRCRAFT_ROOT_ID = "aircraft-root";
 
 export function exponentialMtbfHours(distribution) {
-  if (!distribution || typeof distribution !== "object" || Array.isArray(distribution)) return "";
-  const directRate = Number(distribution.rate ?? distribution.lambda);
-  if (Number.isFinite(directRate) && directRate > 0) return 1 / directRate;
-  const parameters = cleanEquipmentText(distribution.parameters || distribution.params);
-  const match = parameters.match(/(?:^|[,，;；\s])(?:lambda|λ|rate|failure_rate)\s*=\s*([0-9]+(?:\.[0-9]+)?)/i);
-  const parameterRate = Number(match?.[1]);
-  return Number.isFinite(parameterRate) && parameterRate > 0 ? 1 / parameterRate : "";
+  return exponentialMtbfHoursForDistribution(distribution);
 }
 
 export function exponentialFailureDistributionForMtbfHours(distribution, mtbfHours) {
-  const mtbf = Number(mtbfHours);
-  if (!Number.isFinite(mtbf) || mtbf <= 0) return null;
-  const next = {
-    ...(distribution && typeof distribution === "object" && !Array.isArray(distribution) ? distribution : {})
-  };
-  delete next.parameters;
-  delete next.params;
-  delete next.lambda;
-  next.rate = 1 / mtbf;
-  return next;
+  return exponentialFailureDistributionForMtbf(distribution, mtbfHours);
 }
 
 export function normalizeEquipmentTreeIntegrityForScenario(scenario) {

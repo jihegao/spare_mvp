@@ -1701,9 +1701,23 @@ test("equipment composition constrains k-out-of-n to an integer within quantity"
 
 test("equipment system table exposes MTBF and MTTR distribution parameter rules", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentTreeSource = await readFile(new URL("../front/equipment-tree-model.mjs", import.meta.url), "utf8");
+  const productCatalogSource = await readFile(new URL("../front/product-catalog.mjs", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderReliabilityBlockDiagram")
+  );
+  const exponentialMtbfSource = equipmentTreeSource.slice(
+    equipmentTreeSource.indexOf("export function exponentialMtbfHours"),
+    equipmentTreeSource.indexOf("export function normalizeEquipmentTreeIntegrityForScenario")
+  );
+  const exponentialCatalogSource = productCatalogSource.slice(
+    productCatalogSource.indexOf("export function exponentialMtbfHoursForDistribution"),
+    productCatalogSource.indexOf("function isExponentialDistribution")
+  );
+  const sharedParameterSource = appSource.slice(
+    appSource.indexOf("function updateSharedEquipmentProductParameter"),
+    appSource.indexOf("function formatSharedProductParameterValue")
   );
   for (const label of ["固定值", "指数分布", "正态分布", "均匀分布"]) {
     assert.match(equipmentSource, new RegExp(label));
@@ -1731,10 +1745,23 @@ test("equipment system table exposes MTBF and MTTR distribution parameter rules"
   assert.doesNotMatch(equipmentSource, /固定值使用 \$\{fixedLabel\}/);
   assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution/);
   assert.match(equipmentSource, /components\.\$\{index\}\.repairDistribution/);
-  assert.match(equipmentSource, /type="number" min="\$\{fieldDef\.mtbfHours \? "0\.0001" : "0"\}" step="\$\{fieldDef\.step\}"/);
+  assert.match(equipmentSource, /type="number" min="\$\{fieldDef\.mtbfHours \? "0\.0001" : "0"\}" step="\$\{fieldDef\.mtbfHours \? "any" : fieldDef\.step\}"/);
   assert.doesNotMatch(equipmentSource, /组件属性表/);
   assert.doesNotMatch(equipmentSource, /飞机状态数据表/);
   assert.doesNotMatch(equipmentSource, /可出动标识/);
+  assert.match(exponentialMtbfSource, /exponentialMtbfHoursForDistribution\(distribution\)/);
+  assert.match(exponentialMtbfSource, /exponentialFailureDistributionForMtbf\(distribution, mtbfHours\)/);
+  assert.match(exponentialCatalogSource, /return rate !== null && rate > 0 \? 1 \/ rate : ""/);
+  assert.match(exponentialCatalogSource, /distributionType: cleanText\(distribution\?\.distributionType \|\| distribution\?\.distribution_type\) \|\| "指数分布"/);
+  assert.match(exponentialCatalogSource, /rate: 1 \/ mtbf/);
+  assert.match(exponentialCatalogSource, /delete distribution\.parameters/);
+  assert.match(exponentialCatalogSource, /delete distribution\.params/);
+  assert.match(exponentialCatalogSource, /delete distribution\.lambda/);
+  assert.match(exponentialCatalogSource, /delete distribution\["λ"\]/);
+  assert.match(exponentialCatalogSource, /delete distribution\.failure_rate/);
+  assert.match(sharedParameterSource, /componentsSharingProduct\(scenario, product\.id\)/);
+  assert.match(sharedParameterSource, /window\.confirm/);
+  assert.match(sharedParameterSource, /parameterPath = "failureDistribution"/);
 });
 
 test("frontend shell mounts a feature workbench rather than six static summary views", async () => {

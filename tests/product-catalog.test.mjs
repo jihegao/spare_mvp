@@ -7,6 +7,7 @@ import {
   findProjectProductConflicts,
   searchProjectProducts,
   normalizeProjectProducts,
+  projectHasExponentialFailureConflicts,
   updateSharedProductParameter
 } from "../front/product-catalog.mjs";
 
@@ -124,6 +125,123 @@ test("shared reliability parameters hydrate from the canonical exact product ID 
   assert.equal(project.components[2].repairDistribution, undefined);
 });
 
+test("exponential reliability synchronizes exact product IDs without retaining the MTBF compatibility scalar", () => {
+  const project = {
+    products: [
+      {
+        id: "product-engine",
+        name: "共享发动机",
+        mtbfHours: 500,
+        failureDistribution: { distributionType: "指数分布", rate: 0.002 }
+      },
+      {
+        id: "PRODUCT-ENGINE",
+        name: "大小写不同发动机",
+        mtbfHours: 30,
+        failureDistribution: { distributionType: "指数分布", rate: 0.0333333333333333 }
+      }
+    ],
+    components: [
+      {
+        id: "j15-engine",
+        aircraftModel: "J-15",
+        productId: "product-engine",
+        mtbfHours: 500,
+        failureDistribution: { distributionType: "指数分布", rate: 0.002 }
+      },
+      { id: "j35-engine", aircraftModel: "J-35", productId: "product-engine" },
+      { id: "case-sensitive-engine", aircraftModel: "J-35", productId: "PRODUCT-ENGINE" }
+    ]
+  };
+
+  normalizeProjectProducts(project);
+
+  assert.deepEqual(
+    componentsSharingProduct(project, "product-engine").map((component) => component.id),
+    ["j15-engine", "j35-engine"]
+  );
+  assert.equal(project.products[0].failureDistribution.rate, 0.002);
+  assert.equal(project.components[0].failureDistribution.rate, 0.002);
+  assert.equal(project.components[1].failureDistribution.rate, 0.002);
+  assert.equal(project.products[1].failureDistribution.rate, 0.0333333333333333);
+  assert.equal(project.components[2].failureDistribution.rate, 0.0333333333333333);
+
+  assert.equal(updateSharedProductParameter(
+    project,
+    "product-engine",
+    "failureDistribution",
+    { distributionType: "指数分布", rate: 0.005 }
+  ), true);
+
+  for (const item of [project.products[0], project.components[0], project.components[1]]) {
+    assert.deepEqual(item.failureDistribution, { distributionType: "指数分布", rate: 0.005 });
+    assert.equal(Object.hasOwn(item, "mtbfHours"), false);
+  }
+  assert.equal(project.products[1].failureDistribution.rate, 0.0333333333333333);
+  assert.equal(project.components[2].failureDistribution.rate, 0.0333333333333333);
+  assert.equal(Object.hasOwn(project.products[1], "mtbfHours"), false);
+  assert.equal(Object.hasOwn(project.components[2], "mtbfHours"), false);
+});
+
+test("conflicting exponential reliability survives hydrate unchanged and is not silently synchronized", () => {
+  const project = {
+    products: [{
+      id: "product-shared",
+      name: "共享产品",
+      failureDistribution: {
+        distributionType: "指数分布",
+        rate: 0.002,
+        lambda: 0.003
+      }
+    }],
+    components: [{
+      id: "component-a",
+      productId: "product-shared",
+      failureDistribution: { distributionType: "指数分布", rate: 0.004 }
+    }]
+  };
+  const before = structuredClone(project);
+
+  assert.equal(projectHasExponentialFailureConflicts(project), true);
+  normalizeProjectProducts(project);
+
+  assert.deepEqual(project.products[0].failureDistribution, before.products[0].failureDistribution);
+  assert.deepEqual(project.components[0].failureDistribution, before.components[0].failureDistribution);
+});
+
+test("empty product exponential distribution backfills from one consistent component rate", () => {
+  const project = {
+    products: [{
+      id: "product-shared",
+      name: "共享产品",
+      failureDistribution: { distributionType: "指数分布" }
+    }],
+    components: [{
+      id: "component-a",
+      productId: "product-shared",
+      failureDistribution: { distributionType: "exponential", rate: 0.004 }
+    }, {
+      id: "component-b",
+      productId: "product-shared",
+      failureDistribution: { distributionType: "指数分布", rate: 0.004 }
+    }]
+  };
+
+  assert.equal(projectHasExponentialFailureConflicts(project), false);
+  normalizeProjectProducts(project);
+
+  assert.deepEqual(project.products[0].failureDistribution, {
+    distributionType: "指数分布",
+    rate: 0.004
+  });
+  for (const component of project.components) {
+    assert.deepEqual(component.failureDistribution, {
+      distributionType: "指数分布",
+      rate: 0.004
+    });
+  }
+});
+
 test("fixed product parameters outrank the MTBF compatibility projection and legacy values backfill only when missing", () => {
   const project = {
     products: [
@@ -137,7 +255,7 @@ test("fixed product parameters outrank the MTBF compatibility projection and leg
       { id: "mean-negative", name: "Negative mean", mtbfHours: 304, failureDistribution: { distributionType: "fixed", mean: -1 } },
       { id: "mean-zero", name: "Zero mean", mtbfHours: 305, failureDistribution: { distributionType: "fixed", mean: 0 } },
       { id: "mean-null", name: "Null mean", mtbfHours: 306, failureDistribution: { distributionType: "fixed", mean: null } },
-      { id: "non-fixed", name: "Exponential", mtbfHours: 300, failureDistribution: { distributionType: "指数分布", rate: 0.02 } }
+      { id: "non-fixed", name: "Exponential", mtbfHours: 50, failureDistribution: { distributionType: "指数分布", rate: 0.02 } }
     ],
     components: [
       "legacy", "explicit-value", "explicit-mean", "value-first", "value-negative", "value-zero", "value-null",
@@ -171,7 +289,8 @@ test("fixed product parameters outrank the MTBF compatibility projection and leg
   assert.equal(products["mean-zero"].failureDistribution.mean, 0);
   assert.equal(products["mean-null"].mtbfHours, 306);
   assert.equal(products["mean-null"].failureDistribution.mean, null);
-  assert.equal(products["non-fixed"].mtbfHours, 300);
+  assert.equal(Object.hasOwn(products["non-fixed"], "mtbfHours"), false);
+  assert.equal(Object.hasOwn(components["non-fixed"], "mtbfHours"), false);
   assert.deepEqual(products["non-fixed"].failureDistribution, { distributionType: "指数分布", rate: 0.02 });
   const once = JSON.stringify(project);
   normalizeProjectProducts(project);
@@ -191,12 +310,12 @@ test("fixed failure distributions synchronize the shared MTBF compatibility scal
   assert.equal(project.components[1].failureDistribution.value, 1500);
 });
 
-test("legacy component parameters seed a product once and canonical product values win conflicts", () => {
+test("matching legacy component parameters seed a product once", () => {
   const project = {
     products: [{ id: "product-shared", name: "共享产品" }],
     components: [
       { id: "first", productId: "product-shared", failureDistribution: { distributionType: "指数分布", rate: 0.01 } },
-      { id: "second", productId: "product-shared", failureDistribution: { distributionType: "指数分布", rate: 0.02 } }
+      { id: "second", productId: "product-shared", failureDistribution: { distributionType: "指数分布", rate: 0.01 } }
     ]
   };
   normalizeProjectProducts(project);

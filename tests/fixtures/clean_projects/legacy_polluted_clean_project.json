@@ -40,7 +40,8 @@
     {
       "aircraftModel": "J-15",
       "failureDistribution": {
-        "distributionType": "exponential"
+        "distributionType": "exponential",
+        "rate": 0.01
       },
       "id": "whole-aircraft",
       "kOutOfN": {
@@ -62,6 +63,10 @@
   },
   "products": [
     {
+      "failureDistribution": {
+        "distributionType": "exponential",
+        "rate": 0.01
+      },
       "id": "product-whole-aircraft",
       "kind": "whole",
       "model": "whole aircraft",

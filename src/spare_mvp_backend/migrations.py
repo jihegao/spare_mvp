@@ -11,10 +11,17 @@ import json
 import sqlite3
 from collections.abc import Callable
 
-from .project_payload import normalize_project_equipment_tree_integrity
+from .project_payload import (
+    normalize_project_failure_distributions,
+    normalize_project_equipment_tree_integrity,
+)
 
 
 Migration = tuple[int, str, Callable[[sqlite3.Connection], None]]
+
+
+class ProjectFailureDistributionMigrationRequired(RuntimeError):
+    """Raised when issue #344 requires the explicit backup-backed maintenance command."""
 
 
 def apply_compatibility_migrations(connection: sqlite3.Connection) -> None:
@@ -215,6 +222,82 @@ def _migrate_project_equipment_tree_integrity(connection: sqlite3.Connection) ->
                 )
 
 
+def audit_project_failure_distribution_migration(
+    connection: sqlite3.Connection,
+) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
+    """Audit editable Projects and return canonical replacements without writing."""
+
+    project_columns = {row[1] for row in connection.execute("PRAGMA table_info(projects)")}
+    if not {"project_id", "payload_json"}.issubset(project_columns):
+        return {
+            "schema_version": "issue-344-mtbf-database-audit-v1",
+            "projects": [],
+            "summary": {"scanned": 0, "pending": 0, "conflicts": 0, "records": 0},
+        }, {}
+    projects: list[dict[str, object]] = []
+    updates: dict[str, dict[str, object]] = {}
+    for project_id, payload_json in connection.execute("SELECT project_id, payload_json FROM projects").fetchall():
+        try:
+            project = json.loads(payload_json)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            projects.append({
+                "project_id": str(project_id),
+                "changed": False,
+                "records": [],
+                "issues": [{
+                    "code": "invalid_project_payload_json",
+                    "path": "<root>",
+                    "message": str(exc),
+                }],
+            })
+            continue
+        if not isinstance(project, dict):
+            projects.append({
+                "project_id": str(project_id),
+                "changed": False,
+                "records": [],
+                "issues": [{
+                    "code": "invalid_project_payload_json",
+                    "path": "<root>",
+                    "message": "Project payload_json must contain an object.",
+                }],
+            })
+            continue
+        normalized, project_report = normalize_project_failure_distributions(project, strict=False)
+        entry = {
+            "project_id": str(project_id),
+            "changed": bool(project_report["changed"]),
+            "records": project_report["records"],
+            "synchronized_products": project_report["synchronized_products"],
+            "issues": project_report["issues"],
+        }
+        projects.append(entry)
+        if entry["changed"] and not entry["issues"]:
+            updates[str(project_id)] = normalized
+    summary = {
+        "scanned": len(projects),
+        "pending": sum(bool(project["changed"]) for project in projects),
+        "conflicts": sum(len(project["issues"]) for project in projects),
+        "records": sum(len(project["records"]) for project in projects),
+    }
+    return {
+        "schema_version": "issue-344-mtbf-database-audit-v1",
+        "projects": projects,
+        "summary": summary,
+    }, updates
+
+
+def _guard_project_failure_distribution_canonicalization(connection: sqlite3.Connection) -> None:
+    report, _updates = audit_project_failure_distribution_migration(connection)
+    summary = report["summary"]
+    if summary["conflicts"] or summary["pending"]:
+        raise ProjectFailureDistributionMigrationRequired(
+            "Project MTBF migration is required; stop the service and run "
+            "python3 scripts/migrate-issue-344-mtbf.py --check, then --write. "
+            f"pending={summary['pending']} conflicts={summary['conflicts']}"
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "simulation_runs_nullable_scenarios", _migrate_simulation_runs_nullable_scenarios),
     (2, "simulation_run_lifecycle_columns", _migrate_simulation_run_lifecycle_columns),
@@ -222,4 +305,5 @@ MIGRATIONS: tuple[Migration, ...] = (
     (4, "experiment_plan_snapshot_column", _migrate_experiment_plan_snapshot_column),
     (5, "modeling_import_payload_columns", _migrate_modeling_import_payload_columns),
     (6, "project_equipment_tree_integrity", _migrate_project_equipment_tree_integrity),
+    (7, "project_failure_distribution_rate_canonicalization", _guard_project_failure_distribution_canonicalization),
 )

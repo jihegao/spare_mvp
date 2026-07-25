@@ -6,7 +6,12 @@ from pathlib import Path
 import unittest
 
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
-from src.spare_mvp_backend.migrations import apply_compatibility_migrations
+from src.spare_mvp_backend.migrations import (
+    ProjectFailureDistributionMigrationRequired,
+    apply_compatibility_migrations,
+    audit_project_failure_distribution_migration,
+)
+from src.spare_mvp_backend.project_payload import normalize_project_failure_distributions
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -106,6 +111,7 @@ class DatabaseContractTest(unittest.TestCase):
                 (4, "experiment_plan_snapshot_column"),
                 (5, "modeling_import_payload_columns"),
                 (6, "project_equipment_tree_integrity"),
+                (7, "project_failure_distribution_rate_canonicalization"),
             ],
         )
 
@@ -133,6 +139,123 @@ class DatabaseContractTest(unittest.TestCase):
         self.assertEqual(migrated["components"][0]["failureDistribution"]["distributionType"], "正态分布")
         self.assertEqual(migrated["supportActivities"][0]["equipmentId"], "aircraft-root")
         self.assertTrue(any(product["id"] == "product-aircraft-root" for product in migrated["products"]))
+
+    def test_failure_distribution_migration_requires_explicit_backup_backed_write(self) -> None:
+        legacy = {
+            "project_id": "project-failure-distribution-alias",
+            "products": [{
+                "id": "product-shared",
+                "name": "共享设备",
+                "failureDistribution": {
+                    "distributionType": "指数分布",
+                    "failure_rate": 0.08,
+                },
+            }],
+            "components": [{
+                "id": "shared-a",
+                "name": "共享设备-A",
+                "productId": "product-shared",
+                "parentId": "aircraft-root",
+                "failureDistribution": {
+                    "distributionType": "exponential",
+                    "lambda": 0.08,
+                },
+            }, {
+                "id": "aircraft-root",
+                "name": "整机",
+                "productId": "product-aircraft-root",
+                "productType": "whole",
+                "quantity": 1,
+                "failureDistribution": {
+                    "distributionType": "指数分布",
+                    "parameters": "lambda=0.01; failure_rate=0.01",
+                },
+            }, {
+                "id": "shared-b",
+                "name": "共享设备-B",
+                "productId": "product-shared",
+                "parentId": "aircraft-root",
+                "failureDistribution": {
+                    "distributionType": "指数分布",
+                    "params": "failure_rate=0.08",
+                },
+            }],
+        }
+        self.repository.upsert_project(legacy)
+        self.connection.execute("DELETE FROM schema_migrations WHERE version = 7")
+
+        report, updates = audit_project_failure_distribution_migration(self.connection)
+
+        self.assertEqual(report["summary"]["pending"], 1)
+        self.assertEqual(report["summary"]["conflicts"], 0)
+        self.assertIn(legacy["project_id"], updates)
+        with self.assertRaises(ProjectFailureDistributionMigrationRequired):
+            apply_compatibility_migrations(self.connection)
+        self.assertNotIn(
+            7,
+            {row[0] for row in self.connection.execute("SELECT version FROM schema_migrations")},
+        )
+
+        normalized, normalization_report = normalize_project_failure_distributions(legacy)
+        self.assertTrue(normalization_report["changed"])
+        self.repository.upsert_project(normalized)
+        apply_compatibility_migrations(self.connection)
+
+        migrated = self.repository.get_project(legacy["project_id"])
+        shared_product = next(item for item in migrated["products"] if item["id"] == "product-shared")
+        self.assertEqual(shared_product["failureDistribution"]["rate"], 0.08)
+        self.assertEqual(
+            set(shared_product["failureDistribution"]),
+            {"distributionType", "rate"},
+        )
+        component_a = next(item for item in migrated["components"] if item["id"] == "shared-a")
+        self.assertEqual(component_a["failureDistribution"], shared_product["failureDistribution"])
+        component_b = next(item for item in migrated["components"] if item["id"] == "shared-b")
+        self.assertEqual(component_b["failureDistribution"], shared_product["failureDistribution"])
+        self.assertEqual(
+            self.connection.execute(
+                "SELECT name FROM schema_migrations WHERE version = 7"
+            ).fetchone()[0],
+            "project_failure_distribution_rate_canonicalization",
+        )
+
+    def test_failure_distribution_migration_reports_product_component_conflicts_without_writing(self) -> None:
+        project = {
+            "project_id": "project-failure-distribution-conflict",
+            "products": [{
+                "id": "product-shared",
+                "name": "共享设备",
+                "failureDistribution": {"distributionType": "指数分布", "rate": 0.08},
+            }],
+            "components": [{
+                "id": "shared-a",
+                "productId": "product-shared",
+                "failureDistribution": {"distributionType": "指数分布", "lambda": 0.09},
+            }],
+        }
+        self.repository.upsert_project(project)
+        self.connection.execute("DELETE FROM schema_migrations WHERE version = 7")
+        before = self.connection.execute(
+            "SELECT payload_json FROM projects WHERE project_id = ?",
+            (project["project_id"],),
+        ).fetchone()[0]
+
+        report, updates = audit_project_failure_distribution_migration(self.connection)
+
+        self.assertEqual(report["summary"]["pending"], 0)
+        self.assertEqual(report["summary"]["conflicts"], 1)
+        self.assertEqual(updates, {})
+        self.assertEqual(
+            report["projects"][0]["issues"][0]["code"],
+            "conflicting_product_failure_distribution",
+        )
+        with self.assertRaises(ProjectFailureDistributionMigrationRequired):
+            apply_compatibility_migrations(self.connection)
+        after = self.connection.execute(
+            "SELECT payload_json FROM projects WHERE project_id = ?",
+            (project["project_id"],),
+        ).fetchone()[0]
+        self.assertEqual(after, before)
 
     def test_schema_preserves_version_and_traceability_columns(self) -> None:
         required_columns = {
@@ -369,13 +492,13 @@ class DatabaseContractTest(unittest.TestCase):
             )
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
-                6,
+                7,
             )
 
             initialize_database(connection)
             self.assertEqual(
                 connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
-                6,
+                7,
             )
         finally:
             connection.close()

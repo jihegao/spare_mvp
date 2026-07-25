@@ -1554,6 +1554,38 @@ class BackendApiContractTest(unittest.TestCase):
             self.api.save_project(project)
         self.assertEqual(ctx.exception.code, "invalid_project")
 
+    def test_save_project_rejects_conflicting_product_level_exponential_distribution(self) -> None:
+        project = small_aircraft_support_project("project-conflicting-product-failure-distribution")
+        project["components"].append({
+            "id": "shared-engine",
+            "name": "J-15发动机副本",
+            "productId": project["components"][0]["productId"],
+            "parentId": "whole-aircraft",
+            "aircraftModel": "J-15",
+            "productType": "LRU",
+            "quantity": 1,
+            "failureDistribution": {
+                "distributionType": "指数分布",
+                "parameters": "lambda=0.02",
+            },
+            "repairDistribution": {"distributionType": "fixed", "parameters": "value=15"},
+        })
+
+        validation = self.api.validate_project(project)
+
+        self.assertFalse(validation["ok"])
+        self.assertIn(
+            "conflicting_product_failure_distribution",
+            {error["code"] for error in validation["errors"]},
+        )
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.save_project(project)
+        self.assertEqual(ctx.exception.code, "invalid_project")
+        self.assertIn(
+            "conflicting_product_failure_distribution",
+            {error["code"] for error in ctx.exception.details["errors"]},
+        )
+
     def test_save_project_migrates_basic_mission_support_activity_name_matching_legacy_name(self) -> None:
         project = small_aircraft_support_project("project-invalid-support-activity-name")
         project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
@@ -4464,8 +4496,9 @@ class BackendApiContractTest(unittest.TestCase):
         branch_project["experiment"]["seed"] = 99
         branch_project["components"][0]["failureDistribution"] = {
             "distributionType": "exponential",
-            "parameters": "lambda=0.21",
+            "rate": 0.21,
         }
+        branch_project["components"][0].pop("mtbfHours", None)
         branch_project["components"][0].setdefault("rms", {})["prediction"] = {"mtbfHours": 100}
         branch_project["resultSummary"] = {"mission_success_rate": 1}
         branch_project = strip_project_sweep(branch_project)
@@ -4507,7 +4540,14 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(clean_export["target"], "aircraft_support_v1")
         self.assertIn("resultSummary", clean_export["stripped_fields"])
         self.assertEqual(self.adapter.compile_runtime_configs[-1]["seed"], 99)
-        self.assertEqual(compiled_project["components"][0]["failureDistribution"]["parameters"], "lambda=0.21")
+        self.assertEqual(
+            compiled_project["components"][0]["failureDistribution"],
+            {"distributionType": "exponential", "rate": 0.21},
+        )
+        self.assertEqual(
+            compiled_project["products"][0]["failureDistribution"],
+            {"distributionType": "exponential", "rate": 0.21},
+        )
         self.assertEqual(next(resource for resource in compiled_project["supportResources"] if resource["type"] == "equipment")["quantity"], 8)
         self.assertEqual(compiled_scenario["simulation_inputs"]["seed"], 99)
         self.assertEqual(compiled_scenario["simulation_inputs"]["equipment_tree"]["components"][0]["failure_rate"], 0.21)
@@ -4575,8 +4615,9 @@ class BackendApiContractTest(unittest.TestCase):
         old_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
         project["components"][0]["failureDistribution"] = {
             "distributionType": "exponential",
-            "parameters": "lambda=0.33",
+            "rate": 0.33,
         }
+        project["components"][0].pop("mtbfHours", None)
         saved = self.api.save_project(project)
         current_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(
@@ -4609,7 +4650,14 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(provenance["modeling_snapshot_id"], current_snapshot["snapshot_id"])
         self.assertNotIn("experiment", compiled_project)
         self.assertEqual(compiled_scenario["simulation_inputs"]["seed"], 606)
-        self.assertEqual(compiled_project["components"][0]["failureDistribution"]["parameters"], "lambda=0.33")
+        self.assertEqual(
+            compiled_project["components"][0]["failureDistribution"],
+            {"distributionType": "exponential", "rate": 0.33},
+        )
+        self.assertEqual(
+            compiled_project["products"][0]["failureDistribution"],
+            {"distributionType": "exponential", "rate": 0.33},
+        )
         self.assertEqual(compiled_scenario["simulation_inputs"]["equipment_tree"]["components"][0]["failure_rate"], 0.33)
 
     def test_backend_api_delegates_submit_run_without_owning_lifecycle_lock(self) -> None:

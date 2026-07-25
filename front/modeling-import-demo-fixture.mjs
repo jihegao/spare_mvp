@@ -54,7 +54,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "connectionType": "串联",
         "failureDistribution": {
           "distributionType": "指数分布",
-          "parameters": "lambda=0.055"
+          "rate": 0.055
         },
         "failureModel": "随机",
         "failureRate": 0.055,
@@ -65,7 +65,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           "n": 2
         },
         "lifeLimitHours": 240,
-        "mtbfHours": 95,
         "name": "发动机",
         "parentId": "aircraft-root",
         "productType": "LRU",
@@ -90,7 +89,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "connectionType": "串联",
         "failureDistribution": {
           "distributionType": "指数分布",
-          "parameters": "lambda=0.04"
+          "rate": 0.04
         },
         "failureModel": "随机",
         "failureRate": 0.04,
@@ -101,7 +100,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           "n": 1
         },
         "lifeLimitHours": 260,
-        "mtbfHours": 120,
         "name": "发动机控制模块",
         "parentId": "j15-engine",
         "productType": "SRU",
@@ -234,7 +232,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "connectionType": "串联",
         "failureDistribution": {
           "distributionType": "指数分布",
-          "parameters": "lambda=0.05"
+          "rate": 0.05
         },
         "failureModel": "随机",
         "failureRate": 0.05,
@@ -245,7 +243,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           "n": 2
         },
         "lifeLimitHours": 250,
-        "mtbfHours": 105,
         "name": "发动机",
         "parentId": "aircraft-root",
         "productType": "LRU",

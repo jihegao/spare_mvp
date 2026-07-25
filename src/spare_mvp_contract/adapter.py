@@ -20,8 +20,10 @@ import re
 from typing import Any
 
 from src.spare_mvp_backend.project_payload import (
+    FailureDistributionContractError,
     OrganizationContractError,
     normalize_aircraft_pre_life,
+    normalize_project_failure_distributions,
     normalize_project_products,
     normalize_support_organization_contract,
     normalize_support_activity_maintenance_plans,
@@ -428,6 +430,36 @@ class SimulationAdapter:
         normalization_changes: list[str] = []
         if model_family == "aircraft_support_v1":
             project = normalize_project_products(project)
+            try:
+                project, failure_distribution_report = normalize_project_failure_distributions(
+                    project,
+                    strict=True,
+                )
+                if failure_distribution_report["changed"]:
+                    normalization_changes.append("failureDistribution.rate=canonical")
+            except FailureDistributionContractError as error:
+                provenance = self._aircraft_support_v1_mapping_provenance(
+                    self._project_id(project),
+                    project,
+                    runtime_config,
+                )
+                return {
+                    "status": "blocked",
+                    "scenario": None,
+                    "provenance": provenance,
+                    "errors": copy.deepcopy(error.issues),
+                    "issues": [
+                        {
+                            "code": issue.get("code", "invalid_exponential_failure_distribution"),
+                            "message": issue.get("message", str(error)),
+                            "field_path": issue.get("field_path") or issue.get("path") or "components",
+                            "page": "装备系统建模",
+                            "severity": "error",
+                            "suggestion": "Use one finite positive failureDistribution.rate per exact productId.",
+                        }
+                        for issue in error.issues
+                    ],
+                }
             try:
                 project, pre_life_changes = normalize_aircraft_pre_life(project)
                 normalization_changes.extend(pre_life_changes)
@@ -2103,6 +2135,66 @@ class SimulationAdapter:
                         "invalid_component_failure_distribution",
                         f"components[{index}].failureDistribution",
                         "非根组件必须提供可解析的 failureDistribution，不能回退到 failureRate 或默认失效率。",
+                        "装备系统建模",
+                    )
+                )
+        product_failure_distributions: dict[str, tuple[str, float | None]] = {}
+        for product in products:
+            product_id = str(product.get("id") or "").strip()
+            distribution = product.get("failureDistribution")
+            if not product_id or not isinstance(distribution, dict):
+                continue
+            distribution_type = str(
+                distribution.get("distributionType") or distribution.get("distribution_type") or ""
+            ).casefold()
+            kind = "exponential" if "exponential" in distribution_type or "指数" in distribution_type else "other"
+            product_failure_distributions[product_id] = (
+                kind,
+                self._failure_distribution_rate(distribution) if kind == "exponential" else None,
+            )
+
+        component_failure_distribution_rates: dict[str, float] = {}
+        for index, component in enumerate(components):
+            product_id = str(component.get("productId") or "").strip()
+            if not product_id or product_id not in product_ids:
+                continue
+            distribution = component.get("failureDistribution")
+            if not isinstance(distribution, dict):
+                continue
+            distribution_type = str(
+                distribution.get("distributionType") or distribution.get("distribution_type") or ""
+            ).casefold()
+            is_exponential = "exponential" in distribution_type or "指数" in distribution_type
+            product_distribution = product_failure_distributions.get(product_id)
+            if product_distribution and product_distribution[0] != ("exponential" if is_exponential else "other"):
+                issues.append(
+                    self._compile_issue(
+                        "conflicting_product_failure_distribution",
+                        f"components[{index}].failureDistribution",
+                        f"同一产品 {product_id} 的产品记录与组件使用了不同故障分布类型。",
+                        "装备系统建模",
+                    )
+                )
+                continue
+            if not is_exponential:
+                continue
+            rate = self._failure_distribution_rate(distribution)
+            if not isinstance(rate, (int, float)) or rate <= 0:
+                continue
+            product_rate = product_distribution[1] if product_distribution else None
+            first_rate = product_rate or component_failure_distribution_rates.get(product_id)
+            if first_rate is None:
+                component_failure_distribution_rates[product_id] = float(rate)
+                continue
+            if not math.isclose(rate, first_rate, rel_tol=1e-9, abs_tol=1e-12):
+                issues.append(
+                    self._compile_issue(
+                        "conflicting_product_failure_distribution",
+                        f"components[{index}].failureDistribution",
+                        (
+                            f"同一产品 {product_id} 的指数分布失效率参数冲突，"
+                            f"期望与参考值一致，当前为 {rate:g}。"
+                        ),
                         "装备系统建模",
                     )
                 )
