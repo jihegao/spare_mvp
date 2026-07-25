@@ -4833,21 +4833,17 @@ test("visual simulation page embeds the Solara visualization frame", async () =>
   assert.doesNotMatch(appSource, /ontology-context/);
 });
 
-test("visual simulation layout exposes session controls and a conditional iframe", async () => {
+test("visual simulation layout exposes a direct run action and a conditional iframe", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(appSource.indexOf("function renderVisualSimulation(page)"), appSource.indexOf("function visualSimulationPlanFingerprint"));
   assert.match(visualSource, /class="mesa-visual-shell"/);
   assert.match(visualSource, /class="lite-mesa-hero mesa-visual-toolbar"/);
   assert.match(visualSource, /renderExperimentPlanContextDropdown\(page\)/);
-  assert.match(visualSource, /data-visualization-setting="seed"/);
-  assert.match(visualSource, /data-visualization-setting="frameSampleEverySteps"/);
-  assert.match(visualSource, /data-visualization-setting="playbackSpeed"/);
-  assert.match(visualSource, /最大时长[\s\S]*readonly/);
-  assert.match(visualSource, /duration_minutes/);
-  assert.match(visualSource, /最大步数[\s\S]*readonly/);
   assert.match(visualSource, /data-visualization-session-start/);
+  assert.match(visualSource, /运行推演/);
   assert.match(visualSource, /visualizationSessionId && visualizationSessionToken/);
   assert.equal((visualSource.match(/<iframe/g) || []).length, 1);
+  assert.doesNotMatch(visualSource, /visualization-session-settings|data-visualization-setting=/);
   assert.doesNotMatch(visualSource, /run picker|data-visualization-run/);
 });
 
@@ -5171,12 +5167,12 @@ test("visual simulation enters the Solara Mesa page without a replay list", asyn
   assert.doesNotMatch(visualSource, /data-mesa-backend-control-status/);
 });
 
-test("visual simulation keeps a session-gated Solara iframe without a visible run picker", async () => {
+test("visual simulation keeps a direct-run Solara iframe without a visible run picker", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(appSource.indexOf("function renderVisualSimulation(page)"), appSource.indexOf("function visualSimulationPlanFingerprint"));
   assert.match(visualSource, /data-solara-visualization-frame/);
   assert.match(visualSource, /visualizationSessionId && visualizationSessionToken/);
-  assert.match(visualSource, /请选择运行上下文并创建可视化会话/);
+  assert.match(visualSource, /请选择运行上下文后运行推演/);
   assert.match(visualSource, /data-visualization-session-start/);
   assert.doesNotMatch(visualSource, /visualizationRunList|data-visualization-run|回放列表|run picker/);
 });

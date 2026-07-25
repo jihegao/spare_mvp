@@ -12269,7 +12269,7 @@ function replaceSelectedRunContextKey(nextKey, { persist = false } = {}) {
   solaraVisualizationProjectSyncError = "";
   solaraVisualizationProjectSyncErrorKey = "";
   solaraVisualizationProjectSyncIssues = [];
-  invalidateVisualizationSession("运行上下文已更新，请重新创建可视化会话。");
+  invalidateVisualizationSession("运行上下文已更新，请重新运行推演。");
   if (persist) persistSelectedRunContextKey();
 }
 
@@ -12285,7 +12285,7 @@ function resetRunContextToCurrentProject() {
 
 function resetSavedRunContextAfterProjectMutation() {
   if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) {
-    invalidateVisualizationSession("当前项目建模数据已更新，请重新创建可视化会话。");
+    invalidateVisualizationSession("当前项目建模数据已更新，请重新运行推演。");
     return;
   }
   resetRunContextToCurrentProject();
@@ -12333,7 +12333,7 @@ function syncSelectedRunContextAfterPlanRefresh() {
   const planRunSettings = selectedExperimentPlanRunSettings();
   if (!planRunSettings.validationError) liteMesaMonteCarloSettings = { ...planRunSettings };
   if (contentChanged) {
-    invalidateVisualizationSession("实验方案指纹已更新，请重新创建可视化会话。");
+    invalidateVisualizationSession("实验方案指纹已更新，请重新运行推演。");
     invalidateSelectedRunContextResults("实验方案配置已更新，请重新运行。");
     liteMesaMonteCarloStatus = `实验方案配置已更新：${context.name}，请重新运行 Mesa 分析。`;
   }
@@ -14288,7 +14288,7 @@ function updateVisualizationSessionSetting(field, value) {
     return;
   }
   if (shouldInvalidateVisualizationSession(field)) {
-    invalidateVisualizationSession("可视化运行参数已更新，请重新创建会话。");
+    invalidateVisualizationSession("可视化运行参数已更新，请重新运行推演。");
   }
 }
 
@@ -14301,14 +14301,14 @@ async function startVisualizationSessionThroughApi() {
       selectedExperimentPlanContext(),
       visualizationSessionSettings
     );
-    visualizationReplayStatus = "正在创建可视化会话";
+    visualizationReplayStatus = "正在启动可视化推演";
     const response = await backendApi.createVisualizationSession(payload);
     if (
       requestEpoch !== visualizationSessionRequestEpoch
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return null;
     visualizationSession = response;
-    visualizationReplayStatus = `可视化会话已创建：${response.visualization_session_id || response.session_id || response.id}`;
+    visualizationReplayStatus = "可视化推演已启动";
     return response;
   } catch (err) {
     if (
@@ -14316,7 +14316,7 @@ async function startVisualizationSessionThroughApi() {
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return null;
     visualizationSession = null;
-    visualizationReplayStatus = `可视化会话创建失败：${formatBackendError(err)}`;
+    visualizationReplayStatus = `可视化推演启动失败：${formatBackendError(err)}`;
     return null;
   }
 }
@@ -16521,11 +16521,6 @@ function renderVisualSimulation(page) {
         playbackSpeed: visualizationSessionSettings.playbackSpeed
       })
     : "";
-  const duration = visualizationSession?.duration_minutes
-    ?? visualizationSession?.duration
-    ?? visualizationSession?.maxDuration
-    ?? "-";
-  const maxSteps = visualizationSession?.maxSteps ?? visualizationSession?.max_steps ?? "-";
   return `
     <div class="mesa-visual-shell">
       <section class="lite-mesa-hero mesa-visual-toolbar">
@@ -16535,16 +16530,9 @@ function renderVisualSimulation(page) {
         </div>
         <div class="lite-mesa-hero-actions">
           ${renderExperimentPlanContextDropdown(page)}
+          <button type="button" class="btn-primary" data-visualization-session-start>运行推演</button>
         </div>
-      </section>
-      <section class="lite-mesa-settings visualization-session-settings">
-        <label>随机种子<input data-visualization-setting="seed" type="number" min="0" step="1" value="${htmlEscape(visualizationSessionSettings.seed)}"></label>
-        <label>帧采样间隔<input data-visualization-setting="frameSampleEverySteps" type="number" min="1" step="1" value="${htmlEscape(visualizationSessionSettings.frameSampleEverySteps)}"></label>
-        <label>播放速度<input data-visualization-setting="playbackSpeed" type="number" min="0.1" step="0.1" value="${htmlEscape(visualizationSessionSettings.playbackSpeed)}"></label>
-        <label>最大时长<input type="text" value="${htmlEscape(duration)}" readonly></label>
-        <label>最大步数<input type="text" value="${htmlEscape(maxSteps)}" readonly></label>
-        <button type="button" class="btn-primary" data-visualization-session-start>创建可视化会话</button>
-        <p class="inline-status">${htmlEscape(visualizationReplayStatus)}</p>
+        <p class="inline-status" role="status">${htmlEscape(visualizationReplayStatus)}</p>
       </section>
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
         ${solaraUrl ? `<iframe
@@ -16555,7 +16543,7 @@ function renderVisualSimulation(page) {
           loading="eager"
           referrerpolicy="no-referrer"
         ></iframe>` : `<div class="visual-simulation-plan-empty" data-visual-simulation-plan-empty>
-          <strong>请选择运行上下文并创建可视化会话</strong>
+          <strong>请选择运行上下文后运行推演</strong>
         </div>`}
       </div>
     </div>

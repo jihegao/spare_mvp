@@ -2102,7 +2102,7 @@ test("product catalog collapse handles zero, one, and multiple products", async 
   }
 });
 
-test("visual Mesa page renders current Project controls before creating a Solara session", async () => {
+test("visual Mesa page directly starts a Solara session from the run toolbar", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson()
@@ -2112,10 +2112,9 @@ test("visual Mesa page renders current Project controls before creating a Solara
     const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "mesa-visual-toolbar");
     assert.match(visualHero, /运行上下文/);
     assert.match(visualHero, /当前项目：Runtime 项目/);
+    assert.match(visualHero, /运行推演/);
     assert.match(runtime.appNode.innerHTML, /data-visualization-session-start/);
-    assert.match(runtime.appNode.innerHTML, /data-visualization-setting="seed"[^>]*value="20260621"/);
-    assert.match(runtime.appNode.innerHTML, /data-visualization-setting="frameSampleEverySteps"[^>]*value="1"/);
-    assert.match(runtime.appNode.innerHTML, /data-visualization-setting="playbackSpeed"[^>]*value="1"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /visualization-session-settings|data-visualization-setting=/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /class="solara-visualization-frame"|<iframe/);
 
     await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
@@ -6768,29 +6767,15 @@ test("visual simulation sends frozen plan identity and uses the returned session
   }
 });
 
-test("visual session invalidation distinguishes playback from seed and frame sampling", async () => {
+test("visual session can be restarted directly from the run toolbar", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-visual-mesa-page" });
   try {
     await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
     assert.match(runtime.appNode.innerHTML, /<iframe/);
     assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-1/);
-    assert.match(runtime.appNode.innerHTML, /最大时长<input[^>]*value="1440"[^>]*readonly/);
-    assert.match(runtime.appNode.innerHTML, /最大步数<input[^>]*readonly/);
-
-    await runtime.change("[data-visualization-setting]", { visualizationSetting: "playbackSpeed" }, { value: "1.5", type: "number" });
-    assert.match(runtime.appNode.innerHTML, /<iframe/);
-    assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-1/);
-    assert.match(runtime.appNode.innerHTML, /playback_speed=1.5/);
-
-    await runtime.change("[data-visualization-setting]", { visualizationSetting: "seed" }, { value: "99", type: "number" });
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /visualization_session_token|visual-token-runtime-1/);
     await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
     assert.match(runtime.appNode.innerHTML, /<iframe/);
     assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-2/);
-    await runtime.change("[data-visualization-setting]", { visualizationSetting: "frameSampleEverySteps" }, { value: "3", type: "number" });
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /visualization_session_token|visual-token-runtime-2/);
   } finally {
     runtime.restore();
   }
