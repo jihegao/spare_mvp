@@ -49,6 +49,14 @@ class ImportableProjectJsonTemplateTest(unittest.TestCase):
                 project = json.loads(path.read_text(encoding="utf-8"))
                 errors = sorted(self.validator.iter_errors(project), key=lambda error: list(error.path))
                 self.assertEqual(errors, [])
+                for owner in [*project["products"], *project["components"]]:
+                    distribution = owner.get("failureDistribution")
+                    distribution_type = str((distribution or {}).get("distributionType") or "").lower()
+                    if "exponential" not in distribution_type and "指数" not in distribution_type:
+                        continue
+                    self.assertEqual(set(distribution), {"distributionType", "rate"})
+                    self.assertGreater(distribution["rate"], 0)
+                    self.assertNotIn("mtbfHours", owner)
                 self.assertTrue(project["projectInfo"]["isTemplate"])
                 self.assertTrue(project["projectInfo"]["is_template"])
                 self.assertTrue(project["products"])

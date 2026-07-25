@@ -65,8 +65,7 @@
       "aircraftModel": "J-15",
       "failureDistribution": {
         "distributionType": "指数分布",
-        "parameters": "lambda=0.055",
-        "rate": 20
+        "rate": 0.03333333333333333
       },
       "id": "j15-engine",
       "kOutOfN": {
@@ -234,6 +233,10 @@
       "name": "舰载机"
     },
     {
+      "failureDistribution": {
+        "distributionType": "指数分布",
+        "rate": 0.03333333333333333
+      },
       "id": "product-j15-engine",
       "model": "发动机",
       "name": "发动机"
