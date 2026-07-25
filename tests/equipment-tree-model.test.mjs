@@ -50,11 +50,26 @@ test("equipment integrity normalization materializes the real aircraft root and 
   assert.ok(scenario.products.some((product) => product.id === "product-aircraft-root"));
 });
 
-test("exponential MTBF editor value is persisted as the canonical failure rate", () => {
+test("exponential MTBF editor reads direct and legacy rates in hours", () => {
+  assert.equal(exponentialMtbfHours({ distributionType: "指数分布", lambda: 0.002 }), 500);
+  assert.equal(exponentialMtbfHours({ distributionType: "指数分布", parameters: "lambda=0.002" }), 500);
+  assert.ok(
+    Math.abs(exponentialMtbfHours({ distributionType: "指数分布", rate: 0.0333333333333333 }) - 30) < 1e-9
+  );
   assert.equal(exponentialMtbfHours({ distributionType: "指数分布", rate: 0.008 }), 125);
   assert.equal(exponentialMtbfHours({ distributionType: "指数分布", parameters: "lambda=0.01" }), 100);
+});
+
+test("exponential MTBF editor persists one direct rate and removes every legacy rate representation", () => {
   assert.deepEqual(
-    exponentialFailureDistributionForMtbfHours({ distributionType: "指数分布", parameters: "lambda=0.01" }, 200),
+    exponentialFailureDistributionForMtbfHours({
+      distributionType: "指数分布",
+      parameters: "lambda=0.01",
+      params: "rate=0.02",
+      lambda: 0.03,
+      λ: 0.04,
+      failure_rate: 0.05
+    }, 200),
     { distributionType: "指数分布", rate: 0.005 }
   );
   assert.equal(exponentialFailureDistributionForMtbfHours({ distributionType: "指数分布" }, 0), null);

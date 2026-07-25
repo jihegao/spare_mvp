@@ -36,8 +36,17 @@ class ProjectCompilerGovernanceTest(unittest.TestCase):
             (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
         )
         jsonschema.Draft202012Validator.check_schema(input_schema)
-        jsonschema.Draft202012Validator(input_schema).validate(scenario["simulation_inputs"])
+        validator = jsonschema.Draft202012Validator(input_schema)
+        validator.validate(scenario["simulation_inputs"])
         self.assertEqual(scenario["simulation_inputs"]["schema_version"], "aircraft-support-v1-input-v0")
+
+        exponential_component = scenario["simulation_inputs"]["equipment_tree"]["components"][0]
+        self.assertIn(
+            exponential_component["failure_distribution"]["distributionType"],
+            {"exponential", "指数分布"},
+        )
+        exponential_component["failure_rate"] = 0
+        self.assertTrue(list(validator.iter_errors(scenario["simulation_inputs"])))
 
 
 if __name__ == "__main__":

@@ -66,7 +66,7 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                     "aircraftModel": "J-15",
                     "productType": "whole",
                     "quantity": 1,
-                    "failureDistribution": {"distributionType": "指数分布", "parameters": "lambda=0.01"},
+                    "failureDistribution": {"distributionType": "指数分布", "rate": 0.01},
                     "kOutOfN": {"k": 1, "n": 1},
                 }
             ],
@@ -74,7 +74,6 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                 {
                     "id": "node-a",
                     "name": "node A",
-                    "organizationNodeId": "node-a",
                     "personnelCapacity": 1,
                     "equipmentCapacity": 1,
                     "inventory": {"aircraft_support_v1_spares": 2},

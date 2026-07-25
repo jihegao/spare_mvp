@@ -53,6 +53,34 @@
   },
   "$defs": {
     "dictionary": { "type": "object", "additionalProperties": true },
+    "failureDistribution": {
+      "type": "object",
+      "allOf": [
+        {
+          "if": {
+            "required": ["distributionType"],
+            "properties": {
+              "distributionType": {
+                "enum": ["exponential", "指数分布"]
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": ["distributionType", "rate"],
+            "properties": {
+              "distributionType": {
+                "enum": ["exponential", "指数分布"]
+              },
+              "rate": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        }
+      ]
+    },
     "governanceObject": { "type": "object", "additionalProperties": true },
     "openModelObject": {
       "type": "object",
@@ -254,6 +282,22 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "name"],
+      "allOf": [
+        {
+          "if": {
+            "required": ["failureDistribution"],
+            "properties": {
+              "failureDistribution": {
+                "required": ["distributionType"],
+                "properties": {
+                  "distributionType": { "enum": ["exponential", "指数分布"] }
+                }
+              }
+            }
+          },
+          "then": { "not": { "required": ["mtbfHours"] } }
+        }
+      ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
@@ -261,7 +305,7 @@
         "kind": { "type": "string" },
         "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
         "meanRepairTimeMinutes": { "type": "number", "minimum": 0 },
-        "failureDistribution": { "$ref": "#/$defs/dictionary" },
+        "failureDistribution": { "$ref": "#/$defs/failureDistribution" },
         "repairDistribution": { "$ref": "#/$defs/dictionary" }
       }
     },
@@ -269,6 +313,22 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "name", "productId", "quantity"],
+      "allOf": [
+        {
+          "if": {
+            "required": ["failureDistribution"],
+            "properties": {
+              "failureDistribution": {
+                "required": ["distributionType"],
+                "properties": {
+                  "distributionType": { "enum": ["exponential", "指数分布"] }
+                }
+              }
+            }
+          },
+          "then": { "not": { "required": ["mtbfHours"] } }
+        }
+      ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
@@ -279,7 +339,7 @@
         "quantity": { "type": "integer", "minimum": 0 },
         "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
         "meanRepairTimeMinutes": { "type": "number", "minimum": 0 },
-        "failureDistribution": { "$ref": "#/$defs/dictionary" },
+        "failureDistribution": { "$ref": "#/$defs/failureDistribution" },
         "repairDistribution": { "$ref": "#/$defs/dictionary" },
         "kOutOfN": { "$ref": "#/$defs/dictionary" },
         "specialRepairProfile": { "$ref": "#/$defs/specialRepairProfile" }

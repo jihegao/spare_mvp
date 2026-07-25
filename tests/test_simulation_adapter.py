@@ -92,6 +92,14 @@ class SimulationAdapterTest(unittest.TestCase):
                     "value": invalid_value,
                     "mean": 200,
                 }
+                product_id = project["components"][1]["productId"]
+                next(
+                    product
+                    for product in project["products"]
+                    if product["id"] == product_id
+                )["failureDistribution"] = copy.deepcopy(
+                    project["components"][1]["failureDistribution"]
+                )
 
                 result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
 
@@ -107,6 +115,44 @@ class SimulationAdapterTest(unittest.TestCase):
                         for issue in result["issues"]
                     ],
                 )
+
+    def test_aircraft_support_v1_compile_rejects_conflicting_product_level_exponential_distribution(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["components"][2]["productId"] = "product-j15-engine"
+        project["components"][2]["failureDistribution"] = {
+            "distributionType": "指数分布",
+            "rate": 0.99,
+        }
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn(
+            {
+                "code": "conflicting_product_failure_distribution",
+                "field_path": "components[2].failureDistribution",
+            },
+            [
+                {"code": issue["code"], "field_path": issue["field_path"]}
+                for issue in result["issues"]
+            ],
+        )
+
+    def test_aircraft_support_v1_compile_rejects_conflicting_rate_aliases_within_one_distribution(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["components"][1]["failureDistribution"] = {
+            "distributionType": "指数分布",
+            "rate": 0.01,
+            "lambda": 0.02,
+        }
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn(
+            "conflicting_exponential_failure_rate_sources",
+            {issue["code"] for issue in result["issues"]},
+        )
 
     def test_downtime_projection_maps_four_factor_event_ledger_without_duplicate_ids(self) -> None:
         samples = [
@@ -2200,17 +2246,25 @@ class SimulationAdapterTest(unittest.TestCase):
                 job["requiredPersonnel"] = 1
                 job["requiredDevices"] = 1
                 job["spare"] = "无"
+        low_risk_products = {product["id"]: product for product in low_risk_project["products"]}
         for component in low_risk_project["components"]:
             if component.get("parentId"):
-                component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0"}
+                component["failureDistribution"] = {"distributionType": "指数分布", "rate": 1e-9}
+                low_risk_products[component["productId"]]["failureDistribution"] = copy.deepcopy(
+                    component["failureDistribution"]
+                )
                 component["kOutOfN"] = {"enabled": True, "k": 1, "n": 2}
         low_risk_project["missionProfile"]["periodicTasks"][0]["dailyRepeatCount"] = 1
         low_risk_project["missionProfile"]["periodicTasks"][0]["repeatCount"] = 1
 
         high_risk_project = copy.deepcopy(low_risk_project)
+        high_risk_products = {product["id"]: product for product in high_risk_project["products"]}
         for component in high_risk_project["components"]:
             if component.get("parentId"):
-                component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0.8"}
+                component["failureDistribution"] = {"distributionType": "指数分布", "rate": 0.8}
+                high_risk_products[component["productId"]]["failureDistribution"] = copy.deepcopy(
+                    component["failureDistribution"]
+                )
                 component["kOutOfN"] = {"enabled": False, "k": 1, "n": 1}
         high_risk_project["missionProfile"]["periodicTasks"][0]["dailyRepeatCount"] = 3
         high_risk_project["missionProfile"]["periodicTasks"][0]["repeatCount"] = 3
@@ -2245,14 +2299,19 @@ class SimulationAdapterTest(unittest.TestCase):
             and component.get("aircraftModel") == "J-35"
         )
         target_spare_name = str(target_lru["name"])
+        products_by_id = {product["id"]: product for product in project["products"]}
         for component in project["components"]:
             if component.get("parentId"):
+                rate = 60 if component.get("id") == target_lru.get("id") else 1e-9
                 component["failureDistribution"] = {
                     "distributionType": "指数分布",
                     # Keep the transport assertion deterministic now that an
                     # LRU can fail only on its owning aircraft model.
-                    "parameters": "lambda=60" if component.get("id") == target_lru.get("id") else "lambda=0",
+                    "rate": rate,
                 }
+                products_by_id[component["productId"]]["failureDistribution"] = copy.deepcopy(
+                    component["failureDistribution"]
+                )
                 component["kOutOfN"] = {"enabled": False, "k": 1, "n": 1}
         for activity in project["supportActivities"]:
             activity.pop("calendarDayInterval", None)

@@ -149,7 +149,34 @@
           "items": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["id", "name", "quantity", "failure_rate"]
+            "required": ["id", "name", "quantity", "failure_rate"],
+            "allOf": [
+              {
+                "if": {
+                  "required": ["failure_distribution"],
+                  "properties": {
+                    "failure_distribution": {
+                      "type": "object",
+                      "required": ["distributionType"],
+                      "properties": {
+                        "distributionType": { "enum": ["exponential", "指数分布"] }
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "failure_rate": { "exclusiveMinimum": 0 }
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "failure_rate": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
           }
         }
       }

@@ -127,7 +127,7 @@
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
-      "field_path": "objects.equipmentAssets[].failureDistribution.parameters",
+      "field_path": "objects.equipmentAssets[].failureDistribution.rate",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
@@ -233,6 +233,12 @@
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.equipmentAssets[].failureDistribution.parameters",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionAreas[].areaType",
@@ -1620,12 +1626,12 @@
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 45,
+    "consumed": 46,
     "defaulted": 0,
     "derived": 9,
     "governance_only": 20,
     "ignored": 195,
-    "total_fields": 269,
+    "total_fields": 270,
     "unsupported": 0
   }
 }

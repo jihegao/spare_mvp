@@ -3037,9 +3037,6 @@ function bindEvents() {
     const input = event.target.closest("[data-path]");
     if (!input) return;
     if (input.dataset.sharedProductComponentId && updateSharedEquipmentProductParameter(input)) {
-      const inputValue = parseInput(input);
-      setPath(scenario, input.dataset.path, inputValue);
-      normalizeEquipmentDistributionForDistributionTypeChange(input.dataset.path);
       render();
       return;
     }
@@ -6835,6 +6832,25 @@ function updateSharedEquipmentProductParameter(input) {
     input.setCustomValidity("");
     parameterPath = "failureDistribution";
     newValue = normalizedDistribution;
+  } else {
+    const distributionTypeMatch = parameterPath.match(/^(failure|repair)Distribution\.distributionType$/);
+    if (distributionTypeMatch) {
+      const distributionKind = `${distributionTypeMatch[1]}Distribution`;
+      const metric = distributionKind === "failureDistribution" ? "mtbf" : "mttr";
+      const distributionType = equipmentDistributionType(newValue, metric);
+      const nextDistribution = {
+        ...(product[distributionKind] && typeof product[distributionKind] === "object" && !Array.isArray(product[distributionKind])
+          ? product[distributionKind]
+          : {}),
+        distributionType
+      };
+      const allowedKeys = distributionKeysForType(distributionType, metric);
+      Object.keys(nextDistribution).forEach((key) => {
+        if (key !== "distributionType" && !allowedKeys.has(key)) delete nextDistribution[key];
+      });
+      parameterPath = distributionKind;
+      newValue = nextDistribution;
+    }
   }
   const oldValue = getPath(product, parameterPath);
   const relatedComponents = componentsSharingProduct(scenario, product.id);
@@ -6846,7 +6862,7 @@ function updateSharedEquipmentProductParameter(input) {
     if (!confirmed) return true;
   }
   updateSharedProductParameter(scenario, product.id, parameterPath, newValue);
-  if (input.dataset.equipmentMtbfHours === "true" || parameterPath === "failureDistribution.value") {
+  if (parameterPath === "failureDistribution.value") {
     updateSharedProductParameter(scenario, product.id, "mtbfHours", Number(input.value));
   }
   updatePreviewResultsThroughApiClient();
@@ -7686,7 +7702,7 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     <div class="equipment-param-fields">
       ${fields.map((fieldDef) => `
         <label>${fieldDef.label}
-          <input data-path="${basePath}.${fieldDef.key}" data-shared-product-component-id="${htmlEscape(component?.id || "")}"${fieldDef.mtbfHours ? " data-equipment-mtbf-hours=\"true\"" : ""} type="number" min="${fieldDef.mtbfHours ? "0.0001" : "0"}" step="${fieldDef.step}" value="${htmlEscape(fieldDef.mtbfHours ? exponentialMtbfHours(component?.failureDistribution) : getPath(scenario, `${basePath}.${fieldDef.key}`))}" aria-label="${htmlEscape(fieldDef.mtbfHours ? "MTBF（h）" : fieldDef.label)}">
+          <input data-path="${basePath}.${fieldDef.key}" data-shared-product-component-id="${htmlEscape(component?.id || "")}"${fieldDef.mtbfHours ? " data-equipment-mtbf-hours=\"true\"" : ""} type="number" min="${fieldDef.mtbfHours ? "0.0001" : "0"}" step="${fieldDef.mtbfHours ? "any" : fieldDef.step}" value="${htmlEscape(fieldDef.mtbfHours ? exponentialMtbfHours(component?.failureDistribution) : getPath(scenario, `${basePath}.${fieldDef.key}`))}" aria-label="${htmlEscape(fieldDef.mtbfHours ? "MTBF（h）" : fieldDef.label)}">
         </label>
       `).join("")}
     </div>

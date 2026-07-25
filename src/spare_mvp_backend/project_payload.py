@@ -157,7 +157,16 @@ _AIRCRAFT_PRE_LIFE_FIELDS = (
     ("preLifeFlightHours", None, "number"),
     ("preLifeTakeoffLandingCount", None, "integer"),
 )
-_PRODUCT_FIELDS = {"id", "name", "model", "kind"}
+_PRODUCT_FIELDS = {
+    "id",
+    "name",
+    "model",
+    "kind",
+    "mtbfHours",
+    "meanRepairTimeMinutes",
+    "failureDistribution",
+    "repairDistribution",
+}
 _COMPONENT_FIELDS = {
     "id",
     "name",
@@ -315,6 +324,19 @@ _SUPPORT_ACTIVITY_RULE_UI_FIELDS = {
     "useFlightHourRule",
     "useTakeoffLandingRule",
 }
+_FAILURE_DISTRIBUTION_RATE_KEYS = ("rate", "lambda", "λ", "failure_rate")
+_FAILURE_DISTRIBUTION_RATE_ALIASES = ("lambda", "λ", "failure_rate")
+_FAILURE_DISTRIBUTION_REL_TOL = 1e-9
+_FAILURE_DISTRIBUTION_ABS_TOL = 1e-12
+
+
+class FailureDistributionContractError(ValueError):
+    """Fail-closed Project reliability normalization error."""
+
+    def __init__(self, issues: list[dict[str, Any]]) -> None:
+        self.issues = deepcopy(issues)
+        first = self.issues[0] if self.issues else {}
+        super().__init__(str(first.get("message") or "invalid exponential failure distribution"))
 
 
 class ProjectJsonExporter:
@@ -328,6 +350,7 @@ class ProjectJsonExporter:
 
     def export(self, project_json: dict[str, Any]) -> dict[str, Any]:
         project = normalize_project_products(strip_project_sweep(project_json))
+        project, _failure_distribution_report = normalize_project_failure_distributions(project, strict=True)
         project, _pre_life_changes = normalize_aircraft_pre_life(project)
         project, _organization_changes = normalize_support_organization_contract(project)
         _strip_pollution_keys(project)
@@ -1557,6 +1580,7 @@ def normalize_project_equipment_tree_integrity(project_json: dict[str, Any]) -> 
                 "model": _clean_text(root.get("aircraftModel")) or "aircraft-root",
                 "kind": "whole",
             })
+    project, _failure_distribution_report = normalize_project_failure_distributions(project, strict=False)
     return project
 
 
@@ -1605,6 +1629,346 @@ def _normalize_legacy_failure_distribution_type(distribution: Any) -> None:
         distribution["distributionType"] = "正态分布" if "指数" in distribution_type else "normal"
     elif ("normal" in distribution_type or "正态" in distribution_type) and has_rate:
         distribution["distributionType"] = "指数分布" if "正态" in distribution_type else "exponential"
+
+
+def project_failure_distribution_errors(project_json: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return fail-closed exponential-distribution issues without mutating Project JSON."""
+
+    try:
+        normalize_project_failure_distributions(project_json, strict=True)
+    except FailureDistributionContractError as exc:
+        return deepcopy(exc.issues)
+    return []
+
+
+def normalize_project_failure_distributions(
+    project_json: dict[str, Any],
+    *,
+    strict: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Canonicalize Project exponential rates and synchronize exact Product references.
+
+    ``failureDistribution.rate`` remains the sole behavior-driving Project
+    representation.  MTBF hours are an editor projection and are therefore
+    removed from exponential owners after reciprocal consistency is checked.
+    """
+
+    original = deepcopy(project_json)
+    project = deepcopy(project_json)
+    owners = _project_failure_distribution_owners(project)
+    for owner in owners:
+        _normalize_legacy_failure_distribution_type(owner["value"].get("failureDistribution"))
+
+    issues: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
+    candidates: dict[tuple[str, int], dict[str, Any]] = {}
+    rates: dict[tuple[str, int], float] = {}
+    for owner in owners:
+        value = owner["value"]
+        distribution = value.get("failureDistribution")
+        if not _is_exponential_failure_distribution(distribution):
+            continue
+        owner_path = owner["path"]
+        sources, source_issues = _failure_distribution_rate_sources(
+            value,
+            distribution,
+            f"{owner_path}.failureDistribution",
+        )
+        issues.extend(source_issues)
+        if source_issues or not sources:
+            continue
+        reference_rate = sources[0]["rate"]
+        if any(
+            not math.isclose(
+                source["rate"],
+                reference_rate,
+                rel_tol=_FAILURE_DISTRIBUTION_REL_TOL,
+                abs_tol=_FAILURE_DISTRIBUTION_ABS_TOL,
+            )
+            for source in sources[1:]
+        ):
+            issues.append({
+                "code": "conflicting_exponential_failure_rate_sources",
+                "path": f"{owner_path}.failureDistribution",
+                "field_path": f"{owner_path}.failureDistribution",
+                "message": "指数分布包含互相冲突的故障率或 MTBF 来源，无法安全迁移。",
+                "sources": deepcopy(sources),
+            })
+            continue
+        key = (owner["kind"], owner["index"])
+        raw_distribution_type = _clean_text(
+            distribution.get("distributionType")
+            or distribution.get("distribution_type")
+        )
+        canonical = {
+            "distributionType": (
+                "指数分布"
+                if "指数" in raw_distribution_type
+                else "exponential"
+            ),
+            "rate": reference_rate,
+        }
+        candidates[key] = canonical
+        rates[key] = reference_rate
+        records.append({
+            "owner_type": owner["kind"],
+            "owner_id": _clean_text(value.get("id")),
+            "product_id": _clean_text(value.get("id") if owner["kind"] == "product" else value.get("productId")),
+            "path": f"{owner_path}.failureDistribution",
+            "sources": deepcopy(sources),
+            "rate": reference_rate,
+            "mtbf_hours": 1.0 / reference_rate,
+            "status": "canonical" if distribution == canonical and "mtbfHours" not in value else "convert",
+        })
+
+    products = {
+        _clean_text(owner["value"].get("id")): owner
+        for owner in owners
+        if owner["kind"] == "product" and _clean_text(owner["value"].get("id"))
+    }
+    components_by_product: dict[str, list[dict[str, Any]]] = {}
+    for owner in owners:
+        if owner["kind"] != "component":
+            continue
+        product_id = _clean_text(owner["value"].get("productId"))
+        if product_id:
+            components_by_product.setdefault(product_id, []).append(owner)
+
+    synchronized_groups: list[dict[str, Any]] = []
+    for product_id, component_owners in components_by_product.items():
+        product_owner = products.get(product_id)
+        if product_owner is None:
+            continue
+        grouped_owners = [product_owner, *component_owners]
+        grouped_rates = [
+            (owner, rates[(owner["kind"], owner["index"])])
+            for owner in grouped_owners
+            if (owner["kind"], owner["index"]) in rates
+        ]
+        if not grouped_rates:
+            continue
+        reference_owner, reference_rate = grouped_rates[0]
+        conflicting = [
+            (owner, rate)
+            for owner, rate in grouped_rates[1:]
+            if not math.isclose(
+                rate,
+                reference_rate,
+                rel_tol=_FAILURE_DISTRIBUTION_REL_TOL,
+                abs_tol=_FAILURE_DISTRIBUTION_ABS_TOL,
+            )
+        ]
+        incompatible = [
+            owner
+            for owner in grouped_owners
+            if isinstance(owner["value"].get("failureDistribution"), dict)
+            and owner["value"].get("failureDistribution")
+            and not _is_exponential_failure_distribution(owner["value"].get("failureDistribution"))
+        ]
+        if conflicting or incompatible:
+            for owner, rate in conflicting:
+                issues.append({
+                    "code": "conflicting_product_failure_distribution",
+                    "path": f'{owner["path"]}.failureDistribution',
+                    "field_path": f'{owner["path"]}.failureDistribution',
+                    "message": (
+                        f"同一产品 {product_id} 的指数分布故障率冲突："
+                        f"期望 {reference_rate:g}，当前为 {rate:g}。"
+                    ),
+                    "product_id": product_id,
+                })
+            for owner in incompatible:
+                issues.append({
+                    "code": "conflicting_product_failure_distribution",
+                    "path": f'{owner["path"]}.failureDistribution',
+                    "field_path": f'{owner["path"]}.failureDistribution',
+                    "message": f"同一产品 {product_id} 混用了指数分布与其他故障分布。",
+                    "product_id": product_id,
+                })
+            continue
+
+        reference_key = (reference_owner["kind"], reference_owner["index"])
+        canonical_distribution = deepcopy(candidates[reference_key])
+        for owner in grouped_owners:
+            key = (owner["kind"], owner["index"])
+            candidates[key] = deepcopy(canonical_distribution)
+            rates[key] = reference_rate
+        synchronized_groups.append({
+            "product_id": product_id,
+            "rate": reference_rate,
+            "component_paths": [owner["path"] for owner in component_owners],
+        })
+
+    issue_paths = {
+        issue.get("path") or issue.get("field_path")
+        for issue in issues
+    }
+    for owner in owners:
+        distribution = owner["value"].get("failureDistribution")
+        key = (owner["kind"], owner["index"])
+        path = f'{owner["path"]}.failureDistribution'
+        if (
+            _is_exponential_failure_distribution(distribution)
+            and key not in candidates
+            and not any(
+                isinstance(issue_path, str) and issue_path.startswith(path)
+                for issue_path in issue_paths
+            )
+        ):
+            issues.append({
+                "code": "missing_exponential_failure_rate",
+                "path": path,
+                "field_path": path,
+                "message": "指数分布必须提供有限正数故障率，或可由同一产品的无冲突引用补全。",
+            })
+
+    report = {
+        "schema_version": "issue-344-mtbf-migration-report-v1",
+        "records": records,
+        "synchronized_products": synchronized_groups,
+        "issues": issues,
+        "changed": False,
+    }
+    if issues:
+        if strict:
+            raise FailureDistributionContractError(issues)
+        return original, report
+
+    for owner in owners:
+        key = (owner["kind"], owner["index"])
+        if key not in candidates:
+            continue
+        owner["value"]["failureDistribution"] = deepcopy(candidates[key])
+        owner["value"].pop("mtbfHours", None)
+    report["changed"] = project != original
+    return project, report
+
+
+def _project_failure_distribution_owners(project: dict[str, Any]) -> list[dict[str, Any]]:
+    owners: list[dict[str, Any]] = []
+    for kind, field in (("product", "products"), ("component", "components")):
+        values = project.get(field)
+        if not isinstance(values, list):
+            continue
+        for index, value in enumerate(values):
+            if isinstance(value, dict):
+                owners.append({
+                    "kind": kind,
+                    "index": index,
+                    "path": f"{field}[{index}]",
+                    "value": value,
+                })
+    return owners
+
+
+def _is_exponential_failure_distribution(distribution: Any) -> bool:
+    if not isinstance(distribution, dict):
+        return False
+    distribution_type = _clean_text(
+        distribution.get("distributionType") or distribution.get("distribution_type")
+    ).casefold()
+    return "exponential" in distribution_type or "指数" in distribution_type
+
+
+def _failure_distribution_rate_sources(
+    owner: dict[str, Any],
+    distribution: dict[str, Any],
+    path: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    sources: list[dict[str, Any]] = []
+    issues: list[dict[str, Any]] = []
+    allowed_fields = {
+        "distributionType",
+        "distribution_type",
+        "parameters",
+        "params",
+        *_FAILURE_DISTRIBUTION_RATE_KEYS,
+    }
+    for field in distribution:
+        if field in allowed_fields:
+            continue
+        issues.append({
+            "code": "ambiguous_exponential_failure_distribution",
+            "path": f"{path}.{field}",
+            "field_path": f"{path}.{field}",
+            "message": f"指数分布包含无法识别的直接参数：{field}",
+        })
+
+    def append_source(source_path: str, raw_value: Any, *, reciprocal: bool = False) -> None:
+        rate = _positive_finite_number(raw_value)
+        if rate is None:
+            issues.append({
+                "code": "invalid_exponential_failure_rate",
+                "path": source_path,
+                "field_path": source_path,
+                "message": "指数分布故障率和 MTBF 必须是有限正数。",
+                "value": raw_value,
+            })
+            return
+        sources.append({
+            "path": source_path,
+            "value": raw_value,
+            "rate": 1.0 / rate if reciprocal else rate,
+            "kind": "mtbf_hours" if reciprocal else "failure_rate",
+        })
+
+    for key in _FAILURE_DISTRIBUTION_RATE_KEYS:
+        if key in distribution:
+            append_source(f"{path}.{key}", distribution[key])
+
+    for field in ("parameters", "params"):
+        if field not in distribution:
+            continue
+        parameters = distribution[field]
+        if isinstance(parameters, (int, float)) and not isinstance(parameters, bool):
+            append_source(f"{path}.{field}", parameters)
+            continue
+        if not isinstance(parameters, str):
+            issues.append({
+                "code": "invalid_exponential_failure_rate",
+                "path": f"{path}.{field}",
+                "field_path": f"{path}.{field}",
+                "message": "指数分布历史参数必须是故障率数值或 key=value 字符串。",
+                "value": parameters,
+            })
+            continue
+        for item_index, item in enumerate(re.split(r"[,，;；]", parameters)):
+            token = item.strip()
+            if not token:
+                continue
+            if "=" not in token:
+                issues.append({
+                    "code": "ambiguous_exponential_failure_distribution",
+                    "path": f"{path}.{field}",
+                    "field_path": f"{path}.{field}",
+                    "message": f"指数分布包含无法识别的历史参数：{token}",
+                })
+                continue
+            raw_key, raw_value = [part.strip() for part in token.split("=", 1)]
+            normalized_key = raw_key.casefold()
+            if normalized_key not in _FAILURE_DISTRIBUTION_RATE_KEYS:
+                issues.append({
+                    "code": "ambiguous_exponential_failure_distribution",
+                    "path": f"{path}.{field}",
+                    "field_path": f"{path}.{field}",
+                    "message": f"指数分布包含非故障率历史参数：{raw_key}",
+                })
+                continue
+            append_source(f"{path}.{field}[{item_index}].{raw_key}", raw_value)
+
+    if "mtbfHours" in owner:
+        append_source(path.rsplit(".", 1)[0] + ".mtbfHours", owner["mtbfHours"], reciprocal=True)
+    return sources, issues
+
+
+def _positive_finite_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and number > 0 else None
 
 
 def _normalize_basic_mission_support_activity_names(project: dict[str, Any]) -> None:
@@ -2107,6 +2471,29 @@ def _validate_clean_products(products: list[Any], target: str) -> None:
             _require_clean_non_empty_string(product, field, f"{path}.{field}", target)
         for field in ("model", "kind"):
             _validate_optional_clean_string(product, field, f"{path}.{field}", target)
+        _validate_optional_clean_number(
+            product,
+            "mtbfHours",
+            f"{path}.mtbfHours",
+            target,
+            minimum=0,
+        )
+        if "mtbfHours" in product and product["mtbfHours"] <= 0:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at {path}.mtbfHours: expected > 0"
+            )
+        _validate_optional_clean_number(
+            product,
+            "meanRepairTimeMinutes",
+            f"{path}.meanRepairTimeMinutes",
+            target,
+            minimum=0,
+        )
+        for field in ("failureDistribution", "repairDistribution"):
+            if field in product and not isinstance(product[field], dict):
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at {path}.{field}: expected object"
+                )
 
 
 def _validate_product_references(project: dict[str, Any], target: str) -> None:
@@ -2847,6 +3234,9 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _strip_modeling_import_validation_non_model_fields(project)
     _strip_support_resource_non_model_fields(project)
     _strip_legacy_support_node_resource_fields(project)
+    normalized_project, _failure_distribution_report = normalize_project_failure_distributions(project, strict=True)
+    project.clear()
+    project.update(normalized_project)
     _normalize_project_component_k_out_of_n(project)
     _strip_component_non_model_fields(project.get("components"))
     _strip_reliability_block_diagram_non_model_fields(project.get("reliabilityBlockDiagram"))

@@ -416,7 +416,7 @@
             "aircraft_model": "J-15",
             "failure_distribution": {
               "distributionType": "指数分布",
-              "parameters": "lambda=0.055"
+              "rate": 0.055
             },
             "failure_rate": 0.055,
             "id": "j15-engine",
@@ -440,7 +440,7 @@
             "aircraft_model": "J-15",
             "failure_distribution": {
               "distributionType": "指数分布",
-              "parameters": "lambda=0.04"
+              "rate": 0.04
             },
             "failure_rate": 0.04,
             "id": "j15-engine-control",
@@ -536,7 +536,7 @@
             "aircraft_model": "J-35",
             "failure_distribution": {
               "distributionType": "指数分布",
-              "parameters": "lambda=0.05"
+              "rate": 0.05
             },
             "failure_rate": 0.05,
             "id": "j35-engine",
@@ -1835,7 +1835,7 @@
             "aircraftModel": "J-15",
             "failureDistribution": {
               "distributionType": "指数分布",
-              "parameters": "lambda=0.055"
+              "rate": 0.055
             },
             "id": "j15-engine",
             "kOutOfN": {
@@ -1856,7 +1856,7 @@
             "aircraftModel": "J-15",
             "failureDistribution": {
               "distributionType": "指数分布",
-              "parameters": "lambda=0.04"
+              "rate": 0.04
             },
             "id": "j15-engine-control",
             "kOutOfN": {
@@ -1940,7 +1940,7 @@
             "aircraftModel": "J-35",
             "failureDistribution": {
               "distributionType": "指数分布",
-              "parameters": "lambda=0.05"
+              "rate": 0.05
             },
             "id": "j35-engine",
             "kOutOfN": {
@@ -2112,12 +2112,20 @@
             "name": "舰载机"
           },
           {
+            "failureDistribution": {
+              "distributionType": "指数分布",
+              "rate": 0.055
+            },
             "id": "product-j15-engine",
             "kind": "LRU",
             "model": "发动机",
             "name": "发动机"
           },
           {
+            "failureDistribution": {
+              "distributionType": "指数分布",
+              "rate": 0.04
+            },
             "id": "product-j15-engine-control",
             "kind": "SRU",
             "model": "发动机控制模块",
@@ -2142,6 +2150,10 @@
             "name": "液压系统"
           },
           {
+            "failureDistribution": {
+              "distributionType": "指数分布",
+              "rate": 0.05
+            },
             "id": "product-j35-engine",
             "kind": "LRU",
             "model": "发动机",
@@ -3088,7 +3100,7 @@
           "aircraftModel": "J-15",
           "failureDistribution": {
             "distributionType": "指数分布",
-            "parameters": "lambda=0.055"
+            "rate": 0.055
           },
           "id": "j15-engine",
           "kOutOfN": {
@@ -3109,7 +3121,7 @@
           "aircraftModel": "J-15",
           "failureDistribution": {
             "distributionType": "指数分布",
-            "parameters": "lambda=0.04"
+            "rate": 0.04
           },
           "id": "j15-engine-control",
           "kOutOfN": {
@@ -3193,7 +3205,7 @@
           "aircraftModel": "J-35",
           "failureDistribution": {
             "distributionType": "指数分布",
-            "parameters": "lambda=0.05"
+            "rate": 0.05
           },
           "id": "j35-engine",
           "kOutOfN": {
@@ -3365,12 +3377,20 @@
           "name": "舰载机"
         },
         {
+          "failureDistribution": {
+            "distributionType": "指数分布",
+            "rate": 0.055
+          },
           "id": "product-j15-engine",
           "kind": "LRU",
           "model": "发动机",
           "name": "发动机"
         },
         {
+          "failureDistribution": {
+            "distributionType": "指数分布",
+            "rate": 0.04
+          },
           "id": "product-j15-engine-control",
           "kind": "SRU",
           "model": "发动机控制模块",
@@ -3395,6 +3415,10 @@
           "name": "液压系统"
         },
         {
+          "failureDistribution": {
+            "distributionType": "指数分布",
+            "rate": 0.05
+          },
           "id": "product-j35-engine",
           "kind": "LRU",
           "model": "发动机",
@@ -4355,7 +4379,7 @@
         "aircraftModel": "J-15",
         "failureDistribution": {
           "distributionType": "指数分布",
-          "parameters": "lambda=0.055"
+          "rate": 0.055
         },
         "id": "j15-engine",
         "kOutOfN": {
@@ -4376,7 +4400,7 @@
         "aircraftModel": "J-15",
         "failureDistribution": {
           "distributionType": "指数分布",
-          "parameters": "lambda=0.04"
+          "rate": 0.04
         },
         "id": "j15-engine-control",
         "kOutOfN": {
@@ -4460,7 +4484,7 @@
         "aircraftModel": "J-35",
         "failureDistribution": {
           "distributionType": "指数分布",
-          "parameters": "lambda=0.05"
+          "rate": 0.05
         },
         "id": "j35-engine",
         "kOutOfN": {
@@ -4632,12 +4656,20 @@
         "name": "舰载机"
       },
       {
+        "failureDistribution": {
+          "distributionType": "指数分布",
+          "rate": 0.055
+        },
         "id": "product-j15-engine",
         "kind": "LRU",
         "model": "发动机",
         "name": "发动机"
       },
       {
+        "failureDistribution": {
+          "distributionType": "指数分布",
+          "rate": 0.04
+        },
         "id": "product-j15-engine-control",
         "kind": "SRU",
         "model": "发动机控制模块",
@@ -4662,6 +4694,10 @@
         "name": "液压系统"
       },
       {
+        "failureDistribution": {
+          "distributionType": "指数分布",
+          "rate": 0.05
+        },
         "id": "product-j35-engine",
         "kind": "LRU",
         "model": "发动机",
@@ -5459,7 +5495,7 @@
           "connectionType": "串联",
           "failureDistribution": {
             "distributionType": "指数分布",
-            "parameters": "lambda=0.055"
+            "rate": 0.055
           },
           "failureModel": "随机",
           "failureRate": 0.055,
@@ -5470,7 +5506,6 @@
             "n": 2
           },
           "lifeLimitHours": 240,
-          "mtbfHours": 95,
           "name": "发动机",
           "parentId": "aircraft-root",
           "productType": "LRU",
@@ -5495,7 +5530,7 @@
           "connectionType": "串联",
           "failureDistribution": {
             "distributionType": "指数分布",
-            "parameters": "lambda=0.04"
+            "rate": 0.04
           },
           "failureModel": "随机",
           "failureRate": 0.04,
@@ -5506,7 +5541,6 @@
             "n": 1
           },
           "lifeLimitHours": 260,
-          "mtbfHours": 120,
           "name": "发动机控制模块",
           "parentId": "j15-engine",
           "productType": "SRU",
@@ -5639,7 +5673,7 @@
           "connectionType": "串联",
           "failureDistribution": {
             "distributionType": "指数分布",
-            "parameters": "lambda=0.05"
+            "rate": 0.05
           },
           "failureModel": "随机",
           "failureRate": 0.05,
@@ -5650,7 +5684,6 @@
             "n": 2
           },
           "lifeLimitHours": 250,
-          "mtbfHours": 105,
           "name": "发动机",
           "parentId": "aircraft-root",
           "productType": "LRU",

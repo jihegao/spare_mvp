@@ -10,7 +10,11 @@ from unittest import mock
 
 import jsonschema
 
-from src.spare_mvp_backend.project_payload import ProjectJsonExporter
+from src.spare_mvp_backend.project_payload import (
+    FailureDistributionContractError,
+    ProjectJsonExporter,
+    normalize_project_failure_distributions,
+)
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -63,6 +67,144 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("preLifeRequirementHours", exported_member)
         self.assertNotIn("remainingLifeHours", exported_member)
         self.assertNotIn("takeoffLandingCount", exported_member)
+
+    def test_exponential_failure_distribution_uses_direct_rate_and_mtbf_is_only_a_projection(self) -> None:
+        project = {
+            "products": [{
+                "id": "product-shared",
+                "name": "共享产品",
+                "mtbfHours": 500,
+                "failureDistribution": {
+                    "distributionType": "指数分布",
+                    "lambda": 0.002,
+                    "parameters": "failure_rate=0.002",
+                },
+            }],
+            "components": [{
+                "id": "component-a",
+                "name": "组件 A",
+                "productId": "product-shared",
+            }, {
+                "id": "component-b",
+                "name": "组件 B",
+                "productId": "product-shared",
+                "failureDistribution": {
+                    "distributionType": "exponential",
+                    "rate": 0.002,
+                },
+            }],
+        }
+
+        normalized, report = normalize_project_failure_distributions(project)
+
+        self.assertTrue(report["changed"])
+        self.assertEqual(report["issues"], [])
+        for owner in [normalized["products"][0], *normalized["components"]]:
+            self.assertEqual(
+                owner["failureDistribution"],
+                {"distributionType": "指数分布", "rate": 0.002},
+            )
+            self.assertNotIn("mtbfHours", owner)
+        normalized_again, second_report = normalize_project_failure_distributions(normalized)
+        self.assertEqual(normalized_again, normalized)
+        self.assertFalse(second_report["changed"])
+
+    def test_project_schema_rejects_exponential_owner_mtbf_scalar(self) -> None:
+        project = ProjectJsonExporter(target="aircraft_support_v1").export(self._polluted_project())
+        project["products"][0]["failureDistribution"] = {
+            "distributionType": "指数分布",
+            "rate": 0.002,
+        }
+        project["products"][0]["mtbfHours"] = 500
+        self.assertTrue(self._schema_errors(project))
+
+        del project["products"][0]["mtbfHours"]
+        project["components"][0]["failureDistribution"] = {
+            "distributionType": "exponential",
+            "rate": 0.002,
+        }
+        project["components"][0]["mtbfHours"] = 500
+        self.assertTrue(self._schema_errors(project))
+
+    def test_exponential_failure_distribution_rejects_conflicting_or_ambiguous_sources(self) -> None:
+        conflicting = {
+            "products": [{
+                "id": "product-shared",
+                "name": "共享产品",
+                "failureDistribution": {
+                    "distributionType": "指数分布",
+                    "rate": 0.002,
+                },
+            }],
+            "components": [{
+                "id": "component-a",
+                "name": "组件 A",
+                "productId": "product-shared",
+                "failureDistribution": {
+                    "distributionType": "指数分布",
+                    "lambda": 0.003,
+                },
+            }],
+        }
+        with self.assertRaises(FailureDistributionContractError) as conflict:
+            normalize_project_failure_distributions(conflicting)
+        self.assertIn(
+            "conflicting_product_failure_distribution",
+            {issue["code"] for issue in conflict.exception.issues},
+        )
+
+        ambiguous = deepcopy(conflicting)
+        ambiguous["components"][0]["failureDistribution"] = {
+            "distributionType": "指数分布",
+            "parameters": "scale=500",
+        }
+        with self.assertRaises(FailureDistributionContractError) as ambiguity:
+            normalize_project_failure_distributions(ambiguous)
+        self.assertIn(
+            "ambiguous_exponential_failure_distribution",
+            {issue["code"] for issue in ambiguity.exception.issues},
+        )
+
+        ambiguous["components"][0]["failureDistribution"] = {
+            "distributionType": "指数分布",
+            "rate": 0.002,
+            "scale": 500,
+        }
+        with self.assertRaises(FailureDistributionContractError) as direct_ambiguity:
+            normalize_project_failure_distributions(ambiguous)
+        self.assertIn(
+            "ambiguous_exponential_failure_distribution",
+            {issue["code"] for issue in direct_ambiguity.exception.issues},
+        )
+
+    def test_exponential_failure_distribution_requires_a_rate_source_unless_the_product_supplies_it(self) -> None:
+        missing = {
+            "products": [{"id": "product-empty", "name": "空产品"}],
+            "components": [{
+                "id": "component-empty",
+                "name": "空组件",
+                "productId": "product-empty",
+                "failureDistribution": {"distributionType": "指数分布"},
+            }],
+        }
+        with self.assertRaises(FailureDistributionContractError) as error:
+            normalize_project_failure_distributions(missing)
+        self.assertIn(
+            "missing_exponential_failure_rate",
+            {issue["code"] for issue in error.exception.issues},
+        )
+
+        supplied = deepcopy(missing)
+        supplied["products"][0]["failureDistribution"] = {
+            "distributionType": "exponential",
+            "rate": 0.004,
+        }
+        normalized, report = normalize_project_failure_distributions(supplied)
+        self.assertEqual(report["issues"], [])
+        self.assertEqual(
+            normalized["components"][0]["failureDistribution"],
+            {"distributionType": "exponential", "rate": 0.004},
+        )
 
     def test_export_rejects_invalid_canonical_pre_life_and_ignores_legacy_cycle_semantics(self) -> None:
         project = self._polluted_project()
@@ -369,6 +511,14 @@ class ProjectJsonExporterTest(unittest.TestCase):
             self.assertNotIn(field, clean["components"][0])
         self.assertNotIn("spareType", clean["components"][0])
         self.assertEqual(clean["components"][0]["productId"], "product-whole-aircraft")
+        self.assertEqual(
+            clean["components"][0]["failureDistribution"],
+            {"distributionType": "exponential", "rate": 0.01},
+        )
+        self.assertEqual(
+            clean["products"][0]["failureDistribution"],
+            {"distributionType": "exponential", "rate": 0.01},
+        )
         self.assertEqual(clean["components"][0]["specialRepairProfile"], {"repairTimeMinutes": 45})
         self.assertNotIn("formState", clean["components"][0])
         self.assertNotIn("draftState", clean["basicMissions"][0])

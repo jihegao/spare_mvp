@@ -50,6 +50,10 @@ def minimal_clean_project() -> dict[str, Any]:
                 "name": "whole aircraft",
                 "model": "whole-aircraft",
                 "kind": "whole",
+                "failureDistribution": {
+                    "distributionType": "指数分布",
+                    "rate": 0.01,
+                },
             }
         ],
         "components": [
@@ -60,7 +64,7 @@ def minimal_clean_project() -> dict[str, Any]:
                 "aircraftModel": "J-15",
                 "productType": "whole",
                 "quantity": 1,
-                "failureDistribution": {"distributionType": "指数分布", "parameters": "lambda=0.01"},
+                "failureDistribution": {"distributionType": "指数分布", "rate": 0.01},
                 "kOutOfN": {"k": 1, "n": 1},
             }
         ],
@@ -167,7 +171,7 @@ def legacy_polluted_project() -> dict[str, Any]:
                 "productType": "whole",
                 "quantity": 1,
                 "failureRate": 0.01,
-                "failureDistribution": {"distributionType": "exponential"},
+                "failureDistribution": {"distributionType": "exponential", "rate": 0.01},
                 "kOutOfN": {"k": 1, "n": 1},
                 "rms": {
                     "target": {"reliability": 0.98},

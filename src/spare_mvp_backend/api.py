@@ -25,6 +25,7 @@ from src.spare_mvp_backend.project_payload import (
     materialize_scenario_composition,
     normalize_project_basic_mission_support_activity_names,
     project_basic_mission_support_activity_name_errors,
+    project_failure_distribution_errors,
     project_k_out_of_n_errors,
     project_runtime_config_paths,
     strip_project_sweep,
@@ -95,8 +96,24 @@ class BackendApi:
         self.run_service = RunService(repository, adapter, self.output_dir, run_lifecycle_lock=lifecycle_lock)
 
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
+        failure_distribution_errors = project_failure_distribution_errors(project_json)
         project = normalize_project_basic_mission_support_activity_names(project_json)
         validation = self.adapter.validate_project(project)
+        if failure_distribution_errors:
+            validation = copy.deepcopy(validation)
+            validation["ok"] = False
+            existing = {
+                (error.get("code"), error.get("path") or error.get("field_path"))
+                for error in validation.get("errors", [])
+            }
+            validation["errors"] = [
+                *validation.get("errors", []),
+                *[
+                    error
+                    for error in failure_distribution_errors
+                    if (error.get("code"), error.get("path") or error.get("field_path")) not in existing
+                ],
+            ]
         runtime_config_errors = [
             {
                 "code": "unsupported_project_runtime_config",
@@ -126,6 +143,7 @@ class BackendApi:
             "missing_component_parent",
             "invalid_component_failure_distribution",
             "missing_equipment_reference",
+            "conflicting_product_failure_distribution",
         }
         equipment_integrity_errors = [
             issue
