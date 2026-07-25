@@ -17074,8 +17074,9 @@ function renderMesaAircraftStage(state) {
         `).join("")}
       </div>
       <div class="legend">
-        <span class="legend-item"><i class="dot available"></i>停放</span>
+        <span class="legend-item"><i class="dot available"></i>可用未分配</span>
         <span class="legend-item"><i class="dot support"></i>使用保障</span>
+        <span class="legend-item"><i class="dot mission_ready"></i>保障完成／待出动</span>
         <span class="legend-item"><i class="dot flying"></i>任务</span>
         <span class="legend-item"><i class="dot repair_unavailable"></i>维修/不可用</span>
       </div>
@@ -17084,7 +17085,7 @@ function renderMesaAircraftStage(state) {
 }
 
 function aircraftStateLanes(aircraftList) {
-  const actualStates = ["available", "pre_support", "flying", "repair_unavailable"];
+  const actualStates = ["available", "pre_support", "mission_ready", "flying", "repair_unavailable"];
   const lanes = actualStates.map((state) => ({
     key: state,
     title: visualAircraftStateLabel(state),
@@ -18032,11 +18033,11 @@ function missionStatusLabel(status) {
 
 function visualAircraftStateLabel(state) {
   const labels = {
-    available: "停放",
+    available: "可用未分配",
     maintenance: "维修/不可用",
     flying: "任务",
     repair_unavailable: "维修/不可用",
-    mission_ready: "停放",
+    mission_ready: "保障完成／待出动",
     pre_support: "使用保障",
     post_support: "使用保障",
     support: "使用保障",
@@ -18056,7 +18057,8 @@ function visualAircraftStateLabel(state) {
 
 function visualAircraftLaneKey(state) {
   const value = String(state || "available").toLowerCase();
-  if (["available", "mission_ready", "standby", "parked", "idle"].includes(value)) return "available";
+  if (value === "mission_ready") return "mission_ready";
+  if (["available", "standby", "parked", "idle"].includes(value)) return "available";
   if (["flying", "mission", "launched", "sortie", "task"].includes(value)) return "flying";
   if (["pre_support", "post_support", "support", "operations_support", "using_support", "flightline_support"].includes(value)) {
     return "pre_support";

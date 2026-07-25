@@ -78,6 +78,24 @@ test("ships a non-empty demo state frame for static inspection", () => {
   assert.ok(normalized.missions.length >= 1);
 });
 
+test("preserves mission-ready reservation identity for visualization", () => {
+  const normalized = normalizeAviationSupportState({
+    ...rawState,
+    aircraft: [{
+      tail_number: "AC-01",
+      type: "J-15",
+      state: "mission_ready",
+      current_mission_id: "wave-0600",
+      x: 0,
+      y: 0,
+      systems: []
+    }]
+  });
+
+  assert.equal(normalized.aircraft[0].state, "mission_ready");
+  assert.equal(normalized.aircraft[0].currentMissionId, "wave-0600");
+});
+
 test("hydrates compact failure tree templates into aircraft failure trees", () => {
   const normalized = normalizeAviationSupportState({
     ...rawState,

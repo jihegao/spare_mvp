@@ -531,6 +531,7 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         self.assertNotRegex(message, r"blocked by|shortage at")
         self.assertEqual(solara_app._job_state_label("blocked"), "受阻")
         self.assertEqual(solara_app._job_state_label("future_state"), "未知状态")
+        self.assertEqual(solara_app._state_label("mission_ready"), "待出动")
         self.assertEqual(solara_app._shortage_reason_label("equipment_capacity"), "保障设备可用数量不足")
         self.assertEqual(solara_app._shortage_reason_label("spare:hyd-pump"), "备件库存不足")
 
