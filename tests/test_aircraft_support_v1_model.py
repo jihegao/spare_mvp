@@ -3229,9 +3229,9 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             for event in model.event_log
         ))
 
-    def test_preflight_completion_at_calendar_threshold_enters_preventive_maintenance(self) -> None:
+    def test_calendar_due_during_preflight_defers_preventive_until_mission_return(self) -> None:
         inputs = _minimal_inputs()
-        inputs["time"]["duration_minutes"] = 1500
+        inputs["time"]["duration_minutes"] = 1520
         inputs["aircraft"].update({"fleet_count": 1, "initial_ready": 1})
         model = AircraftSupportV1Model(inputs)
         mission = MissionState(
@@ -3254,17 +3254,132 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         preflight = next(job for job in model.jobs if job.kind == "preflight")
         aircraft = model.aircraft[0]
         self.assertEqual(preflight.state, "completed")
+        self.assertEqual(aircraft.state, "flying")
+        self.assertTrue(aircraft.preventive_due)
+        self.assertEqual(aircraft.preventive_due_dimensions, ["calendar_days"])
+        self.assertEqual(aircraft.current_mission_id, mission.mission_id)
+        self.assertNotIn(mission.mission_id, aircraft.prepared_mission_ids)
+        self.assertEqual(mission.status, "launched")
+        self.assertEqual(model.snapshot()["available_aircraft"], 0)
+        self.assertEqual(
+            [job for job in model.jobs if job.kind == "preventive"],
+            [],
+        )
+
+        while model.minute < 1480:
+            model.step()
+
+        self.assertEqual(aircraft.state, "post_support")
+        self.assertEqual(
+            [job for job in model.jobs if job.kind == "preventive"],
+            [],
+        )
+
+        while model.minute < 1485:
+            model.step()
+
+        preventive = next(job for job in model.jobs if job.kind == "preventive")
         self.assertEqual(aircraft.state, "maintenance")
         self.assertTrue(aircraft.preventive_due)
-        self.assertIsNone(aircraft.current_mission_id)
-        self.assertNotIn(mission.mission_id, aircraft.prepared_mission_ids)
-        self.assertNotEqual(mission.status, "launched")
-        release = next(
+        self.assertEqual(preventive.due_dimensions, ["calendar_days"])
+        created = next(
             event for event in model.event_log
-            if event["event"] == "mission_preflight_released"
-            and event["details"].get("reason") == "preventive_due"
+            if event["event"] == "preventive_created"
         )
-        self.assertEqual(release["details"]["mission_id"], mission.mission_id)
+        self.assertEqual(created["time"], 1485)
+        self.assertFalse(any(
+            event["event"] == "mission_preflight_released"
+            for event in model.event_log
+        ))
+
+    def test_available_aircraft_due_on_calendar_day_is_unavailable_at_midnight(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 1500
+        inputs["aircraft"].update({"fleet_count": 1, "initial_ready": 1})
+        model = AircraftSupportV1Model(inputs)
+        mission = MissionState(
+            mission_id="midnight-wave",
+            name="midnight wave",
+            planned_start=1460,
+            preparation_start=1440,
+            duration_minutes=30,
+            required_aircraft=1,
+            min_required_aircraft=1,
+            priority=1,
+            cancel_minutes=20,
+            required_aircraft_type="J-15",
+        )
+        model.missions = [mission]
+
+        while model.minute < 1440:
+            model.step()
+
+        aircraft = model.aircraft[0]
+        preventive = next(job for job in model.jobs if job.kind == "preventive")
+        self.assertEqual(aircraft.state, "maintenance")
+        self.assertTrue(aircraft.preventive_due)
+        self.assertEqual(preventive.due_dimensions, ["calendar_days"])
+        created = next(
+            event for event in model.event_log
+            if event["event"] == "preventive_created"
+        )
+        self.assertEqual(created["time"], 1440)
+        self.assertEqual(
+            [job for job in model.jobs if job.kind == "preflight"],
+            [],
+        )
+        self.assertEqual(model.snapshot()["available_aircraft"], 0)
+
+    def test_flight_hour_and_landing_due_start_preventive_after_return_and_postflight(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 90
+        inputs["aircraft"].update({"fleet_count": 1, "initial_ready": 1})
+        inputs["support_activities"]["activities"][3].update({
+            "calendarDayInterval": 0,
+            "runHourInterval": 0.5,
+            "takeoffLandingInterval": 1,
+        })
+        model = AircraftSupportV1Model(inputs)
+        mission = MissionState(
+            mission_id="usage-threshold-wave",
+            name="usage threshold wave",
+            planned_start=20,
+            preparation_start=0,
+            duration_minutes=30,
+            required_aircraft=1,
+            min_required_aircraft=1,
+            priority=1,
+            cancel_minutes=10,
+            required_aircraft_type="J-15",
+        )
+        model.missions = [mission]
+
+        while model.minute < 49:
+            model.step()
+
+        aircraft = model.aircraft[0]
+        self.assertEqual(aircraft.state, "flying")
+        self.assertFalse(aircraft.preventive_due)
+        self.assertEqual(
+            [job for job in model.jobs if job.kind == "preventive"],
+            [],
+        )
+
+        postflight_completion = int(mission.return_time or 0) + 5
+        while model.minute < postflight_completion:
+            model.step()
+
+        preventive = next(job for job in model.jobs if job.kind == "preventive")
+        self.assertEqual(aircraft.state, "maintenance")
+        self.assertEqual(
+            preventive.due_dimensions,
+            ["flight_hours", "takeoff_landing_cycles"],
+        )
+        created = next(
+            event for event in model.event_log
+            if event["event"] == "preventive_created"
+        )
+        self.assertEqual(created["time"], postflight_completion)
 
     def test_behavior_scope_promotes_m9_7_4_fields(self) -> None:
         scope = AircraftSupportV1Model.behavior_scope()

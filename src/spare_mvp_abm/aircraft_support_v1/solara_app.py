@@ -711,11 +711,7 @@ def _event_display(event: dict[str, Any]) -> tuple[str, str, str]:
     elif event_type == "mission_cancelled":
         message = "就绪飞机数量不足，任务已取消。"
     elif event_type == "mission_preflight_released":
-        message = (
-            "飞机达到预防性维修阈值，已释放待出动任务保留并转入维修。"
-            if details.get("reason") == "preventive_due"
-            else "已释放待出动飞机和关联飞行前保障资源。"
-        )
+        message = "已释放待出动飞机和关联飞行前保障资源。"
     elif event_type == "mission_success_point_succeeded":
         message = "任务在成功判定点达到要求，判定成功。"
     elif event_type == "mission_success_point_failed":

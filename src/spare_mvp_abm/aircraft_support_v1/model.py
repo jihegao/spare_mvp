@@ -406,9 +406,15 @@ class AircraftSupportV1Model:
     def snapshot(self) -> dict[str, Any]:
         downtime_summary = self._downtime_event_summary()
         planned_sorties = sum(mission.required_aircraft for mission in self.missions) or 1
-        unassigned_available = sum(1 for aircraft in self.aircraft if aircraft.state == "available")
+        unassigned_available = sum(
+            1 for aircraft in self.aircraft
+            if aircraft.state == "available" and not aircraft.preventive_due
+        )
         mission_ready = sum(1 for aircraft in self.aircraft if aircraft.state == "mission_ready")
-        available = unassigned_available + mission_ready
+        available = unassigned_available + sum(
+            1 for aircraft in self.aircraft
+            if aircraft.state == "mission_ready" and not aircraft.preventive_due
+        )
         active_jobs = sum(1 for job in self.jobs if job.state == "running")
         backlog = sum(1 for job in self.jobs if job.state == "waiting")
         repair_backlog = sum(1 for job in self.jobs if job.kind == "repair" and job.state in {"waiting", "running"})
@@ -559,7 +565,7 @@ class AircraftSupportV1Model:
             return self._downtime_event_payload("equipment_shortage", aircraft, equipment_job, start_minute)
         if aircraft.failed_component_id is not None or repair_job is not None:
             return self._downtime_event_payload("failure", aircraft, repair_job, start_minute)
-        if preventive_job is not None or aircraft.preventive_due:
+        if preventive_job is not None:
             return self._downtime_event_payload("preventive", aircraft, preventive_job, start_minute)
         return None
 
@@ -814,6 +820,7 @@ class AircraftSupportV1Model:
         available = sum(
             1 for aircraft in self.aircraft
             if aircraft.state in {"available", "mission_ready"}
+            and not aircraft.preventive_due
         )
         self.daily_readiness_samples.append(
             {
@@ -2093,56 +2100,53 @@ class AircraftSupportV1Model:
                 and aircraft.initial_preventive_due
                 and bool(aircraft.initial_due_dimensions)
             )
-            if (
-                aircraft.state not in {"available", "mission_ready"}
-                and not minute_zero_due
-            ) or aircraft.preventive_due:
-                continue
-            if any(job.kind == "preventive" and job.tail_number == aircraft.tail_number and job.state != "completed" for job in self.jobs):
+            if any(
+                job.kind == "preventive"
+                and job.tail_number == aircraft.tail_number
+                and job.state in {"waiting", "running"}
+                for job in self.jobs
+            ):
                 continue
             activity = self._select_activity("preventive", aircraft=aircraft)
             thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
             if not any(value > 0 for value in thresholds.values()):
                 continue
-            due_dimensions = self._preventive_due_dimensions(aircraft, activity)
-            if due_dimensions:
-                activity = self._preventive_activity_for_due(aircraft, activity, due_dimensions)
-                released_mission_id = aircraft.current_mission_id if aircraft.state == "mission_ready" else None
-                if released_mission_id:
-                    aircraft.prepared_mission_ids.discard(released_mission_id)
-                    aircraft.current_mission_id = None
-                    self._event(
-                        "mission_preflight_released",
-                        f"{aircraft.tail_number} released {released_mission_id} for preventive maintenance",
-                        {
-                            "mission_id": released_mission_id,
-                            "cancelled_job_ids": [],
-                            "released_tail_numbers": [aircraft.tail_number],
-                            "reason": "preventive_due",
-                        },
-                    )
-                aircraft.state = "maintenance"
-                aircraft.preventive_due = True
-                aircraft.preventive_due_dimensions = list(due_dimensions)
-                self.preventive_maintenance_events += 1
-                self._create_job(
-                    aircraft,
-                    activity,
-                    kind="preventive",
-                    due_dimensions=due_dimensions,
-                )
-                self._event(
-                    "preventive_created",
-                    f"{aircraft.tail_number} preventive maintenance created",
-                    {
-                        "tail_number": aircraft.tail_number,
-                        "activity_id": str(activity.get("id") or "preventive"),
-                        "initial_life_state": copy.deepcopy(aircraft.initial_life_state),
-                        "preventive_thresholds": copy.deepcopy(aircraft.preventive_thresholds),
-                        "preventive_threshold_sources": copy.deepcopy(aircraft.preventive_threshold_sources),
-                        "due_dimensions": list(due_dimensions),
-                    },
-                )
+            due_dimensions = list(dict.fromkeys([
+                *aircraft.preventive_due_dimensions,
+                *self._preventive_due_dimensions(aircraft, activity),
+            ]))
+            if not due_dimensions:
+                continue
+
+            aircraft.preventive_due = True
+            aircraft.preventive_due_dimensions = list(due_dimensions)
+            # An aircraft already committed to a mission keeps that commitment.
+            # Preventive work starts only after return and postflight processing
+            # make the aircraft available again.
+            if aircraft.state != "available" and not minute_zero_due:
+                continue
+
+            activity = self._preventive_activity_for_due(aircraft, activity, due_dimensions)
+            aircraft.state = "maintenance"
+            self.preventive_maintenance_events += 1
+            self._create_job(
+                aircraft,
+                activity,
+                kind="preventive",
+                due_dimensions=due_dimensions,
+            )
+            self._event(
+                "preventive_created",
+                f"{aircraft.tail_number} preventive maintenance created",
+                {
+                    "tail_number": aircraft.tail_number,
+                    "activity_id": str(activity.get("id") or "preventive"),
+                    "initial_life_state": copy.deepcopy(aircraft.initial_life_state),
+                    "preventive_thresholds": copy.deepcopy(aircraft.preventive_thresholds),
+                    "preventive_threshold_sources": copy.deepcopy(aircraft.preventive_threshold_sources),
+                    "due_dimensions": list(due_dimensions),
+                },
+            )
 
     def _preventive_activity_for_due(
         self,
@@ -2189,10 +2193,11 @@ class AircraftSupportV1Model:
     ) -> list[str]:
         thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
         due_dimensions = []
-        if (
-            thresholds["calendar_days"] > 0
-            and self.minute - aircraft.last_preventive_minute >= thresholds["calendar_days"] * 1440
-        ):
+        calendar_days = int(thresholds["calendar_days"])
+        calendar_due_minute = (
+            (aircraft.last_preventive_minute // 1440) + calendar_days
+        ) * 1440
+        if calendar_days > 0 and self.minute >= calendar_due_minute:
             due_dimensions.append("calendar_days")
         if thresholds["flight_hours"] > 0 and aircraft.flight_hours >= thresholds["flight_hours"]:
             due_dimensions.append("flight_hours")
