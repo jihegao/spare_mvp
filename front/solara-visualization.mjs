@@ -217,7 +217,11 @@ function localizedVisualizationEventMessage(eventType, event, details, eventLabe
   if (type === "mission_launched" || type === "mission_started") return `${taskPrefix}任务已启动${quantity ? `，投入 ${quantity} 架飞机` : ""}。`;
   if (type === "mission_launch") return `任务已启动。${aircraftSuffix}`;
   if (type === "mission_cancelled") return `${taskPrefix}就绪飞机数量不足，任务已取消。`;
-  if (type === "mission_preflight_released") return `${taskPrefix}任务取消后已释放待出动飞机和关联飞行前保障资源。`;
+  if (type === "mission_preflight_released") {
+    return details.reason === "preventive_due"
+      ? `${aircraftSuffix}达到预防性维修阈值，已释放待出动任务保留并转入维修。`
+      : `${taskPrefix}已释放待出动飞机和关联飞行前保障资源。`;
+  }
   if (type === "mission_success_point_succeeded") return `${taskPrefix}任务在成功判定点达到要求，判定成功。`;
   if (type === "mission_success_point_failed") return `${taskPrefix}任务在成功判定点未达到要求，判定失败。`;
   if (type === "preflight_created") return `${taskPrefix}已创建飞行前保障作业。`;

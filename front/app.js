@@ -16544,6 +16544,7 @@ function renderVisualSimulation(page) {
           referrerpolicy="no-referrer"
         ></iframe>` : `<div class="visual-simulation-plan-empty" data-visual-simulation-plan-empty>
           <strong>请选择运行上下文后运行推演</strong>
+          <p>会话已清除；如需继续，请重新创建可视化会话。</p>
         </div>`}
       </div>
     </div>

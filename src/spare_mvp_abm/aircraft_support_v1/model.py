@@ -2093,7 +2093,10 @@ class AircraftSupportV1Model:
                 and aircraft.initial_preventive_due
                 and bool(aircraft.initial_due_dimensions)
             )
-            if (aircraft.state != "available" and not minute_zero_due) or aircraft.preventive_due:
+            if (
+                aircraft.state not in {"available", "mission_ready"}
+                and not minute_zero_due
+            ) or aircraft.preventive_due:
                 continue
             if any(job.kind == "preventive" and job.tail_number == aircraft.tail_number and job.state != "completed" for job in self.jobs):
                 continue
@@ -2104,6 +2107,20 @@ class AircraftSupportV1Model:
             due_dimensions = self._preventive_due_dimensions(aircraft, activity)
             if due_dimensions:
                 activity = self._preventive_activity_for_due(aircraft, activity, due_dimensions)
+                released_mission_id = aircraft.current_mission_id if aircraft.state == "mission_ready" else None
+                if released_mission_id:
+                    aircraft.prepared_mission_ids.discard(released_mission_id)
+                    aircraft.current_mission_id = None
+                    self._event(
+                        "mission_preflight_released",
+                        f"{aircraft.tail_number} released {released_mission_id} for preventive maintenance",
+                        {
+                            "mission_id": released_mission_id,
+                            "cancelled_job_ids": [],
+                            "released_tail_numbers": [aircraft.tail_number],
+                            "reason": "preventive_due",
+                        },
+                    )
                 aircraft.state = "maintenance"
                 aircraft.preventive_due = True
                 aircraft.preventive_due_dimensions = list(due_dimensions)
@@ -2430,7 +2447,7 @@ class AircraftSupportV1Model:
             blockers,
             state_counts,
         )
-        if shortfall <= 0 or fact_key in self._mission_scheduling_fact_keys:
+        if shortfall <= 0 or not blockers or fact_key in self._mission_scheduling_fact_keys:
             return
         self._mission_scheduling_fact_keys.add(fact_key)
         self._event(

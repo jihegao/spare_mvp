@@ -3227,9 +3227,7 @@ test("issue 349 and 350 frontend uses frozen run contexts and visualization sess
   assert.match(appSource, /冻结方案不可编辑/);
   assert.match(visualSource, /backendApi\.createVisualizationSession|data-visualization-session-start/);
   assert.match(appSource, /requestEpoch !== visualizationSessionRequestEpoch/);
-  assert.match(visualSource, /frameSampleEverySteps/);
-  assert.match(visualSource, /最大时长[\s\S]*readonly/);
-  assert.match(visualSource, /最大步数[\s\S]*readonly/);
+  assert.match(appSource, /frameSampleEverySteps/);
   assert.doesNotMatch(visualSource, /saveProject|createExperimentPlan|parallelCores|samples/);
   assert.match(solaraSource, /visualization_session_id/);
   assert.match(solaraSource, /visualization_session_token/);

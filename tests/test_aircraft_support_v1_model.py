@@ -3224,6 +3224,47 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         )
         self.assertEqual(released["details"]["cancelled_job_ids"], [preflight_job.job_id])
         self.assertEqual(released["details"]["released_tail_numbers"], [aircraft.tail_number])
+        self.assertFalse(any(
+            event["event"] == "preflight_resource_conflict"
+            for event in model.event_log
+        ))
+
+    def test_preflight_completion_at_calendar_threshold_enters_preventive_maintenance(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 1500
+        inputs["aircraft"].update({"fleet_count": 1, "initial_ready": 1})
+        model = AircraftSupportV1Model(inputs)
+        mission = MissionState(
+            mission_id="threshold-wave",
+            name="threshold wave",
+            planned_start=1450,
+            preparation_start=1430,
+            duration_minutes=30,
+            required_aircraft=1,
+            min_required_aircraft=1,
+            priority=1,
+            cancel_minutes=20,
+            required_aircraft_type="J-15",
+        )
+        model.missions = [mission]
+
+        while model.minute < 1450:
+            model.step()
+
+        preflight = next(job for job in model.jobs if job.kind == "preflight")
+        aircraft = model.aircraft[0]
+        self.assertEqual(preflight.state, "completed")
+        self.assertEqual(aircraft.state, "maintenance")
+        self.assertTrue(aircraft.preventive_due)
+        self.assertIsNone(aircraft.current_mission_id)
+        self.assertNotIn(mission.mission_id, aircraft.prepared_mission_ids)
+        self.assertNotEqual(mission.status, "launched")
+        release = next(
+            event for event in model.event_log
+            if event["event"] == "mission_preflight_released"
+            and event["details"].get("reason") == "preventive_due"
+        )
+        self.assertEqual(release["details"]["mission_id"], mission.mission_id)
 
     def test_behavior_scope_promotes_m9_7_4_fields(self) -> None:
         scope = AircraftSupportV1Model.behavior_scope()
