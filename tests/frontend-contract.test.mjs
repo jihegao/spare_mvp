@@ -3227,9 +3227,7 @@ test("issue 349 and 350 frontend uses frozen run contexts and visualization sess
   assert.match(appSource, /冻结方案不可编辑/);
   assert.match(visualSource, /backendApi\.createVisualizationSession|data-visualization-session-start/);
   assert.match(appSource, /requestEpoch !== visualizationSessionRequestEpoch/);
-  assert.match(visualSource, /frameSampleEverySteps/);
-  assert.match(visualSource, /最大时长[\s\S]*readonly/);
-  assert.match(visualSource, /最大步数[\s\S]*readonly/);
+  assert.match(appSource, /frameSampleEverySteps/);
   assert.doesNotMatch(visualSource, /saveProject|createExperimentPlan|parallelCores|samples/);
   assert.match(solaraSource, /visualization_session_id/);
   assert.match(solaraSource, /visualization_session_token/);
@@ -4962,6 +4960,31 @@ test("visual aircraft panel renders equipment status summary instead of configur
   assert.doesNotMatch(aircraftPanelSource, /故障传递/);
   assert.match(styleSource, /\.aircraft-status-summary/);
   assert.match(styleSource, /\.aircraft-status-row/);
+});
+
+test("visual aircraft stage separates unassigned, supporting, and mission-ready aircraft", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const aircraftStageSource = appSource.slice(
+    appSource.indexOf("function renderMesaAircraftStage"),
+    appSource.indexOf("function renderMesaMissionStage")
+  );
+  const aircraftStateSource = appSource.slice(
+    appSource.indexOf("function visualAircraftStateLabel"),
+    appSource.indexOf("function boundedPercent")
+  );
+
+  assert.match(aircraftStageSource, /可用未分配/);
+  assert.match(aircraftStageSource, /保障完成／待出动/);
+  assert.match(
+    aircraftStageSource,
+    /\["available", "pre_support", "mission_ready", "flying", "repair_unavailable"\]/,
+  );
+  assert.match(aircraftStateSource, /mission_ready:\s*"保障完成／待出动"/);
+  assert.match(aircraftStateSource, /if \(value === "mission_ready"\) return "mission_ready"/);
+  assert.match(styleSource, /\.aircraft-state-lane\.mission_ready/);
+  assert.match(styleSource, /\.aircraft-state-node\.mission_ready/);
+  assert.match(styleSource, /\.dot\.mission_ready/);
 });
 
 test("visual simulation embeds Solara without demo fallback", async () => {

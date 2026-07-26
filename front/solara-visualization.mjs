@@ -16,9 +16,11 @@ const VISUALIZATION_EVENT_TYPE_LABELS = {
   mission_returned_with_component_failure: "任务返场后维修",
   mission_failed_minimum_aircraft: "任务失败",
   mission_cancelled: "任务取消",
+  mission_preflight_released: "任务预保障释放",
   mission_success_point_succeeded: "任务判定成功",
   mission_success_point_failed: "任务判定失败",
   preflight_created: "飞行前保障创建",
+  preflight_resource_conflict: "飞行前保障资源冲突",
   preflight_completed: "飞行前保障完成",
   postflight_completed: "航后保障完成",
   preventive_created: "预防性维修创建",
@@ -215,9 +217,13 @@ function localizedVisualizationEventMessage(eventType, event, details, eventLabe
   if (type === "mission_launched" || type === "mission_started") return `${taskPrefix}任务已启动${quantity ? `，投入 ${quantity} 架飞机` : ""}。`;
   if (type === "mission_launch") return `任务已启动。${aircraftSuffix}`;
   if (type === "mission_cancelled") return `${taskPrefix}就绪飞机数量不足，任务已取消。`;
+  if (type === "mission_preflight_released") {
+    return `${taskPrefix}已释放待出动飞机和关联飞行前保障资源。`;
+  }
   if (type === "mission_success_point_succeeded") return `${taskPrefix}任务在成功判定点达到要求，判定成功。`;
   if (type === "mission_success_point_failed") return `${taskPrefix}任务在成功判定点未达到要求，判定失败。`;
   if (type === "preflight_created") return `${taskPrefix}已创建飞行前保障作业。`;
+  if (type === "preflight_resource_conflict") return `${taskPrefix}同型飞机已被较早任务保留，当前任务飞行前保障等待资源。`;
   if (type === "preflight_completed") return `飞机已完成飞行前保障。${aircraftSuffix}`;
   if (type === "postflight_completed") return `飞机已完成航后保障。${aircraftSuffix}`;
   if (type === "preventive_created") return `飞机已进入预防性维修。${aircraftSuffix}`;

@@ -293,6 +293,7 @@ class AircraftSupportV1Model:
         self._transport_shipment_keys: set[tuple[str, int, str, tuple[str, ...], int]] = set()
         self._transport_batch_counts: dict[tuple[str, int, str], int] = {}
         self._organization_fact_keys: set[tuple[Any, ...]] = set()
+        self._mission_scheduling_fact_keys: set[tuple[Any, ...]] = set()
         self._organization_event_sequence = 0
         self._job_sequence = 0
         self._maintenance_occurrence_by_kind = {"repair": 0, "preventive": 0}
@@ -301,6 +302,7 @@ class AircraftSupportV1Model:
         self.launched_sorties = 0
         self.cancelled_sorties = 0
         self.delayed_sorties = 0
+        self._delayed_mission_ids: set[str] = set()
         self.total_departure_delay = 0
         self.total_transport_delay = 0
         self.lru_failures = 0
@@ -404,7 +406,15 @@ class AircraftSupportV1Model:
     def snapshot(self) -> dict[str, Any]:
         downtime_summary = self._downtime_event_summary()
         planned_sorties = sum(mission.required_aircraft for mission in self.missions) or 1
-        available = sum(1 for aircraft in self.aircraft if aircraft.state == "available")
+        unassigned_available = sum(
+            1 for aircraft in self.aircraft
+            if aircraft.state == "available" and not aircraft.preventive_due
+        )
+        mission_ready = sum(1 for aircraft in self.aircraft if aircraft.state == "mission_ready")
+        available = unassigned_available + sum(
+            1 for aircraft in self.aircraft
+            if aircraft.state == "mission_ready" and not aircraft.preventive_due
+        )
         active_jobs = sum(1 for job in self.jobs if job.state == "running")
         backlog = sum(1 for job in self.jobs if job.state == "waiting")
         repair_backlog = sum(1 for job in self.jobs if job.kind == "repair" and job.state in {"waiting", "running"})
@@ -435,6 +445,8 @@ class AircraftSupportV1Model:
             "aircraft_count": aircraft_count,
             "simulation_days": simulation_days,
             "available_aircraft": available,
+            "unassigned_available_aircraft": unassigned_available,
+            "mission_ready_aircraft": mission_ready,
             "daily_readiness_sample_count": len(self.daily_readiness_samples),
             "active_jobs": active_jobs,
             "spare_stock_total": stock_total,
@@ -553,7 +565,7 @@ class AircraftSupportV1Model:
             return self._downtime_event_payload("equipment_shortage", aircraft, equipment_job, start_minute)
         if aircraft.failed_component_id is not None or repair_job is not None:
             return self._downtime_event_payload("failure", aircraft, repair_job, start_minute)
-        if preventive_job is not None or aircraft.preventive_due:
+        if preventive_job is not None:
             return self._downtime_event_payload("preventive", aircraft, preventive_job, start_minute)
         return None
 
@@ -789,7 +801,7 @@ class AircraftSupportV1Model:
         if self.transport_shipments:
             return False
         if any(
-            aircraft.state in {"flying", "pre_support", "post_support"}
+            aircraft.state in {"flying", "mission_ready", "pre_support", "post_support"}
             or aircraft.postflight_required
             or aircraft.preventive_due
             for aircraft in self.aircraft
@@ -805,7 +817,11 @@ class AircraftSupportV1Model:
         if day_index in self._daily_readiness_sample_days:
             return
         aircraft_count = max(1, len(self.aircraft))
-        available = sum(1 for aircraft in self.aircraft if aircraft.state == "available")
+        available = sum(
+            1 for aircraft in self.aircraft
+            if aircraft.state in {"available", "mission_ready"}
+            and not aircraft.preventive_due
+        )
         self.daily_readiness_samples.append(
             {
                 "day": day_index,
@@ -865,7 +881,11 @@ class AircraftSupportV1Model:
             "missions": [self._mission_payload(item) for item in self.missions],
             "resources": [self._resource_payload(item) for item in self.nodes.values()],
             "spares": self._spares_payload(),
-            "jobs": [self._job_payload(job) for job in self.jobs if job.state != "completed"],
+            "jobs": [
+                self._job_payload(job)
+                for job in self.jobs
+                if job.state in {"waiting", "running"}
+            ],
             "events": self._events_for_frame(),
         }
 
@@ -2080,39 +2100,53 @@ class AircraftSupportV1Model:
                 and aircraft.initial_preventive_due
                 and bool(aircraft.initial_due_dimensions)
             )
-            if (aircraft.state != "available" and not minute_zero_due) or aircraft.preventive_due:
-                continue
-            if any(job.kind == "preventive" and job.tail_number == aircraft.tail_number and job.state != "completed" for job in self.jobs):
+            if any(
+                job.kind == "preventive"
+                and job.tail_number == aircraft.tail_number
+                and job.state in {"waiting", "running"}
+                for job in self.jobs
+            ):
                 continue
             activity = self._select_activity("preventive", aircraft=aircraft)
             thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
             if not any(value > 0 for value in thresholds.values()):
                 continue
-            due_dimensions = self._preventive_due_dimensions(aircraft, activity)
-            if due_dimensions:
-                activity = self._preventive_activity_for_due(aircraft, activity, due_dimensions)
-                aircraft.state = "maintenance"
-                aircraft.preventive_due = True
-                aircraft.preventive_due_dimensions = list(due_dimensions)
-                self.preventive_maintenance_events += 1
-                self._create_job(
-                    aircraft,
-                    activity,
-                    kind="preventive",
-                    due_dimensions=due_dimensions,
-                )
-                self._event(
-                    "preventive_created",
-                    f"{aircraft.tail_number} preventive maintenance created",
-                    {
-                        "tail_number": aircraft.tail_number,
-                        "activity_id": str(activity.get("id") or "preventive"),
-                        "initial_life_state": copy.deepcopy(aircraft.initial_life_state),
-                        "preventive_thresholds": copy.deepcopy(aircraft.preventive_thresholds),
-                        "preventive_threshold_sources": copy.deepcopy(aircraft.preventive_threshold_sources),
-                        "due_dimensions": list(due_dimensions),
-                    },
-                )
+            due_dimensions = list(dict.fromkeys([
+                *aircraft.preventive_due_dimensions,
+                *self._preventive_due_dimensions(aircraft, activity),
+            ]))
+            if not due_dimensions:
+                continue
+
+            aircraft.preventive_due = True
+            aircraft.preventive_due_dimensions = list(due_dimensions)
+            # An aircraft already committed to a mission keeps that commitment.
+            # Preventive work starts only after return and postflight processing
+            # make the aircraft available again.
+            if aircraft.state != "available" and not minute_zero_due:
+                continue
+
+            activity = self._preventive_activity_for_due(aircraft, activity, due_dimensions)
+            aircraft.state = "maintenance"
+            self.preventive_maintenance_events += 1
+            self._create_job(
+                aircraft,
+                activity,
+                kind="preventive",
+                due_dimensions=due_dimensions,
+            )
+            self._event(
+                "preventive_created",
+                f"{aircraft.tail_number} preventive maintenance created",
+                {
+                    "tail_number": aircraft.tail_number,
+                    "activity_id": str(activity.get("id") or "preventive"),
+                    "initial_life_state": copy.deepcopy(aircraft.initial_life_state),
+                    "preventive_thresholds": copy.deepcopy(aircraft.preventive_thresholds),
+                    "preventive_threshold_sources": copy.deepcopy(aircraft.preventive_threshold_sources),
+                    "due_dimensions": list(due_dimensions),
+                },
+            )
 
     def _preventive_activity_for_due(
         self,
@@ -2159,10 +2193,11 @@ class AircraftSupportV1Model:
     ) -> list[str]:
         thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
         due_dimensions = []
-        if (
-            thresholds["calendar_days"] > 0
-            and self.minute - aircraft.last_preventive_minute >= thresholds["calendar_days"] * 1440
-        ):
+        calendar_days = int(thresholds["calendar_days"])
+        calendar_due_minute = (
+            (aircraft.last_preventive_minute // 1440) + calendar_days
+        ) * 1440
+        if calendar_days > 0 and self.minute >= calendar_due_minute:
             due_dimensions.append("calendar_days")
         if thresholds["flight_hours"] > 0 and aircraft.flight_hours >= thresholds["flight_hours"]:
             due_dimensions.append("flight_hours")
@@ -2200,7 +2235,8 @@ class AircraftSupportV1Model:
                 continue
             if self.minute < mission.preparation_start:
                 continue
-            if self._mission_preflight_commissioned_count(mission) >= mission.required_aircraft:
+            commissioned = self._mission_preflight_commissioned_count(mission)
+            if commissioned >= mission.required_aircraft:
                 mission.preflight_created = True
                 continue
             active_preflight_tails = self._active_preflight_tail_numbers(mission.mission_id)
@@ -2209,19 +2245,23 @@ class AircraftSupportV1Model:
                 for aircraft in self.aircraft
                 if aircraft.state == "available"
                 and self._aircraft_matches_mission_type(aircraft, mission)
-                and mission.mission_id not in aircraft.prepared_mission_ids
+                and not aircraft.prepared_mission_ids
                 and aircraft.tail_number not in active_preflight_tails
             ]
-            needed = mission.required_aircraft - self._mission_preflight_commissioned_count(mission)
+            needed = mission.required_aircraft - commissioned
             created = 0
             for aircraft in available[: max(0, needed)]:
                 aircraft.state = "pre_support"
+                aircraft.current_mission_id = mission.mission_id
                 activity = self._preflight_activity_for_mission(mission, aircraft)
                 self._create_job(aircraft, activity, kind="preflight", mission_id=mission.mission_id)
                 created += 1
-            mission.preflight_created = self._mission_preflight_commissioned_count(mission) >= mission.required_aircraft
+            commissioned = self._mission_preflight_commissioned_count(mission)
+            mission.preflight_created = commissioned >= mission.required_aircraft
             if created:
                 self._event("preflight_created", f"{mission.mission_id} created {created} jobs")
+            if not mission.preflight_created:
+                self._report_preflight_resource_conflict(mission, commissioned)
 
     def _preflight_activity_for_mission(
         self,
@@ -2258,8 +2298,7 @@ class AircraftSupportV1Model:
             candidates = [
                 aircraft
                 for aircraft in self.aircraft
-                if aircraft.state == "available"
-                and mission.mission_id in aircraft.prepared_mission_ids
+                if self._aircraft_ready_for_mission(aircraft, mission)
                 and self._aircraft_matches_mission_type(aircraft, mission)
             ]
             if len(candidates) >= mission.required_aircraft:
@@ -2267,6 +2306,7 @@ class AircraftSupportV1Model:
                 for aircraft in assigned:
                     aircraft.state = "flying"
                     aircraft.current_mission_id = mission.mission_id
+                    aircraft.prepared_mission_ids.discard(mission.mission_id)
                     aircraft.return_time = self.minute + mission.duration_minutes
                     aircraft.takeoff_count += 1
                 mission.status = "launched"
@@ -2276,18 +2316,22 @@ class AircraftSupportV1Model:
                 mission.delay_minutes = max(0, self.minute - mission.planned_start)
                 self.launched_sorties += len(assigned)
                 self.total_departure_delay += mission.delay_minutes
-                if mission.delay_minutes:
+                if mission.delay_minutes and mission.mission_id not in self._delayed_mission_ids:
                     self.delayed_sorties += len(assigned)
+                    self._delayed_mission_ids.add(mission.mission_id)
                 self._event("mission_launched", f"{mission.mission_id} launched {len(assigned)} aircraft")
                 continue
             if self.minute - mission.planned_start >= mission.cancel_minutes:
                 mission.status = "cancelled"
                 self.cancelled_sorties += mission.required_aircraft
                 self.total_departure_delay += mission.cancel_minutes
+                self._cancel_mission_preflight(mission)
                 self._event("mission_cancelled", f"{mission.mission_id} cancelled for insufficient ready aircraft")
             else:
                 mission.status = "delayed"
-                self.delayed_sorties += 1
+                if mission.mission_id not in self._delayed_mission_ids:
+                    self.delayed_sorties += mission.required_aircraft
+                    self._delayed_mission_ids.add(mission.mission_id)
 
     def _evaluate_mission_success_points(self) -> None:
         """Lock each task wave's outcome at its task-success checkpoint.
@@ -2339,16 +2383,17 @@ class AircraftSupportV1Model:
         return {
             job.tail_number
             for job in self.jobs
-            if job.kind == "preflight" and job.mission_id == mission_id and job.state != "completed"
+            if job.kind == "preflight"
+            and job.mission_id == mission_id
+            and job.state in {"waiting", "running"}
         }
 
     def _mission_preflight_commissioned_count(self, mission: MissionState) -> int:
         active_preflight_tails = self._active_preflight_tail_numbers(mission.mission_id)
-        prepared_available_tails = {
+        mission_ready_tails = {
             aircraft.tail_number
             for aircraft in self.aircraft
-            if aircraft.state == "available"
-            and mission.mission_id in aircraft.prepared_mission_ids
+            if self._aircraft_ready_for_mission(aircraft, mission)
             and self._aircraft_matches_mission_type(aircraft, mission)
         }
         matching_active_tails = {
@@ -2357,7 +2402,122 @@ class AircraftSupportV1Model:
             if (aircraft := self._aircraft_by_tail(tail_number)) is not None
             and self._aircraft_matches_mission_type(aircraft, mission)
         }
-        return len(matching_active_tails | prepared_available_tails)
+        return len(matching_active_tails | mission_ready_tails)
+
+    @staticmethod
+    def _aircraft_ready_for_mission(
+        aircraft: AircraftState,
+        mission: MissionState,
+    ) -> bool:
+        if mission.mission_id not in aircraft.prepared_mission_ids:
+            return False
+        if aircraft.state == "mission_ready":
+            return aircraft.current_mission_id == mission.mission_id
+        # Compatibility for focused tests and callers that directly seed the
+        # preflight marker instead of progressing a real preflight job.
+        return aircraft.state == "available" and aircraft.current_mission_id in {None, mission.mission_id}
+
+    def _report_preflight_resource_conflict(
+        self,
+        mission: MissionState,
+        commissioned: int,
+    ) -> None:
+        blockers = tuple(sorted(
+            (
+                aircraft.tail_number,
+                str(aircraft.current_mission_id or ""),
+                aircraft.state,
+            )
+            for aircraft in self.aircraft
+            if self._aircraft_matches_mission_type(aircraft, mission)
+            and aircraft.current_mission_id not in {None, mission.mission_id}
+            and aircraft.state in {"pre_support", "mission_ready", "flying", "post_support"}
+        ))
+        state_counts = tuple(sorted(
+            (
+                state,
+                sum(
+                    1 for aircraft in self.aircraft
+                    if aircraft.state == state
+                    and self._aircraft_matches_mission_type(aircraft, mission)
+                ),
+            )
+            for state in {aircraft.state for aircraft in self.aircraft}
+        ))
+        shortfall = max(0, mission.required_aircraft - commissioned)
+        fact_key = (
+            "preflight_resource_conflict",
+            mission.mission_id,
+            shortfall,
+            blockers,
+            state_counts,
+        )
+        if shortfall <= 0 or not blockers or fact_key in self._mission_scheduling_fact_keys:
+            return
+        self._mission_scheduling_fact_keys.add(fact_key)
+        self._event(
+            "preflight_resource_conflict",
+            f"{mission.mission_id} preflight shortfall {shortfall}; earlier missions retain reservations",
+            {
+                "mission_id": mission.mission_id,
+                "required_aircraft": mission.required_aircraft,
+                "commissioned_aircraft": commissioned,
+                "shortfall": shortfall,
+                "policy": "no_preemption_earlier_mission",
+                "blocking_reservations": [
+                    {
+                        "tail_number": tail_number,
+                        "mission_id": blocking_mission_id,
+                        "state": state,
+                    }
+                    for tail_number, blocking_mission_id, state in blockers
+                ],
+            },
+        )
+
+    def _cancel_mission_preflight(self, mission: MissionState) -> None:
+        cancelled_jobs = [
+            job for job in self.jobs
+            if job.kind == "preflight"
+            and job.mission_id == mission.mission_id
+            and job.state in {"waiting", "running"}
+        ]
+        cancelled_job_ids = {job.job_id for job in cancelled_jobs}
+        affected_tails = {job.tail_number for job in cancelled_jobs}
+        for job in cancelled_jobs:
+            if job.state == "running" or job.resource_reservations:
+                self._release_job_resources(job)
+            job.state = "cancelled"
+            job.remaining = 0
+            job.shortage_reason = None
+            job.remote_resources_pending.clear()
+        if cancelled_job_ids:
+            self.resource_transits = [
+                transit for transit in self.resource_transits
+                if transit.job_id not in cancelled_job_ids
+            ]
+        self._return_cancelled_spare_reservations()
+
+        released_tails: list[str] = []
+        for aircraft in self.aircraft:
+            reserved_for_mission = (
+                aircraft.current_mission_id == mission.mission_id
+                and aircraft.state in {"pre_support", "mission_ready"}
+            )
+            if reserved_for_mission or aircraft.tail_number in affected_tails:
+                aircraft.state = "available"
+                aircraft.current_mission_id = None
+                released_tails.append(aircraft.tail_number)
+            aircraft.prepared_mission_ids.discard(mission.mission_id)
+        self._event(
+            "mission_preflight_released",
+            f"{mission.mission_id} released preflight reservations",
+            {
+                "mission_id": mission.mission_id,
+                "cancelled_job_ids": sorted(cancelled_job_ids),
+                "released_tail_numbers": sorted(set(released_tails)),
+            },
+        )
 
     def _aircraft_matches_mission_type(self, aircraft: AircraftState, mission: MissionState) -> bool:
         required_tokens = _aircraft_type_tokens(mission.required_aircraft_type)
@@ -3288,7 +3448,8 @@ class AircraftSupportV1Model:
             return
         if job.kind == "preflight" and job.mission_id:
             aircraft.prepared_mission_ids.add(job.mission_id)
-            aircraft.state = "available"
+            aircraft.current_mission_id = job.mission_id
+            aircraft.state = "mission_ready"
             self._event("preflight_completed", f"{aircraft.tail_number} prepared for {job.mission_id}")
         elif job.kind == "repair":
             aircraft.state = "available"
@@ -3639,6 +3800,7 @@ class AircraftSupportV1Model:
             "job_id": job.job_id,
             "tail_number": job.tail_number,
             "kind": job.kind,
+            "mission_id": job.mission_id,
             "state": job.state,
             "task": task.get("workName") or task.get("activityCode") or job.activity_name,
             "remaining": job.remaining,
@@ -3657,15 +3819,20 @@ class AircraftSupportV1Model:
             recent = [{"time": self.minute, "event": "state_frame", "message": "state frame sampled"}]
         payload = []
         for event in recent[-10:]:
+            event_type = str(event["event"])
             item = {
-                    "time": float(event["time"]),
-                    "event": str(event["event"]),
-                    "event_type": str(event["event"]),
-                    "message": str(event["message"]),
-                    "metric_refs": self._metric_refs_for_event(str(event["event"])),
-                }
-            if str(event["event"]).startswith("organization_") and isinstance(event.get("details"), dict):
+                "time": float(event["time"]),
+                "event": event_type,
+                "event_type": event_type,
+                "message": str(event["message"]),
+                "metric_refs": self._metric_refs_for_event(event_type),
+            }
+            if (
+                event_type.startswith("organization_")
+                or event_type in {"preflight_resource_conflict", "mission_preflight_released"}
+            ) and isinstance(event.get("details"), dict):
                 item["details"] = copy.deepcopy(event["details"])
+            if event_type.startswith("organization_"):
                 item["source_event_id"] = str(event["source_event_id"])
                 item["event_sequence"] = int(event["event_sequence"])
             payload.append(item)
@@ -3731,7 +3898,11 @@ class AircraftSupportV1Model:
             },
             "support_resources": [self._event_resource_snapshot(node) for node in self.nodes.values()],
             "spare_shortages": self._event_spare_shortages(details),
-            "active_jobs": [self._job_payload(job) for job in self.jobs if job.state != "completed"],
+            "active_jobs": [
+                self._job_payload(job)
+                for job in self.jobs
+                if job.state in {"waiting", "running"}
+            ],
         }
 
     def _event_aircraft_snapshot_payload(self, item: AircraftState) -> dict[str, Any]:

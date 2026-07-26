@@ -57,6 +57,8 @@ EVENT_TYPE_LABELS = {
     "aircraft_failed": "飞机故障",
     "preventive_created": "预防性维修创建",
     "preflight_created": "飞行前保障创建",
+    "preflight_resource_conflict": "飞行前保障资源冲突",
+    "mission_preflight_released": "任务预保障释放",
     "mission_launched": "任务启动",
     "mission_cancelled": "任务取消",
     "mission_success_point_succeeded": "任务判定成功",
@@ -708,12 +710,16 @@ def _event_display(event: dict[str, Any]) -> tuple[str, str, str]:
         message = f"任务已启动{f'，投入 {number} 架飞机' if number else ''}。"
     elif event_type == "mission_cancelled":
         message = "就绪飞机数量不足，任务已取消。"
+    elif event_type == "mission_preflight_released":
+        message = "已释放待出动飞机和关联飞行前保障资源。"
     elif event_type == "mission_success_point_succeeded":
         message = "任务在成功判定点达到要求，判定成功。"
     elif event_type == "mission_success_point_failed":
         message = "任务在成功判定点未达到要求，判定失败。"
     elif event_type == "preflight_created":
         message = "已创建飞行前保障作业。"
+    elif event_type == "preflight_resource_conflict":
+        message = "同型飞机已被较早任务保留，当前任务飞行前保障等待资源。"
     elif event_type == "preflight_completed":
         message = "飞机已完成飞行前保障。"
     elif event_type == "postflight_completed":

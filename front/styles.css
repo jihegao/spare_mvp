@@ -4774,7 +4774,7 @@ tr.clickable-table-row.selected-table-row td {
 
 .aircraft-state-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 10px;
   height: 520px;
   min-height: 520px;
@@ -4800,6 +4800,10 @@ tr.clickable-table-row.selected-table-row td {
 
 .aircraft-state-lane.pre_support {
   background: #fff7e6;
+}
+
+.aircraft-state-lane.mission_ready {
+  background: #ecfdf5;
 }
 
 .aircraft-state-lane.flying {
@@ -4864,9 +4868,13 @@ tr.clickable-table-row.selected-table-row td {
   white-space: nowrap;
 }
 
-.aircraft-state-node.available,
-.aircraft-state-node.mission_ready {
+.aircraft-state-node.available {
   border-left-color: #2f9e44;
+}
+
+.aircraft-state-node.mission_ready {
+  border-left-color: #16a34a;
+  background: #f0fdf4;
 }
 
 .aircraft-state-node.pre_support,
@@ -4922,6 +4930,10 @@ tr.clickable-table-row.selected-table-row td {
 
 .dot.support {
   background: #f4c95d;
+}
+
+.dot.mission_ready {
+  background: #16a34a;
 }
 
 .dot.ready {
