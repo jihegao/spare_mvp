@@ -36,6 +36,22 @@ METRICS_PANEL_TITLE = "指标"
 VISUAL_TAB_LABELS = ["飞机视图", "任务视图", "保障视图"]
 CONTROL_PANEL_TITLE = "运行控制"
 PLAY_INTERVAL_LABEL = "播放速度(x)"
+PLAYBACK_SPEED_MIN = 0.1
+PLAYBACK_SPEED_MAX = 1000.0
+PLAYBACK_SPEED_EXPONENT_MIN = -1.0
+PLAYBACK_SPEED_EXPONENT_MAX = 3.0
+PLAYBACK_SPEED_EXPONENT_STEP = 0.1
+PLAYBACK_SPEED_TICK_LABELS = [
+    "0.1",
+    *([""] * 9),
+    "1",
+    *([""] * 9),
+    "10",
+    *([""] * 9),
+    "100",
+    *([""] * 9),
+    "1000",
+]
 RENDER_INTERVAL_LABEL = "渲染周期帧数"
 RESET_BUTTON_LABEL = "重置"
 STEP_BUTTON_LABEL = "单步推进"
@@ -844,6 +860,43 @@ def _playback_delay_seconds(playback_speed: Any) -> float:
     return 1.0 / speed
 
 
+def _playback_speed_to_exponent(playback_speed: Any) -> float:
+    try:
+        speed = float(playback_speed)
+    except (TypeError, ValueError):
+        speed = 1.0
+    if not math.isfinite(speed):
+        speed = 1.0
+    clamped_speed = min(PLAYBACK_SPEED_MAX, max(PLAYBACK_SPEED_MIN, speed))
+    return math.log10(clamped_speed)
+
+
+def _playback_speed_from_exponent(exponent: Any) -> float:
+    try:
+        normalized_exponent = float(exponent)
+    except (TypeError, ValueError):
+        normalized_exponent = 0.0
+    if not math.isfinite(normalized_exponent):
+        normalized_exponent = 0.0
+    clamped_exponent = min(
+        PLAYBACK_SPEED_EXPONENT_MAX,
+        max(PLAYBACK_SPEED_EXPONENT_MIN, normalized_exponent),
+    )
+    return 10**clamped_exponent
+
+
+def _playback_speed_label(playback_speed: Any) -> str:
+    speed = _playback_speed_from_exponent(
+        _playback_speed_to_exponent(playback_speed)
+    )
+    formatted_speed = (
+        str(int(speed))
+        if speed >= 1 and math.isclose(speed, round(speed))
+        else f"{speed:.3g}"
+    )
+    return f"{PLAY_INTERVAL_LABEL}：{formatted_speed}"
+
+
 def _step_model_once(
     model: AircraftSupportV1Model,
     *,
@@ -871,7 +924,9 @@ def ControlPanel(
 ) -> None:
     update_counter.get()
     runtime_config = runtime or {}
-    initial_playback_speed = float(runtime_config.get("playback_speed") or 1.0)
+    initial_playback_exponent = _playback_speed_to_exponent(
+        runtime_config.get("playback_speed") or 1.0
+    )
     initial_frame_sample = max(
         1,
         int(runtime_config.get("frame_sample_every_steps") or 1),
@@ -887,7 +942,7 @@ def ControlPanel(
             )
         ),
     )
-    playback_speed = solara.use_reactive(initial_playback_speed)
+    playback_speed_exponent = solara.use_reactive(initial_playback_exponent)
     render_interval = solara.use_reactive(initial_frame_sample)
     playing = solara.use_reactive(False)
 
@@ -913,7 +968,11 @@ def ControlPanel(
 
     def play_loop() -> None:
         while playing.value and model_state.value.running:
-            time.sleep(_playback_delay_seconds(playback_speed.value))
+            time.sleep(
+                _playback_delay_seconds(
+                    _playback_speed_from_exponent(playback_speed_exponent.value)
+                )
+            )
             # Reset/pause may occur while this worker is sleeping.  Recheck
             # before advancing so an already-scheduled iteration cannot step
             # the freshly reset model.
@@ -928,12 +987,18 @@ def ControlPanel(
             with solara.Row(classes=["sim-control-content"], gap="16px", style="width:100%; flex-wrap:wrap; align-items:flex-end;"):
                 with solara.Column(gap="0px", style="flex:1 1 220px; min-width:180px;"):
                     solara.SliderFloat(
-                        label=PLAY_INTERVAL_LABEL,
-                        value=playback_speed,
-                        on_value=playback_speed.set,
-                        min=0.1,
-                        max=max(10.0, initial_playback_speed),
-                        step=0.1,
+                        label=_playback_speed_label(
+                            _playback_speed_from_exponent(
+                                playback_speed_exponent.value
+                            )
+                        ),
+                        value=playback_speed_exponent,
+                        on_value=playback_speed_exponent.set,
+                        min=PLAYBACK_SPEED_EXPONENT_MIN,
+                        max=PLAYBACK_SPEED_EXPONENT_MAX,
+                        step=PLAYBACK_SPEED_EXPONENT_STEP,
+                        thumb_label=False,
+                        tick_labels=PLAYBACK_SPEED_TICK_LABELS,
                     )
                 with solara.Column(gap="0px", style="flex:1 1 220px; min-width:180px;"):
                     solara.SliderInt(
@@ -1214,6 +1279,7 @@ VISUAL_SIMULATION_STYLE = """
 .visual-simulation-page .sim-control-panel .v-card { background: #ffffff !important; }
 .visual-simulation-page .sim-control-content { align-items: flex-end; }
 .visual-simulation-page .sim-control-actions { align-items: center; padding-bottom: 4px; }
+.visual-simulation-page .sim-control-panel .v-slider__tick-label { font-size: 10px; white-space: nowrap; }
 .visual-simulation-page .sim-left-rail, .visual-simulation-page .sim-detail-card, .visual-simulation-page .sim-stage-card { background: #ffffff !important; border: 1px solid #d8e2ed; border-radius: 8px; padding: 12px; }
 .visual-simulation-page .sim-left-rail { flex: 0 1 310px; min-width: 270px; }
 .visual-simulation-page .sim-main { flex: 1 1 0; min-width: 0; }

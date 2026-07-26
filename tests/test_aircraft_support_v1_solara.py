@@ -365,6 +365,41 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         self.assertEqual(solara_app._playback_delay_seconds(2), 0.5)
         self.assertEqual(solara_app._playback_delay_seconds(4), 0.25)
 
+    def test_playback_speed_slider_uses_base_10_exponential_scale(self) -> None:
+        self.assertEqual(solara_app.PLAYBACK_SPEED_MIN, 0.1)
+        self.assertEqual(solara_app.PLAYBACK_SPEED_MAX, 1000.0)
+        self.assertEqual(solara_app.PLAYBACK_SPEED_EXPONENT_MIN, -1.0)
+        self.assertEqual(solara_app.PLAYBACK_SPEED_EXPONENT_MAX, 3.0)
+        self.assertEqual(solara_app.PLAYBACK_SPEED_EXPONENT_STEP, 0.1)
+        self.assertEqual(
+            [
+                solara_app._playback_speed_from_exponent(exponent)
+                for exponent in (-1, 0, 1, 2, 3)
+            ],
+            [0.1, 1, 10, 100, 1000],
+        )
+        self.assertEqual(
+            [
+                solara_app._playback_speed_to_exponent(speed)
+                for speed in (0.1, 1, 10, 100, 1000)
+            ],
+            [-1, 0, 1, 2, 3],
+        )
+        self.assertEqual(
+            [label for label in solara_app.PLAYBACK_SPEED_TICK_LABELS if label],
+            ["0.1", "1", "10", "100", "1000"],
+        )
+        self.assertEqual(solara_app._playback_speed_label(0.1), "播放速度(x)：0.1")
+        self.assertEqual(solara_app._playback_speed_label(1000), "播放速度(x)：1000")
+
+    def test_playback_speed_slider_clamps_invalid_or_out_of_range_values(self) -> None:
+        self.assertEqual(solara_app._playback_speed_to_exponent(0), -1)
+        self.assertEqual(solara_app._playback_speed_to_exponent(10000), 3)
+        self.assertEqual(solara_app._playback_speed_to_exponent("invalid"), 0)
+        self.assertEqual(solara_app._playback_speed_from_exponent(-2), 0.1)
+        self.assertEqual(solara_app._playback_speed_from_exponent(4), 1000)
+        self.assertEqual(solara_app._playback_speed_from_exponent("invalid"), 1)
+
     def test_session_provenance_is_published_in_visualization_frames(self) -> None:
         payload = self._visualization_session_payload()
         with patch(
