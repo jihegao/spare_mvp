@@ -4059,6 +4059,61 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertAlmostEqual(carry_row["satisfaction_constraint_margin"], 0.1)
         self.assertEqual(carry_row["utilization"], 1)
 
+    def test_aircraft_support_carry_list_projects_preventive_life_limits_to_matching_spare(self) -> None:
+        projections = self.adapter._aircraft_support_v1_analysis_projections(
+            {"planned_sorties": 1},
+            "base-artifact",
+            simulation_inputs={
+                "aircraft": {"assets": [{"tail_number": "J15-001", "model": "J-15"}]},
+                "equipment_tree": {
+                    "components": [
+                        {
+                            "id": "j15-lru0",
+                            "aircraft_model": "J-15",
+                            "product_id": "product-lru0",
+                            "product_name": "LRU0",
+                            "product_type": "LRU",
+                        },
+                        {
+                            "id": "j15-unlimited",
+                            "aircraft_model": "J-15",
+                            "product_id": "product-unlimited",
+                            "product_name": "非有寿件",
+                            "product_type": "LRU",
+                        },
+                    ],
+                },
+                "support_activities": {
+                    "activities": [
+                        {
+                            "id": "pm-lru0",
+                            "activity_type": "preventive",
+                            "aircraft_model": "J-15",
+                            "equipment_id": "j15-lru0",
+                            "runHourInterval": 240,
+                            "takeoffLandingInterval": 120,
+                            "jobs": [{"spare": [{"productId": "product-lru0", "quantity": 1}]}],
+                        },
+                    ],
+                },
+                "support_network": {
+                    "nodes": [{
+                        "id": "base",
+                        "inventory": {"product-lru0": 10, "product-unlimited": 10},
+                        "product_names": {"product-lru0": "LRU0", "product-unlimited": "非有寿件"},
+                    }],
+                },
+            },
+        )
+
+        rows = {row["product_id"]: row for row in projections["carry_list"]["data"]}
+        self.assertTrue(rows["product-lru0"]["life_limited"])
+        self.assertEqual(rows["product-lru0"]["life_hours"], 240)
+        self.assertEqual(rows["product-lru0"]["life_landings"], 120)
+        self.assertFalse(rows["product-unlimited"]["life_limited"])
+        self.assertEqual(rows["product-unlimited"]["life_hours"], 0)
+        self.assertEqual(rows["product-unlimited"]["life_landings"], 0)
+
     def test_aircraft_support_carry_capacity_uses_only_successful_samples_after_partial_failure(self) -> None:
         projections = self.adapter._aircraft_support_v1_analysis_projections(
             {"planned_sorties": 3, "requested_sample_count": 3, "failed_sample_count": 1},

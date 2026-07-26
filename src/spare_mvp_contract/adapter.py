@@ -3375,6 +3375,10 @@ class SimulationAdapter:
         scoped_node_ids = {str(node.get("id") or "") for node in scoped_nodes if str(node.get("id") or "")}
         modeled_aircraft_models = self._aircraft_support_v1_modeled_aircraft_models(simulation_inputs)
         spare_models = self._aircraft_support_v1_spare_models(simulation_inputs, modeled_aircraft_models)
+        life_limits = self._aircraft_support_v1_life_limits_by_spare(
+            simulation_inputs,
+            modeled_aircraft_models,
+        )
         product_names = self._aircraft_support_v1_product_names(simulation_inputs)
         baseline_quantities: dict[str, int] = {}
         for node in scoped_nodes:
@@ -3410,6 +3414,7 @@ class SimulationAdapter:
                 row_keys.append(row_key)
 
         for aircraft_model, product_id in row_keys:
+            life_limit = life_limits.get((aircraft_model, product_id), {})
             baseline_quantity = baseline_quantities.get(product_id, 0)
             row_stats = stats.get((aircraft_model, product_id), {})
             consumed_quantity = max(0.0, float(row_stats.get("consumed_quantity", 0) or 0))
@@ -3485,9 +3490,97 @@ class SimulationAdapter:
                     "mean_transport_delay": mean_transport_delay if shortage_count > 0 else 0.0,
                     "in_transit_count": 0,
                     "risk_level": risk_level,
+                    "life_limited": bool(
+                        life_limit.get("life_hours", 0) > 0
+                        or life_limit.get("life_landings", 0) > 0
+                    ),
+                    "life_hours": life_limit.get("life_hours", 0),
+                    "life_landings": life_limit.get("life_landings", 0),
                 }
             )
         return rows
+
+    def _aircraft_support_v1_life_limits_by_spare(
+        self,
+        simulation_inputs: dict[str, Any],
+        modeled_aircraft_models: set[str],
+    ) -> dict[tuple[str, str], dict[str, int | float]]:
+        """Project preventive flight-hour/cycle thresholds onto affected spare rows."""
+        components = [
+            component
+            for component in simulation_inputs.get("equipment_tree", {}).get("components", []) or []
+            if isinstance(component, dict)
+            and str(component.get("product_type") or component.get("productType") or "").strip().casefold() != "whole"
+        ]
+        components_by_id = {
+            str(component.get("id") or "").strip(): component
+            for component in components
+            if str(component.get("id") or "").strip()
+        }
+        limits: dict[tuple[str, str], dict[str, int | float]] = {}
+
+        def merge_limit(aircraft_model: str, product_id: str, hours: float, landings: int) -> None:
+            if aircraft_model not in modeled_aircraft_models or not product_id:
+                return
+            current = limits.setdefault(
+                (aircraft_model, product_id),
+                {"life_hours": 0.0, "life_landings": 0},
+            )
+            current["life_hours"] = max(float(current["life_hours"]), hours)
+            current["life_landings"] = max(int(current["life_landings"]), landings)
+
+        for activity in simulation_inputs.get("support_activities", {}).get("activities", []) or []:
+            if not isinstance(activity, dict):
+                continue
+            activity_type = str(activity.get("activity_type") or activity.get("activityType") or "").casefold()
+            if "preventive" not in activity_type and "预防" not in activity_type:
+                continue
+            life_hours = self._non_negative_number(
+                activity.get("runHourInterval", activity.get("run_hour_interval")),
+                0.0,
+            )
+            life_landings = self._positive_int(
+                activity.get("takeoffLandingInterval", activity.get("takeoff_landing_interval")),
+                0,
+            )
+            if life_hours <= 0 and life_landings <= 0:
+                continue
+
+            activity_model = str(activity.get("aircraft_model") or activity.get("aircraftModel") or "").strip()
+            equipment_id = str(activity.get("equipment_id") or activity.get("equipmentId") or "").strip()
+            applicable_components = (
+                [components_by_id[equipment_id]]
+                if equipment_id in components_by_id
+                else [
+                    component
+                    for component in components
+                    if not activity_model
+                    or str(component.get("aircraft_model") or component.get("aircraftModel") or "").strip() == activity_model
+                ]
+            )
+            applicable_models = {
+                str(component.get("aircraft_model") or component.get("aircraftModel") or activity_model).strip()
+                for component in applicable_components
+            } - {""}
+            if activity_model:
+                applicable_models = {activity_model}
+
+            for component in applicable_components:
+                component_model = str(component.get("aircraft_model") or component.get("aircraftModel") or activity_model).strip()
+                product_id = str(component.get("product_id") or component.get("productId") or "").strip()
+                merge_limit(component_model, product_id, life_hours, life_landings)
+
+            for job in activity.get("jobs") or []:
+                if not isinstance(job, dict):
+                    continue
+                for spare in job.get("spare") or []:
+                    if not isinstance(spare, dict):
+                        continue
+                    product_id = str(spare.get("productId") or spare.get("product_id") or "").strip()
+                    for aircraft_model in applicable_models:
+                        merge_limit(aircraft_model, product_id, life_hours, life_landings)
+
+        return limits
 
     def _aircraft_support_v1_modeled_aircraft_models(self, simulation_inputs: dict[str, Any]) -> set[str]:
         models = {
@@ -3873,9 +3966,9 @@ class SimulationAdapter:
                         "risk_level": row["risk_level"],
                         "minimum_satisfaction_rate": row["minimum_satisfaction_rate"],
                         "hide_zero_demand": True,
-                        "life_limited": False,
-                        "life_landings": 0,
-                        "life_hours": 0,
+                        "life_limited": row["life_limited"],
+                        "life_landings": row["life_landings"],
+                        "life_hours": row["life_hours"],
                     }
                     for row in spare_rows
                 ],
