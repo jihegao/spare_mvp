@@ -1562,6 +1562,22 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(entry["experiment_name"], "模板项目")
         self.assertEqual(entry["is_template"], True)
 
+    def test_project_catalog_accepts_canonical_string_airports_without_base_code(self) -> None:
+        project = small_aircraft_support_project("project-string-airport-catalog-001")
+        project["scenarioId"] = "string-airport-scenario"
+        project["projectInfo"] = {
+            "name": "字符串机场项目",
+            "summary": "Project 契约允许 airports 使用字符串数组",
+        }
+        project["airports"] = ["机场A"]
+        saved = self.api.save_project(project)
+
+        catalog = self.api.list_projects()
+        entry = next(item for item in catalog["projects"] if item["project_id"] == saved["project_id"])
+
+        self.assertEqual(entry["experiment_name"], "字符串机场项目")
+        self.assertEqual(entry["base_code"], "string-airport-scenario")
+
     def test_project_catalog_prefers_canonical_template_flag_after_unset_and_reload(self) -> None:
         project = small_aircraft_support_project("project-template-transition-001")
         project["isTemplate"] = True

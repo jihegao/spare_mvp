@@ -3737,7 +3737,9 @@ def _project_list_entry(project: dict[str, Any]) -> dict[str, Any]:
 
     base_code = payload.get("projectInfo", {}).get("baseCode")
     if not isinstance(base_code, str) or not base_code.strip():
-        base_code = (payload.get("airports") or [{}])[0].get("airportCode") if isinstance(payload.get("airports"), list) and payload.get("airports") else ""
+        airports = payload.get("airports")
+        first_airport = airports[0] if isinstance(airports, list) and airports else None
+        base_code = first_airport.get("airportCode") if isinstance(first_airport, dict) else ""
     if not isinstance(base_code, str) or not base_code.strip():
         base_code = str(payload.get("scenarioId") or payload.get("project_id") or project.get("project_id") or "NB")
 
