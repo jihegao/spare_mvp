@@ -77,7 +77,7 @@ test("equal allocation derives recursive risk from the selected basic mission an
   const result = calculateRmsAllocation(plan, project);
 
   assert.equal(plan.schemaVersion, "rms-allocation-plan-v6");
-  assert.equal(plan.algorithmVersion, "rms-engine-6.0.0");
+  assert.equal(plan.algorithmVersion, "rms-engine-7.0.0");
   assert.equal(plan.inputs.basicMissionId, "basic-mission-patrol");
   assert.equal("missionHours" in plan.inputs, false);
   assert.equal("mtbfHours" in plan.inputs, false);
@@ -336,6 +336,52 @@ test("proportional allocation uses imported installation count and running ratio
   assert.equal(radar.cumulativeInstallationCount, 1);
   assertRmsFormulaInvariants(result);
   assert.ok(Math.abs(result.totals.allocationShare - 1) < 1e-12);
+});
+
+test("equal repair difficulty still allocates different component MTTR by failure contribution", () => {
+  const project = withBasicMission(normalizeRmsEquipmentImportRows([
+    { id: "root", name: "测试整机", level: "装备", quantity: 1 },
+    { id: "a", parentId: "root", name: "组件A", level: "LRU", quantity: 1, runningRatio: 1, repairDifficulty: 1 },
+    { id: "b", parentId: "root", name: "组件B", level: "LRU", quantity: 2, runningRatio: 1, repairDifficulty: 1 }
+  ]));
+  const plan = createDefaultRmsAllocationPlan(project);
+  plan.methods.allocation = "proportional";
+  const result = calculateRmsAllocation(plan, project);
+  const componentA = result.nodeResults.find((row) => row.nodeId === "a");
+  const componentB = result.nodeResults.find((row) => row.nodeId === "b");
+
+  assert.equal(project.equipmentNodes.find((node) => node.id === "a").repairDifficulty, 1);
+  assert.equal(project.equipmentNodes.find((node) => node.id === "b").repairDifficulty, 1);
+  assert.ok(Math.abs(componentA.mttrHours - 3) < 1e-9);
+  assert.ok(Math.abs(componentB.mttrHours - 1.5) < 1e-9);
+  assert.notEqual(componentA.mttrHours, componentB.mttrHours);
+  assertRmsFormulaInvariants(result);
+});
+
+test("changing installation count changes MTTR allocation with equal repair difficulty", () => {
+  const project = withBasicMission(normalizeRmsEquipmentImportRows([
+    { id: "root", name: "测试整机", level: "装备", quantity: 1 },
+    { id: "a", parentId: "root", name: "组件A", level: "LRU", quantity: 1, runningRatio: 1, repairDifficulty: 1 },
+    { id: "b", parentId: "root", name: "组件B", level: "LRU", quantity: 2, runningRatio: 1, repairDifficulty: 1 }
+  ]));
+  const plan = createDefaultRmsAllocationPlan(project);
+  plan.methods.allocation = "proportional";
+  const before = calculateRmsAllocation(plan, project);
+  project.equipmentNodes.find((node) => node.id === "a").quantity = 2;
+  const after = calculateRmsAllocation(plan, project);
+  const beforeA = before.nodeResults.find((row) => row.nodeId === "a");
+  const beforeB = before.nodeResults.find((row) => row.nodeId === "b");
+  const afterA = after.nodeResults.find((row) => row.nodeId === "a");
+  const afterB = after.nodeResults.find((row) => row.nodeId === "b");
+
+  assert.ok(Math.abs(beforeA.mttrHours - 3) < 1e-9);
+  assert.ok(Math.abs(beforeB.mttrHours - 1.5) < 1e-9);
+  assert.ok(Math.abs(afterA.mttrHours - 2) < 1e-9);
+  assert.ok(Math.abs(afterB.mttrHours - 2) < 1e-9);
+  assert.notEqual(afterA.mttrHours, beforeA.mttrHours);
+  assert.notEqual(afterB.mttrHours, beforeB.mttrHours);
+  assertRmsFormulaInvariants(before);
+  assertRmsFormulaInvariants(after);
 });
 
 test("similar product allocation uses matching baseline installation exposure", () => {

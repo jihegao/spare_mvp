@@ -1,4 +1,4 @@
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-6.0.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-7.0.0";
 
 export const DEFAULT_RMS_ALLOCATION_INPUTS = Object.freeze({
   basicMissionId: "",
@@ -1014,19 +1014,24 @@ function allocateMttrByLevel(rows, parentNodeId, parentMttrHours) {
   const children = rows.filter((row) => row.parentNodeId === parentNodeId);
   if (!children.length) return;
   const activeChildren = children.filter((row) => row.failureRate > 0);
-  const failureRateSum = activeChildren.reduce(
+  const failureContributionSum = activeChildren.reduce(
     (sum, row) => sum + row.installationCount * row.failureRate,
     0
   );
-  const mttrDenominator = activeChildren.reduce((sum, row) => (
-    sum + (failureRateSum > 0 ? row.installationCount * row.failureRate / failureRateSum : 0)
-      * repairDifficultyForNode(row.node)
-  ), 0);
-  const mttrScale = mttrDenominator > 0 ? parentMttrHours / mttrDenominator : 0;
+  const repairDifficultySum = activeChildren.reduce(
+    (sum, row) => sum + repairDifficultyForNode(row.node),
+    0
+  );
   for (const row of children) {
-    row.mttrHours = row.failureRate > 0
-      ? roundRmsMetric(mttrScale * repairDifficultyForNode(row.node))
-      : null;
+    if (row.failureRate > 0) {
+      const failureContributionShare = row.installationCount * row.failureRate / failureContributionSum;
+      const maintenanceBudgetShare = repairDifficultyForNode(row.node) / repairDifficultySum;
+      row.mttrHours = roundRmsMetric(
+        parentMttrHours * maintenanceBudgetShare / failureContributionShare
+      );
+    } else {
+      row.mttrHours = null;
+    }
     allocateMttrByLevel(rows, row.nodeId, row.mttrHours ?? 0);
   }
 }

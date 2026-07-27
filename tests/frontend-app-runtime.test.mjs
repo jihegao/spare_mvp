@@ -4645,7 +4645,7 @@ test("RMS per-aircraft inputs, tree selection and saved results hydrate without 
     assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs.missionReliability, 0.9);
     assert.equal("criticalFailureRatio" in saved.rmsAllocationPlan.aircraftStates["J-20"].plan.inputs, false);
     assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.schemaVersion, "rms-allocation-plan-v6");
-    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.algorithmVersion, "rms-engine-6.0.0");
+    assert.equal(saved.rmsAllocationPlan.aircraftStates["J-20"].plan.algorithmVersion, "rms-engine-7.0.0");
     assert.equal(saved.rmsAllocationResult.byAircraftModel["J-15"].aircraftModel, "J-15");
     const j15Rows = saved.rmsAllocationResult.byAircraftModel["J-15"].nodeResults;
     assert.ok(j15Rows.every((row) => Number.isFinite(row.failureRate) && row.mtbfHours > 0 && row.mttrHours >= 0));
