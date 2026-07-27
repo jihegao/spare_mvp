@@ -34,6 +34,7 @@ DEFAULT_BACKEND_API_BASE = "http://127.0.0.1:4173/api"
 LOCAL_BACKEND_OPENER = build_opener(ProxyHandler({}))
 METRICS_PANEL_TITLE = "指标"
 VISUAL_TAB_LABELS = ["飞机视图", "任务视图", "保障视图"]
+SUPPORT_POINT_SUMMARY_LABEL = "全部保障点（汇总）"
 CONTROL_PANEL_TITLE = "运行控制"
 PLAY_INTERVAL_LABEL = "播放速度(x)"
 PLAYBACK_SPEED_MIN = 0.1
@@ -1145,12 +1146,24 @@ def SupportStage(model: AircraftSupportV1Model) -> None:
     frame = _frame(model)
     resources = frame.get("resources", [])
     spares = frame.get("spares", [])
+    support_point_choices, support_point_ids = _support_point_choices(resources, spares)
+    selected_support_point = solara.use_reactive(SUPPORT_POINT_SUMMARY_LABEL)
+    if selected_support_point.value not in support_point_ids:
+        selected_support_point.set(SUPPORT_POINT_SUMMARY_LABEL)
+    selected_support_node_id = support_point_ids.get(selected_support_point.value, "")
+    selected_resources = _support_resources_for_point(resources, selected_support_node_id)
+    selected_spares = _support_spare_rows(spares, selected_support_node_id)
+    support_scope_label = (
+        selected_support_point.value
+        if selected_support_node_id
+        else SUPPORT_POINT_SUMMARY_LABEL
+    )
     resource_cards = "".join(
         "<div class=\"sim-support-card\">"
         f"<strong>{html.escape(str(item.get('display_name') or item.get('name') or '保障资源'))}</strong>"
         f"<span>占用 {html.escape(str(item.get('in_use', 0)))} / {html.escape(str(item.get('capacity', 0)))}</span>"
         "</div>"
-        for item in resources
+        for item in selected_resources
     ) or '<div class="sim-empty">暂无保障资源。</div>'
     spare_rows = "".join(
         "<tr>"
@@ -1159,17 +1172,96 @@ def SupportStage(model: AircraftSupportV1Model) -> None:
         f"<td>{html.escape(str(item.get('consumed', 0)))}</td>"
         f"<td>{html.escape(str(item.get('pending_quantity', 0)))}</td>"
         "</tr>"
-        for item in spares
+        for item in selected_spares
     ) or "<tr><td colspan=\"4\">暂无备件库存。</td></tr>"
     solara.HTML(
         unsafe_innerHTML=(
             '<div class="sim-stage-heading"><div><span>保障视图</span><strong>资源、备件与保障作业</strong></div></div>'
-            f'<div class="sim-support-grid">{resource_cards}</div><div class="sim-detail-title">备件库存量 / 已消耗 / 在途</div>'
+        ),
+        classes=["sim-html"],
+    )
+    solara.Select("保障点", value=selected_support_point, values=support_point_choices, dense=True)
+    solara.HTML(
+        unsafe_innerHTML=(
+            f'<div class="sim-support-grid">{resource_cards}</div><div class="sim-detail-title">{html.escape(support_scope_label)}：备件库存量 / 已消耗 / 在途</div>'
             '<div class="sim-table-wrap"><table class="sim-table"><thead><tr><th>备件</th><th>库存</th><th>已消耗</th><th>在途</th>'
             f"</tr></thead><tbody>{spare_rows}</tbody></table></div>"
         ),
         classes=["sim-html"],
     )
+
+
+def _support_point_choices(
+    resources: list[dict[str, Any]],
+    spares: list[dict[str, Any]],
+) -> tuple[list[str], dict[str, str]]:
+    """Return stable user-facing support-point choices plus their runtime IDs."""
+    names_by_id: dict[str, str] = {}
+    for item in [*resources, *spares]:
+        if not isinstance(item, dict):
+            continue
+        node_id = str(item.get("support_node_id") or item.get("name") or "").strip()
+        if not node_id:
+            continue
+        node_name = str(
+            item.get("support_node_name")
+            or item.get("display_name")
+            or item.get("name")
+            or node_id
+        ).strip()
+        names_by_id.setdefault(node_id, node_name or node_id)
+    labels = [SUPPORT_POINT_SUMMARY_LABEL]
+    label_to_id = {SUPPORT_POINT_SUMMARY_LABEL: ""}
+    for node_id, node_name in sorted(names_by_id.items(), key=lambda item: (item[1], item[0])):
+        label = f"{node_name}（{node_id}）"
+        labels.append(label)
+        label_to_id[label] = node_id
+    return labels, label_to_id
+
+
+def _support_resources_for_point(
+    resources: list[dict[str, Any]],
+    support_node_id: str,
+) -> list[dict[str, Any]]:
+    if not support_node_id:
+        return list(resources)
+    return [
+        item
+        for item in resources
+        if str(item.get("support_node_id") or item.get("name") or "") == support_node_id
+    ]
+
+
+def _support_spare_rows(
+    spares: list[dict[str, Any]],
+    support_node_id: str,
+) -> list[dict[str, Any]]:
+    """Aggregate a support-point's spares, or every point when no point is selected."""
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in spares:
+        if not isinstance(item, dict):
+            continue
+        item_node_id = str(item.get("support_node_id") or str(item.get("part_id") or "").split(":", 1)[0])
+        if support_node_id and item_node_id != support_node_id:
+            continue
+        product_id = str(item.get("product_id") or item.get("name") or item.get("part_id") or "")
+        name = str(item.get("name") or product_id or "备件")
+        key = (product_id, name)
+        row = grouped.setdefault(
+            key,
+            {"product_id": product_id, "name": name, "quantity": 0, "consumed": 0, "pending_quantity": 0},
+        )
+        row["quantity"] += _nonnegative_int(item.get("quantity"))
+        row["consumed"] += _nonnegative_int(item.get("consumed"))
+        row["pending_quantity"] += _nonnegative_int(item.get("pending_quantity"))
+    return sorted(grouped.values(), key=lambda item: (str(item["name"]), str(item["product_id"])))
+
+
+def _nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return 0
 
 
 @solara.component

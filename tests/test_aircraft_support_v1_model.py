@@ -618,6 +618,9 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         consumed = model.event_log[-1]
         self.assertEqual(consumed["event"], "spare_consumed")
         self.assertEqual(consumed["details"]["aircraft_model"], "J-15")
+        spare = next(item for item in model._spares_payload() if item["product_id"] == "航电模块")
+        self.assertEqual(spare["support_node_id"], "deck")
+        self.assertEqual(spare["consumed"], 1)
 
     def test_structured_no_spare_requirement_does_not_block_preflight(self) -> None:
         inputs = _minimal_inputs()

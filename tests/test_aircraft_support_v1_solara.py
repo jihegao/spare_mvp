@@ -504,6 +504,52 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         self.assertLess(layout_index, left_rail_index)
         self.assertEqual(page_source.count("ControlPanel(model_state, inputs, runtime="), 1)
 
+    def test_support_view_groups_spares_without_a_selected_support_point(self) -> None:
+        spares = [
+            {
+                "support_node_id": "deck",
+                "support_node_name": "飞行甲板",
+                "product_id": "hyd-pump",
+                "name": "液压泵",
+                "quantity": 2,
+                "consumed": 1,
+                "pending_quantity": 3,
+            },
+            {
+                "support_node_id": "relay",
+                "support_node_name": "中继保障点",
+                "product_id": "hyd-pump",
+                "name": "液压泵",
+                "quantity": 4,
+                "consumed": 5,
+                "pending_quantity": 6,
+            },
+        ]
+
+        choices, choice_ids = solara_app._support_point_choices([], spares)
+        summary_rows = solara_app._support_spare_rows(spares, "")
+        deck_rows = solara_app._support_spare_rows(spares, "deck")
+
+        self.assertEqual(choices[0], solara_app.SUPPORT_POINT_SUMMARY_LABEL)
+        self.assertEqual(choice_ids[solara_app.SUPPORT_POINT_SUMMARY_LABEL], "")
+        self.assertIn("飞行甲板（deck）", choices)
+        self.assertEqual(summary_rows, [{
+            "product_id": "hyd-pump",
+            "name": "液压泵",
+            "quantity": 6,
+            "consumed": 6,
+            "pending_quantity": 9,
+        }])
+        self.assertEqual(deck_rows[0]["quantity"], 2)
+        self.assertEqual(deck_rows[0]["consumed"], 1)
+        self.assertEqual(deck_rows[0]["pending_quantity"], 3)
+
+        source = Path(solara_app.__file__).read_text(encoding="utf-8")
+        support_stage_source = source[source.index("def SupportStage"):source.index("def _support_point_choices")]
+        self.assertIn('solara.Select("保障点"', support_stage_source)
+        self.assertIn("_support_spare_rows(spares, selected_support_node_id)", support_stage_source)
+        self.assertIn("SUPPORT_POINT_SUMMARY_LABEL", support_stage_source)
+
     def test_reset_restores_model_state_without_replacing_its_reactive_reference(self) -> None:
         inputs = copy.deepcopy(self.default_inputs)
         inputs["time"] = {**inputs.get("time", {}), "duration_minutes": 3, "tick_minutes": 1}

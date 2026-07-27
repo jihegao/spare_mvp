@@ -328,6 +328,10 @@ class SupportEngineMixin:
                 current = int(node["inventory"].get(spare_type, 0))
                 node["inventory"][spare_type] = current - shared_quantity
             self.spare_consumed_total += spare_quantity
+            consumption_key = (str(node["id"]), str(spare_type))
+            self.spare_consumed_by_node_product[consumption_key] = (
+                self.spare_consumed_by_node_product.get(consumption_key, 0) + spare_quantity
+            )
             aircraft = self._aircraft_by_tail(job.tail_number)
             display_name = self._product_display_name(spare_type)
             self._event(

@@ -373,8 +373,11 @@ class TelemetryMixin:
                         "part_id": f"{node['id']}:{spare_type}",
                         "product_id": spare_type,
                         "name": display_name,
+                        "support_node_id": node["id"],
+                        "support_node_name": node["name"],
+                        "airport_id": node.get("airport_id") or node.get("airport") or "",
                         "quantity": quantity,
-                        "consumed": self.spare_consumed_total,
+                        "consumed": self.spare_consumed_by_node_product.get((str(node["id"]), str(spare_type)), 0),
                         "pending_quantity": sum(
                             shipment.quantity
                             for shipment in self.transport_shipments
