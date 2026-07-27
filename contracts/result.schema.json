@@ -25,6 +25,10 @@
       "type": "object",
       "properties": {
         "mission_success_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "operational_availability": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "operational_availability_sample_count": { "type": "integer", "minimum": 0 },
+        "available_aircraft_hours": { "type": "integer", "minimum": 0 },
+        "total_aircraft_hours": { "type": "integer", "minimum": 0 },
         "sortie_rate": { "type": "number", "minimum": 0, "maximum": 1 },
         "spare_fill_rate": { "type": "number", "minimum": 0, "maximum": 1 },
         "spare_utilization": { "type": "number", "minimum": 0 },
@@ -140,6 +144,10 @@
           "type": "object",
           "required": [
             "sortie_completion_rate",
+            "operational_availability",
+            "operational_availability_sample_count",
+            "available_aircraft_hours",
+            "total_aircraft_hours",
             "available_aircraft",
             "active_jobs",
             "spare_stock_total",
@@ -149,6 +157,10 @@
           ],
           "properties": {
             "sortie_completion_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "operational_availability": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+            "operational_availability_sample_count": { "type": "integer", "minimum": 0 },
+            "available_aircraft_hours": { "type": "integer", "minimum": 0 },
+            "total_aircraft_hours": { "type": "integer", "minimum": 0 },
             "available_aircraft": { "type": "integer", "minimum": 0 },
             "active_jobs": { "type": "integer", "minimum": 0 },
             "spare_stock_total": { "type": "integer", "minimum": 0 },

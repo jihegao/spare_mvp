@@ -174,6 +174,14 @@ function normalizeFrames(rawFrames, runId) {
           frame.snapshot?.available_aircraft,
           aircraft.filter((item) => String(item.state) === "available").length
         ),
+        operational_availability: (
+          frame.snapshot?.operational_availability ?? aircraftState.operational_availability
+        ) == null
+          ? null
+          : numberOrDefault(
+              frame.snapshot?.operational_availability,
+              aircraftState.operational_availability
+            ),
         sortie_completion_rate: numberOrDefault(frame.snapshot?.sortie_completion_rate, completionRate(frame.snapshot, missions))
       },
       aircraft_state: aircraftState,

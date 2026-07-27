@@ -61,6 +61,8 @@ test("active docs record lite Mesa analysis metric formulas", async () => {
   const docs = await readFile(DOCS_README_URL, "utf8");
 
   assert.match(docs, /\/api\/mesa-analysis-runs/);
+  assert.match(docs, /使用可用度\(A\) = N_可用飞机小时 \/ N_总飞机小时/);
+  assert.match(docs, /每满 60 分钟对全部飞机做一次 0\/1 点采样/);
   assert.match(docs, /出动架次率 = 起飞总架次 \/ 飞机总数 \/ 仿真总天数/);
   assert.match(docs, /战备完好率 = 每天 14:00 的可用飞机数量 \/ 总飞机数量/);
   assert.match(docs, /平均备件延误时间\(h\) = 总调运延误时间\(分钟\) \/ 60 \/ 备件调运次数/);

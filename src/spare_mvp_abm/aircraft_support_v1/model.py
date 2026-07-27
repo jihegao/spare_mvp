@@ -321,6 +321,11 @@ class AircraftSupportV1Model:
         self.failure_delay_events = 0
         self.daily_readiness_samples: list[dict[str, Any]] = []
         self._daily_readiness_sample_days: set[int] = set()
+        self.operational_availability_sample_interval_minutes = 60
+        self._next_operational_availability_sample_minute = 60
+        self.operational_availability_sample_count = 0
+        self.available_aircraft_hours = 0
+        self.total_aircraft_hours = 0
         self.running = True
         self.steps = 0
         # Pre-life is an initial condition, so an already-due aircraft must be
@@ -386,6 +391,7 @@ class AircraftSupportV1Model:
             self._dispatch_due_missions()
             self._evaluate_mission_success_points()
             self._record_daily_readiness_sample_if_due()
+            self._record_operational_availability_sample_if_due()
             self._record_downtime_minutes()
             stop_reason, stop_conditions = self._stop_decision()
             should_stop = bool(stop_reason)
@@ -436,6 +442,11 @@ class AircraftSupportV1Model:
             if self.daily_readiness_samples
             else available / aircraft_count
         )
+        operational_availability = (
+            self.available_aircraft_hours / self.total_aircraft_hours
+            if self.total_aircraft_hours > 0
+            else None
+        )
         avg_delay = self.total_departure_delay / max(1, self.launched_sorties + self.cancelled_sorties)
         mean_transport_delay = (self.total_transport_delay / 60.0) / max(1, self.transport_replenishment_events)
         return {
@@ -443,6 +454,10 @@ class AircraftSupportV1Model:
             "mission_success_rate": mission_success_rate,
             "sortie_rate": sortie_rate,
             "ready_rate": ready_rate,
+            "operational_availability": operational_availability,
+            "operational_availability_sample_count": self.operational_availability_sample_count,
+            "available_aircraft_hours": self.available_aircraft_hours,
+            "total_aircraft_hours": self.total_aircraft_hours,
             "aircraft_count": aircraft_count,
             "simulation_days": simulation_days,
             "available_aircraft": available,
@@ -834,6 +849,31 @@ class AircraftSupportV1Model:
         )
         self._daily_readiness_sample_days.add(day_index)
 
+    def _record_operational_availability_sample_if_due(self) -> None:
+        while self.minute >= self._next_operational_availability_sample_minute:
+            available_count = sum(
+                1 for aircraft in self.aircraft
+                if self._aircraft_is_operationally_available(aircraft)
+            )
+            self.available_aircraft_hours += available_count
+            self.total_aircraft_hours += len(self.aircraft)
+            self.operational_availability_sample_count += 1
+            self._next_operational_availability_sample_minute += (
+                self.operational_availability_sample_interval_minutes
+            )
+
+    def _aircraft_is_operationally_available(self, aircraft: AircraftState) -> bool:
+        if aircraft.in_flight_failure or aircraft.failed_component_id is not None:
+            return False
+        if aircraft.state == "maintenance":
+            return False
+        return not any(
+            job.tail_number == aircraft.tail_number
+            and job.kind in {"repair", "preventive"}
+            and job.state in {"waiting", "running"}
+            for job in self.jobs
+        )
+
     def visualization_frame(self, *, run_id: str, step: int) -> dict[str, Any]:
         metrics = self.snapshot()
         return {
@@ -842,6 +882,10 @@ class AircraftSupportV1Model:
             "simulation_time": self.minute,
             "aircraft_state": {
                 "ready_rate": metrics["ready_rate"],
+                "operational_availability": metrics["operational_availability"],
+                "operational_availability_sample_count": metrics["operational_availability_sample_count"],
+                "available_aircraft_hours": metrics["available_aircraft_hours"],
+                "total_aircraft_hours": metrics["total_aircraft_hours"],
                 "failed_count": metrics["failed_count"],
                 "repairing_count": metrics["repairing_count"],
                 "sortie_count": metrics["sortie_count"],

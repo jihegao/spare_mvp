@@ -491,9 +491,11 @@ def _metrics_rows(model: AircraftSupportV1Model, metrics: dict[str, Any] | None 
         identity=model.organization_graph_identity,
     )
     fulfillment_rate = organization.get("observed_fulfillment_rate")
+    operational_availability = values.get("operational_availability")
     return [
         ("仿真分钟", model.minute),
         ("任务成功率", f"{values['mission_success_rate']:.1%}"),
+        ("使用可用度(A)", "--" if operational_availability is None else f"{operational_availability:.1%}"),
         ("战备完好率", f"{values['ready_rate']:.1%}"),
         ("可用飞机", values["available_aircraft"]),
         ("维修中", values["repairing_count"]),

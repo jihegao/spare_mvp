@@ -129,6 +129,9 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
   assert.ok(resultSchema.properties.model_family);
   assert.ok(resultSchema.properties.metrics.properties.mission_success_rate);
   assert.ok(resultSchema.properties.metrics.properties.sortie_completion_rate);
+  assert.ok(resultSchema.properties.metrics.properties.operational_availability);
+  assert.ok(resultSchema.properties.metrics.properties.available_aircraft_hours);
+  assert.ok(resultSchema.properties.metrics.properties.total_aircraft_hours);
   assert.ok(runSchema.properties.artifact_manifest_id);
   assert.ok(artifactSchema.properties.artifacts.items.properties.sha256);
 });
@@ -241,7 +244,16 @@ test("M9.1 visualization state-series schema validates traceable frame events", 
         run_id: "run-aircraft-support-contract-001",
         step: 0,
         simulation_time: 0,
-        aircraft_state: { ready_rate: 1, failed_count: 0, repairing_count: 0, sortie_count: 0 },
+        aircraft_state: {
+          ready_rate: 1,
+          operational_availability: null,
+          operational_availability_sample_count: 0,
+          available_aircraft_hours: 0,
+          total_aircraft_hours: 0,
+          failed_count: 0,
+          repairing_count: 0,
+          sortie_count: 0
+        },
         mission_state: { mission_success_rate: 1, sortie_rate: 1, mean_launch_time: 0, mean_recovery_time: 0, mean_turnaround_time: 0 },
         resource_state: { spare_fill_rate: 1, spare_utilization: 0, repair_backlog: 0 },
         event_summary: { shortage_events: 0, downtime_failure_events: 0, downtime_spare_shortage_events: 0, downtime_resource_delay_events: 0 },

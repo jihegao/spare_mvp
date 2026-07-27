@@ -2599,6 +2599,9 @@ class SimulationAdapter:
                 "tick_minutes": inputs.get("time", {}).get("tick_minutes"),
                 "sample_every_minutes": inputs.get("time", {}).get("sample_every_minutes"),
                 "sortie_completion_rate": snapshot.get("sortie_completion_rate", 0),
+                "operational_availability": snapshot.get("operational_availability"),
+                "available_aircraft_hours": snapshot.get("available_aircraft_hours", 0),
+                "total_aircraft_hours": snapshot.get("total_aircraft_hours", 0),
                 "available_aircraft": snapshot.get("available_aircraft", 0),
                 "maintenance_backlog": snapshot.get("maintenance_backlog", 0),
             },
@@ -2880,6 +2883,7 @@ class SimulationAdapter:
                 "seed": inputs["seed"],
                 "mc_experiment_id": mc_experiment_id,
                 "sortie_completion_rate": aggregate.get("sortie_completion_rate", 0),
+                "operational_availability": aggregate.get("operational_availability"),
                 "available_aircraft": aggregate.get("available_aircraft", 0),
             },
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
@@ -3205,6 +3209,9 @@ class SimulationAdapter:
 
     def _coerce_result_integer_metrics(self, metrics: dict[str, Any]) -> None:
         for key in [
+            "operational_availability_sample_count",
+            "available_aircraft_hours",
+            "total_aircraft_hours",
             "available_aircraft",
             "active_jobs",
             "spare_stock_total",
@@ -4621,6 +4628,12 @@ class SimulationAdapter:
             mean = finite_mean(values)
             if mean is not None:
                 aggregate[key] = mean
+        if any(
+            isinstance(sample.get("metrics"), dict)
+            and "operational_availability" in sample["metrics"]
+            for sample in samples
+        ):
+            aggregate.setdefault("operational_availability", None)
         aggregate["sample_count"] = len(samples)
         if "mission_success_rate" in aggregate:
             aggregate["mission_success_probability"] = aggregate["mission_success_rate"]

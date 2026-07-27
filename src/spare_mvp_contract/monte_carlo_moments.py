@@ -16,6 +16,13 @@ MONTE_CARLO_METRIC_DEFINITIONS: tuple[dict[str, str], ...] = (
         "value_format": "ratio",
     },
     {
+        "metric_id": "operational_availability",
+        "label": "使用可用度(A)",
+        "unit": "比例",
+        "variance_unit": "比例²",
+        "value_format": "ratio",
+    },
+    {
         "metric_id": "spare_fill_rate",
         "label": "备件满足率",
         "unit": "比例",

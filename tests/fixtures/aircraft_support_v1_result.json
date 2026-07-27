@@ -24,13 +24,17 @@
   ],
   "metrics": {
     "active_jobs": 0,
+    "available_aircraft_hours": 1,
     "available_aircraft": 1,
     "avg_departure_delay": 0,
     "lru_failures": 0,
     "maintenance_backlog": 0,
+    "operational_availability": 1,
+    "operational_availability_sample_count": 1,
     "sortie_completion_rate": 1,
     "spare_consumed_total": 0,
-    "spare_stock_total": 2
+    "spare_stock_total": 2,
+    "total_aircraft_hours": 1
   },
   "model_family": "aircraft_support_v1",
   "result_id": "result-aircraft-support-contract-001",

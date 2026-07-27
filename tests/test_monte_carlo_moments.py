@@ -34,6 +34,7 @@ class MonteCarloMomentsTest(unittest.TestCase):
                 "name": "sample-a",
                 "metrics": {
                     "mission_success_rate": 0.2,
+                    "operational_availability": 0.5,
                     "spare_fill_rate": math.nan,
                     "spare_utilization": "0.5",
                     "ready_rate": True,
@@ -48,6 +49,7 @@ class MonteCarloMomentsTest(unittest.TestCase):
                 "sample_id": 654321,
                 "metrics": {
                     "mission_success_rate": 0.8,
+                    "operational_availability": 0.9,
                     "spare_fill_rate": 0.6,
                     "spare_utilization": math.inf,
                     "ready_rate": 0.4,
@@ -66,7 +68,7 @@ class MonteCarloMomentsTest(unittest.TestCase):
         metrics = {metric["metric_id"]: metric for metric in moments["metrics"]}
 
         self.assertEqual(set(metrics), {
-            "mission_success_rate", "spare_fill_rate", "spare_utilization", "ready_rate",
+            "mission_success_rate", "operational_availability", "spare_fill_rate", "spare_utilization", "ready_rate",
             "sortie_rate", "mean_transport_delay", "repair_backlog",
         })
         self.assertEqual(moments["variance_denominator"], "n-1")
@@ -76,6 +78,8 @@ class MonteCarloMomentsTest(unittest.TestCase):
         self.assertAlmostEqual(metrics["mission_success_rate"]["mean"], 0.5)
         self.assertAlmostEqual(metrics["mission_success_rate"]["sample_variance"], 0.18)
         self.assertEqual(metrics["mission_success_rate"]["valid_sample_count"], 2)
+        self.assertAlmostEqual(metrics["operational_availability"]["mean"], 0.7)
+        self.assertAlmostEqual(metrics["operational_availability"]["sample_variance"], 0.08)
         self.assertEqual(metrics["spare_fill_rate"]["valid_sample_count"], 1)
         self.assertIsNone(metrics["spare_fill_rate"]["sample_variance"])
         self.assertEqual(metrics["spare_utilization"]["valid_sample_count"], 0)

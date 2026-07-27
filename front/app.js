@@ -3067,6 +3067,13 @@ function bindEvents() {
       return;
     }
 
+    const preventiveRuleToggle = event.target.closest("[data-preventive-rule-interval-path]");
+    if (preventiveRuleToggle) {
+      updatePreventiveRuleToggle(preventiveRuleToggle);
+      render();
+      return;
+    }
+
     const input = event.target.closest("[data-path]");
     if (!input) return;
     if (input.dataset.sharedProductComponentId && updateSharedEquipmentProductParameter(input)) {
@@ -11430,13 +11437,38 @@ function renderMaintenanceMethodControls(activity, activityIndex) {
   `;
 }
 
+function preventiveRuleEnabled(activity, intervalField) {
+  const interval = Number(activity?.[intervalField]);
+  return Number.isFinite(interval) && interval > 0;
+}
+
+function updatePreventiveRuleToggle(input) {
+  const intervalPath = String(input.dataset.preventiveRuleIntervalPath || "");
+  if (!intervalPath) return;
+  const currentInterval = Number(getPath(scenario, intervalPath));
+  const defaultInterval = Number(input.dataset.preventiveRuleDefaultInterval);
+  setPath(
+    scenario,
+    intervalPath,
+    input.checked
+      ? (Number.isFinite(currentInterval) && currentInterval > 0
+        ? currentInterval
+        : Number.isFinite(defaultInterval) && defaultInterval > 0
+          ? defaultInterval
+          : 1)
+      : 0
+  );
+  updatePreviewResultsThroughApiClient();
+  if (isCurrentModelingPage()) markProjectDraftChanged();
+}
+
 function renderPreventiveMaintenanceActivity(activePlan, activity) {
   const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
   const ruleNumberAttrs = (enabled, attrs) => (enabled ? attrs : { ...attrs, disabled: "disabled" });
   const lockedAttr = modelingLockDisabledAttr();
-  const renderRuleRow = ({ toggleLabel, togglePath, enabled, intervalLabel, intervalPath, intervalAttrs, floatLabel, floatPath, floatAttrs }) => `
+  const renderRuleRow = ({ toggleLabel, enabled, intervalLabel, intervalPath, defaultInterval, intervalAttrs, floatLabel, floatPath, floatAttrs }) => `
     <div class="preventive-rule-row">
-      <label class="preventive-rule-toggle">${toggleLabel}<input type="checkbox" data-path="${togglePath}" ${enabled ? "checked" : ""}${lockedAttr}></label>
+      <label class="preventive-rule-toggle">${toggleLabel}<input type="checkbox" data-maintenance-rule-toggle data-preventive-rule-interval-path="${intervalPath}" data-preventive-rule-default-interval="${defaultInterval}" ${enabled ? "checked" : ""}${lockedAttr}></label>
       ${field(intervalLabel, intervalPath, "number", ruleNumberAttrs(enabled, intervalAttrs))}
       ${field(floatLabel, floatPath, "number", ruleNumberAttrs(enabled, floatAttrs))}
     </div>
@@ -11455,10 +11487,10 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
         ${renderMaintenanceMethodControls(activity, activityIndex)}
         ${renderRuleRow({
           toggleLabel: "启动日历时间",
-          togglePath: `supportActivities.${activityIndex}.useCalendarRule`,
-          enabled: activity.useCalendarRule,
+          enabled: preventiveRuleEnabled(activity, "calendarDayInterval"),
           intervalLabel: "日历日间隔规则",
           intervalPath: `supportActivities.${activityIndex}.calendarDayInterval`,
+          defaultInterval: 1,
           intervalAttrs: { min: "0", step: "1" },
           floatLabel: "日历日间隔上下浮动比例",
           floatPath: `supportActivities.${activityIndex}.calendarDayFloatRatio`,
@@ -11466,10 +11498,10 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
         })}
         ${renderRuleRow({
           toggleLabel: "飞行小时",
-          togglePath: `supportActivities.${activityIndex}.useFlightHourRule`,
-          enabled: activity.useFlightHourRule,
+          enabled: preventiveRuleEnabled(activity, "runHourInterval"),
           intervalLabel: "飞行小时间隔",
           intervalPath: `supportActivities.${activityIndex}.runHourInterval`,
+          defaultInterval: 8,
           intervalAttrs: { min: "0", step: "1" },
           floatLabel: "飞行小时上下浮动比例",
           floatPath: `supportActivities.${activityIndex}.runHourFloatRatio`,
@@ -11477,10 +11509,10 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
         })}
         ${renderRuleRow({
           toggleLabel: "起落次数",
-          togglePath: `supportActivities.${activityIndex}.useTakeoffLandingRule`,
-          enabled: activity.useTakeoffLandingRule,
+          enabled: preventiveRuleEnabled(activity, "takeoffLandingInterval"),
           intervalLabel: "起落次数间隔",
           intervalPath: `supportActivities.${activityIndex}.takeoffLandingInterval`,
+          defaultInterval: 6,
           intervalAttrs: { min: "0", step: "1" },
           floatLabel: "起落次数间隔上下浮动比例",
           floatPath: `supportActivities.${activityIndex}.takeoffLandingFloatRatio`,
@@ -16686,13 +16718,24 @@ function mesaTab(id, label, activeView) {
 
 function visualSimulationKpis(state) {
   const aircraftCount = state.aircraft.length || 1;
-  const usableAircraft = state.aircraft.filter((aircraft) => ["available", "mission_ready"].includes(aircraft.state)).length;
+  const rawOperationalAvailability = (
+    state.snapshot?.operational_availability ?? state.aircraft_state?.operational_availability
+  );
+  const sampledOperationalAvailability = rawOperationalAvailability == null
+    ? Number.NaN
+    : Number(rawOperationalAvailability);
+  const usableAircraft = state.aircraft.filter((aircraft) => !isMaintenanceAircraftState(aircraft.state)).length;
   const requiredSorties = state.missions.reduce((sum, mission) => sum + Number(mission.requiredAircraft || 0), 0);
   const assignedSorties = state.missions.reduce((sum, mission) => sum + Number(mission.assignedCount || 0), 0);
   const aircraftTrendCounts = countAircraftTrendStates(state.aircraft);
   const stockedSpares = state.spares.filter((spare) => Number(spare.quantity || 0) > 0).length;
   return [
-    { label: "使用可用度", value: ratioFixed(usableAircraft / aircraftCount) },
+    {
+      label: "使用可用度(A)",
+      value: Number.isFinite(sampledOperationalAvailability)
+        ? ratioFixed(sampledOperationalAvailability)
+        : "--"
+    },
     { label: "出动架次率", value: ratioFixed(assignedSorties / Math.max(1, requiredSorties)) },
     { label: "维修中飞机", value: `${aircraftTrendCounts.maintenance} 架` },
     { label: "保障中飞机", value: `${aircraftTrendCounts.support} 架` },

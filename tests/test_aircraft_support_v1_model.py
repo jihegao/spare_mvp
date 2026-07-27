@@ -1007,6 +1007,51 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(snapshot["simulation_days"], 2)
         self.assertEqual(snapshot["sortie_rate"], 0.5)
 
+    def test_operational_availability_uses_hourly_binary_fleet_samples(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        first, second = model.aircraft
+        first.state = "flying"
+        first.component_failure_minutes["minor-lru"] = 10
+        second.state = "available"
+        delayed_preventive = JobState(
+            job_id="preventive-resource-delay",
+            tail_number=second.tail_number,
+            kind="preventive",
+            activity_id="preventive",
+            activity_name="preventive",
+            tasks=[{"workName": "inspection"}],
+            priority=1,
+            resource_node_id="deck",
+            state="waiting",
+            shortage_reason="equipment_capacity",
+        )
+        model.jobs.append(delayed_preventive)
+
+        model.minute = 59
+        model._record_operational_availability_sample_if_due()
+        before_first_hour = model.snapshot()
+        self.assertIsNone(before_first_hour["operational_availability"])
+        self.assertEqual(before_first_hour["operational_availability_sample_count"], 0)
+
+        model.minute = 60
+        model._record_operational_availability_sample_if_due()
+        first_hour = model.snapshot()
+        self.assertEqual(first_hour["available_aircraft_hours"], 1)
+        self.assertEqual(first_hour["total_aircraft_hours"], 2)
+        self.assertEqual(first_hour["operational_availability"], 0.5)
+
+        delayed_preventive.state = "completed"
+        second.state = "post_support"
+        first.in_flight_failure = True
+        first.failed_component_id = "critical-lru"
+        model.minute = 120
+        model._record_operational_availability_sample_if_due()
+        second_hour = model.snapshot()
+        self.assertEqual(second_hour["operational_availability_sample_count"], 2)
+        self.assertEqual(second_hour["available_aircraft_hours"], 2)
+        self.assertEqual(second_hour["total_aircraft_hours"], 4)
+        self.assertEqual(second_hour["operational_availability"], 0.5)
+
     def test_snapshot_mean_transport_delay_is_hours_per_replenishment(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())
         model.total_transport_delay = 180

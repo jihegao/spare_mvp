@@ -5678,6 +5678,71 @@ test("preventive maintenance view edits the same canonical maintenance method pa
   }
 });
 
+test("preventive maintenance rule toggles derive from canonical intervals and persist through those intervals", async () => {
+  const projectId = "project-preventive-rule-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivities.push({
+    id: "preventive-j15-calendar-or-hours",
+    activityType: "预防性维修",
+    planType: "预防性维修方案",
+    activityName: "J-15每7天或25飞行小时定检",
+    aircraftModel: "J-15",
+    calendarDayInterval: 7,
+    runHourInterval: 25,
+    takeoffLandingInterval: 0,
+    plannedDowntimeHours: 24,
+    maintenanceMethods: ["non_replacement"],
+    replacementRatio: 0,
+    activityCodes: [],
+    predecessors: {}
+  });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "预防性维修周期运行时项目")]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-preventive-maintenance-activity");
+    await runtime.click("[data-select-preventive-activity-plan]", { selectPreventiveActivityPlan: "supportActivity:1" });
+
+    assert.match(
+      runtime.appNode.innerHTML,
+      /启动日历时间<input[^>]*data-preventive-rule-interval-path="supportActivities\.1\.calendarDayInterval"[^>]*checked/
+    );
+    assert.match(
+      runtime.appNode.innerHTML,
+      /飞行小时<input[^>]*data-preventive-rule-interval-path="supportActivities\.1\.runHourInterval"[^>]*checked/
+    );
+    assert.match(
+      runtime.appNode.innerHTML,
+      /data-path="supportActivities\.1\.calendarDayInterval" type="number" value="7"(?![^>]*disabled)/
+    );
+    assert.match(
+      runtime.appNode.innerHTML,
+      /data-path="supportActivities\.1\.runHourInterval" type="number" value="25"(?![^>]*disabled)/
+    );
+
+    await runtime.change(
+      "[data-preventive-rule-interval-path]",
+      {
+        preventiveRuleIntervalPath: "supportActivities.1.calendarDayInterval",
+        preventiveRuleDefaultInterval: "1"
+      },
+      { checked: false, type: "checkbox" }
+    );
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => (
+      body.supportActivities?.[1]?.calendarDayInterval === 0
+      && body.supportActivities?.[1]?.runHourInterval === 25
+    ), "expected preventive rule toggle to persist through canonical interval fields");
+    assert.equal(saved.supportActivities[1].useCalendarRule, undefined);
+    assert.equal(saved.supportActivities[1].useFlightHourRule, undefined);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("basic support activity codes stay unique when edited at runtime", async () => {
   const projectJson = createRuntimeProjectJson();
   appendRuntimeSupportActivityJob(projectJson, 0, {
@@ -7412,6 +7477,7 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
       timings: { total_seconds: 70.9 },
       aggregate_metrics: {
         mission_success_rate: 0.73,
+        operational_availability: 0.81,
         spare_fill_rate: 0.64,
         spare_utilization: 0.29,
         ready_rate: 0.61,
@@ -7428,6 +7494,7 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
         failed_sample_count: 1,
         metrics: [
           { metric_id: "mission_success_rate", mean: 0.73, sample_variance: 0.0123, valid_sample_count: 3 },
+          { metric_id: "operational_availability", mean: 0.81, sample_variance: 0.0064, valid_sample_count: 3 },
           { metric_id: "spare_fill_rate", mean: 0.64, sample_variance: 0.02, valid_sample_count: 2 },
           { metric_id: "spare_utilization", mean: 0.29, sample_variance: null, valid_sample_count: 1 },
           { metric_id: "ready_rate", mean: 0, sample_variance: null, valid_sample_count: 2, invalid_reason: "sample_variance_not_finite" },
@@ -7483,21 +7550,23 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(resultCards, /成功样本[\s\S]*<strong>3<\/strong>/);
     assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
     assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
+    assert.match(resultCards, /使用可用度\(A\)[\s\S]*<strong>0\.81<\/strong>/);
     assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64<\/strong>/);
     assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29<\/strong>/);
     assert.doesNotMatch(resultCards, /比例|架次\/机\/天|小时|项/);
     assert.match(metricTable, /<th>均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
     assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
     assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>1<\/td>/);
     assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
     assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
     assert.match(metricTable, /<td>维修积压<\/td>[\s\S]*?<td>项<\/td>/);
     assert.doesNotMatch(metricTable, /比例²|\(架次\/机\/天\)²|小时²|项²/);
-    for (const label of ["任务可靠度", "备件满足率", "备件利用率"]) {
+    for (const label of ["任务可靠度", "使用可用度\\(A\\)", "备件满足率", "备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }
-    assert.doesNotMatch(runtime.appNode.innerHTML, /sample_id|mean_transport_delay|mission_success_rate|spare_fill_rate|spare_utilization/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /sample_id|mean_transport_delay|mission_success_rate|operational_availability|spare_fill_rate|spare_utilization/);
     assert.match(runtime.appNode.innerHTML, new RegExp("Mesa 分析完成：3/4 个样本，失败 1 个，总耗时 70\\.9 秒。"));
   } finally {
     runtime.restore();

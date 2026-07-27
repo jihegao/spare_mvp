@@ -1423,6 +1423,10 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertNotIn("failure_tree", state_payload["frames"][0]["aircraft"][0])
         for metric in [
             "sortie_completion_rate",
+            "operational_availability",
+            "operational_availability_sample_count",
+            "available_aircraft_hours",
+            "total_aircraft_hours",
             "available_aircraft",
             "active_jobs",
             "spare_stock_total",
@@ -1446,6 +1450,9 @@ class SimulationAdapterTest(unittest.TestCase):
             self.assertIn("spares", frame)
             self.assertIn("jobs", frame)
             self.assertIn("events", frame)
+            self.assertIn("operational_availability", frame["aircraft_state"])
+            self.assertIn("available_aircraft_hours", frame["aircraft_state"])
+            self.assertIn("total_aircraft_hours", frame["aircraft_state"])
         first_frame_missions = [
             {**state_payload["mission_templates"][mission["mission_id"]], **mission}
             for mission in state_payload["frames"][0]["missions"]

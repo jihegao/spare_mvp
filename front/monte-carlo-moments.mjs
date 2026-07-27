@@ -1,5 +1,6 @@
 export const MONTE_CARLO_METRIC_DEFINITIONS = Object.freeze([
   { metricId: "mission_success_rate", label: "任务可靠度", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
+  { metricId: "operational_availability", label: "使用可用度(A)", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
   { metricId: "spare_fill_rate", label: "备件满足率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
   { metricId: "spare_utilization", label: "备件利用率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
   { metricId: "ready_rate", label: "战备完好率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },

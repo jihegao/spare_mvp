@@ -184,6 +184,10 @@ test("result schema exposes only aircraft_support_v1 metrics", async () => {
     currentRequired,
     new Set([
       "sortie_completion_rate",
+      "operational_availability",
+      "operational_availability_sample_count",
+      "available_aircraft_hours",
+      "total_aircraft_hours",
       "available_aircraft",
       "active_jobs",
       "spare_stock_total",

@@ -13,6 +13,7 @@ test("moments exclude strings, nonfinite values, booleans, metadata, and use n-1
       sample_id: 999,
       metrics: {
         mission_success_rate: 0.2,
+        operational_availability: 0.5,
         spare_fill_rate: Number.NaN,
         spare_utilization: "0.5",
         ready_rate: true,
@@ -26,6 +27,7 @@ test("moments exclude strings, nonfinite values, booleans, metadata, and use n-1
     {
       metrics: {
         mission_success_rate: 0.8,
+        operational_availability: 0.9,
         spare_fill_rate: 0.6,
         spare_utilization: Number.POSITIVE_INFINITY,
         ready_rate: 0.4,
@@ -45,6 +47,8 @@ test("moments exclude strings, nonfinite values, booleans, metadata, and use n-1
   assert.equal(byId.mission_success_rate.mean, 0.5);
   assert.ok(Math.abs(byId.mission_success_rate.sampleVariance - 0.18) < 1e-12);
   assert.equal(byId.mission_success_rate.validSampleCount, 2);
+  assert.ok(Math.abs(byId.operational_availability.mean - 0.7) < 1e-12);
+  assert.ok(Math.abs(byId.operational_availability.sampleVariance - 0.08) < 1e-12);
   assert.equal(byId.spare_fill_rate.validSampleCount, 1);
   assert.equal(byId.spare_fill_rate.sampleVariance, null);
   assert.equal(byId.spare_utilization.validSampleCount, 0);
