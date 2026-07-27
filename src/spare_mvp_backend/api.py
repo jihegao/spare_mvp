@@ -77,9 +77,12 @@ ANALYSIS_PROJECTION_ARTIFACT_KINDS = {
     "downtime_factors": "analysis_projection_downtime_factors",
 }
 
-LITE_MESA_SAMPLE_TIMEOUT_SECONDS = 60
+# Keep a hard deadline for pathological samples while leaving headroom for
+# supported long-horizon Projects on slower developer and deployment hosts.
+LITE_MESA_SAMPLE_TIMEOUT_SECONDS = 90
 LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS = 180
 LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS = 900
+_LITE_MESA_WORKER_INPUTS: dict[str, Any] | None = None
 
 
 class LiteMesaSampleTimeoutError(TimeoutError):
@@ -2460,7 +2463,6 @@ def _run_lite_mesa_analysis_samples(
     worker_count = min(settings["parallelCores"], sample_count)
     tasks = [
         (
-            inputs,
             base_seed + sample_index,
             sample_index,
             settings["write_event_snapshots"],
@@ -2470,7 +2472,11 @@ def _run_lite_mesa_analysis_samples(
     ]
     outcomes: list[dict[str, Any]] = []
     context = multiprocessing.get_context("spawn")
-    pool = context.Pool(processes=worker_count)
+    pool = context.Pool(
+        processes=worker_count,
+        initializer=_initialize_lite_mesa_sample_worker,
+        initargs=(inputs,),
+    )
     pending = [
         (task, pool.apply_async(_run_lite_mesa_analysis_sample_worker, (task,)))
         for task in tasks
@@ -2529,10 +2535,12 @@ def _run_lite_mesa_analysis_samples(
 
 
 def _lite_mesa_worker_process_failure(
-    task: tuple[dict[str, Any], int, int, bool, float],
+    task: tuple[Any, ...],
     exc: Exception,
 ) -> dict[str, Any]:
-    _inputs, seed, sample_index, _write_event_snapshots, _sample_timeout_seconds = task
+    seed, sample_index, _write_event_snapshots, _sample_timeout_seconds = (
+        _lite_mesa_sample_task_metadata(task)
+    )
     return {
         "status": "failed",
         "sample_index": sample_index,
@@ -2551,11 +2559,13 @@ def _lite_mesa_worker_process_failure(
 
 
 def _lite_mesa_session_timeout_failure(
-    task: tuple[dict[str, Any], int, int, bool, float],
+    task: tuple[Any, ...],
     settings: dict[str, Any],
     elapsed_seconds: float,
 ) -> dict[str, Any]:
-    _inputs, seed, sample_index, _write_event_snapshots, _sample_timeout_seconds = task
+    seed, sample_index, _write_event_snapshots, _sample_timeout_seconds = (
+        _lite_mesa_sample_task_metadata(task)
+    )
     return {
         "status": "failed",
         "sample_index": sample_index,
@@ -2626,9 +2636,11 @@ def _lite_mesa_execution_metadata(
 
 
 def _run_lite_mesa_analysis_sample_worker(
-    task: tuple[dict[str, Any], int, int, bool, float],
+    task: tuple[Any, ...],
 ) -> dict[str, Any]:
-    inputs, seed, sample_index, write_event_snapshots, sample_timeout_seconds = task
+    inputs, seed, sample_index, write_event_snapshots, sample_timeout_seconds = (
+        _lite_mesa_sample_task_values(task)
+    )
     started = time.perf_counter()
     try:
         with _lite_mesa_sample_deadline(sample_timeout_seconds):
@@ -2685,6 +2697,51 @@ def _run_lite_mesa_analysis_sample_worker(
         }
 
 
+def _initialize_lite_mesa_sample_worker(inputs: dict[str, Any]) -> None:
+    global _LITE_MESA_WORKER_INPUTS
+    _LITE_MESA_WORKER_INPUTS = inputs
+
+
+def _lite_mesa_sample_task_values(
+    task: tuple[Any, ...],
+) -> tuple[dict[str, Any], int, int, bool, float]:
+    if len(task) == 5 and isinstance(task[0], dict):
+        inputs = task[0]
+    elif len(task) == 4:
+        inputs = _LITE_MESA_WORKER_INPUTS
+        if not isinstance(inputs, dict):
+            raise RuntimeError("lite Mesa worker inputs were not initialized")
+    else:
+        raise ValueError("invalid lite Mesa sample task")
+    seed, sample_index, write_event_snapshots, sample_timeout_seconds = (
+        _lite_mesa_sample_task_metadata(task)
+    )
+    return (
+        inputs,
+        seed,
+        sample_index,
+        write_event_snapshots,
+        sample_timeout_seconds,
+    )
+
+
+def _lite_mesa_sample_task_metadata(
+    task: tuple[Any, ...],
+) -> tuple[int, int, bool, float]:
+    if len(task) == 5 and isinstance(task[0], dict):
+        _inputs, seed, sample_index, write_event_snapshots, sample_timeout_seconds = task
+    elif len(task) == 4:
+        seed, sample_index, write_event_snapshots, sample_timeout_seconds = task
+    else:
+        raise ValueError("invalid lite Mesa sample task")
+    return (
+        int(seed),
+        int(sample_index),
+        bool(write_event_snapshots),
+        float(sample_timeout_seconds),
+    )
+
+
 def _run_aircraft_support_v1_analysis_sample(
     inputs: dict[str, Any],
     *,
@@ -2718,6 +2775,11 @@ def _run_aircraft_support_v1_analysis_sample(
         item["seed"] = seed
         item["sweep"] = {}
         frames.append(item)
+    projection_events = [
+        copy.deepcopy(event)
+        for event in execution.get("events") or []
+        if _lite_mesa_projection_event_required(event)
+    ]
     return {
         "sample_index": sample_index,
         "seed": seed,
@@ -2727,12 +2789,19 @@ def _run_aircraft_support_v1_analysis_sample(
         "mission_wave_reliability": mission_wave_reliability,
         "period_outcome": period_outcome,
         "frames": frames,
-        "events": copy.deepcopy(execution.get("events") or []),
+        "events": projection_events,
         "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
         "lifecycle_trace": copy.deepcopy(execution.get("lifecycle_trace") or []),
         "organization_graph_identity": copy.deepcopy(execution["organization_graph_identity"]),
         "organization_dispatch_summary": copy.deepcopy(execution["organization_dispatch_summary"]),
     }
+
+
+def _lite_mesa_projection_event_required(event: Any) -> bool:
+    if not isinstance(event, dict):
+        return False
+    event_name = str(event.get("event") or event.get("event_type") or "")
+    return event_name in {"spare_shortage", "spare_consumed"} or isinstance(event.get("snapshot"), dict)
 
 
 def _sample_daily_mission_reliability(missions: list[Any], *, aircraft_count: int = 1) -> list[dict[str, Any]]:

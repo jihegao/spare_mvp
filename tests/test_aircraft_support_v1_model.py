@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
+from src.spare_mvp_abm.aircraft_support_v1.component_index import aircraft_type_tokens
 from src.spare_mvp_abm.aircraft_support_v1.model import (
     AircraftSupportV1Model,
     JobState,
@@ -295,10 +296,12 @@ def _canonical_import_inputs() -> dict:
     for activity in project["supportActivities"]:
         activity["resourceId"] = "基地"
     inputs = SimulationAdapter().compile_scenario(project, model_family="aircraft_support_v1")["simulation_inputs"]
-    # Direct model tests must provide an explicit runtime node under a non-empty
-    # canonical organization graph; production compilation owns this binding.
-    for activity in inputs["support_activities"]["activities"]:
-        activity["resource_id"] = "基地"
+    # Direct model tests keep the canonical runtime-node ID emitted by the
+    # SimulationAdapter. Display names such as "基地" are not runtime IDs.
+    assert all(
+        activity.get("resource_id") == "carrier-deck"
+        for activity in inputs["support_activities"]["activities"]
+    )
     return inputs
 
 
@@ -1500,6 +1503,27 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         self.assertNotIn("j16d-lru", j16.component_failure_minutes)
         self.assertEqual(model.snapshot()["lru_failures"], 0)
+
+    def test_failure_steps_use_precomputed_component_applicability(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["fleet_count"] = 1
+        inputs["aircraft"]["initial_ready"] = 1
+        inputs["equipment_tree"]["components"] = [
+            _runtime_component("engine", "aircraft", "Engine", 0.001, aircraft_model="J-15")
+        ]
+        aircraft_type_tokens.cache_clear()
+        model = AircraftSupportV1Model(inputs)
+        aircraft = model.aircraft[0]
+        aircraft.state = "flying"
+        aircraft.lru_failure_remaining_minutes["engine"] = 10_000.0
+        cache_after_initialization = aircraft_type_tokens.cache_info()
+
+        for minute in range(1, 11):
+            model.minute = minute
+            model._evaluate_failures()
+
+        self.assertEqual(aircraft_type_tokens.cache_info(), cache_after_initialization)
+        self.assertEqual(aircraft.lru_failure_remaining_minutes["engine"], 9_990.0)
 
     def test_lru_failure_time_is_consumed_during_mission_execution(self) -> None:
         inputs = _minimal_inputs()

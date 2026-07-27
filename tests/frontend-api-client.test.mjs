@@ -254,8 +254,8 @@ test("frontend API client sends current and frozen run contexts without frozen s
 });
 
 test("lite Mesa request timeout follows sample waves and stays above the backend session deadline", () => {
-  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 4, parallelCores: 1 }), 330000);
-  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 24, parallelCores: 4 }), 450000);
+  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 4, parallelCores: 1 }), 480000);
+  assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 24, parallelCores: 4 }), 660000);
   assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 24, parallelCores: 1 }), 930000);
   assert.equal(liteMesaAnalysisRequestTimeoutMs({ samples: 1000, parallelCores: 1 }), 930000);
   assert.equal(

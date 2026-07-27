@@ -23,7 +23,11 @@ from src.spare_mvp_backend.api import (
     _lite_mesa_downtime_event_snapshots,
     _lite_mesa_downtime_factors_result,
     _lite_mesa_mission_reliability_result,
+    _lite_mesa_projection_event_required,
+    _lite_mesa_session_timeout_failure,
     _lite_mesa_spare_shortfall_result,
+    _lite_mesa_worker_process_failure,
+    _initialize_lite_mesa_sample_worker,
     _normalize_lite_mesa_analysis_settings,
     _run_aircraft_support_v1_analysis_sample,
     _run_lite_mesa_analysis_sample_worker,
@@ -296,7 +300,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(settings["samples"], 4)
         self.assertEqual(settings["parallelCores"], 4)
         self.assertEqual(settings["seed"], 20260621)
-        self.assertEqual(settings["sampleTimeoutSeconds"], 60)
+        self.assertEqual(settings["sampleTimeoutSeconds"], 90)
         self.assertEqual(settings["sessionTimeoutSeconds"], 180)
         self.assertNotIn("maxTimeWindow", _normalize_lite_mesa_analysis_settings({"maxTimeWindow": 1}))
 
@@ -913,7 +917,7 @@ class BackendApiContractTest(unittest.TestCase):
         serial = _normalize_lite_mesa_analysis_settings({"samples": 24, "parallelCores": 1})
         very_large = _normalize_lite_mesa_analysis_settings({"samples": 1000, "parallelCores": 1})
 
-        self.assertEqual(parallel["sessionTimeoutSeconds"], 420)
+        self.assertEqual(parallel["sessionTimeoutSeconds"], 630)
         self.assertEqual(serial["sessionTimeoutSeconds"], 900)
         self.assertEqual(very_large["sessionTimeoutSeconds"], 900)
 
@@ -932,6 +936,45 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(outcome["failure"]["error"]["code"], "sample_timeout")
         self.assertEqual(outcome["failure"]["error"]["details"]["phase"], "model_execution")
         self.assertEqual(outcome["failure"]["error"]["details"]["timeout_seconds"], 0.01)
+
+    def test_lite_mesa_worker_reuses_initializer_inputs_for_seed_only_tasks(self) -> None:
+        inputs = {"schema_version": "aircraft-support-v1-input-v0"}
+        _initialize_lite_mesa_sample_worker(inputs)
+        with mock.patch(
+            "src.spare_mvp_backend.api._run_aircraft_support_v1_analysis_sample",
+            return_value={"metrics": {"ready_rate": 1.0}},
+        ) as run_sample:
+            outcome = _run_lite_mesa_analysis_sample_worker((20260718, 3, False, 1))
+
+        self.assertEqual(outcome["status"], "ok")
+        run_sample.assert_called_once_with(
+            inputs,
+            seed=20260718,
+            sample_index=3,
+            write_event_snapshots=False,
+        )
+
+    def test_lite_mesa_seed_only_task_keeps_parent_side_failure_diagnostics(self) -> None:
+        task = (20260718, 3, False, 90)
+
+        worker_failure = _lite_mesa_worker_process_failure(task, RuntimeError("worker exited"))
+        session_failure = _lite_mesa_session_timeout_failure(
+            task,
+            {"sessionTimeoutSeconds": 270},
+            270.5,
+        )
+
+        self.assertEqual(worker_failure["sample_index"], 3)
+        self.assertEqual(worker_failure["seed"], 20260718)
+        self.assertEqual(worker_failure["failure"]["error"]["code"], "sample_worker_failed")
+        self.assertEqual(session_failure["sample_index"], 3)
+        self.assertEqual(session_failure["seed"], 20260718)
+        self.assertEqual(session_failure["failure"]["error"]["code"], "session_timeout")
+
+    def test_lite_mesa_worker_keeps_only_projection_events(self) -> None:
+        self.assertTrue(_lite_mesa_projection_event_required({"event": "spare_consumed"}))
+        self.assertTrue(_lite_mesa_projection_event_required({"event": "failure", "snapshot": {}}))
+        self.assertFalse(_lite_mesa_projection_event_required({"event": "job_started"}))
 
     def test_lite_mesa_all_timeout_response_keeps_empty_moments_and_execution_counts(self) -> None:
         failures = [
@@ -3546,7 +3589,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["metric_moments"]["failed_sample_count"], 0)
         self.assertTrue(all("unit" in metric for metric in payload["metric_moments"]["metrics"]))
         self.assertEqual(payload["seed_list"], [20260705, 20260706])
-        self.assertEqual(payload["sample_timeout_seconds"], 60)
+        self.assertEqual(payload["sample_timeout_seconds"], 90)
         self.assertEqual(payload["session_timeout_seconds"], 180)
         self.assertEqual([item["status"] for item in payload["sample_diagnostics"]], ["ok", "ok"])
         self.assertGreaterEqual(payload["timings"]["compile_seconds"], 0)

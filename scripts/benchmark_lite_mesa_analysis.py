@@ -62,10 +62,14 @@ def main() -> None:
             )
             elapsed_seconds = time.perf_counter() - started
             failed_samples = result.get("failed_samples") or result.get("errors") or []
+            try:
+                project_label = str(project_path.relative_to(repo_root))
+            except ValueError:
+                project_label = str(project_path)
             print(
                 json.dumps(
                     {
-                        "project": str(project_path.relative_to(repo_root)),
+                        "project": project_label,
                         "project_id": project.get("project_id"),
                         "analysis_type": args.analysis_type,
                         "requested_samples": args.samples,
