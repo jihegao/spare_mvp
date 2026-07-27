@@ -117,6 +117,7 @@ class AircraftState:
     initial_life_state: dict[str, int | float] = field(default_factory=dict)
     preventive_thresholds: dict[str, int | float] = field(default_factory=dict)
     preventive_threshold_sources: dict[str, list[dict[str, str]]] = field(default_factory=dict)
+    preventive_cycles: dict[str, dict[str, Any]] = field(default_factory=dict)
     initial_due_dimensions: list[str] = field(default_factory=list)
     preventive_due_dimensions: list[str] = field(default_factory=list)
     source_initial_state: str = "available"
@@ -922,6 +923,7 @@ class AircraftSupportV1Model:
                         initial_life_state=initial_life_state,
                         preventive_thresholds=copy.deepcopy(item.get("preventive_thresholds") or {}),
                         preventive_threshold_sources=copy.deepcopy(item.get("preventive_threshold_sources") or {}),
+                        preventive_cycles=self._initial_preventive_cycles(item, initial_life_state),
                         source_initial_state=str(item.get("source_initial_state") or state),
                         initial_preventive_due=bool(item.get("initial_preventive_due")),
                     )
@@ -966,6 +968,41 @@ class AircraftSupportV1Model:
             "flight_hours": _non_negative_float(raw.get("flight_hours"), 0.0),
             "takeoff_landing_cycles": _non_negative_int(raw.get("takeoff_landing_cycles"), 0),
         }
+
+    @staticmethod
+    def _initial_preventive_cycles(
+        asset: dict[str, Any],
+        fallback_life_state: dict[str, int | float],
+    ) -> dict[str, dict[str, Any]]:
+        cycles: dict[str, dict[str, Any]] = {}
+        raw_cycles = asset.get("preventive_cycles")
+        for index, raw_cycle in enumerate(raw_cycles if isinstance(raw_cycles, list) else []):
+            if not isinstance(raw_cycle, dict):
+                continue
+            activity_id = str(raw_cycle.get("activity_id") or raw_cycle.get("activityId") or "").strip()
+            if not activity_id:
+                activity_id = f"preventive-cycle-{index + 1}"
+            raw_thresholds = raw_cycle.get("thresholds") if isinstance(raw_cycle.get("thresholds"), dict) else {}
+            thresholds = {
+                "calendar_days": _non_negative_int(raw_thresholds.get("calendar_days"), 0),
+                "flight_hours": _non_negative_float(raw_thresholds.get("flight_hours"), 0.0),
+                "takeoff_landing_cycles": _non_negative_int(raw_thresholds.get("takeoff_landing_cycles"), 0),
+            }
+            if not any(value > 0 for value in thresholds.values()):
+                continue
+            raw_life = raw_cycle.get("initial_life_state") if isinstance(raw_cycle.get("initial_life_state"), dict) else fallback_life_state
+            cycles[activity_id] = {
+                "activity_id": activity_id,
+                "equipment_id": str(raw_cycle.get("equipment_id") or raw_cycle.get("equipmentId") or ""),
+                "thresholds": thresholds,
+                "life_state": {
+                    "calendar_days": _non_negative_int(raw_life.get("calendar_days"), 0),
+                    "flight_hours": _non_negative_float(raw_life.get("flight_hours"), 0.0),
+                    "takeoff_landing_cycles": _non_negative_int(raw_life.get("takeoff_landing_cycles"), 0),
+                },
+                "last_preventive_minute": -_non_negative_int(raw_life.get("calendar_days"), 0) * 1440,
+            }
+        return cycles
 
     def _behavior_components(self) -> list[dict[str, Any]]:
         components = []
@@ -1824,8 +1861,10 @@ class AircraftSupportV1Model:
         start_minute = 0
         if mission is not None:
             start_minute = mission.actual_start if mission.actual_start is not None else mission.planned_start
-        aircraft.flight_hours += max(0.0, float((end_minute - start_minute) / 60.0))
+        flight_hours = max(0.0, float((end_minute - start_minute) / 60.0))
+        aircraft.flight_hours += flight_hours
         aircraft.landing_count += 1
+        self._record_preventive_usage(aircraft, flight_hours=flight_hours, landings=1)
         if aircraft.in_flight_failure:
             aircraft.state = "maintenance"
             self.failed_sorties += 1
@@ -2095,11 +2134,6 @@ class AircraftSupportV1Model:
 
     def _generate_preventive_jobs(self) -> None:
         for aircraft in self.aircraft:
-            minute_zero_due = (
-                self.minute == 0
-                and aircraft.initial_preventive_due
-                and bool(aircraft.initial_due_dimensions)
-            )
             if any(
                 job.kind == "preventive"
                 and job.tail_number == aircraft.tail_number
@@ -2107,16 +2141,11 @@ class AircraftSupportV1Model:
                 for job in self.jobs
             ):
                 continue
-            activity = self._select_activity("preventive", aircraft=aircraft)
-            thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
-            if not any(value > 0 for value in thresholds.values()):
+            due_cycles = self._due_preventive_cycles(aircraft)
+            if not due_cycles:
                 continue
-            due_dimensions = list(dict.fromkeys([
-                *aircraft.preventive_due_dimensions,
-                *self._preventive_due_dimensions(aircraft, activity),
-            ]))
-            if not due_dimensions:
-                continue
+            activity_id, due_dimensions = due_cycles[0]
+            minute_zero_due = self.minute == 0
 
             aircraft.preventive_due = True
             aircraft.preventive_due_dimensions = list(due_dimensions)
@@ -2126,7 +2155,7 @@ class AircraftSupportV1Model:
             if aircraft.state != "available" and not minute_zero_due:
                 continue
 
-            activity = self._preventive_activity_for_due(aircraft, activity, due_dimensions)
+            activity = self._activity_by_id(activity_id) or self._select_activity("preventive", aircraft=aircraft)
             aircraft.state = "maintenance"
             self.preventive_maintenance_events += 1
             self._create_job(
@@ -2144,6 +2173,7 @@ class AircraftSupportV1Model:
                     "initial_life_state": copy.deepcopy(aircraft.initial_life_state),
                     "preventive_thresholds": copy.deepcopy(aircraft.preventive_thresholds),
                     "preventive_threshold_sources": copy.deepcopy(aircraft.preventive_threshold_sources),
+                    "preventive_cycle_id": activity_id,
                     "due_dimensions": list(due_dimensions),
                 },
             )
@@ -2177,6 +2207,17 @@ class AircraftSupportV1Model:
             activity = self._select_activity("preventive", aircraft=aircraft)
             if not aircraft.preventive_thresholds:
                 aircraft.preventive_thresholds = self._preventive_thresholds(activity)
+            if not aircraft.preventive_cycles:
+                thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
+                if any(value > 0 for value in thresholds.values()):
+                    activity_id = str(activity.get("id") or "preventive")
+                    aircraft.preventive_cycles[activity_id] = {
+                        "activity_id": activity_id,
+                        "equipment_id": str(activity.get("equipment_id") or ""),
+                        "thresholds": copy.deepcopy(thresholds),
+                        "life_state": copy.deepcopy(aircraft.initial_life_state),
+                        "last_preventive_minute": -int(aircraft.initial_life_state.get("calendar_days") or 0) * 1440,
+                    }
             aircraft.initial_due_dimensions = self._preventive_due_dimensions(aircraft, activity)
 
     def _preventive_thresholds(self, activity: dict[str, Any]) -> dict[str, int | float]:
@@ -2191,6 +2232,13 @@ class AircraftSupportV1Model:
         aircraft: AircraftState,
         activity: dict[str, Any],
     ) -> list[str]:
+        due_cycles = self._due_preventive_cycles(aircraft)
+        if due_cycles:
+            return list(dict.fromkeys(
+                dimension
+                for _activity_id, dimensions in due_cycles
+                for dimension in dimensions
+            ))
         thresholds = aircraft.preventive_thresholds or self._preventive_thresholds(activity)
         due_dimensions = []
         calendar_days = int(thresholds["calendar_days"])
@@ -2207,6 +2255,43 @@ class AircraftSupportV1Model:
         ):
             due_dimensions.append("takeoff_landing_cycles")
         return due_dimensions
+
+    def _due_preventive_cycles(self, aircraft: AircraftState) -> list[tuple[str, list[str]]]:
+        due_cycles: list[tuple[str, list[str]]] = []
+        for activity_id, cycle in aircraft.preventive_cycles.items():
+            thresholds = cycle.get("thresholds") if isinstance(cycle.get("thresholds"), dict) else {}
+            life_state = cycle.get("life_state") if isinstance(cycle.get("life_state"), dict) else {}
+            due_dimensions: list[str] = []
+            calendar_days = _non_negative_int(thresholds.get("calendar_days"), 0)
+            last_preventive_minute = int(cycle.get("last_preventive_minute") or 0)
+            if calendar_days > 0 and self.minute >= last_preventive_minute + calendar_days * 1440:
+                due_dimensions.append("calendar_days")
+            flight_hours = _non_negative_float(thresholds.get("flight_hours"), 0.0)
+            if flight_hours > 0 and _non_negative_float(life_state.get("flight_hours"), 0.0) >= flight_hours:
+                due_dimensions.append("flight_hours")
+            landing_cycles = _non_negative_int(thresholds.get("takeoff_landing_cycles"), 0)
+            if landing_cycles > 0 and _non_negative_int(life_state.get("takeoff_landing_cycles"), 0) >= landing_cycles:
+                due_dimensions.append("takeoff_landing_cycles")
+            if due_dimensions:
+                due_cycles.append((activity_id, due_dimensions))
+        return due_cycles
+
+    @staticmethod
+    def _legacy_preventive_activity_id(aircraft: AircraftState) -> str:
+        return next(iter(aircraft.preventive_cycles), "")
+
+    def _record_preventive_usage(
+        self,
+        aircraft: AircraftState,
+        *,
+        flight_hours: float = 0.0,
+        takeoffs: int = 0,
+        landings: int = 0,
+    ) -> None:
+        for cycle in aircraft.preventive_cycles.values():
+            life_state = cycle.setdefault("life_state", {})
+            life_state["flight_hours"] = _non_negative_float(life_state.get("flight_hours"), 0.0) + flight_hours
+            life_state["takeoff_landing_cycles"] = _non_negative_int(life_state.get("takeoff_landing_cycles"), 0) + landings
 
     def _preventive_interval_days(self, activity: dict[str, Any] | None = None) -> int:
         activity = activity if isinstance(activity, dict) else self.preventive_activity
@@ -2309,6 +2394,7 @@ class AircraftSupportV1Model:
                     aircraft.prepared_mission_ids.discard(mission.mission_id)
                     aircraft.return_time = self.minute + mission.duration_minutes
                     aircraft.takeoff_count += 1
+                    self._record_preventive_usage(aircraft, takeoffs=1)
                 mission.status = "launched"
                 mission.actual_start = self.minute
                 mission.return_time = self.minute + mission.duration_minutes
@@ -3470,10 +3556,19 @@ class AircraftSupportV1Model:
             aircraft.state = "available"
             aircraft.preventive_due = False
             aircraft.preventive_due_dimensions = []
-            aircraft.last_preventive_minute = self.minute
-            aircraft.flight_hours = 0.0
-            aircraft.takeoff_count = 0
-            aircraft.landing_count = 0
+            cycle = aircraft.preventive_cycles.get(job.activity_id)
+            if cycle is not None:
+                thresholds = cycle.get("thresholds") if isinstance(cycle.get("thresholds"), dict) else {}
+                life_state = cycle.setdefault("life_state", {})
+                for dimension in ("calendar_days", "flight_hours", "takeoff_landing_cycles"):
+                    if _non_negative_float(thresholds.get(dimension), 0.0) > 0:
+                        life_state[dimension] = 0.0 if dimension == "flight_hours" else 0
+                cycle["last_preventive_minute"] = self.minute
+            if job.activity_id == self._legacy_preventive_activity_id(aircraft):
+                aircraft.last_preventive_minute = self.minute
+                aircraft.flight_hours = 0.0
+                aircraft.takeoff_count = 0
+                aircraft.landing_count = 0
             self._event("preventive_completed", f"{aircraft.tail_number} preventive maintenance completed")
 
     def _activity_by_id(self, activity_id: str) -> dict[str, Any]:

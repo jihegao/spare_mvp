@@ -882,7 +882,10 @@ class SimulationAdapter:
                     and float(activity[interval_field]) > 0
                 ]
                 values = {float(activity[interval_field]) for activity in contributors}
-                value = next(iter(values), 0.0)
+                # Legacy consumers expose one summary threshold per dimension.
+                # Use the shortest active interval deterministically; the full
+                # independent-cycle representation is emitted below.
+                value = min(values, default=0.0)
                 thresholds[dimension] = (
                     float(value) if dimension == "flight_hours" else int(value)
                 )
@@ -909,11 +912,40 @@ class SimulationAdapter:
                 effective_life[dimension] = (
                     float(remainder) if dimension == "flight_hours" else int(remainder)
                 )
+            preventive_cycles: list[dict[str, Any]] = []
+            for activity in applicable:
+                cycle_thresholds = {
+                    dimension: (
+                        float(activity.get(interval_field) or 0)
+                        if dimension == "flight_hours"
+                        else int(activity.get(interval_field) or 0)
+                    )
+                    for dimension, interval_field in dimension_fields.items()
+                }
+                if not any(value > 0 for value in cycle_thresholds.values()):
+                    continue
+                cycle_life = {
+                    dimension: (
+                        float(source_life[dimension] % threshold)
+                        if dimension == "flight_hours" and threshold > 0
+                        else int(source_life[dimension] % threshold)
+                        if dimension != "flight_hours" and threshold > 0
+                        else source_life[dimension]
+                    )
+                    for dimension, threshold in cycle_thresholds.items()
+                }
+                preventive_cycles.append({
+                    "activity_id": str(activity.get("id") or ""),
+                    "equipment_id": str(activity.get("equipment_id") or ""),
+                    "thresholds": cycle_thresholds,
+                    "initial_life_state": cycle_life,
+                })
             asset["source_initial_state"] = str(asset.get("source_initial_state") or asset.get("initial_state") or "available")
             asset["source_initial_life_state"] = source_life
             asset["initial_life_state"] = effective_life
             asset["preventive_thresholds"] = thresholds
             asset["preventive_threshold_sources"] = threshold_sources
+            asset["preventive_cycles"] = preventive_cycles
             asset["initial_due_dimensions"] = []
             asset["initial_preventive_due"] = False
         if assets:
@@ -2397,7 +2429,6 @@ class SimulationAdapter:
                         "保障活动建模",
                     ))
 
-        reported_conflicts: set[tuple[str, str]] = set()
         for member_index, member in enumerate(members):
             member_model = str(member.get("model") or "").strip()
             applicable: list[tuple[int, dict[str, Any]]] = []
@@ -2418,17 +2449,6 @@ class SimulationAdapter:
                     and math.isfinite(activity[interval_field])
                     and activity[interval_field] > 0
                 ]
-                distinct = {float(value) for _index, value in enabled}
-                conflict_key = (member_model, interval_field)
-                if len(distinct) > 1 and conflict_key not in reported_conflicts:
-                    reported_conflicts.add(conflict_key)
-                    conflict_index = enabled[-1][0]
-                    issues.append(self._compile_issue(
-                        "conflicting_preventive_threshold",
-                        f"supportActivities[{conflict_index}].{interval_field}",
-                        f"型号 {member_model or '<empty>'} 的多个适用预防性维修方案对 {interval_field} 定义了冲突阈值。",
-                        "保障活动建模",
-                    ))
                 pre_life = member.get(pre_life_field, 0)
                 if not isinstance(pre_life, (int, float)) or isinstance(pre_life, bool) or pre_life <= 0:
                     continue

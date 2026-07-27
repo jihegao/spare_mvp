@@ -3381,6 +3381,86 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         )
         self.assertEqual(created["time"], postflight_completion)
 
+    def test_independent_flight_hour_preventive_cycles_reset_only_their_own_counter(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"].update({
+            "fleet_count": 1,
+            "initial_ready": 1,
+            "assets": [{
+                "tail_number": "J15-101",
+                "aircraft_type": "J-15",
+                "model": "J-15",
+                "initial_state": "available",
+                "initial_life_state": {
+                    "calendar_days": 0,
+                    "flight_hours": 0.0,
+                    "takeoff_landing_cycles": 0,
+                },
+                "preventive_cycles": [
+                    {
+                        "activity_id": "preventive",
+                        "thresholds": {
+                            "calendar_days": 0,
+                            "flight_hours": 25.0,
+                            "takeoff_landing_cycles": 0,
+                        },
+                        "initial_life_state": {
+                            "calendar_days": 0,
+                            "flight_hours": 0.0,
+                            "takeoff_landing_cycles": 0,
+                        },
+                    },
+                    {
+                        "activity_id": "preventive-50h",
+                        "thresholds": {
+                            "calendar_days": 0,
+                            "flight_hours": 50.0,
+                            "takeoff_landing_cycles": 0,
+                        },
+                        "initial_life_state": {
+                            "calendar_days": 0,
+                            "flight_hours": 0.0,
+                            "takeoff_landing_cycles": 0,
+                        },
+                    },
+                ],
+            }],
+        })
+        inputs["support_activities"]["activities"][3].update({
+            "calendarDayInterval": 0,
+            "runHourInterval": 25,
+            "jobs": [{"activityCode": "pm-25", "durationMinutes": 1, "workName": "pm-25"}],
+        })
+        inputs["support_activities"]["activities"].append({
+            "id": "preventive-50h",
+            "name": "preventive-50h",
+            "activity_type": "preventive",
+            "resource_id": "deck",
+            "runHourInterval": 50,
+            "jobs": [{"activityCode": "pm-50", "durationMinutes": 1, "workName": "pm-50"}],
+        })
+        model = AircraftSupportV1Model(inputs)
+        aircraft = model.aircraft[0]
+
+        model._record_preventive_usage(aircraft, flight_hours=25)
+        model._generate_preventive_jobs()
+        first = next(job for job in model.jobs if job.kind == "preventive")
+        self.assertEqual(first.activity_id, "preventive")
+        first.state = "completed"
+        model._complete_job_effect(first)
+        self.assertEqual(aircraft.preventive_cycles["preventive"]["life_state"]["flight_hours"], 0.0)
+        self.assertEqual(aircraft.preventive_cycles["preventive-50h"]["life_state"]["flight_hours"], 25.0)
+
+        model._record_preventive_usage(aircraft, flight_hours=25)
+        model._generate_preventive_jobs()
+        second = next(job for job in model.jobs if job.kind == "preventive" and job is not first)
+        self.assertEqual(second.activity_id, "preventive")
+        second.state = "completed"
+        model._complete_job_effect(second)
+        model._generate_preventive_jobs()
+        third = next(job for job in model.jobs if job.kind == "preventive" and job is not first and job is not second)
+        self.assertEqual(third.activity_id, "preventive-50h")
+
     def test_behavior_scope_promotes_m9_7_4_fields(self) -> None:
         scope = AircraftSupportV1Model.behavior_scope()
 

@@ -346,7 +346,7 @@ class SimulationAdapterTest(unittest.TestCase):
         issue = next(issue for issue in result["issues"] if issue["code"] == "missing_preventive_threshold")
         self.assertEqual(issue["field_path"], "combatUnit.members[0].preLifeFlightHours")
 
-    def test_compile_blocks_conflicting_or_unknown_preventive_threshold_scope(self) -> None:
+    def test_compile_preserves_independent_preventive_threshold_cycles(self) -> None:
         project = self._project_with_pre_life()
         conflict = copy.deepcopy(project["supportActivities"][-1])
         conflict["id"] = "preventive-conflict"
@@ -360,8 +360,13 @@ class SimulationAdapterTest(unittest.TestCase):
         })
 
         result = self.adapter.compile_scenario_with_gate(project)
-        conflict_issue = next(issue for issue in result["issues"] if issue["code"] == "conflicting_preventive_threshold")
-        self.assertEqual(conflict_issue["field_path"], "supportActivities[2].runHourInterval")
+        self.assertEqual(result["status"], "compiled")
+        asset = result["scenario"]["simulation_inputs"]["aircraft"]["assets"][0]
+        self.assertEqual(
+            [(cycle["activity_id"], cycle["thresholds"]["flight_hours"])
+             for cycle in asset["preventive_cycles"]],
+            [("preventive", 4.0), ("preventive-conflict", 5.0)],
+        )
 
         project = self._project_with_pre_life()
         project["supportActivities"][-1]["aircraftModel"] = "UNKNOWN"

@@ -126,6 +126,10 @@
                   "takeoff_landing_cycles": { "$ref": "#/$defs/preventiveThresholdSources" }
                 }
               },
+              "preventive_cycles": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/preventiveCycle" }
+              },
               "initial_due_dimensions": {
                 "type": "array",
                 "uniqueItems": true,
@@ -422,6 +426,35 @@
         "properties": {
           "activity_id": { "type": "string" },
           "equipment_id": { "type": "string" }
+        }
+      }
+    },
+    "preventiveCycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activity_id", "equipment_id", "thresholds", "initial_life_state"],
+      "properties": {
+        "activity_id": { "type": "string" },
+        "equipment_id": { "type": "string" },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["calendar_days", "flight_hours", "takeoff_landing_cycles"],
+          "properties": {
+            "calendar_days": { "type": "integer", "minimum": 0 },
+            "flight_hours": { "type": "number", "minimum": 0 },
+            "takeoff_landing_cycles": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "initial_life_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["calendar_days", "flight_hours", "takeoff_landing_cycles"],
+          "properties": {
+            "calendar_days": { "type": "integer", "minimum": 0 },
+            "flight_hours": { "type": "number", "minimum": 0 },
+            "takeoff_landing_cycles": { "type": "integer", "minimum": 0 }
+          }
         }
       }
     }
