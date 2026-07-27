@@ -4338,6 +4338,9 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(appSource, /SYSTEM_SUPPORT_MODULE_NAME} \/ \$\{htmlEscape\(page\.secondary\)\} \/ \$\{htmlEscape\(page\.tertiary\)\}/);
   assert.match(styleSource, /\.rms-allocation-workbench/);
   assert.match(styleSource, /\.rms-equipment-tree/);
+  assert.match(styleSource, /\.rms-layout\s*\{[^}]*grid-template-columns:\s*minmax\(300px, max-content\) minmax\(0, 1fr\);/s);
+  assert.match(styleSource, /\.rms-equipment-tree\s*\{[^}]*width:\s*max-content;[^}]*min-width:\s*300px;[^}]*max-width:\s*min\(560px, 45vw\);/s);
+  assert.match(styleSource, /\.rms-equipment-tree-list\s*\{[^}]*overflow-x:\s*auto;/s);
   assert.match(styleSource, /\.rms-method-panel/);
   assert.match(styleSource, /\.rms-installation-panel/);
   assert.match(styleSource, /\.rms-data-preparation-grid/);

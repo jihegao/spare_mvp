@@ -2743,11 +2743,23 @@ select[multiple].table-edit-select {
 }
 
 .rms-layout {
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: minmax(300px, max-content) minmax(0, 1fr);
+}
+
+.rms-equipment-tree {
+  width: max-content;
+  min-width: 300px;
+  max-width: min(560px, 45vw);
+}
+
+.rms-equipment-tree-list {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .rms-equipment-tree .tree-node-label {
   cursor: default;
+  white-space: nowrap;
 }
 
 .rms-equipment-tree button.tree-node-label {
@@ -5349,6 +5361,11 @@ tr.clickable-table-row.selected-table-row td {
   .modeling-import-status-grid,
   .modeling-import-compile-grid {
     grid-template-columns: 1fr;
+  }
+
+  .rms-equipment-tree {
+    width: auto;
+    max-width: none;
   }
 
   .mesa-kpi-strip,
