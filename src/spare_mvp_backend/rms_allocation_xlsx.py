@@ -98,7 +98,7 @@ def export_rms_allocation_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "body": output.getvalue(),
         "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "filename": "rms-allocation-result.xlsx",
+        "filename": "RMS指标分配结果.xlsx",
     }
 
 
@@ -265,7 +265,7 @@ def _validate_result_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             issues.append(_issue("missing_node_name", RMS_RESULT_SHEET, row_number, "nodeName", "节点名称不能为空", 2))
         inactive = _result_row_is_inactive(row)
         optional_numeric_fields = {
-            "localAllocationShare", "cumulativeAllocationShare", "cumulativeInstallationCount"
+            "allocationShare", "localAllocationShare", "cumulativeAllocationShare", "cumulativeInstallationCount"
         }
         for field, (minimum, maximum, inclusive_minimum) in numeric_rules.items():
             value = _finite_number(row.get(field))
@@ -281,6 +281,19 @@ def _validate_result_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 issues.append(_issue("number_out_of_range", RMS_RESULT_SHEET, row_number, field, f"{field} 必须在 {interval} 范围内", column))
             else:
                 row[field] = int(value) if field == "installationCount" and value.is_integer() else value
+        if row.get("allocationShare") is None:
+            # rms-engine-7 writes the unambiguous local and cumulative shares,
+            # not the retired allocationShare alias.  Keep the XLSX v1 column
+            # populated for round-trips and recover files exported before this
+            # compatibility mapping was added.
+            row["allocationShare"] = _finite_number(
+                row.get("cumulativeAllocationShare")
+                if row.get("cumulativeAllocationShare") is not None
+                else row.get("localAllocationShare")
+            )
+        if row.get("allocationShare") is None:
+            column = next(i for i, (candidate, _) in enumerate(RESULT_COLUMNS, start=1) if candidate == "allocationShare")
+            issues.append(_issue("invalid_number", RMS_RESULT_SHEET, row_number, "allocationShare", "allocationShare 必须为有限数值", column))
         for field in ("installationCount", "cumulativeInstallationCount"):
             count = _finite_number(row.get(field))
             if count is not None and not count.is_integer():
@@ -321,6 +334,8 @@ def _result_source_value(row: dict[str, Any], field: str) -> Any:
         return row.get("parentNodeId") if "parentNodeId" in row else row.get("parentId")
     if field == "localAllocationShare" and field not in row:
         return row.get("allocationShare")
+    if field == "allocationShare" and field not in row:
+        return row.get("cumulativeAllocationShare") if row.get("cumulativeAllocationShare") is not None else row.get("localAllocationShare")
     return row.get(field)
 
 

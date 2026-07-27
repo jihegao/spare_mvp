@@ -191,6 +191,30 @@ class RmsAllocationXlsxTest(unittest.TestCase):
         self.assertIsNone(preview["rows"][0]["mtbfHours"])
         self.assertIsNone(preview["rows"][0]["mttrHours"])
 
+    def test_export_and_import_accept_engine_rows_without_retired_allocation_share(self) -> None:
+        payload = rms_payload()
+        for row in payload["rows"]:
+            row.pop("allocationShare")
+
+        download = export_rms_allocation_xlsx(payload)
+        workbook = load_workbook(BytesIO(download["body"]))
+        result_sheet = workbook[RMS_RESULT_SHEET]
+        self.assertEqual(result_sheet.cell(6, 11).value, 0.625)
+
+        # Workbooks created by the previous exporter have an empty legacy
+        # allocationShare column. They must remain importable as well.
+        result_sheet.cell(6, 11).value = None
+        result_sheet.cell(7, 11).value = None
+        output = BytesIO()
+        workbook.save(output)
+        workbook.close()
+
+        preview = parse_rms_allocation_xlsx(output.getvalue())
+
+        self.assertTrue(preview["ok"], preview["errors"])
+        self.assertEqual(preview["rows"][0]["allocationShare"], 0.625)
+        self.assertEqual(preview["rows"][1]["allocationShare"], 0.375)
+
     def test_backend_preview_accepts_base64_and_maps_invalid_workbooks(self) -> None:
         connection = sqlite3.connect(":memory:")
         initialize_database(connection)
@@ -255,6 +279,49 @@ class RmsAllocationXlsxTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_export_is_xlsx_and_can_be_imported_through_preview_route(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=Path(__file__).resolve().parents[1],
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                login = self._post_json(
+                    f"{base_url}/auth/login",
+                    {"username": "user", "password": "user"},
+                )
+                content, headers = self._post_binary(
+                    f"{base_url}/rms-allocation/export-xlsx",
+                    rms_payload(),
+                    token=login["session"]["token"],
+                )
+                self.assertTrue(content.startswith(b"PK\x03\x04"))
+                self.assertEqual(
+                    headers.get_content_type(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+                self.assertIn("RMS", headers["content-disposition"])
+
+                preview = self._post_json(
+                    f"{base_url}/rms-allocation/import-xlsx/preview",
+                    {
+                        "content_base64": base64.b64encode(content).decode("ascii"),
+                        "file_name": "RMS指标分配结果.xlsx",
+                    },
+                    token=login["session"]["token"],
+                )
+                self.assertTrue(preview["ok"], preview["errors"])
+                self.assertEqual(preview["rows"][0]["nodeId"], "system-engine")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     @staticmethod
     def _post_json(url: str, payload: dict, *, token: str = "") -> dict:
         headers = {"content-type": "application/json"}
@@ -269,6 +336,21 @@ class RmsAllocationXlsxTest(unittest.TestCase):
         opener = request.build_opener(request.ProxyHandler({}))
         with opener.open(req, timeout=10) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    @staticmethod
+    def _post_binary(url: str, payload: dict, *, token: str = "") -> tuple[bytes, object]:
+        headers = {"content-type": "application/json"}
+        if token:
+            headers["authorization"] = f"Bearer {token}"
+        req = request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers=headers,
+        )
+        opener = request.build_opener(request.ProxyHandler({}))
+        with opener.open(req, timeout=10) as response:
+            return response.read(), response.headers
 
 
 if __name__ == "__main__":

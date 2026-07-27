@@ -101,6 +101,24 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   assert.equal(calls[8].body.run_type, "single");
 });
 
+test("frontend API client requests RMS allocation export as a downloadable XLSX file", async () => {
+  const requests = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      requests.push(request);
+      return { blob: new Blob(["xlsx"]), filename: "RMS指标分配结果.xlsx" };
+    }
+  });
+
+  const download = await client.exportRmsAllocationXlsx({ project_id: "project-rms" });
+
+  assert.equal(download.filename, "RMS指标分配结果.xlsx");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, "POST");
+  assert.equal(requests[0].path, "/rms-allocation/export-xlsx");
+  assert.equal(requests[0].responseType, "download");
+});
+
 test("frontend API client exposes only canonical run read routes", async () => {
   const calls = [];
   const client = createBackendApiClient({

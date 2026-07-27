@@ -15260,7 +15260,7 @@ async function exportRmsAllocationExcel() {
   const mission = rmsBasicMissionForProject(state.project, state.plan.inputs?.basicMissionId);
   rmsEquipmentImportStatus = "正在生成 XLSX 结果";
   try {
-    const blob = await backendApi.exportRmsAllocationXlsx({
+    const download = await backendApi.exportRmsAllocationXlsx({
       schema_version: "rms-allocation-xlsx-v1",
       project_id: state.project.projectId,
       project_name: rmsAllocationProject.name,
@@ -15277,10 +15277,10 @@ async function exportRmsAllocationExcel() {
       generated_at: new Date().toISOString(),
       rows
     });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(download.blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "RMS指标分配结果.xlsx";
+    anchor.download = download.filename || "RMS指标分配结果.xlsx";
     anchor.click();
     URL.revokeObjectURL(url);
     rmsEquipmentImportStatus = "已导出 RMS指标分配结果.xlsx";

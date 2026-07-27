@@ -1343,7 +1343,7 @@ class BackendApiContractTest(unittest.TestCase):
                 "allocationShare": 0.625, "status": "已分配",
             }],
         })
-        self.assertEqual(download["filename"], "rms-allocation-result.xlsx")
+        self.assertEqual(download["filename"], "RMS指标分配结果.xlsx")
         workbook = load_workbook(BytesIO(download["body"]), read_only=True)
         sheet = workbook["RMS分配结果"]
         self.assertEqual(
