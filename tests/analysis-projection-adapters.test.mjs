@@ -205,7 +205,7 @@ test("formal carry utilization distinguishes unavailable raw data from a true ze
   assert.deepEqual(overall(normalize([row({ used_quantity: 3, carried_quantity: 1 })])), ["总体备件利用率", "300.00%"]);
 });
 
-test("normalizes mission reliability projection payload as per-sample wave rows for formal KPI and trend rendering", () => {
+test("normalizes mission reliability projection payload as cross-sample wave averages for formal KPI and trend rendering", () => {
   const view = normalizeAnalysisProjectionPayload("mission_reliability", {
     projection_type: "mission_reliability",
     run_id: "run-ui",
@@ -250,22 +250,20 @@ test("normalizes mission reliability projection payload as per-sample wave rows 
     ["period_duration_days", "2.12 天"]
   ]);
   assert.deepEqual(view.steepestDrop, {
-    fromIndex: 2,
-    toIndex: 3,
-    fromTime: "第1天 第2波",
-    toTime: "第1天 第1波",
-    drop: 0.07999999999999996
+    fromIndex: 1,
+    toIndex: 2,
+    fromTime: "第1天 第1波",
+    toTime: "第1天 第2波",
+    drop: 0.014999999999999902
   });
   assert.equal(view.periodCompletionProbability, 0.9225);
   assert.equal(view.periodDurationDays, 2.125);
   assert.equal(view.totalSamples, 3);
   assert.equal(view.successfulSamples, 2);
   assert.equal(view.failedSamples, 1);
-  assert.deepEqual(view.rows.map((row) => [row.sequence, row.sampleIndex, row.sampleLabel, row.waveLabel, row.probability, row.sortieRate, row.state]), [
-    [1, 0, "样本 1", "第1天 第1波", 0.96, 0.92, "满足"],
-    [2, 0, "样本 1", "第1天 第2波", 0.94, 0.91, "满足"],
-    [3, 1, "样本 2", "第1天 第1波", 0.86, 0.84, "满足"],
-    [4, 1, "样本 2", "第1天 第2波", 0.85, 0.83, "满足"]
+  assert.deepEqual(view.rows.map((row) => [row.sequence, row.sampleCount, row.waveLabel, row.probability, row.sortieRate, row.state]), [
+    [1, 2, "第1天 第1波", 0.9099999999999999, 0.88, "满足"],
+    [2, 2, "第1天 第2波", 0.895, 0.87, "满足"]
   ]);
 });
 

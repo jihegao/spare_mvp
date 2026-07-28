@@ -286,7 +286,7 @@ function normalizeMissionReliability(payload) {
 
 function normalizeMissionReliabilitySeries(data, fallback) {
   const rawRows = Array.isArray(data.mission_wave_rows) ? data.mission_wave_rows : [];
-  return rawRows.map((row, index) => {
+  const normalizedRows = rawRows.map((row, index) => {
     const probability = clamp01(requireFiniteNumber(
       row.mean_mission_success_rate ?? row.mission_success_probability,
       "series mission_success_probability"
@@ -299,17 +299,14 @@ function normalizeMissionReliabilitySeries(data, fallback) {
       `${index + 1}`
     );
     const sampleIndex = optionalNonNegativeInteger(row.sample_index, "series sample_index");
-    if (sampleIndex === null) throw new Error("series sample_index is required for per-sample wave detail");
-    const sampleLabel = stringValue(row.sample_label, `样本 ${sampleIndex + 1}`);
     return {
-      sequence: index + 1,
       timeLabel: waveLabel,
       waveLabel,
       waveKey: stringValue(row.wave_key, dayIndex && waveIndex ? `d${dayIndex}-w${waveIndex}` : `wave-${index + 1}`),
       dayIndex,
       waveIndex,
       sampleIndex,
-      sampleLabel,
+      sampleCount: optionalNonNegativeInteger(row.sample_count, "series sample_count"),
       probability,
       meanMissionSuccessRate: probability,
       sortieRate,
@@ -318,6 +315,43 @@ function normalizeMissionReliabilitySeries(data, fallback) {
       state: fallback.state
     };
   });
+
+  if (!normalizedRows.some((row) => row.sampleIndex !== null)) {
+    return normalizedRows.map((row, index) => ({
+      ...row,
+      sequence: index + 1,
+      sampleCount: row.sampleCount ?? optionalNonNegativeInteger(data.total_samples, "total_samples") ?? 0
+    }));
+  }
+
+  const rowsByWave = new Map();
+  normalizedRows.forEach((row) => {
+    const group = rowsByWave.get(row.waveKey) || [];
+    group.push(row);
+    rowsByWave.set(row.waveKey, group);
+  });
+  return [...rowsByWave.values()]
+    .sort((left, right) => (
+      (left[0].dayIndex || 0) - (right[0].dayIndex || 0)
+      || (left[0].waveIndex || 0) - (right[0].waveIndex || 0)
+    ))
+    .map((sampleRows, index) => {
+      const reference = sampleRows[0];
+      const sampleCount = sampleRows.length;
+      const probability = sampleRows.reduce((sum, row) => sum + row.probability, 0) / sampleCount;
+      const sortieRate = sampleRows.reduce((sum, row) => sum + row.sortieRate, 0) / sampleCount;
+      return {
+        ...reference,
+        sequence: index + 1,
+        sampleIndex: null,
+        sampleCount,
+        probability,
+        meanMissionSuccessRate: probability,
+        sortieRate,
+        sorties: Math.round(sortieRate * 100),
+        available: Math.round(probability * 100)
+      };
+    });
 }
 
 function missionReliabilitySteepestDrop(rows) {

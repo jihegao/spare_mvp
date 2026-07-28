@@ -19397,14 +19397,13 @@ function renderFormalProjectionBody(formalProjection) {
     const rows = formalProjection.rows || [];
     return `
       <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
-        <thead><tr><th>样本</th><th>波次</th><th>成功比例</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.sampleLabel || `样本 ${Number(row.sampleIndex || 0) + 1}`)}</td><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${htmlEscape(formatReliabilityPercent(row.probability))}</td></tr>`).join("") || '<tr><td colspan="3">当前结果没有逐样本波次明细</td></tr>'}</tbody>
+        <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.probability))}</td></tr>`).join("") || '<tr><td colspan="3">当前结果没有波次成功率明细</td></tr>'}</tbody>
       </table></div>
       ${renderLiteMesaMissionReliabilityWaveChart(rows.map((row) => ({
         sequence: row.sequence,
-        sampleIndex: row.sampleIndex,
-        sampleLabel: row.sampleLabel,
         waveLabel: row.waveLabel || row.timeLabel,
+        sampleCount: row.sampleCount,
         meanMissionSuccessRate: row.probability
       })))}
     `;
@@ -19841,11 +19840,11 @@ function analysisXlsxPayloadForPage(page, result) {
       ["成功次数", result.periodSuccessfulSamples, "次"]
     ],
     detail_sections: [{
-      title: "逐样本逐波次任务可靠度明细",
-      columns: ["样本", "波次", "成功比例"],
+      title: "各波次任务可靠度明细",
+      columns: ["波次", "样本数", "波次成功率"],
       rows: rows.map((row) => [
-        row.sampleLabel || `样本 ${Number(row.sampleIndex || 0) + 1}`,
         row.waveLabel || row.waveKey || "-",
+        Number(row.sampleCount || 0),
         formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)
       ])
     }]
@@ -20659,8 +20658,8 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (definition.analysisType === "mission_reliability") {
     return `
       <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
-        <thead><tr><th>样本</th><th>波次</th><th>成功比例</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.sampleLabel || `样本 ${Number(row.sampleIndex || 0) + 1}`)}</td><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${htmlEscape(formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate))}</td></tr>`).join("") || '<tr><td colspan="3">当前会话没有逐样本波次明细</td></tr>'}</tbody>
+        <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate))}</td></tr>`).join("") || '<tr><td colspan="3">当前会话没有波次成功率明细</td></tr>'}</tbody>
       </table></div>
       ${renderLiteMesaMissionReliabilityWaveChart(rows)}
     `;
@@ -20806,12 +20805,12 @@ function renderDowntimeFactorSpecificDetails(rows) {
 
 function renderLiteMesaMissionReliabilityWaveChart(rows) {
   if (!rows.length) {
-    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>当前会话未返回逐样本波次成功比例。</p></div>`;
+    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>当前会话未返回波次成功率明细。</p></div>`;
   }
   const points = rows.map((row, index) => ({
     x: Number(row.sequence || index + 1),
     y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0),
-    tooltip: `${row.sampleLabel || `样本 ${Number(row.sampleIndex || 0) + 1}`} / ${row.waveLabel || row.waveKey || `波次${row.sequence ?? index + 1}`}：${formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)}`
+    tooltip: `${row.waveLabel || row.waveKey || `第${row.sequence ?? index + 1}波`}（${Number(row.sampleCount || 0)} 个样本）：${formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)}`
   }));
   return `
     <div class="analysis-chart-panel">
