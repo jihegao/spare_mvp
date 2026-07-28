@@ -1294,6 +1294,123 @@ class SimulationAdapterTest(unittest.TestCase):
             ],
         )
 
+    def test_j16_43_day_year_profile_compiles_26_unique_duty_days_into_104_waves(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        mission_profile = project["missionProfile"]
+        composite = mission_profile["compositeTasks"][0]
+        composite_id = composite["id"]
+        task_item = composite["taskItems"][0]
+        task_item.update({
+            "dailyRepeatCount": 4,
+            "firstWaveTime": "08:00",
+            "intervalHours": 1,
+        })
+        mission_profile["durationDays"] = 43
+        mission_profile["compositeTasks"] = [composite]
+        weekly_duty_days = (
+            ("week-j16-1", ("monday", "wednesday", "thursday", "saturday")),
+            ("week-j16-2", ("monday", "tuesday", "thursday", "saturday", "sunday")),
+            ("week-j16-3", ("tuesday", "thursday", "friday", "sunday")),
+            ("week-j16-4", ("tuesday", "thursday", "friday", "sunday")),
+            ("week-j16-5", ("tuesday", "wednesday", "friday", "sunday")),
+            ("week-j16-6", ("monday", "wednesday", "friday", "saturday")),
+            ("week-j16-7", ("monday",)),
+        )
+        mission_profile["periodicTasks"] = [
+            {
+                "id": profile_id,
+                "name": profile_id,
+                "compositeTaskIds": [composite_id],
+                "compositeTasks": [
+                    {"weekday": weekday, "compositeTaskId": composite_id}
+                    for weekday in weekdays
+                ],
+            }
+            for profile_id, weekdays in weekly_duty_days
+        ]
+        mission_profile["periodicProfileLists"] = {
+            "week": [
+                {"id": item["id"], "name": item["name"]}
+                for item in mission_profile["periodicTasks"]
+            ],
+            "month": [
+                {
+                    "id": "month-j16-first",
+                    "name": "J16 first four weeks",
+                    "weekProfileIds": [
+                        "week-j16-1",
+                        "week-j16-2",
+                        "week-j16-3",
+                        "week-j16-4",
+                    ],
+                },
+                {
+                    "id": "month-j16-second",
+                    "name": "J16 final three weeks",
+                    "weekProfileIds": [
+                        "week-j16-5",
+                        "week-j16-6",
+                        "week-j16-7",
+                        "",
+                    ],
+                },
+            ],
+            "year": [{
+                "id": "year-j16-43-day",
+                "name": "J16 43-day availability profile",
+                "monthProfileIds": [
+                    "month-j16-first",
+                    "month-j16-second",
+                    *([""] * 10),
+                ],
+            }],
+        }
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "compiled")
+        self.assertNotIn(
+            "duplicate_mission_calendar_entry",
+            {issue["code"] for issue in result["issues"]},
+        )
+        inputs = result["scenario"]["simulation_inputs"]
+        self.assertEqual(inputs["time"]["duration_minutes"], 43 * 24 * 60)
+        self.assertEqual(inputs["mission_profile"]["duration_minutes"], 43 * 24 * 60)
+        self.assertEqual(
+            inputs["mission_profile"]["periodic_source"],
+            {"level": "year", "label": "年剖面", "configured_slots": 7},
+        )
+        calendar = inputs["mission_profile"]["mission_calendar"]
+        calendar_keys = {
+            (entry["day_index"], entry["composite_task_id"])
+            for entry in calendar
+        }
+        self.assertEqual(len(calendar), 26)
+        self.assertEqual(len(calendar_keys), 26)
+        self.assertEqual(len({entry["day_index"] for entry in calendar}), 26)
+        self.assertEqual(
+            [entry["day_index"] for entry in calendar],
+            [1, 3, 4, 6, 8, 9, 11, 13, 14, 16, 18, 19, 21, 23, 25, 26, 28, 30, 31, 33, 35, 36, 38, 40, 41, 43],
+        )
+
+        model = AircraftSupportV1Model(inputs)
+        mission_keys = {
+            (mission.day_index, mission.composite_task_id, mission.wave_index)
+            for mission in model.missions
+        }
+        self.assertEqual(len(model.missions), 104)
+        self.assertEqual(len(mission_keys), 104)
+        for day_index in sorted({mission.day_index for mission in model.missions}):
+            day_missions = [
+                mission
+                for mission in model.missions
+                if mission.day_index == day_index
+            ]
+            self.assertEqual(
+                [(mission.wave_index, mission.planned_start % 1440) for mission in day_missions],
+                [(1, 8 * 60), (2, 9 * 60), (3, 10 * 60), (4, 11 * 60)],
+            )
+
     def test_aircraft_support_v1_duplicate_calendar_entry_fails_closed(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["missionProfile"]["durationDays"] = 7
