@@ -805,6 +805,8 @@ let solaraVisualizationProjectSyncRequestId = 0;
 let visualizationSession = null;
 let visualizationSessionRequestEpoch = 0;
 let visualizationSessionSettings = { ...DEFAULT_VISUALIZATION_SESSION_SETTINGS };
+const disposedVisualizationSessionIds = new Set();
+let renderedVisualizationSessionId = "";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -1064,12 +1066,23 @@ restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi()
 
 function bindEvents() {
   window.addEventListener("hashchange", () => {
+    const previousPage = getFeaturePageById(selectedFeatureId);
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
     const nextFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
+    if (
+      previousPage.component === "visual-simulation"
+      && (selectedRoute !== "workbench" || getFeaturePageById(nextFeatureId).component !== "visual-simulation")
+    ) {
+      invalidateVisualizationSession("已离开可视化推演，原会话已清理。");
+    }
     resetSupportResourceSelectionForFeatureChange(selectedFeatureId, nextFeatureId);
     selectedFeatureId = nextFeatureId;
     createExperimentPlanBranchFromCurrentProject();
     render();
+  });
+  window.addEventListener("pagehide", (event) => {
+    if (event?.persisted) return;
+    invalidateVisualizationSession("", { keepalive: true });
   });
 
   app.addEventListener("click", (event) => {
@@ -1644,6 +1657,7 @@ function bindEvents() {
 
     const logoutButton = event.target.closest("[data-logout]");
     if (logoutButton) {
+      invalidateVisualizationSession("已退出可视化推演。", { keepalive: true });
       isLoggedIn = false;
       backendAuthToken = "";
       localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
@@ -2268,12 +2282,19 @@ function bindEvents() {
     const featureButton = event.target.closest("[data-feature-id]");
     if (featureButton) {
       selectedRoute = "workbench";
+      const previousPage = getFeaturePageById(selectedFeatureId);
       const selectedPage = accessibleFeaturePage(featureButton.dataset.featureId);
       if (
-        getFeaturePageById(selectedFeatureId).component === "rms-allocation"
+        previousPage.component === "rms-allocation"
         && selectedPage.id !== selectedFeatureId
         && !confirmDiscardUnsavedRmsResult()
       ) return;
+      if (
+        previousPage.component === "visual-simulation"
+        && selectedPage.component !== "visual-simulation"
+      ) {
+        invalidateVisualizationSession("已离开可视化推演，原会话已清理。");
+      }
       resetSupportResourceSelectionForFeatureChange(selectedFeatureId, selectedPage.id);
       selectedFeatureId = selectedPage.id;
       if (selectedPage.component === "experiment-plan-management") {
@@ -3317,7 +3338,10 @@ function render() {
   const page = accessibleFeaturePage(selectedFeatureId);
   selectedFeatureId = page.id;
   normalizeSelectedFeatureHash(selectedFeatureId);
-  app.innerHTML = `
+  const activeVisualizationSessionId = page.component === "visual-simulation"
+    ? visualizationSessionIdentity(visualizationSession)
+    : "";
+  const nextHtml = `
     <header class="topbar">
       <div class="left">
         <div class="brand-mark">BJGH</div>
@@ -3336,6 +3360,102 @@ function render() {
       ${renderFeaturePage(page)}
     </main>
   `;
+  if (
+    activeVisualizationSessionId
+    && renderedVisualizationSessionId === activeVisualizationSessionId
+  ) {
+    renderAppHtmlPreservingVisualizationIframe(nextHtml, activeVisualizationSessionId);
+  } else {
+    app.innerHTML = nextHtml;
+  }
+  renderedVisualizationSessionId = activeVisualizationSessionId;
+}
+
+function renderAppHtmlPreservingVisualizationIframe(html, visualizationSessionId) {
+  const currentIframe = app.querySelector?.(".solara-visualization-frame");
+  if (
+    !currentIframe
+    || visualizationIframeIdentity(currentIframe) !== visualizationSessionId
+    || typeof document?.createElement !== "function"
+  ) {
+    app.innerHTML = html;
+    return;
+  }
+  const nextRoot = document.createElement("div");
+  if (
+    !nextRoot
+    || typeof nextRoot.querySelector !== "function"
+    || !("childNodes" in nextRoot)
+  ) {
+    app.innerHTML = html;
+    return;
+  }
+  nextRoot.innerHTML = html;
+  const nextIframe = nextRoot.querySelector(".solara-visualization-frame");
+  if (!nextIframe || visualizationIframeIdentity(nextIframe) !== visualizationSessionId) {
+    app.innerHTML = html;
+    return;
+  }
+  syncRenderedDomChildren(app, nextRoot, visualizationSessionId);
+}
+
+function syncRenderedDomChildren(currentParent, nextParent, visualizationSessionId) {
+  const nextChildren = Array.from(nextParent.childNodes || []);
+  for (let index = 0; index < nextChildren.length; index += 1) {
+    const nextChild = nextChildren[index];
+    const currentChild = currentParent.childNodes?.[index];
+    if (!currentChild) {
+      currentParent.appendChild(nextChild.cloneNode(true));
+      continue;
+    }
+    if (!syncRenderedDomNode(currentChild, nextChild, visualizationSessionId)) {
+      currentParent.replaceChild(nextChild.cloneNode(true), currentChild);
+    }
+  }
+  while ((currentParent.childNodes?.length || 0) > nextChildren.length) {
+    currentParent.removeChild(currentParent.lastChild);
+  }
+}
+
+function syncRenderedDomNode(currentNode, nextNode, visualizationSessionId) {
+  if (
+    currentNode.nodeType !== nextNode.nodeType
+    || (currentNode.nodeType === 1 && currentNode.tagName !== nextNode.tagName)
+  ) return false;
+  if (currentNode.nodeType === 3 || currentNode.nodeType === 8) {
+    if (currentNode.nodeValue !== nextNode.nodeValue) currentNode.nodeValue = nextNode.nodeValue;
+    return true;
+  }
+  if (currentNode.nodeType !== 1) return false;
+  if (
+    currentNode.matches?.(".solara-visualization-frame")
+    && visualizationIframeIdentity(currentNode) === visualizationSessionId
+    && visualizationIframeIdentity(nextNode) === visualizationSessionId
+  ) {
+    return true;
+  }
+  syncRenderedDomAttributes(currentNode, nextNode);
+  syncRenderedDomChildren(currentNode, nextNode, visualizationSessionId);
+  return true;
+}
+
+function syncRenderedDomAttributes(currentNode, nextNode) {
+  for (const attribute of Array.from(currentNode.attributes || [])) {
+    if (!nextNode.hasAttribute(attribute.name)) currentNode.removeAttribute(attribute.name);
+  }
+  for (const attribute of Array.from(nextNode.attributes || [])) {
+    if (currentNode.getAttribute(attribute.name) !== attribute.value) {
+      currentNode.setAttribute(attribute.name, attribute.value);
+    }
+  }
+}
+
+function visualizationIframeIdentity(iframe) {
+  return String(
+    iframe?.dataset?.visualizationSessionId
+    || iframe?.getAttribute?.("data-visualization-session-id")
+    || ""
+  ).trim();
 }
 
 function renderLoginPage() {
@@ -14268,9 +14388,48 @@ function ensureVisualizationRunListLoaded() {
     });
 }
 
-function invalidateVisualizationSession(message = "") {
+function visualizationSessionIdentity(session = visualizationSession) {
+  return String(
+    session?.visualization_session_id
+    || session?.session_id
+    || session?.id
+    || ""
+  ).trim();
+}
+
+function unloadVisualizationSessionIframe(visualizationSessionId) {
+  const iframe = app.querySelector?.(".solara-visualization-frame");
+  if (!iframe) return;
+  const mountedSessionId = String(iframe.dataset?.visualizationSessionId || "").trim();
+  if (visualizationSessionId && mountedSessionId && mountedSessionId !== visualizationSessionId) return;
+  iframe.src = "about:blank";
+  iframe.remove?.();
+  renderedVisualizationSessionId = "";
+}
+
+function deleteVisualizationSessionOnce(
+  session,
+  { keepalive = false, authToken = backendAuthToken } = {}
+) {
+  const visualizationSessionId = visualizationSessionIdentity(session);
+  if (!visualizationSessionId || disposedVisualizationSessionIds.has(visualizationSessionId)) {
+    return Promise.resolve(null);
+  }
+  disposedVisualizationSessionIds.add(visualizationSessionId);
+  return backendApi.deleteVisualizationSession(visualizationSessionId, { keepalive, authToken })
+    .catch(() => {
+      disposedVisualizationSessionIds.delete(visualizationSessionId);
+      return null;
+    });
+}
+
+function invalidateVisualizationSession(message = "", { keepalive = false } = {}) {
   visualizationSessionRequestEpoch += 1;
+  const previousSession = visualizationSession;
+  const previousSessionId = visualizationSessionIdentity(previousSession);
   visualizationSession = null;
+  unloadVisualizationSessionIframe(previousSessionId);
+  deleteVisualizationSessionOnce(previousSession, { keepalive });
   if (message) visualizationReplayStatus = message;
 }
 
@@ -14290,7 +14449,9 @@ function updateVisualizationSessionSetting(field, value) {
 }
 
 async function startVisualizationSessionThroughApi() {
+  invalidateVisualizationSession();
   const requestEpoch = ++visualizationSessionRequestEpoch;
+  const requestAuthToken = backendAuthToken;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();
   try {
@@ -14299,11 +14460,15 @@ async function startVisualizationSessionThroughApi() {
       visualizationSessionSettings
     );
     visualizationReplayStatus = "正在启动可视化推演";
+    render();
     const response = await backendApi.createVisualizationSession(payload);
     if (
       requestEpoch !== visualizationSessionRequestEpoch
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
-    ) return null;
+    ) {
+      await deleteVisualizationSessionOnce(response, { authToken: requestAuthToken });
+      return null;
+    }
     visualizationSession = response;
     visualizationReplayStatus = "可视化推演已启动";
     return response;
@@ -16534,6 +16699,7 @@ function renderVisualSimulation(page) {
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
         ${solaraUrl ? `<iframe
           class="solara-visualization-frame"
+          data-visualization-session-id="${htmlEscape(visualizationSessionId)}"
           title="Solara 可视化推演"
           src="${htmlEscape(solaraUrl)}"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"

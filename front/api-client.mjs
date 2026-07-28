@@ -218,6 +218,14 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         body: payload
       });
     },
+    deleteVisualizationSession(visualizationSessionId, { keepalive = false, authToken = "" } = {}) {
+      return request({
+        method: "DELETE",
+        path: `/visualization-sessions/${encodeURIComponent(visualizationSessionId)}`,
+        keepalive,
+        headers: authToken ? { authorization: `Bearer ${authToken}` } : {}
+      });
+    },
     submitRun(runRequest) {
       return request({
         method: "POST",
@@ -2862,6 +2870,7 @@ export function buildFrontendResultState(projectJson, resultSummary = null) {
 
 function wrapAuthTransport(transport, getAuthToken) {
   return (request) => {
+    if (request.headers?.authorization) return transport(request);
     const token = request.auth === false ? "" : getAuthToken?.();
     if (!token) return transport(request);
     return transport({
@@ -2875,7 +2884,7 @@ function wrapAuthTransport(transport, getAuthToken) {
 }
 
 function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-  return async ({ method, path, body, headers = {}, responseType = "json", timeoutMs: requestTimeoutMs } = {}) => {
+  return async ({ method, path, body, headers = {}, responseType = "json", timeoutMs: requestTimeoutMs, keepalive = false } = {}) => {
     if (typeof fetch !== "function") {
       throw new Error("Backend API fetch transport is unavailable");
     }
@@ -2895,7 +2904,8 @@ function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
         method,
         signal: controller.signal,
         headers: Object.keys(requestHeaders).length === 0 ? undefined : requestHeaders,
-        body: body === undefined ? undefined : JSON.stringify(body)
+        body: body === undefined ? undefined : JSON.stringify(body),
+        keepalive
       });
     } catch (err) {
       const timedOut = controller.signal.aborted;

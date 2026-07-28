@@ -10,6 +10,7 @@ import tempfile
 from threading import Event, Thread
 import unittest
 from unittest import mock
+from urllib.error import HTTPError
 from urllib import request
 from urllib.parse import quote
 
@@ -1484,6 +1485,21 @@ class BackendHttpApiTest(unittest.TestCase):
                     f"/visualization-sessions/{quote(session['visualization_session_id'], safe='')}",
                     auth_token=auth_token,
                 )
+                malformed_delete = request.Request(
+                    (
+                        base_url.removesuffix("/api")
+                        + "/apivisualization-sessions/"
+                        + quote(session["visualization_session_id"], safe="")
+                    ),
+                    headers={"Authorization": f"Bearer {auth_token}"},
+                    method="DELETE",
+                )
+                with self.assertRaises(HTTPError) as malformed_error:
+                    request.urlopen(
+                        malformed_delete,
+                        timeout=HTTP_TEST_TIMEOUT_SECONDS,
+                    )
+                self.assertEqual(malformed_error.exception.code, 404)
                 other_token = self._login_token(base_url, "user", "user")
                 cross_user_status, cross_user_error = self._json_error_with_status(
                     base_url,
@@ -1491,7 +1507,6 @@ class BackendHttpApiTest(unittest.TestCase):
                     f"/visualization-sessions/{quote(session['visualization_session_id'], safe='')}",
                     auth_token=other_token,
                 )
-                from urllib.error import HTTPError
                 from urllib.request import Request, urlopen
 
                 capability_request = Request(
@@ -1565,6 +1580,64 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(
                     wrong_capability_error["code"],
                     "visualization_session_forbidden",
+                )
+                delete_forbidden_status, delete_forbidden_error = self._json_error_with_status(
+                    base_url,
+                    "DELETE",
+                    (
+                        "/visualization-sessions/"
+                        f"{quote(current_session['visualization_session_id'], safe='')}"
+                    ),
+                    auth_token=other_token,
+                )
+                delete_unauthorized_status, delete_unauthorized_error = (
+                    self._json_error_with_status(
+                        base_url,
+                        "DELETE",
+                        (
+                            "/visualization-sessions/"
+                            f"{quote(current_session['visualization_session_id'], safe='')}"
+                        ),
+                    )
+                )
+                self.assertEqual(delete_unauthorized_status, 401)
+                self.assertEqual(delete_unauthorized_error["code"], "unauthorized")
+                self.assertEqual(delete_forbidden_status, 403)
+                self.assertEqual(
+                    delete_forbidden_error["code"],
+                    "visualization_session_forbidden",
+                )
+                deleted_current_session = self._json(
+                    base_url,
+                    "DELETE",
+                    (
+                        "/visualization-sessions/"
+                        f"{quote(current_session['visualization_session_id'], safe='')}"
+                    ),
+                    auth_token=admin_token,
+                )
+                deleted_current_session_again = self._json(
+                    base_url,
+                    "DELETE",
+                    (
+                        "/visualization-sessions/"
+                        f"{quote(current_session['visualization_session_id'], safe='')}"
+                    ),
+                    auth_token=auth_token,
+                )
+                self.assertEqual(
+                    deleted_current_session,
+                    {
+                        "visualization_session_id": current_session["visualization_session_id"],
+                        "deleted": True,
+                    },
+                )
+                self.assertEqual(
+                    deleted_current_session_again,
+                    {
+                        "visualization_session_id": current_session["visualization_session_id"],
+                        "deleted": False,
+                    },
                 )
                 self.assertEqual(update_status, 409)
                 self.assertEqual(update_error["code"], "experiment_plan_frozen")

@@ -426,9 +426,28 @@ class BackendApiContractTest(unittest.TestCase):
             "planFingerprint": frozen["canonical_fingerprint"],
         }
 
-        session = self.api.create_visualization_session(
-            context=context,
-            playback_speed=1.5,
+        with mock.patch.object(
+            self.adapter,
+            "compile_scenario_with_gate",
+            wraps=self.adapter.compile_scenario_with_gate,
+        ) as compile_gate:
+            session = self.api.create_visualization_session(
+                context=context,
+                playback_speed=1.5,
+                actor_user_id="owner-user",
+            )
+            repeated_session = self.api.create_visualization_session(
+                context=context,
+                playback_speed=2.0,
+                actor_user_id="owner-user",
+            )
+        self.assertEqual(compile_gate.call_count, 1)
+        self.assertEqual(
+            repeated_session["input_fingerprint"],
+            session["input_fingerprint"],
+        )
+        self.api.delete_visualization_session(
+            repeated_session["visualization_session_id"],
             actor_user_id="owner-user",
         )
         loaded = self.api.get_visualization_session(
@@ -504,6 +523,98 @@ class BackendApiContractTest(unittest.TestCase):
         now[0] = 20.0
         with self.assertRaises(KeyError):
             store.get(second["visualization_session_id"], actor_user_id="owner-a")
+
+    def test_visualization_session_store_bounds_and_copies_compiled_inputs(self) -> None:
+        from src.spare_mvp_backend.execution_context import VisualizationSessionStore
+
+        store = VisualizationSessionStore(max_compiled_inputs=2)
+        store.put_compiled_inputs("a", {"nested": {"seed": 1}})
+        cached = store.get_compiled_inputs("a")
+        cached["nested"]["seed"] = 99
+        self.assertEqual(store.get_compiled_inputs("a"), {"nested": {"seed": 1}})
+
+        store.put_compiled_inputs("b", {"seed": 2})
+        self.assertEqual(store.get_compiled_inputs("a"), {"nested": {"seed": 1}})
+        store.put_compiled_inputs("c", {"seed": 3})
+        self.assertIsNone(store.get_compiled_inputs("b"))
+        self.assertEqual(store.get_compiled_inputs("c"), {"seed": 3})
+
+    def test_visualization_session_delete_is_authorized_idempotent_and_concurrent(self) -> None:
+        from src.spare_mvp_backend.execution_context import VisualizationSessionStore
+
+        now = [0.0]
+        store = VisualizationSessionStore(ttl_seconds=10, clock=lambda: now[0])
+        session = store.create({"context_key": "delete"}, owner_user_id="owner-a")
+        session_id = session["visualization_session_id"]
+
+        with self.assertRaises(PermissionError):
+            store.delete(session_id, actor_user_id="owner-b")
+        self.assertTrue(store.delete(session_id, actor_user_id="owner-a"))
+        self.assertFalse(store.delete(session_id, actor_user_id="owner-a"))
+
+        admin_session = store.create({"context_key": "admin-delete"}, owner_user_id="owner-a")
+        self.assertTrue(
+            store.delete(
+                admin_session["visualization_session_id"],
+                actor_user_id="admin-user",
+                actor_role="系统管理员",
+            )
+        )
+        expired_session = store.create({"context_key": "expired"}, owner_user_id="owner-a")
+        now[0] = 20.0
+        self.assertFalse(
+            store.delete(expired_session["visualization_session_id"], actor_user_id="owner-a")
+        )
+
+        concurrent_session = store.create({"context_key": "concurrent"}, owner_user_id="owner-a")
+        concurrent_session_id = concurrent_session["visualization_session_id"]
+        barrier = threading.Barrier(3)
+        results: list[bool] = []
+
+        def delete_concurrently() -> None:
+            barrier.wait(timeout=5)
+            results.append(store.delete(concurrent_session_id, actor_user_id="owner-a"))
+
+        threads = [threading.Thread(target=delete_concurrently) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        barrier.wait(timeout=5)
+        for thread in threads:
+            thread.join(timeout=5)
+
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertCountEqual(results, [True, False])
+
+    def test_visualization_session_api_delete_enforces_owner_and_is_idempotent(self) -> None:
+        project = small_aircraft_support_project("project-visualization-api-delete")
+        session = self.api.create_visualization_session(
+            context={"type": "current_project", "project": project},
+            actor_user_id="owner-user",
+        )
+        session_id = session["visualization_session_id"]
+
+        with self.assertRaises(BackendApiError) as forbidden:
+            self.api.delete_visualization_session(
+                session_id,
+                actor_user_id="other-user",
+                actor_role="普通用户",
+            )
+        self.assertEqual(forbidden.exception.code, "visualization_session_forbidden")
+        self.assertEqual(
+            self.api.delete_visualization_session(
+                session_id,
+                actor_user_id="admin-user",
+                actor_role="系统管理员",
+            ),
+            {"visualization_session_id": session_id, "deleted": True},
+        )
+        self.assertEqual(
+            self.api.delete_visualization_session(
+                session_id,
+                actor_user_id="owner-user",
+            ),
+            {"visualization_session_id": session_id, "deleted": False},
+        )
 
     def test_experiment_plan_freeze_compare_and_swap_rejects_concurrent_update(self) -> None:
         project = small_aircraft_support_project("project-freeze-cas")

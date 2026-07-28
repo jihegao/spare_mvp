@@ -1392,19 +1392,32 @@ class BackendApi:
                 field="playback_speed",
             )
 
-        compile_result = self.adapter.compile_scenario_with_gate(
-            copy.deepcopy(resolved.project),
-            model_family=model_family,
-            runtime_config={"seed": normalized_settings["seed"]},
+        compiled_inputs_cache_key = canonical_fingerprint({
+            "context_fingerprint": resolved.fingerprint,
+            "model_family": model_family,
+            "seed": normalized_settings["seed"],
+        })
+        inputs = self.visualization_session_store.get_compiled_inputs(
+            compiled_inputs_cache_key
         )
-        if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
-            raise BackendApiError(
-                "visualization_session_compile_blocked",
-                "Execution context did not pass the SimulationAdapter compile gate",
-                issues=compile_result.get("issues", []),
-                errors=compile_result.get("errors", []),
+        if inputs is None:
+            compile_result = self.adapter.compile_scenario_with_gate(
+                copy.deepcopy(resolved.project),
+                model_family=model_family,
+                runtime_config={"seed": normalized_settings["seed"]},
             )
-        inputs = copy.deepcopy(compile_result["scenario"]["simulation_inputs"])
+            if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
+                raise BackendApiError(
+                    "visualization_session_compile_blocked",
+                    "Execution context did not pass the SimulationAdapter compile gate",
+                    issues=compile_result.get("issues", []),
+                    errors=compile_result.get("errors", []),
+                )
+            inputs = copy.deepcopy(compile_result["scenario"]["simulation_inputs"])
+            self.visualization_session_store.put_compiled_inputs(
+                compiled_inputs_cache_key,
+                inputs,
+            )
         inputs["seed"] = normalized_settings["seed"]
         time_config = inputs.get("time") if isinstance(inputs.get("time"), dict) else {}
         duration_minutes = _positive_session_int(
@@ -1479,6 +1492,30 @@ class BackendApi:
                 "Visualization session access was denied",
                 visualization_session_id=visualization_session_id,
             ) from exc
+
+    def delete_visualization_session(
+        self,
+        visualization_session_id: str,
+        *,
+        actor_user_id: str,
+        actor_role: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            deleted = self.visualization_session_store.delete(
+                visualization_session_id,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+            )
+        except PermissionError as exc:
+            raise BackendApiError(
+                "visualization_session_forbidden",
+                "Visualization session deletion was denied",
+                visualization_session_id=visualization_session_id,
+            ) from exc
+        return {
+            "visualization_session_id": visualization_session_id,
+            "deleted": deleted,
+        }
 
     def _assert_frozen_context_still_current(self, resolved: ResolvedExecutionContext) -> None:
         if resolved.experiment_plan_id is None:

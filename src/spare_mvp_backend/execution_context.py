@@ -21,6 +21,7 @@ DEFAULT_CONTEXT_SEED = 20260621
 DEFAULT_VISUALIZATION_SESSION_TTL_SECONDS = 30 * 60
 DEFAULT_VISUALIZATION_SESSION_GLOBAL_LIMIT = 256
 DEFAULT_VISUALIZATION_SESSION_OWNER_LIMIT = 32
+DEFAULT_VISUALIZATION_INPUT_CACHE_LIMIT = 16
 
 
 def canonical_fingerprint(payload: Any) -> str:
@@ -62,15 +63,34 @@ class VisualizationSessionStore:
         *,
         max_sessions: int = DEFAULT_VISUALIZATION_SESSION_GLOBAL_LIMIT,
         max_sessions_per_owner: int = DEFAULT_VISUALIZATION_SESSION_OWNER_LIMIT,
+        max_compiled_inputs: int = DEFAULT_VISUALIZATION_INPUT_CACHE_LIMIT,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.ttl_seconds = max(1, int(ttl_seconds))
         self.max_sessions = max(1, int(max_sessions))
         self.max_sessions_per_owner = max(1, min(int(max_sessions_per_owner), self.max_sessions))
+        self.max_compiled_inputs = max(1, int(max_compiled_inputs))
         self._clock = clock
         self._lock = threading.Lock()
         self._lru_sequence = 0
         self._sessions: dict[str, _StoredVisualizationSession] = {}
+        self._compiled_inputs: dict[str, dict[str, Any]] = {}
+
+    def get_compiled_inputs(self, cache_key: str) -> dict[str, Any] | None:
+        with self._lock:
+            inputs = self._compiled_inputs.pop(cache_key, None)
+            if inputs is None:
+                return None
+            self._compiled_inputs[cache_key] = inputs
+            return copy.deepcopy(inputs)
+
+    def put_compiled_inputs(self, cache_key: str, inputs: dict[str, Any]) -> None:
+        with self._lock:
+            self._compiled_inputs.pop(cache_key, None)
+            self._compiled_inputs[cache_key] = copy.deepcopy(inputs)
+            while len(self._compiled_inputs) > self.max_compiled_inputs:
+                oldest_key = next(iter(self._compiled_inputs))
+                self._compiled_inputs.pop(oldest_key)
 
     def create(
         self,
@@ -134,6 +154,28 @@ class VisualizationSessionStore:
             entry.last_accessed_at = self._clock()
             entry.lru_sequence = self._next_lru_sequence_locked()
             return copy.deepcopy(entry.payload)
+
+    def delete(
+        self,
+        visualization_session_id: str,
+        *,
+        actor_user_id: str,
+        actor_role: str | None = None,
+    ) -> bool:
+        """Delete one session if the actor owns it or is a system administrator."""
+        with self._lock:
+            self._purge_expired_locked()
+            entry = self._sessions.get(visualization_session_id)
+            if entry is None:
+                return False
+            allowed = (
+                str(actor_user_id or "") == entry.owner_user_id
+                or str(actor_role or "") == "系统管理员"
+            )
+            if not allowed:
+                raise PermissionError(visualization_session_id)
+            self._sessions.pop(visualization_session_id)
+            return True
 
     def delete_for_experiment_plan(self, experiment_plan_id: str) -> list[str]:
         with self._lock:

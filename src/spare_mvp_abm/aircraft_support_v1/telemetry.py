@@ -14,8 +14,14 @@ from .state import AircraftState, JobState, MissionState
 class TelemetryMixin:
 
 
-    def visualization_frame(self, *, run_id: str, step: int) -> dict[str, Any]:
-        metrics = self.snapshot()
+    def visualization_frame(
+        self,
+        *,
+        run_id: str,
+        step: int,
+        metrics: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        metrics = self.snapshot() if metrics is None else metrics
         return {
             "run_id": run_id,
             "step": step,

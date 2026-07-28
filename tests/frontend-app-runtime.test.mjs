@@ -5734,6 +5734,17 @@ test("deleting the last preventive maintenance activity keeps the page empty", a
 test("preventive maintenance rule toggles derive from canonical intervals and persist through those intervals", async () => {
   const projectId = "project-preventive-rule-runtime";
   const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.combatUnit = {
+    members: [{
+      aircraftNo: "J15-01",
+      model: "J-15",
+      airport: "航母飞行甲板",
+      status: "待命",
+      preLifeCalendarDays: 0,
+      preLifeFlightHours: 0,
+      preLifeTakeoffLandingCount: 3
+    }]
+  };
   projectJson.supportActivities.push({
     id: "preventive-j15-calendar-or-hours",
     activityType: "预防性维修",
@@ -5742,7 +5753,7 @@ test("preventive maintenance rule toggles derive from canonical intervals and pe
     aircraftModel: "J-15",
     calendarDayInterval: 7,
     runHourInterval: 25,
-    takeoffLandingInterval: 0,
+    takeoffLandingInterval: 6,
     plannedDowntimeHours: 24,
     maintenanceMethods: ["non_replacement"],
     replacementRatio: 0,
@@ -5775,6 +5786,10 @@ test("preventive maintenance rule toggles derive from canonical intervals and pe
       runtime.appNode.innerHTML,
       /data-path="supportActivities\.1\.runHourInterval" type="number" value="25"(?![^>]*disabled)/
     );
+    assert.match(
+      runtime.appNode.innerHTML,
+      /起落次数<input[^>]*data-preventive-rule-interval-path="supportActivities\.1\.takeoffLandingInterval"[^>]*checked/
+    );
 
     await runtime.change(
       "[data-preventive-rule-interval-path]",
@@ -5784,10 +5799,20 @@ test("preventive maintenance rule toggles derive from canonical intervals and pe
       },
       { checked: false, type: "checkbox" }
     );
+    await runtime.change(
+      "[data-preventive-rule-interval-path]",
+      {
+        preventiveRuleIntervalPath: "supportActivities.1.takeoffLandingInterval",
+        preventiveRuleDefaultInterval: "6"
+      },
+      { checked: false, type: "checkbox" }
+    );
     await runtime.click("[data-project-draft-save]");
     const saved = await waitForProjectSave(runtime, (body) => (
       body.supportActivities?.[1]?.calendarDayInterval === 0
       && body.supportActivities?.[1]?.runHourInterval === 25
+      && body.supportActivities?.[1]?.takeoffLandingInterval === 0
+      && body.combatUnit?.members?.[0]?.preLifeTakeoffLandingCount === 3
     ), "expected preventive rule toggle to persist through canonical interval fields");
     assert.equal(saved.supportActivities[1].useCalendarRule, undefined);
     assert.equal(saved.supportActivities[1].useFlightHourRule, undefined);
@@ -6894,6 +6919,109 @@ test("visual session can be restarted directly from the run toolbar", async () =
     await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
     assert.match(runtime.appNode.innerHTML, /<iframe/);
     assert.match(runtime.appNode.innerHTML, /visualization_session_token=visual-token-runtime-2/);
+    const deletes = runtime.requests.filter((request) => (
+      request.url === "/api/visualization-sessions/visual-session-runtime-1"
+      && request.options.method === "DELETE"
+    ));
+    assert.equal(deletes.length, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual session keeps its iframe identity while the host page rerenders", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-visual-mesa-page" });
+  try {
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    const iframeSrc = runtime.appNode.innerHTML.match(/<iframe[\s\S]*?src="([^"]+)"/)?.[1] || "";
+    assert.match(iframeSrc, /visualization_session_id=visual-session-runtime-1/);
+
+    await runtime.click("[data-project-menu-toggle]", { projectMenuToggle: "" });
+
+    const rerenderedIframeSrc = runtime.appNode.innerHTML.match(/<iframe[\s\S]*?src="([^"]+)"/)?.[1] || "";
+    assert.equal(rerenderedIframeSrc, iframeSrc);
+    assert.match(runtime.appNode.innerHTML, /data-project-list/);
+    assert.equal(
+      runtime.requests.filter((request) => request.url === "/api/visualization-sessions").length,
+      1
+    );
+    assert.equal(
+      runtime.requests.filter((request) => (
+        request.url === "/api/visualization-sessions/visual-session-runtime-1"
+        && request.options.method === "DELETE"
+      )).length,
+      0
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual session is deleted once when in-app feature navigation leaves the visual page", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-visual-mesa-page" });
+  try {
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    await runtime.click(
+      "[data-feature-id]",
+      { featureId: "spare-planning-basic-mission" }
+    );
+
+    const deletes = runtime.requests.filter((request) => (
+      request.url === "/api/visualization-sessions/visual-session-runtime-1"
+      && request.options.method === "DELETE"
+    ));
+    assert.equal(deletes.length, 1);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe|visual-token-runtime-1/);
+    assert.match(runtime.appNode.innerHTML, /基本任务建模/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual simulation deletes a stale session response after its context was invalidated", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    visualizationSessionResponseDelayMs: 25
+  });
+  try {
+    const pendingSession = runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    await runtime.setHash("feature=spare-planning-basic-mission");
+    await pendingSession;
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+    const cleanupRequests = runtime.requests.filter((request) => (
+      request.url === "/api/visualization-sessions/visual-session-runtime-1"
+      && request.options.method === "DELETE"
+    ));
+    assert.equal(cleanupRequests.length, 1);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe|visual-token-runtime-1/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("pending visual session cleanup keeps the request auth token after logout", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    visualizationSessionResponseDelayMs: 25
+  });
+  try {
+    const pendingSession = runtime.click(
+      "[data-visualization-session-start]",
+      { visualizationSessionStart: "" }
+    );
+    await runtime.click("[data-logout]", { logout: "" });
+    await pendingSession;
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+
+    const cleanup = runtime.requests.find((request) => (
+      request.url === "/api/visualization-sessions/visual-session-runtime-1"
+      && request.options.method === "DELETE"
+    ));
+    assert.ok(cleanup);
+    assert.equal(cleanup.options.headers.authorization, "Bearer m4-runtime-token");
+    assert.match(runtime.appNode.innerHTML, /登录/);
   } finally {
     runtime.restore();
   }
@@ -7007,6 +7135,65 @@ test("visual simulation clears its session when shared run context changes on an
     assert.doesNotMatch(runtime.appNode.innerHTML, /<iframe/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /visualization_session_token|visual-token-runtime-1/);
     assert.match(runtime.appNode.innerHTML, /重新创建可视化会话/);
+    const sessionCreateIndex = runtime.requests.findIndex((request) => (
+      request.url === "/api/visualization-sessions"
+      && request.options.method === "POST"
+    ));
+    const cleanupRequests = runtime.requests.slice(sessionCreateIndex + 1).filter((request) => (
+      request.url === "/api/visualization-sessions/visual-session-runtime-1"
+      && request.options.method === "DELETE"
+    ));
+    assert.equal(cleanupRequests.length, 1);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual simulation uses keepalive cleanup when the host page is hidden", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-visual-mesa-page" });
+  try {
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    await runtime.windowEvent("pagehide", { persisted: true });
+    assert.equal(
+      runtime.requests.filter((request) => (
+        request.url === "/api/visualization-sessions/visual-session-runtime-1"
+        && request.options.method === "DELETE"
+      )).length,
+      0
+    );
+    assert.match(runtime.appNode.innerHTML, /<iframe/);
+
+    await runtime.windowEvent("pagehide", { persisted: false });
+    const cleanup = runtime.requests.find((request) => (
+      request.url === "/api/visualization-sessions/visual-session-runtime-1"
+      && request.options.method === "DELETE"
+    ));
+    assert.ok(cleanup);
+    assert.equal(cleanup.options.keepalive, true);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual session cleanup can retry the same identity after a transient DELETE failure", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    visualizationSessionResponseOverrides: {
+      visualization_session_id: "visual-session-runtime-retry",
+      session_access_token: "visual-token-runtime-retry"
+    },
+    visualizationSessionDeleteFailures: 1
+  });
+  try {
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    await runtime.click("[data-visualization-session-start]", { visualizationSessionStart: "" });
+    await runtime.windowEvent("pagehide", { persisted: false });
+
+    const cleanupAttempts = runtime.requests.filter((request) => (
+      request.url === "/api/visualization-sessions/visual-session-runtime-retry"
+      && request.options.method === "DELETE"
+    ));
+    assert.equal(cleanupAttempts.length, 2);
   } finally {
     runtime.restore();
   }
@@ -7771,6 +7958,7 @@ async function setupRuntimeApp({
   liteMesaAnalysisResponseDelayMs = 0,
   visualizationSessionResponseOverrides = {},
   visualizationSessionResponseDelayMs = 0,
+  visualizationSessionDeleteFailures = 0,
   analysisXlsxExportError = "",
   analysisXlsxExportDelayMs = 0,
   projectSaveHandler = null,
@@ -7799,6 +7987,7 @@ async function setupRuntimeApp({
   let createProjectFromImportCount = 0;
   let projectSaveCount = 0;
   let visualizationSessionCount = 0;
+  let remainingVisualizationSessionDeleteFailures = visualizationSessionDeleteFailures;
   const storage = new Map([
     ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })],
     ...storageEntries
@@ -8135,6 +8324,20 @@ async function setupRuntimeApp({
         ...visualizationSessionResponseOverrides
       });
     }
+    if (url.startsWith("/api/visualization-sessions/") && method === "DELETE") {
+      const visualizationSessionId = decodeURIComponent(url.split("/").at(-1) || "");
+      if (remainingVisualizationSessionDeleteFailures > 0) {
+        remainingVisualizationSessionDeleteFailures -= 1;
+        return jsonResponse(
+          { code: "visualization_session_delete_failed", message: "runtime delete failure" },
+          { ok: false, status: 503 }
+        );
+      }
+      return jsonResponse({
+        visualization_session_id: visualizationSessionId,
+        deleted: true
+      });
+    }
     if (url === "/api/mesa-analysis-runs" && method === "POST") {
 	      if (liteMesaAnalysisResponseDelayMs > 0) {
 	        await new Promise((resolve) => previousSetTimeout(resolve, liteMesaAnalysisResponseDelayMs));
@@ -8414,6 +8617,10 @@ async function setupRuntimeApp({
       await flushRuntimeTasks();
     },
     async flush() {
+      await flushRuntimeTasks();
+    },
+    async windowEvent(type, event = {}) {
+      windowListeners[type]?.(event);
       await flushRuntimeTasks();
     },
     restore() {

@@ -94,7 +94,8 @@ def create_backend_server(
 
         def _handle(self) -> None:
             parsed_path = unquote(urlparse(self.path).path)
-            if self.command == "GET" and not parsed_path.startswith("/api"):
+            is_api_path = parsed_path == "/api" or parsed_path.startswith("/api/")
+            if self.command == "GET" and not is_api_path:
                 self._send_static(parsed_path)
                 return
             request_connection = None
@@ -164,7 +165,7 @@ def create_backend_server(
         def _dispatch(self) -> dict[str, Any]:
             api = self._request_api
             path = urlparse(self.path).path
-            if not path.startswith("/api"):
+            if path != "/api" and not path.startswith("/api/"):
                 raise KeyError(path)
             route = path[4:] or "/"
             decoded_route = unquote(route)
@@ -393,6 +394,13 @@ def create_backend_server(
                     )
                 actor = self._require_user()
                 return api.get_visualization_session(
+                    parts[1],
+                    actor_user_id=actor["user_id"],
+                    actor_role=actor["role"],
+                )
+            if self.command == "DELETE" and len(parts) == 2 and parts[0] == "visualization-sessions":
+                actor = self._require_user()
+                return api.delete_visualization_session(
                     parts[1],
                     actor_user_id=actor["user_id"],
                     actor_role=actor["role"],
