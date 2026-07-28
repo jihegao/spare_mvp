@@ -5686,6 +5686,56 @@ test("preventive maintenance view edits the same canonical maintenance method pa
   }
 });
 
+test("deleting the last preventive maintenance activity keeps the page empty", async () => {
+  const projectId = "project-empty-preventive-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  projectJson.supportActivities.push({
+    id: "preventive-j15-only",
+    activityType: "预防性维修",
+    planType: "预防性维修方案",
+    activityName: "J-15唯一预防性维修方案",
+    aircraftModel: "J-15",
+    maintenanceMethods: ["non_replacement"],
+    replacementRatio: 0,
+    activityCodes: [],
+    predecessors: {}
+  });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "预防性维修空状态运行时项目")]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-preventive-maintenance-activity");
+    assert.match(runtime.appNode.innerHTML, /J-15唯一预防性维修方案/);
+
+    await runtime.click(
+      "[data-preventive-activity-plan-delete]",
+      { preventiveActivityPlanDelete: "supportActivity:1" }
+    );
+
+    assert.match(runtime.appNode.innerHTML, /暂无预防性维修活动/);
+    assert.match(runtime.appNode.innerHTML, /data-preventive-activity-plan-add/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /J-15新增预防性维修活动/);
+
+    await runtime.click("[data-project-draft-save]");
+    const saved = await waitForProjectSave(runtime, (body) => (
+      body.project_id === projectId
+      && !body.supportActivities?.some((activity) => (
+        activity.activityType === "预防性维修"
+        || activity.planType === "预防性维修方案"
+      ))
+    ), "expected the project to persist without preventive maintenance activities");
+    assert.equal(
+      saved.supportActivities.some((activity) => activity.activityType === "预防性维修"),
+      false
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("preventive maintenance rule toggles derive from canonical intervals and persist through those intervals", async () => {
   const projectId = "project-preventive-rule-runtime";
   const projectJson = createRuntimeProjectJson({ project_id: projectId });
