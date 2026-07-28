@@ -3712,6 +3712,56 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         self.assertEqual(sorted({mission.day_index for mission in model.missions}), [1, 2, 3])
 
+    def test_explicit_mission_calendar_ignores_legacy_periodic_repetition_and_duration_boundary(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 2 * 24 * 60
+        inputs["mission_profile"]["duration_minutes"] = 2 * 24 * 60
+        inputs["mission_profile"]["composite_tasks"] = [
+            {
+                "id": "composite-a",
+                "name": "Two wave composite",
+                "taskItems": [
+                    {
+                        "id": "wave-1",
+                        "basicMissionId": "mission-a",
+                        "firstWaveTime": "08:00",
+                        "taskDurationMinutes": 30,
+                        "equipmentQuantity": 1,
+                    },
+                    {
+                        "id": "wave-2",
+                        "basicMissionId": "mission-a",
+                        "firstWaveTime": "09:00",
+                        "taskDurationMinutes": 30,
+                        "equipmentQuantity": 1,
+                    },
+                ],
+            }
+        ]
+        inputs["mission_profile"]["mission_calendar"] = [
+            {"day_index": 2, "composite_task_id": "composite-a"},
+            {"day_index": 3, "composite_task_id": "composite-a"},
+        ]
+        inputs["mission_profile"]["periodic_tasks"] = [
+            {
+                "id": "legacy-periodic",
+                "cycleDays": 7,
+                "repeatWeeks": 43,
+                "repeatCount": 43,
+                "compositeTaskIds": ["composite-a"],
+            }
+        ]
+
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertEqual(len(model.missions), 2)
+        self.assertEqual([mission.day_index for mission in model.missions], [2, 2])
+        self.assertEqual(
+            [mission.planned_start for mission in model.missions],
+            [24 * 60 + 8 * 60, 24 * 60 + 9 * 60],
+        )
+        self.assertTrue(all(mission.periodic_task_id == "mission-calendar" for mission in model.missions))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@ from typing import Any
 
 from .runtime_utils import (
     _failure_distribution_rate,
+    _mission_calendar_days_by_composite,
     _non_negative_float,
     _non_negative_int,
     _periodic_explicit_composite_days,
@@ -631,10 +632,17 @@ class ModelBuilderMixin:
         basic_missions = self._basic_missions_by_id(profile)
         default_basic = next(iter(basic_missions.values()), {})
         missions: list[MissionState] = []
+        has_explicit_calendar = isinstance(profile.get("mission_calendar"), list)
         periodic_contexts = self._periodic_contexts_by_composite(profile)
+        schedule_duration_minutes = min(
+            self.duration_minutes,
+            _positive_int(profile.get("duration_minutes"), self.duration_minutes),
+        )
         mission_duration_adjustment = self.mission_context["duration_adjustment_minutes"]
         for composite in profile.get("composite_tasks") or []:
             composite_id = str(composite.get("id") or "")
+            if has_explicit_calendar and composite_id not in periodic_contexts:
+                continue
             periodic_context = periodic_contexts.get(composite_id, {})
             for item_index, item in enumerate(composite.get("taskItems") or []):
                 if not isinstance(item, dict):
@@ -658,7 +666,11 @@ class ModelBuilderMixin:
                 for day_offset in mission_days:
                     for repeat in range(daily_repeat_count):
                         planned_start = day_offset * 1440 + first_start + repeat * interval
-                        if planned_start > self.duration_minutes:
+                        if (
+                            planned_start >= schedule_duration_minutes
+                            if has_explicit_calendar
+                            else planned_start > schedule_duration_minutes
+                        ):
                             continue
                         day_index = planned_start // 1440 + 1
                         wave_index = repeat + 1
@@ -693,7 +705,7 @@ class ModelBuilderMixin:
                                 day_index=day_index,
                             )
                         )
-        if not missions:
+        if not missions and not has_explicit_calendar:
             basic = default_basic
             planned_start = max(0, int(basic.get("startHour") or 1) * 60)
             preflight_notice = self._preflight_notice_minutes({}, basic)
@@ -755,6 +767,16 @@ class ModelBuilderMixin:
         return default_basic
 
     def _periodic_contexts_by_composite(self, profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        if isinstance(profile.get("mission_calendar"), list):
+            return {
+                composite_task_id: {
+                    "id": "mission-calendar",
+                    "name": "mission calendar",
+                    "daily_repeat_count": 1,
+                    "active_days": active_days,
+                }
+                for composite_task_id, active_days in _mission_calendar_days_by_composite(profile).items()
+            }
         contexts: dict[str, dict[str, Any]] = {}
         for periodic in profile.get("periodic_tasks") or []:
             if not isinstance(periodic, dict):
@@ -799,11 +821,18 @@ class ModelBuilderMixin:
 
     def _mission_days_for_item(self, item: dict[str, Any], periodic_context: dict[str, Any]) -> list[int]:
         if periodic_context:
+            profile = self.inputs.get("mission_profile", {})
+            duration_minutes = min(
+                self.duration_minutes,
+                _positive_int(profile.get("duration_minutes"), self.duration_minutes),
+            )
             days = [
                 int(day)
                 for day in periodic_context.get("active_days", [])
-                if isinstance(day, int) and day >= 0 and day * 1440 <= self.duration_minutes
+                if isinstance(day, int) and day >= 0 and day * 1440 < duration_minutes
             ]
+            if isinstance(profile.get("mission_calendar"), list):
+                return days
             return days or [0]
         return [0]
 

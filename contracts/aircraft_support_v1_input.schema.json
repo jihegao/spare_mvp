@@ -18,7 +18,7 @@
     "stop_policy"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "aircraft-support-v1-input-v0" },
+    "schema_version": { "type": "string", "const": "aircraft-support-v1-input-v1" },
     "project_identity": {
       "type": "object",
       "additionalProperties": false,
@@ -39,7 +39,8 @@
         "duration_minutes",
         "basic_missions",
         "composite_tasks",
-        "periodic_tasks",
+        "mission_calendar",
+        "periodic_source",
         "mission_phases",
         "airports"
       ],
@@ -49,7 +50,18 @@
         "duration_minutes": { "type": "integer", "minimum": 1 },
         "basic_missions": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
         "composite_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-        "periodic_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "mission_calendar": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["day_index", "composite_task_id"],
+            "properties": {
+              "day_index": { "type": "integer", "minimum": 1 },
+              "composite_task_id": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
         "periodic_source": {
           "type": "object",
           "additionalProperties": false,

@@ -24,8 +24,8 @@
   ],
   "metrics": {
     "active_jobs": 0,
-    "available_aircraft_hours": 1,
     "available_aircraft": 1,
+    "available_aircraft_hours": 1,
     "avg_departure_delay": 0,
     "lru_failures": 0,
     "maintenance_backlog": 0,

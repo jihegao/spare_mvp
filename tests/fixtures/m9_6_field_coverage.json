@@ -601,6 +601,12 @@
       "target": "M9.6 platform case package"
     },
     {
+      "field_path": "objects.missionProfiles[].durationDays",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
       "field_path": "objects.missionProfiles[].durationHours",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
@@ -799,139 +805,79 @@
       "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
-      "field_path": "objects.missionProfiles[].periodicTasks[].compositeTaskIds[]",
+      "field_path": "objects.missionProfiles[].periodicProfileLists.month[].id",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.missionProfiles[].periodicProfileLists.month[].name",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].periodicProfileLists.month[].weekProfileIds[]",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.missionProfiles[].periodicProfileLists.week[].id",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.missionProfiles[].periodicProfileLists.week[].name",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].periodicProfileLists.year[].id",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].periodicProfileLists.year[].monthProfileIds[]",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.missionProfiles[].periodicProfileLists.year[].name",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].periodicTasks[].compositeTaskIds[]",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].compositeTasks[].compositeTaskId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
-      "field_path": "objects.missionProfiles[].periodicTasks[].compositeTasks[].week",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].cycleDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].dailyRepeatCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
+      "field_path": "objects.missionProfiles[].periodicTasks[].compositeTasks[].weekday",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].periodDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].repeatCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].repeatCycleDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].repeatCycleUnit",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].repeatCycleValue",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].repeatRounds",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].repeatWeeks",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].taskName",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].taskPeriodDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.friday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.monday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.saturday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.sunday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.thursday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.tuesday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.wednesday",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -1626,12 +1572,12 @@
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 46,
+    "consumed": 55,
     "defaulted": 0,
     "derived": 9,
     "governance_only": 20,
-    "ignored": 195,
-    "total_fields": 270,
+    "ignored": 177,
+    "total_fields": 261,
     "unsupported": 0
   }
 }

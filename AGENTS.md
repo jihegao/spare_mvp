@@ -3,7 +3,7 @@
 ## Project Contract Ownership
 
 - Treat `contracts/`, `src/spare_mvp_backend/project_payload.py` (`ProjectJsonExporter`), and `src/spare_mvp_contract/adapter.py` (`SimulationAdapter`) as the sources of truth for Project JSON and Project-to-model compilation semantics.
-- Do not add a second Project-to-`aircraft-support-v1-input-v0` compiler in scripts, skills, tests, frontend code, or backend handlers. Project operations must use the repository/exporter boundary, and model input must be produced by `SimulationAdapter`.
+- Do not add a second Project-to-`aircraft-support-v1` input compiler in scripts, skills, tests, frontend code, or backend handlers. Project operations must use the repository/exporter boundary, and model input must be produced by `SimulationAdapter`.
 - Keep modeling changes synchronized across the Project and input schemas, `ProjectJsonExporter`, `SimulationAdapter`, canonical fixtures, contract tests, and relevant documentation.
 - Treat SQLite databases as local runtime state. Reproducible baseline data belongs in reviewed fixtures or deterministic fixture generators, not in a checked-in database.
 

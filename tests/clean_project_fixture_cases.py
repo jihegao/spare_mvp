@@ -18,7 +18,7 @@ def minimal_clean_project() -> dict[str, Any]:
         "airports": ["A"],
         "missionProfile": {
             "name": "clean mission",
-            "durationHours": 1,
+            "durationDays": 1,
             "compositeTasks": [],
             "periodicTasks": [],
         },
@@ -134,7 +134,7 @@ def legacy_polluted_project() -> dict[str, Any]:
         "missionAreas": [{"id": "area-a", "name": "Area A", "canvasLayout": {"x": 1}}],
         "missionProfile": {
             "name": "clean mission",
-            "durationHours": 1,
+            "durationDays": 1,
             "profileType": "legacy-ui",
             "analysisRequests": {"largeSample": {"samples": 10}},
             "compositeTasks": [],

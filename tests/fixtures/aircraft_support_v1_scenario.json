@@ -11,7 +11,7 @@
         "missionProfile.combatUnit.members[].preLifeCalendarDays",
         "missionProfile.combatUnit.members[].preLifeFlightHours",
         "missionProfile.combatUnit.members[].preLifeTakeoffLandingCount",
-        "missionProfile.durationHours",
+        "missionProfile.durationDays",
         "missionProfile.compositeTasks",
         "missionProfile.periodicTasks",
         "basicMissions",
@@ -113,7 +113,7 @@
         "missionProfile.combatUnit.members[].remainingLifeHours",
         "missionProfile.combatUnit.members[].takeoffLandingCount"
       ],
-      "mapping_version": "aircraft-support-v1-input-v0",
+      "mapping_version": "aircraft-support-v1-input-v1",
       "migration_notices": [],
       "model_family": "aircraft_support_v1",
       "modeling_snapshot_id": null,
@@ -154,6 +154,7 @@
           "initial_preventive_due": false,
           "initial_state": "available",
           "model": "J-15",
+          "preventive_cycles": [],
           "preventive_threshold_sources": {
             "calendar_days": [],
             "flight_hours": [],
@@ -232,7 +233,8 @@
         }
       ],
       "composite_tasks": [],
-      "duration_minutes": 60,
+      "duration_minutes": 1440,
+      "mission_calendar": [],
       "mission_phases": [
         {
           "basicMissionId": "basic-small",
@@ -248,7 +250,6 @@
         "label": "周剖面",
         "level": "week"
       },
-      "periodic_tasks": [],
       "profile_id": "mission-profile"
     },
     "monte_carlo": {
@@ -271,12 +272,12 @@
       "scenario_id": "aircraft-support-contract-demo",
       "source_import_id": null
     },
-    "schema_version": "aircraft-support-v1-input-v0",
+    "schema_version": "aircraft-support-v1-input-v1",
     "seed": 0,
     "stop_policy": {
       "conditions": [
         {
-          "duration_minutes": 60,
+          "duration_minutes": 1440,
           "type": "duration"
         }
       ],
@@ -367,9 +368,9 @@
       }
     },
     "time": {
-      "duration_minutes": 60,
+      "duration_minutes": 1440,
       "max_state_frames_single": 2000,
-      "requested_steps": 2,
+      "requested_steps": 48,
       "sample_every_minutes": 30,
       "tick_minutes": 1
     }

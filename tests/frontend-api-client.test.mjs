@@ -766,7 +766,7 @@ test("normalizeProjectJsonForClientDraft repairs duplicate basic mission identit
   assert.equal(normalized.basicMissions[1].missionId, "mission-j16d");
 });
 
-test("buildBackendProjectJson normalizes periodic task save aliases", () => {
+test("buildBackendProjectJson migrates periodic aliases to durationDays and canonical weekday rows", () => {
   const scenario = {
     scenarioId: "periodic-canonical-save",
     basicMissions: [{
@@ -833,6 +833,7 @@ test("buildBackendProjectJson normalizes periodic task save aliases", () => {
   const periodicTask = projectJson.missionProfile.periodicTasks[0];
 
   assert.equal("durationHours" in projectJson.missionProfile, false);
+  assert.equal(projectJson.missionProfile.durationDays, 14);
   assert.deepEqual(taskItem, {
     basicMissionId: "basic-alpha",
     basicTaskName: "Basic Alpha",
@@ -845,16 +846,13 @@ test("buildBackendProjectJson normalizes periodic task save aliases", () => {
   assert.equal(periodicTask.id, "periodic-alpha");
   assert.deepEqual(projectJson.missionProfile.periodicProfileLists, scenario.missionProfile.periodicProfileLists);
   assert.equal(periodicTask.name, "周期任务 A");
-  assert.equal(periodicTask.repeatWeeks, 2);
-  assert.equal(periodicTask.cycleDays, 7);
   assert.deepEqual(periodicTask.compositeTaskIds, ["composite-alpha"]);
   assert.deepEqual(periodicTask.compositeTasks, [
-    { compositeTaskId: "composite-alpha", weekIndex: 1, weekday: "monday" },
-    { compositeTaskId: "composite-alpha", weekIndex: 1, weekday: "tuesday" },
-    { compositeTaskId: "composite-alpha", weekIndex: 2, weekday: "monday" },
-    { compositeTaskId: "composite-alpha", weekIndex: 2, weekday: "tuesday" }
+    { compositeTaskId: "composite-alpha", weekday: "monday" },
+    { compositeTaskId: "composite-alpha", weekday: "tuesday" }
   ]);
   for (const field of [
+    "cycleDays",
     "dailyRepeatCount",
     "experimentName",
     "parentTask",
@@ -866,6 +864,7 @@ test("buildBackendProjectJson normalizes periodic task save aliases", () => {
     "repeatCycleUnit",
     "repeatCycleValue",
     "repeatRounds",
+    "repeatWeeks",
     "taskCategory",
     "taskGroupName",
     "taskName",
@@ -874,6 +873,213 @@ test("buildBackendProjectJson normalizes periodic task save aliases", () => {
   ]) {
     assert.equal(field in periodicTask, false, `${field} should not be saved`);
   }
+});
+
+test("buildBackendProjectJson splits indexed legacy weeks without changing their calendar mapping", () => {
+  const scenario = {
+    scenarioId: "indexed-periodic-migration",
+    basicMissions: [],
+    missionProfile: {
+      name: "indexed legacy profile",
+      durationHours: 24,
+      compositeTasks: [
+        { id: "composite-day", name: "day", taskItems: [] },
+        { id: "composite-night", name: "night", taskItems: [] }
+      ],
+      periodicTasks: [{
+        id: "legacy-periodic",
+        name: "legacy",
+        repeatWeeks: 2,
+        cycleDays: 7,
+        compositeTasks: [
+          { weekIndex: 1, weekday: "mondayCompositeTaskId", compositeTaskId: "composite-day" },
+          { weekIndex: 2, weekday: "tuesdayCompositeTaskId", compositeTaskId: "composite-night" }
+        ]
+      }]
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: scenario.scenarioId });
+  const profile = projectJson.missionProfile;
+
+  assert.equal(profile.durationDays, 14);
+  assert.deepEqual(profile.periodicTasks, [
+    {
+      id: "migrated-week-profile-1",
+      name: "迁移周剖面 1",
+      compositeTasks: [{ compositeTaskId: "composite-day", weekday: "monday" }],
+      compositeTaskIds: ["composite-day"]
+    },
+    {
+      id: "migrated-week-profile-2",
+      name: "迁移周剖面 2",
+      compositeTasks: [{ compositeTaskId: "composite-night", weekday: "tuesday" }],
+      compositeTaskIds: ["composite-night"]
+    }
+  ]);
+  assert.deepEqual(
+    profile.periodicProfileLists.month[0].weekProfileIds,
+    ["migrated-week-profile-1", "migrated-week-profile-2", "", "", ""]
+  );
+  assert.equal(profile.periodicProfileLists.year[0].monthProfileIds[0], "migrated-month-profile-1-1");
+  assert.equal(profile.periodicProfileLists.year[0].monthProfileIds.length, 12);
+});
+
+test("buildBackendProjectJson gives explicit durationDays precedence over stale legacy repeats", () => {
+  const scenario = {
+    scenarioId: "canonical-duration-precedence",
+    basicMissions: [],
+    missionProfile: {
+      name: "canonical duration",
+      durationDays: 43,
+      durationHours: 24,
+      compositeTasks: [{ id: "composite-day", name: "day", taskItems: [] }],
+      periodicTasks: [{
+        id: "legacy-periodic",
+        name: "legacy",
+        repeatWeeks: 43,
+        cycleDays: 3,
+        weekdayAssignments: { monday: "composite-day" }
+      }]
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: scenario.scenarioId });
+
+  assert.equal(projectJson.missionProfile.durationDays, 43);
+  assert.equal("durationHours" in projectJson.missionProfile, false);
+  assert.equal("repeatWeeks" in projectJson.missionProfile.periodicTasks[0], false);
+});
+
+test("normalizeProjectJsonForClientDraft fails closed for indexed legacy calendar conflicts", () => {
+  const base = {
+    scenarioId: "indexed-periodic-conflict",
+    basicMissions: [],
+    missionProfile: {
+      name: "conflicting legacy profile",
+      durationDays: 14,
+      compositeTasks: [
+        { id: "composite-a", name: "A", taskItems: [] },
+        { id: "composite-b", name: "B", taskItems: [] }
+      ],
+      periodicTasks: [
+        {
+          id: "legacy-a",
+          compositeTasks: [{ weekIndex: 1, weekday: "monday", compositeTaskId: "composite-a" }]
+        },
+        {
+          id: "legacy-b",
+          compositeTasks: [{ weekIndex: 1, weekday: "monday", compositeTaskId: "composite-b" }]
+        }
+      ]
+    }
+  };
+
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft(base),
+    /duplicate week 1 monday assignment/
+  );
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft({
+      ...base,
+      missionProfile: {
+        ...base.missionProfile,
+        periodicTasks: [
+          {
+            id: "legacy-a",
+            compositeTasks: [{ weekIndex: 1, weekday: "monday", compositeTaskId: "composite-a" }]
+          },
+          {
+            id: "legacy-b",
+            compositeTasks: [{ weekIndex: 1, weekday: "monday", compositeTaskId: "composite-a" }]
+          }
+        ]
+      }
+    }),
+    /duplicate week 1 monday assignment/
+  );
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft({
+      ...base,
+      missionProfile: {
+        ...base.missionProfile,
+        periodicProfileLists: {
+          week: [{ id: "legacy-a", name: "legacy" }],
+          month: [{ id: "month-a", name: "month", weekProfileIds: ["", "", "", "legacy-a"] }],
+          year: []
+        },
+        periodicTasks: [{
+          id: "legacy-a",
+          compositeTasks: [{ weekIndex: 1, weekday: "monday", compositeTaskId: "composite-a" }]
+        }]
+      }
+    }),
+    /indexed legacy rows with configured month\/year references cannot be migrated safely/
+  );
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft({
+      ...base,
+      missionProfile: {
+        ...base.missionProfile,
+        periodicTasks: [{
+          id: "legacy-outside-duration",
+          compositeTasks: [{ weekIndex: 3, weekday: "monday", compositeTaskId: "composite-a" }]
+        }]
+      }
+    }),
+    /indexed task day 15 exceeds explicit durationDays 14/
+  );
+  assert.throws(
+    () => normalizeProjectJsonForClientDraft({
+      ...base,
+      missionProfile: {
+        ...base.missionProfile,
+        periodicTasks: [{
+          id: "legacy-invalid-weekday",
+          compositeTasks: [{ weekIndex: 1, weekday: "funday", compositeTaskId: "composite-a" }]
+        }]
+      }
+    }),
+    /unsupported weekday funday/
+  );
+});
+
+test("buildBackendProjectJson preserves legacy whole-week rows as seven weekday assignments", () => {
+  const projectJson = buildBackendProjectJson({
+    scenarioId: "whole-week-periodic-migration",
+    basicMissions: [],
+    missionProfile: {
+      name: "whole week legacy profile",
+      compositeTasks: [
+        { id: "composite-day", name: "day", taskItems: [] },
+        { id: "composite-night", name: "night", taskItems: [] }
+      ],
+      periodicTasks: [{
+        id: "legacy-whole-weeks",
+        repeatWeeks: 2,
+        cycleDays: 7,
+        compositeTasks: [
+          { week: 1, compositeTaskId: "composite-day" },
+          { week: 2, compositeTaskId: "composite-night" }
+        ]
+      }]
+    }
+  }, { id: "whole-week-periodic-migration" });
+
+  assert.equal(projectJson.missionProfile.periodicTasks.length, 2);
+  assert.deepEqual(
+    projectJson.missionProfile.periodicTasks.map((task) => (
+      task.compositeTasks.map((row) => row.weekday)
+    )),
+    [
+      ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+      ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    ]
+  );
+  assert.deepEqual(
+    projectJson.missionProfile.periodicTasks.map((task) => task.compositeTaskIds),
+    [["composite-day"], ["composite-night"]]
+  );
 });
 
 test("buildBackendProjectJson canonicalizes support activity job predecessor references", () => {
@@ -2526,7 +2732,7 @@ test("buildExperimentPlanConfig applies scenario composition overrides to branch
       schemaVersion: "scenario-composition-v0",
       overrides: [
         { path: "supportResources.0.quantity", valueType: "number", value: "12", label: "LRU-A" },
-        { path: "missionProfile.durationHours", valueType: "number", value: "8" }
+        { path: "missionProfile.durationDays", valueType: "number", value: "8" }
       ]
     },
     seedPolicy: { mode: "fixed", baseSeed: 909 }
@@ -2537,10 +2743,10 @@ test("buildExperimentPlanConfig applies scenario composition overrides to branch
   assert.equal(config.seed, 909);
   assert.deepEqual(config.seedPolicy, { mode: "fixed", baseSeed: 909 });
   assert.equal(config.projectJson.supportResources[0].quantity, 12);
-  assert.equal(config.projectJson.missionProfile.durationHours, 8);
+  assert.equal(config.projectJson.missionProfile.durationDays, 8);
   assert.deepEqual(config.scenarioComposition.overrides.map((item) => item.path), [
     "supportResources.0.quantity",
-    "missionProfile.durationHours"
+    "missionProfile.durationDays"
   ]);
   assert.equal("scenarioComposition" in config.projectJson, false);
   assert.equal("seedPolicy" in config.projectJson, false);

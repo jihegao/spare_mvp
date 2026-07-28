@@ -100,32 +100,13 @@
     "missionProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name"],
-      "allOf": [
-        {
-          "if": {
-            "required": ["periodicTasks"],
-            "properties": {
-              "periodicTasks": {
-                "contains": {
-                  "anyOf": [
-                    { "required": ["repeatWeeks"] },
-                    { "required": ["cycleDays"] }
-                  ]
-                }
-              }
-            }
-          },
-          "then": { "not": { "required": ["durationHours"] } }
-        }
-      ],
+      "required": ["name", "durationDays"],
       "properties": {
         "id": { "type": "string" },
         "profileId": { "type": "string" },
         "sourceImportId": { "type": "string" },
         "name": { "type": "string", "minLength": 1 },
-        "durationHours": { "type": "number", "minimum": 0 },
-        "durationMinutes": { "type": "integer", "minimum": 1 },
+        "durationDays": { "type": "integer", "minimum": 1, "maximum": 3650 },
         "combatUnit": { "$ref": "#/$defs/combatUnit" },
         "compositeTasks": { "type": "array", "items": { "$ref": "#/$defs/compositeTask" } },
         "periodicProfileLists": { "$ref": "#/$defs/periodicProfileLists" },
@@ -206,11 +187,10 @@
     "periodicTask": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["id", "name", "compositeTasks", "compositeTaskIds"],
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "repeatWeeks": { "type": "number", "minimum": 0 },
-        "cycleDays": { "type": "number", "minimum": 0 },
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
         "compositeTasks": { "type": "array", "items": { "$ref": "#/$defs/periodicCompositeTask" } },
         "compositeTaskIds": { "type": "array", "items": { "type": "string" } }
       }
@@ -218,12 +198,13 @@
     "periodicCompositeTask": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["compositeTaskId", "weekday"],
       "properties": {
-        "compositeTaskId": { "type": "string" },
-        "week": { "type": ["string", "integer"] },
-        "weekIndex": { "type": ["string", "integer"] },
-        "weekday": { "type": ["string", "integer"] },
-        "dayOfWeek": { "type": ["string", "integer"] }
+        "compositeTaskId": { "type": "string", "minLength": 1 },
+        "weekday": {
+          "type": "string",
+          "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        }
       }
     },
     "basicMission": {

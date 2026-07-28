@@ -144,6 +144,27 @@ def _is_no_spare_value(value: Any) -> bool:
 _aircraft_type_tokens = aircraft_type_tokens
 
 
+def _mission_calendar_days_by_composite(profile: dict[str, Any]) -> dict[str, list[int]]:
+    """Return deterministic zero-based active days from the compiled calendar."""
+
+    days_by_composite: dict[str, set[int]] = {}
+    calendar = profile.get("mission_calendar")
+    if not isinstance(calendar, list):
+        return {}
+    for entry in calendar:
+        if not isinstance(entry, dict):
+            continue
+        composite_task_id = str(entry.get("composite_task_id") or "").strip()
+        day_index = _positive_int(entry.get("day_index"), 0)
+        if not composite_task_id or day_index <= 0:
+            continue
+        days_by_composite.setdefault(composite_task_id, set()).add(day_index - 1)
+    return {
+        composite_task_id: sorted(active_days)
+        for composite_task_id, active_days in sorted(days_by_composite.items())
+    }
+
+
 def _periodic_period_days(periodic: dict[str, Any]) -> int:
     for key in ("taskPeriodDays", "periodDays", "cycleDays", "repeatCycleDays"):
         parsed = _positive_int(periodic.get(key), 0)
@@ -368,6 +389,7 @@ __all__ = [
     "_non_negative_int",
     "_normalized_stop_condition",
     "_normalized_stop_policy",
+    "_mission_calendar_days_by_composite",
     "_periodic_explicit_composite_days",
     "_periodic_period_days",
     "_periodic_total_days",

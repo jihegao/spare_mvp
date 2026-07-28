@@ -58,7 +58,7 @@
   ],
   "missionProfile": {
     "compositeTasks": [],
-    "durationHours": 1,
+    "durationDays": 1,
     "name": "current aircraft support mission",
     "periodicTasks": []
   },

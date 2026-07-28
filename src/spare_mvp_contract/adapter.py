@@ -759,12 +759,11 @@ class SimulationAdapter:
         composite_tasks = copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks")))
         self._normalize_mission_task_field_ownership(basic_missions, composite_tasks)
         periodic_plan = self._compile_periodic_profile_plan(mission_profile, composite_tasks)
-        compiled_mission_profile = {**mission_profile, "periodicTasks": periodic_plan["periodic_tasks"]}
-        duration_minutes = self._aircraft_support_v1_duration_minutes(compiled_mission_profile)
+        duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
         stop_policy = self._runtime_stop_policy_config(project, runtime_config, duration_minutes)
 
         inputs = {
-            "schema_version": "aircraft-support-v1-input-v0",
+            "schema_version": "aircraft-support-v1-input-v1",
             "project_identity": {
                 "project_id": validation["project_id"],
                 "project_version": validation["project_version"],
@@ -777,7 +776,7 @@ class SimulationAdapter:
                 "duration_minutes": duration_minutes,
                 "basic_missions": basic_missions,
                 "composite_tasks": periodic_plan["composite_tasks"],
-                "periodic_tasks": periodic_plan["periodic_tasks"],
+                "mission_calendar": periodic_plan["mission_calendar"],
                 "periodic_source": periodic_plan["source"],
                 "mission_phases": self._aircraft_support_v1_mission_phases(project, basic_missions),
                 "airports": self._runtime_airports(project.get("airports")),
@@ -1759,7 +1758,7 @@ class SimulationAdapter:
             "modeling_snapshot_id": None,
             "experiment_plan_id": None,
             "model_family": "aircraft_support_v1",
-            "mapping_version": "aircraft-support-v1-input-v0",
+            "mapping_version": "aircraft-support-v1-input-v1",
             "consumed_fields": [
                 "combatUnit.members",
                 "combatUnit.members[].preLifeCalendarDays",
@@ -1769,7 +1768,7 @@ class SimulationAdapter:
                 "missionProfile.combatUnit.members[].preLifeCalendarDays",
                 "missionProfile.combatUnit.members[].preLifeFlightHours",
                 "missionProfile.combatUnit.members[].preLifeTakeoffLandingCount",
-                "missionProfile.durationHours",
+                "missionProfile.durationDays",
                 "missionProfile.compositeTasks",
                 "missionProfile.periodicTasks",
                 "basicMissions",
@@ -1877,8 +1876,8 @@ class SimulationAdapter:
         combat_members = self._aircraft_support_v1_combat_members(project, mission_profile)
         if not combat_members and not self._is_positive_number(equipment.get("initialReady")):
             defaults.append("aircraft.initialReady=derivedFleetCount")
-        if not self._is_positive_number(mission_profile.get("durationHours")) and not self._mission_profile_has_periodic_duration(mission_profile):
-            defaults.append("missionProfile.durationHours=24")
+        if not self._is_positive_number(mission_profile.get("durationDays")):
+            defaults.append("missionProfile.durationDays=1")
         if self._uses_root_mission_phase_fallback(project):
             defaults.append("basicMissions[].missionPhases=legacyRootMissionPhases")
         if not self._is_positive_number(experiment.get("steps")):
@@ -2087,12 +2086,17 @@ class SimulationAdapter:
                     "保障活动建模",
                 )
             )
-        if not self._is_positive_number(mission_profile.get("durationHours")) and not self._mission_profile_has_periodic_duration(mission_profile):
+        duration_days = mission_profile.get("durationDays")
+        if (
+            not isinstance(duration_days, int)
+            or isinstance(duration_days, bool)
+            or not 1 <= duration_days <= 3650
+        ):
             issues.append(
                 self._compile_issue(
                     "missing_mission_duration",
-                    "missionProfile.durationHours",
-                    "任务剖面 durationHours 必须大于 0，或周期任务必须提供可推导总时长的周期/重复配置。",
+                    "missionProfile.durationDays",
+                    "任务剖面 durationDays 必须是 1 到 3650 之间的整数。",
                     "任务剖面参数",
                 )
             )
@@ -2161,12 +2165,16 @@ class SimulationAdapter:
                     )
                 )
             distribution = component.get("failureDistribution")
-            if not isinstance(distribution, dict) or self._failure_distribution_rate(distribution) is None:
+            is_lru = str(component.get("productType") or "").strip().upper() == "LRU"
+            if is_lru and (
+                not isinstance(distribution, dict)
+                or self._failure_distribution_rate(distribution) is None
+            ):
                 issues.append(
                     self._compile_issue(
                         "invalid_component_failure_distribution",
                         f"components[{index}].failureDistribution",
-                        "非根组件必须提供可解析的 failureDistribution，不能回退到 failureRate 或默认失效率。",
+                        "LRU 必须提供可解析的 failureDistribution，不能回退到 failureRate 或默认失效率。",
                         "装备系统建模",
                     )
                 )
@@ -5157,7 +5165,8 @@ class SimulationAdapter:
         issues: list[dict[str, str]] = []
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
         periodic_tasks = self._dict_list(mission_profile.get("periodicTasks"))
-        week_ids = {str(item.get("id") or "").strip() for item in periodic_tasks}
+        periodic_task_ids = [str(item.get("id") or "").strip() for item in periodic_tasks]
+        week_ids = set(periodic_task_ids)
         composite_ids = {str(item.get("id") or "").strip() for item in self._dict_list(mission_profile.get("compositeTasks"))}
         basic_ids = {
             str(value or "").strip()
@@ -5166,9 +5175,49 @@ class SimulationAdapter:
             if str(value or "").strip()
         }
         lists = mission_profile.get("periodicProfileLists") if isinstance(mission_profile.get("periodicProfileLists"), dict) else {}
+        week_profiles = self._dict_list(lists.get("week"))
         months = self._dict_list(lists.get("month"))
         years = self._dict_list(lists.get("year"))
-        month_ids = {str(item.get("id") or "").strip() for item in months}
+        week_profile_ids = [str(item.get("id") or "").strip() for item in week_profiles]
+        month_profile_ids = [str(item.get("id") or "").strip() for item in months]
+        year_profile_ids = [str(item.get("id") or "").strip() for item in years]
+        month_ids = set(month_profile_ids)
+        for collection_name, values, path in (
+            ("周剖面", periodic_task_ids, "missionProfile.periodicTasks"),
+            ("周剖面列表", week_profile_ids, "missionProfile.periodicProfileLists.week"),
+            ("月剖面", month_profile_ids, "missionProfile.periodicProfileLists.month"),
+            ("年剖面", year_profile_ids, "missionProfile.periodicProfileLists.year"),
+        ):
+            seen_ids: set[str] = set()
+            for index, value in enumerate(values):
+                if not value:
+                    issues.append(self._compile_issue(
+                        "missing_periodic_profile_id",
+                        f"{path}[{index}].id",
+                        f"{collection_name} ID 不能为空。",
+                        "周期性任务建模",
+                    ))
+                    continue
+                if value in seen_ids:
+                    issues.append(self._compile_issue(
+                        "duplicate_periodic_profile_id",
+                        f"{path}[{index}].id",
+                        f"{collection_name} ID {value} 重复。",
+                        "周期性任务建模",
+                    ))
+                seen_ids.add(value)
+        if lists and set(week_profile_ids) != week_ids:
+            missing_metadata = sorted(week_ids - set(week_profile_ids))
+            missing_tasks = sorted(set(week_profile_ids) - week_ids)
+            issues.append(self._compile_issue(
+                "periodic_week_profile_identity_mismatch",
+                "missionProfile.periodicProfileLists.week",
+                (
+                    "周剖面列表与周期任务定义的 ID 必须一一对应。"
+                    f" 缺少列表项：{missing_metadata or '无'}；缺少任务定义：{missing_tasks or '无'}。"
+                ),
+                "周期性任务建模",
+            ))
         periodic_composite_ids = {
             str(reference or "").strip()
             for task in periodic_tasks
@@ -5246,7 +5295,22 @@ class SimulationAdapter:
                         f"missionProfile.periodicProfileLists.year[{year_index}].monthProfileIds[{slot_index}]",
                         f"年剖面引用的月剖面 {reference} 不存在。", "周期性任务建模",
                     ))
-        if periodic_tasks and not self._periodic_profile_schedule(mission_profile)[1]:
+        periodic_plan = self._compile_periodic_profile_plan(
+            mission_profile,
+            self._dict_list(mission_profile.get("compositeTasks")),
+        )
+        for duplicate in periodic_plan["duplicates"]:
+            issues.append(self._compile_issue(
+                "duplicate_mission_calendar_entry",
+                "missionProfile.periodicTasks",
+                (
+                    "任务剖面展开后产生重复日历项："
+                    f"day_index={duplicate['day_index']}, "
+                    f"composite_task_id={duplicate['composite_task_id']}。"
+                ),
+                "周期性任务建模",
+            ))
+        if periodic_tasks and not periodic_plan["mission_calendar"]:
             issues.append(self._compile_issue(
                 "empty_periodic_task_schedule", "missionProfile.periodicTasks",
                 "周期任务无法生成任何有效任务实例，请至少配置一个存在的复合任务。", "周期性任务建模",
@@ -5303,41 +5367,55 @@ class SimulationAdapter:
     def _compile_periodic_profile_plan(self, mission_profile: dict[str, Any], composite_tasks: list[dict[str, Any]]) -> dict[str, Any]:
         source_level, schedule = self._periodic_profile_schedule(mission_profile)
         tasks = self._dict_list(mission_profile.get("periodicTasks"))
-        source = {"level": source_level, "label": {"week": "周剖面", "month": "月剖面", "year": "年剖面"}[source_level], "configured_slots": len(schedule)}
+        duration_days = max(1, self._positive_int(mission_profile.get("durationDays"), 1))
+        configured_slots = len(schedule)
         if source_level == "week":
-            return {"source": source, "periodic_tasks": copy.deepcopy(tasks), "composite_tasks": composite_tasks}
+            schedule = [
+                (week_offset, str(task.get("id") or "").strip())
+                for week_offset in range(0, int(math.ceil(duration_days / 7)))
+                for task in tasks
+                if str(task.get("id") or "").strip()
+            ]
+            configured_slots = len(tasks)
+        source = {
+            "level": source_level,
+            "label": {"week": "周剖面", "month": "月剖面", "year": "年剖面"}[source_level],
+            "configured_slots": configured_slots,
+        }
         task_by_id = {str(item.get("id") or "").strip(): item for item in tasks}
-        composite_by_id = {str(item.get("id") or "").strip(): item for item in composite_tasks}
-        compiled_tasks: list[dict[str, Any]] = []
-        compiled_composites: list[dict[str, Any]] = []
-        total_weeks = max((offset for offset, _ in schedule), default=0) + 1
-        for occurrence, (week_offset, task_id) in enumerate(schedule, start=1):
-            task = copy.deepcopy(task_by_id[task_id])
-            suffix = f"__{source_level}_{occurrence}"
-            references = {str(row.get("compositeTaskId") or "").strip() for row in self._dict_list(task.get("compositeTasks")) if str(row.get("compositeTaskId") or "").strip()}
-            references.update(str(item or "").strip() for item in task.get("compositeTaskIds") or [] if str(item or "").strip())
-            reference_map = {reference: f"{reference}{suffix}" for reference in sorted(references)}
-            for reference, clone_id in reference_map.items():
-                clone = copy.deepcopy(composite_by_id[reference])
-                clone["id"] = clone_id
-                compiled_composites.append(clone)
-            task["id"] = f"{task_id}{suffix}"
-            task["repeatWeeks"] = task["repeatRounds"] = task["repeatCount"] = total_weeks
-            task["compositeTaskIds"] = list(reference_map.values())
-            rows = []
+        calendar: list[dict[str, Any]] = []
+        duplicates: list[dict[str, Any]] = []
+        seen: set[tuple[int, str]] = set()
+        for week_offset, task_id in schedule:
+            task = task_by_id.get(task_id)
+            if task is None:
+                continue
             for row in self._dict_list(task.get("compositeTasks")):
-                reference = str(row.get("compositeTaskId") or "").strip()
-                if not reference:
+                composite_task_id = str(row.get("compositeTaskId") or "").strip()
+                weekday_index = self._periodic_weekday_index(row.get("weekday"))
+                if not composite_task_id or weekday_index is None:
                     continue
-                row["compositeTaskId"] = reference_map[reference]
-                row["weekIndex"] = week_offset + max(1, self._positive_int(row.get("weekIndex"), 1))
-                rows.append(row)
-            task["compositeTasks"] = rows
-            task["weekdayAssignments"] = {}
-            compiled_tasks.append(task)
-        return {"source": source, "periodic_tasks": compiled_tasks, "composite_tasks": compiled_composites}
+                day_index = week_offset * 7 + weekday_index + 1
+                if day_index > duration_days:
+                    continue
+                key = (day_index, composite_task_id)
+                entry = {"day_index": day_index, "composite_task_id": composite_task_id}
+                if key in seen:
+                    duplicates.append(entry)
+                    continue
+                seen.add(key)
+                calendar.append(entry)
+        calendar.sort(key=lambda item: (item["day_index"], item["composite_task_id"]))
+        return {
+            "source": source,
+            "mission_calendar": calendar,
+            "duplicates": duplicates,
+            "composite_tasks": composite_tasks,
+        }
 
     def _aircraft_support_v1_duration_minutes(self, mission_profile: dict[str, Any]) -> int:
+        if self._is_positive_number(mission_profile.get("durationDays")):
+            return max(1, int(math.ceil(float(mission_profile["durationDays"])))) * 24 * 60
         periodic_days = []
         for periodic in self._dict_list(mission_profile.get("periodicTasks")):
             active_days = self._periodic_task_active_duration_days(periodic)

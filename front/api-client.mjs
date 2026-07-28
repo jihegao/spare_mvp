@@ -392,6 +392,7 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   stripSupportActivityTypoFields(normalized);
   stripDeprecatedSupportActivityStrategyFields(normalized);
   normalizeEquipmentTreeIntegrityForScenario(normalized);
+  normalizeMissionProfileSchedulingFields(normalized.missionProfile);
   return normalized;
 }
 
@@ -1362,18 +1363,13 @@ const MISSION_PROFILE_TASK_ITEM_FIELDS = [
 const MISSION_PROFILE_PERIODIC_TASK_FIELDS = [
   "id",
   "name",
-  "repeatWeeks",
-  "cycleDays",
   "compositeTasks",
   "compositeTaskIds"
 ];
 
 const PERIODIC_COMPOSITE_TASK_FIELDS = [
   "compositeTaskId",
-  "week",
-  "weekIndex",
-  "weekday",
-  "dayOfWeek"
+  "weekday"
 ];
 
 const PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS = [
@@ -1389,9 +1385,254 @@ const PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS = [
 function normalizeMissionProfileReferenceFields(projectJson) {
   const missionProfile = projectJson?.missionProfile;
   if (!missionProfile || typeof missionProfile !== "object" || Array.isArray(missionProfile)) return;
+  normalizeMissionProfileSchedulingFields(missionProfile);
   normalizeMissionProfileCompositeTasks(projectJson, missionProfile);
+}
+
+function normalizeMissionProfileSchedulingFields(missionProfile) {
+  if (!missionProfile || typeof missionProfile !== "object" || Array.isArray(missionProfile)) return;
+  const hasExplicitDurationDays = positiveNumber(missionProfile.durationDays) !== null;
+  normalizeMissionProfileDurationDays(missionProfile, { hasExplicitDurationDays });
+  migrateLegacyIndexedPeriodicProfiles(missionProfile, { hasExplicitDurationDays });
   normalizeMissionProfilePeriodicTasks(missionProfile);
-  if (missionProfileHasPeriodicDuration(missionProfile)) delete missionProfile.durationHours;
+  delete missionProfile.durationHours;
+}
+
+function normalizeMissionProfileDurationDays(missionProfile, { hasExplicitDurationDays = false } = {}) {
+  const configuredDuration = positiveNumber(missionProfile.durationDays);
+  if (hasExplicitDurationDays && configuredDuration !== null) {
+    missionProfile.durationDays = Math.ceil(configuredDuration);
+    return;
+  }
+  const legacyDurationHours = positiveNumber(missionProfile.durationHours);
+  const legacyPeriodicDurations = Array.isArray(missionProfile.periodicTasks)
+    ? missionProfile.periodicTasks.map(legacyPeriodicTaskDurationDays).filter((value) => value !== null)
+    : [];
+  missionProfile.durationDays = Math.max(
+    1,
+    Math.ceil(configuredDuration || 0),
+    Math.ceil((legacyDurationHours || 0) / 24),
+    ...legacyPeriodicDurations.map((value) => Math.ceil(value))
+  );
+}
+
+const LEGACY_YEAR_MONTH_WEEK_COUNTS = [5, 4, 4, 5, 4, 4, 5, 4, 4, 5, 4, 4];
+
+function migrateLegacyIndexedPeriodicProfiles(missionProfile, { hasExplicitDurationDays = false } = {}) {
+  const tasks = Array.isArray(missionProfile.periodicTasks)
+    ? missionProfile.periodicTasks.filter((task) => task && typeof task === "object" && !Array.isArray(task))
+    : [];
+  const hasIndexedRows = tasks.some((task) => (
+    Array.isArray(task.compositeTasks)
+    && task.compositeTasks.some((row) => legacyPeriodicWeekIndex(row) !== null)
+  ));
+  if (!hasIndexedRows) return;
+  const profileLists = missionProfile.periodicProfileLists;
+  const hasConfiguredHigherProfileReferences = (
+    profileLists
+    && typeof profileLists === "object"
+    && !Array.isArray(profileLists)
+    && (
+      (Array.isArray(profileLists.month) && profileLists.month.some((profile) => (
+        Array.isArray(profile?.weekProfileIds)
+        && profile.weekProfileIds.some((value) => cleanText(value))
+      )))
+      || (Array.isArray(profileLists.year) && profileLists.year.some((profile) => (
+        Array.isArray(profile?.monthProfileIds)
+        && profile.monthProfileIds.some((value) => cleanText(value))
+      )))
+    )
+  );
+  if (hasConfiguredHigherProfileReferences) {
+    throw new Error(
+      "missionProfile.periodicTasks: indexed legacy rows with configured month/year references cannot be migrated safely"
+    );
+  }
+
+  const durationDays = Math.ceil(positiveNumber(missionProfile.durationDays) || 1);
+  const indexedWeekCount = tasks.reduce((largest, task) => Math.max(
+    largest,
+    ...(Array.isArray(task.compositeTasks)
+      ? task.compositeTasks.map((row) => legacyPeriodicWeekIndex(row) || 0)
+      : [0])
+  ), 0);
+  const inferredWeekCount = hasExplicitDurationDays
+    ? 0
+    : tasks.reduce((largest, task) => Math.max(
+        largest,
+        legacyPeriodicTaskDurationWeeks(task) || 0
+      ), 0);
+  const totalWeeks = hasExplicitDurationDays
+    ? Math.max(1, Math.ceil(durationDays / 7))
+    : Math.max(1, indexedWeekCount, inferredWeekCount);
+  const assignmentsByWeek = new Map();
+
+  for (const task of tasks) {
+    const rawRows = Array.isArray(task.compositeTasks) ? task.compositeTasks : [];
+    const indexedRows = rawRows.filter((row) => legacyPeriodicWeekIndex(row) !== null);
+    const unindexedRows = rawRows.filter((row) => legacyPeriodicWeekIndex(row) === null);
+    if (indexedRows.length && unindexedRows.length) {
+      throw new Error(`missionProfile.periodicTasks.${cleanText(task.id) || "unknown"}: cannot safely mix indexed and unindexed compositeTasks`);
+    }
+    if (!rawRows.length && Array.isArray(task.compositeTaskIds) && task.compositeTaskIds.some((value) => cleanText(value))) {
+      throw new Error(`missionProfile.periodicTasks.${cleanText(task.id) || "unknown"}: compositeTaskIds without weekday assignments cannot be migrated`);
+    }
+
+    if (indexedRows.length) {
+      for (const row of indexedRows) addLegacyPeriodicRow(assignmentsByWeek, row, {
+        durationDays,
+        hasExplicitDurationDays
+      });
+      continue;
+    }
+
+    const canonicalRows = normalizedPeriodicCompositeTasks(task);
+    if (!canonicalRows.length) {
+      if (rawRows.length) {
+        throw new Error(`missionProfile.periodicTasks.${cleanText(task.id) || "unknown"}: unindexed rows require valid weekdays`);
+      }
+      continue;
+    }
+    const repeatWeeks = hasExplicitDurationDays ? totalWeeks : legacyPeriodicTaskDurationWeeks(task);
+    const activeWeeks = repeatWeeks === null ? 1 : Math.min(totalWeeks, repeatWeeks);
+    for (let weekIndex = 1; weekIndex <= activeWeeks; weekIndex += 1) {
+      for (const row of canonicalRows) {
+        addPeriodicAssignment(assignmentsByWeek, weekIndex, row.weekday, row.compositeTaskId);
+      }
+    }
+  }
+
+  const activeWeeks = [...assignmentsByWeek.keys()].sort((left, right) => left - right);
+  if (!activeWeeks.length) {
+    throw new Error("missionProfile.periodicTasks: indexed legacy schedule produced no representable weekday assignments");
+  }
+  const weekProfiles = activeWeeks.map((weekIndex) => {
+    const id = `migrated-week-profile-${weekIndex}`;
+    return {
+      id,
+      name: `迁移周剖面 ${weekIndex}`,
+      compositeTasks: [...assignmentsByWeek.get(weekIndex).entries()].map(([weekday, compositeTaskId]) => ({
+        compositeTaskId,
+        weekday
+      })),
+      compositeTaskIds: uniqueStrings([...assignmentsByWeek.get(weekIndex).values()])
+    };
+  });
+  const { monthProfiles, yearProfiles } = legacyCalendarProfileLists(totalWeeks, new Map(
+    weekProfiles.map((profile, index) => [activeWeeks[index], profile.id])
+  ));
+  missionProfile.periodicTasks = weekProfiles;
+  missionProfile.periodicProfileLists = {
+    week: weekProfiles.map(({ id, name }) => ({ id, name })),
+    month: monthProfiles,
+    year: yearProfiles
+  };
+}
+
+function legacyPeriodicWeekIndex(row) {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  if (!Object.hasOwn(row, "weekIndex") && !Object.hasOwn(row, "week")) return null;
+  const value = Number(row.weekIndex ?? row.week);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error("missionProfile.periodicTasks.compositeTasks: week/weekIndex must be a positive integer");
+  }
+  return value;
+}
+
+function legacyPeriodicTaskDurationWeeks(task) {
+  const repeatCount = firstPositiveNumber(task.repeatWeeks, task.repeatRounds, task.repeatCount, task.rounds);
+  if (repeatCount === null) return null;
+  const cycleDays = periodicCycleDays(task) ?? 7;
+  const weeks = (repeatCount * cycleDays) / 7;
+  if (!Number.isInteger(weeks) || weeks < 1) {
+    throw new Error("missionProfile.periodicTasks: legacy cycle/repeat duration must resolve to whole weeks");
+  }
+  return weeks;
+}
+
+function addLegacyPeriodicRow(assignmentsByWeek, row, { durationDays, hasExplicitDurationDays }) {
+  const weekIndex = legacyPeriodicWeekIndex(row);
+  const compositeTaskId = cleanText(row.compositeTaskId || row.compositeTask || row.taskId);
+  if (!compositeTaskId) {
+    throw new Error("missionProfile.periodicTasks.compositeTasks: compositeTaskId is required for migration");
+  }
+  const rawWeekday = row.weekday ?? row.dayOfWeek;
+  const weekday = normalizedPeriodicWeekday(rawWeekday);
+  if (cleanText(rawWeekday) && !weekday) {
+    throw new Error(`missionProfile.periodicTasks.compositeTasks: unsupported weekday ${cleanText(rawWeekday)}`);
+  }
+  if (!weekday) {
+    for (const [, canonicalWeekday] of PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS) {
+      addPeriodicAssignment(assignmentsByWeek, weekIndex, canonicalWeekday, compositeTaskId);
+    }
+    return;
+  }
+  const weekdayOffset = PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS.findIndex(([, value]) => value === weekday);
+  const dayIndex = (weekIndex - 1) * 7 + weekdayOffset + 1;
+  if (hasExplicitDurationDays && dayIndex > durationDays) {
+    throw new Error(
+      `missionProfile.periodicTasks.compositeTasks: indexed task day ${dayIndex} exceeds explicit durationDays ${durationDays}`
+    );
+  }
+  addPeriodicAssignment(assignmentsByWeek, weekIndex, weekday, compositeTaskId);
+}
+
+function addPeriodicAssignment(assignmentsByWeek, weekIndex, weekday, compositeTaskId) {
+  if (!assignmentsByWeek.has(weekIndex)) assignmentsByWeek.set(weekIndex, new Map());
+  const assignments = assignmentsByWeek.get(weekIndex);
+  if (assignments.has(weekday)) {
+    const existing = assignments.get(weekday);
+    throw new Error(
+      `missionProfile.periodicTasks: duplicate week ${weekIndex} ${weekday} assignment (${existing}, ${compositeTaskId}) cannot be represented safely`
+    );
+  }
+  assignments.set(weekday, compositeTaskId);
+}
+
+function legacyCalendarProfileLists(totalWeeks, weekProfileIds) {
+  const monthProfiles = [];
+  const yearProfiles = [];
+  let weekOffset = 0;
+  const yearCount = Math.max(1, Math.ceil(totalWeeks / 52));
+  for (let yearIndex = 1; yearIndex <= yearCount; yearIndex += 1) {
+    const monthProfileIds = [];
+    for (let monthIndex = 1; monthIndex <= 12; monthIndex += 1) {
+      const slotCount = LEGACY_YEAR_MONTH_WEEK_COUNTS[monthIndex - 1];
+      const id = `migrated-month-profile-${yearIndex}-${monthIndex}`;
+      const weekSlots = Array.from({ length: slotCount }, () => {
+        weekOffset += 1;
+        return weekProfileIds.get(weekOffset) || "";
+      });
+      monthProfiles.push({
+        id,
+        name: `迁移月剖面 ${yearIndex}-${monthIndex}`,
+        weekProfileIds: weekSlots
+      });
+      monthProfileIds.push(id);
+    }
+    yearProfiles.push({
+      id: `migrated-year-profile-${yearIndex}`,
+      name: `迁移年剖面 ${yearIndex}`,
+      monthProfileIds
+    });
+  }
+  return { monthProfiles, yearProfiles };
+}
+
+function legacyPeriodicTaskDurationDays(task) {
+  if (!task || typeof task !== "object" || Array.isArray(task)) return null;
+  const repeatCount = firstPositiveNumber(
+    task.repeatWeeks,
+    task.repeatRounds,
+    task.repeatCount,
+    task.rounds
+  );
+  const cycleDays = periodicCycleDays(task);
+  const repeatedDuration = repeatCount !== null ? (cycleDays ?? 7) * repeatCount : null;
+  const largestWeekIndex = (Array.isArray(task.compositeTasks) ? task.compositeTasks : [])
+    .reduce((largest, row) => Math.max(largest, positiveNumber(row?.weekIndex ?? row?.week) || 0), 0);
+  const indexedDuration = largestWeekIndex > 0 ? largestWeekIndex * 7 : null;
+  return Math.max(repeatedDuration || 0, indexedDuration || 0) || null;
 }
 
 function normalizeMissionProfileCompositeTasks(projectJson, missionProfile) {
@@ -1435,15 +1676,8 @@ function normalizedMissionProfilePeriodicTask(task) {
   const normalized = {};
   copyPresentValue(normalized, "id", task.id);
   copyPresentValue(normalized, "name", task.name || task.periodicTaskName || task.taskName || task.experimentName);
-  const repeatWeeks = firstPositiveNumber(task.repeatWeeks, task.repeatRounds, task.repeatCount);
-  if (repeatWeeks !== null) normalized.repeatWeeks = repeatWeeks;
-  const cycleDays = periodicCycleDays(task) ?? (repeatWeeks !== null ? 7 : null);
-  if (cycleDays !== null) normalized.cycleDays = cycleDays;
-  const compositeTasks = normalizedPeriodicCompositeTasks(task, repeatWeeks);
-  const compositeTaskIds = uniqueStrings([
-    ...(Array.isArray(task.compositeTaskIds) ? task.compositeTaskIds : []),
-    ...compositeTasks.map((item) => item.compositeTaskId)
-  ]);
+  const compositeTasks = normalizedPeriodicCompositeTasks(task);
+  const compositeTaskIds = uniqueStrings(compositeTasks.map((item) => item.compositeTaskId));
   if (compositeTasks.length) normalized.compositeTasks = compositeTasks;
   if (compositeTaskIds.length) normalized.compositeTaskIds = compositeTaskIds;
   for (const field of Object.keys(normalized)) {
@@ -1452,38 +1686,49 @@ function normalizedMissionProfilePeriodicTask(task) {
   return normalized;
 }
 
-function normalizedPeriodicCompositeTasks(task, repeatWeeks) {
+function normalizedPeriodicCompositeTasks(task) {
   const explicit = Array.isArray(task.compositeTasks)
     ? task.compositeTasks
         .filter((item) => item && typeof item === "object" && !Array.isArray(item))
         .map((item) => normalizedPeriodicCompositeTask(item))
-        .filter((item) => item.compositeTaskId)
+        .filter((item) => item.compositeTaskId && item.weekday)
     : [];
-  if (explicit.length) return explicit;
+  if (explicit.length) {
+    const byWeekday = new Map();
+    for (const item of explicit) {
+      if (!byWeekday.has(item.weekday)) byWeekday.set(item.weekday, item);
+    }
+    return [...byWeekday.values()];
+  }
 
-  const assignments = [];
   const rawAssignments = task.weekdayAssignments && typeof task.weekdayAssignments === "object" && !Array.isArray(task.weekdayAssignments)
     ? task.weekdayAssignments
     : {};
-  for (const [legacyField, weekday] of PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS) {
-    assignments.push([weekday, rawAssignments[weekday] || rawAssignments[legacyField] || task[legacyField]]);
-  }
-  const weekCount = Math.max(1, Math.round(repeatWeeks || 1));
   const compositeTasks = [];
-  for (let weekIndex = 1; weekIndex <= weekCount; weekIndex += 1) {
-    for (const [weekday, compositeTaskId] of assignments) {
-      const compositeId = cleanText(compositeTaskId);
-      if (!compositeId) continue;
-      compositeTasks.push({ compositeTaskId: compositeId, weekIndex, weekday });
-    }
+  for (const [legacyField, weekday] of PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS) {
+    const compositeTaskId = cleanText(rawAssignments[weekday] || rawAssignments[legacyField] || task[legacyField]);
+    if (compositeTaskId) compositeTasks.push({ compositeTaskId, weekday });
   }
   return compositeTasks;
 }
 
 function normalizedPeriodicCompositeTask(item) {
-  const normalized = {};
-  for (const field of PERIODIC_COMPOSITE_TASK_FIELDS) copyPresentValue(normalized, field, item[field]);
+  const normalized = {
+    weekday: normalizedPeriodicWeekday(item.weekday ?? item.dayOfWeek)
+  };
+  copyPresentValue(normalized, "compositeTaskId", item.compositeTaskId);
+  for (const field of Object.keys(normalized)) {
+    if (!PERIODIC_COMPOSITE_TASK_FIELDS.includes(field) || !normalized[field]) delete normalized[field];
+  }
   return normalized;
+}
+
+function normalizedPeriodicWeekday(value) {
+  const text = cleanText(value).toLowerCase();
+  const match = PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS.find(([legacyField, weekday]) => (
+    text === legacyField.toLowerCase() || text === weekday
+  ));
+  return match?.[1] || "";
 }
 
 function periodicCycleDays(task) {
@@ -1495,13 +1740,6 @@ function periodicCycleDays(task) {
   if (["week", "weeks", "周", "星期"].includes(unit)) return value * 7;
   if (["hour", "hours", "小时"].includes(unit)) return value / 24;
   return value;
-}
-
-function missionProfileHasPeriodicDuration(missionProfile) {
-  return Array.isArray(missionProfile.periodicTasks)
-    && missionProfile.periodicTasks.some((task) => task && typeof task === "object" && (
-      positiveNumber(task.repeatWeeks) !== null || positiveNumber(task.cycleDays) !== null
-    ));
 }
 
 function firstPositiveNumber(...values) {

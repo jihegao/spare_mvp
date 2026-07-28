@@ -82,6 +82,47 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertNotIn("validationLevel", export["validation"])
         self.assertTrue(export["validation"]["usedTables"]["supportOrganization"])
 
+    def test_platform_case_preserves_two_complete_legacy_week_cycles_in_canonical_calendar(self) -> None:
+        fixture = self._canonical_import()
+
+        export = build_m9_6_platform_case_export(fixture, repo_root=REPO_ROOT)
+
+        mission_profile = export["project"]["missionProfile"]
+        self.assertEqual(mission_profile["durationDays"], 14)
+        self.assertNotIn("durationHours", mission_profile)
+        self.assertEqual(
+            mission_profile["periodicProfileLists"]["month"][0]["weekProfileIds"],
+            ["week-carrier-day-cap", "week-carrier-night-alert", "", ""],
+        )
+        for periodic_task in mission_profile["periodicTasks"]:
+            self.assertFalse(
+                {
+                    "cycleDays",
+                    "periodDays",
+                    "repeatCount",
+                    "repeatRounds",
+                    "repeatWeeks",
+                    "taskPeriodDays",
+                }
+                & periodic_task.keys()
+            )
+
+        compiled_profile = export["compiled_scenario"]["simulation_inputs"]["mission_profile"]
+        self.assertEqual(compiled_profile["duration_minutes"], 14 * 24 * 60)
+        self.assertEqual(
+            compiled_profile["mission_calendar"],
+            [
+                *[
+                    {"day_index": day_index, "composite_task_id": "composite-day-cap"}
+                    for day_index in range(1, 8)
+                ],
+                *[
+                    {"day_index": day_index, "composite_task_id": "composite-night-alert"}
+                    for day_index in range(8, 15)
+                ],
+            ],
+        )
+
     def test_field_coverage_explains_every_business_leaf_once(self) -> None:
         fixture = self._canonical_import()
 

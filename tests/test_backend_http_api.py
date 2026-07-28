@@ -33,7 +33,31 @@ def small_aircraft_support_project(project_id: str) -> dict:
         "activeModule": "sparePlanning",
         "projectInfo": {"name": "small current project", "baseCode": "SM", "summary": "small current project"},
         "airports": ["A"],
-        "missionProfile": {"name": "small current mission", "durationHours": 1, "compositeTasks": [], "periodicTasks": []},
+        "missionProfile": {
+            "name": "small current mission",
+            "durationDays": 1,
+            "compositeTasks": [{
+                "id": "composite-small",
+                "name": "small daily composite",
+                "taskItems": [{
+                    "basicMissionId": "basic-small",
+                    "basicTaskName": "small sortie",
+                    "firstWaveTime": "00:00",
+                    "dailyRepeatCount": 1,
+                    "intervalHours": 0,
+                    "equipmentType": "J-15",
+                }],
+            }],
+            "periodicTasks": [{
+                "id": "week-small",
+                "name": "small one-day week",
+                "compositeTaskIds": ["composite-small"],
+                "compositeTasks": [{
+                    "compositeTaskId": "composite-small",
+                    "weekday": "monday",
+                }],
+            }],
+        },
         "experiment": {"seed": 42},
         "basicMissions": [{
             "id": "basic-small",
@@ -1591,7 +1615,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 )
                 forged_project = small_aircraft_support_project("project-http-forged-current")
                 forged_project["project_id"] = import_package["projectId"]
-                forged_project["missionProfile"] = {"sourceImportId": import_package["importId"]}
+                forged_project["missionProfile"]["sourceImportId"] = import_package["importId"]
                 saved = self._json(base_url, "POST", "/projects", forged_project, auth_token=auth_token)
                 self._json(
                     base_url,

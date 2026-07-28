@@ -74,7 +74,31 @@ def small_aircraft_support_project(project_id: str) -> dict[str, Any]:
         "activeModule": "sparePlanning",
         "projectInfo": {"name": "small current project", "baseCode": "SM", "summary": "small current project"},
         "airports": ["A"],
-        "missionProfile": {"name": "small current mission", "durationHours": 1, "compositeTasks": [], "periodicTasks": []},
+        "missionProfile": {
+            "name": "small current mission",
+            "durationDays": 1,
+            "compositeTasks": [{
+                "id": "composite-small",
+                "name": "small daily composite",
+                "taskItems": [{
+                    "basicMissionId": "basic-small",
+                    "basicTaskName": "small sortie",
+                    "firstWaveTime": "00:00",
+                    "dailyRepeatCount": 1,
+                    "intervalHours": 0,
+                    "equipmentType": "J-15",
+                }],
+            }],
+            "periodicTasks": [{
+                "id": "week-small",
+                "name": "small one-day week",
+                "compositeTaskIds": ["composite-small"],
+                "compositeTasks": [{
+                    "compositeTaskId": "composite-small",
+                    "weekday": "monday",
+                }],
+            }],
+        },
         "experiment": {"seed": 42},
         "basicMissions": [{
             "id": "basic-small",
@@ -136,7 +160,8 @@ def compile_preflight_persistence_counts(connection: sqlite3.Connection) -> dict
 
 def periodic_three_day_aircraft_support_project(project_id: str) -> dict[str, Any]:
     project = small_aircraft_support_project(project_id)
-    project["missionProfile"]["durationHours"] = 24
+    project["missionProfile"].pop("durationHours", None)
+    project["missionProfile"]["durationDays"] = 3
     project["missionProfile"]["compositeTasks"] = [
         {
             "id": "composite-a",
@@ -158,25 +183,11 @@ def periodic_three_day_aircraft_support_project(project_id: str) -> dict[str, An
         {
             "id": "periodic-three-day",
             "name": "three-day explicit rows",
-            "periodDays": 7,
-            "repeatCount": 1,
             "compositeTaskIds": ["composite-a"],
-            "weekdayAssignments": {
-                "monday": "composite-a",
-                "tuesday": "composite-a",
-                "sunday": "composite-a",
-            },
-            "mondayCompositeTaskId": "composite-a",
-            "tuesdayCompositeTaskId": "composite-a",
-            "sundayCompositeTaskId": "composite-a",
             "compositeTasks": [
-                {"weekIndex": 1, "weekday": "mondayCompositeTaskId", "compositeTaskId": "composite-a"},
-                {"weekIndex": 1, "weekday": "tuesdayCompositeTaskId", "compositeTaskId": "composite-a"},
-                {"weekIndex": 1, "weekday": "wednesdayCompositeTaskId", "compositeTaskId": "composite-a"},
-                {"weekIndex": 1, "weekday": "thursdayCompositeTaskId", "compositeTaskId": ""},
-                {"weekIndex": 1, "weekday": "fridayCompositeTaskId", "compositeTaskId": ""},
-                {"weekIndex": 1, "weekday": "saturdayCompositeTaskId", "compositeTaskId": ""},
-                {"weekIndex": 1, "weekday": "sundayCompositeTaskId", "compositeTaskId": ""},
+                {"weekday": "monday", "compositeTaskId": "composite-a"},
+                {"weekday": "tuesday", "compositeTaskId": "composite-a"},
+                {"weekday": "wednesday", "compositeTaskId": "composite-a"},
             ],
         }
     ]
@@ -938,7 +949,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(outcome["failure"]["error"]["details"]["timeout_seconds"], 0.01)
 
     def test_lite_mesa_worker_reuses_initializer_inputs_for_seed_only_tasks(self) -> None:
-        inputs = {"schema_version": "aircraft-support-v1-input-v0"}
+        inputs = {"schema_version": "aircraft-support-v1-input-v1"}
         _initialize_lite_mesa_sample_worker(inputs)
         with mock.patch(
             "src.spare_mvp_backend.api._run_aircraft_support_v1_analysis_sample",
@@ -1066,7 +1077,7 @@ class BackendApiContractTest(unittest.TestCase):
     def test_periodic_profile_empty_slots_survive_project_round_trip_and_compile(self) -> None:
         project = small_aircraft_support_project("project-periodic-profile-empty-slots")
         project["missionProfile"]["periodicProfileLists"] = {
-            "week": [],
+            "week": [{"id": "week-small", "name": "small one-day week"}],
             "month": [{"id": "month-empty", "name": "空月", "weekProfileIds": [""] * 4}],
             "year": [{"id": "year-empty", "name": "空年", "monthProfileIds": [""] * 12}],
         }
@@ -2206,6 +2217,9 @@ class BackendApiContractTest(unittest.TestCase):
         project["deletedSupportResourceKeys"] = ["support-org:spare:legacy"]
         project["missionProfile"] = {
             "name": "model profile",
+            "durationDays": 1,
+            "compositeTasks": [],
+            "periodicTasks": [],
             "profileType": "legacy label",
             "repeatCycleHours": 6,
             "endCondition": "legacy end condition",

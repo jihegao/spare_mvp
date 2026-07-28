@@ -1568,7 +1568,7 @@ test("periodic task editor uses named week month and year profiles without total
     project_id: "project-runtime",
     missionProfile: {
       name: "运行时任务剖面",
-      durationHours: 8,
+      durationDays: 14,
       compositeTasks: [
         { id: "composite-day", name: "昼间出动", taskItems: [] },
         { id: "composite-night", name: "夜间警戒", taskItems: [] }
@@ -1577,10 +1577,9 @@ test("periodic task editor uses named week month and year profiles without total
         id: "periodic-runtime",
         parentTaskName: "旧总任务",
         name: "旧周期性任务名",
-        repeatWeeks: 2,
         compositeTasks: [
-          { weekIndex: 1, weekday: "mondayCompositeTaskId", compositeTaskId: "composite-day" },
-          { weekIndex: 2, weekday: "tuesdayCompositeTaskId", compositeTaskId: "composite-night" }
+          { weekday: "monday", compositeTaskId: "composite-day" },
+          { weekday: "tuesday", compositeTaskId: "composite-night" }
         ]
       }]
     }
@@ -1605,6 +1604,14 @@ test("periodic task editor uses named week month and year profiles without total
     assert.doesNotMatch(runtime.appNode.innerHTML, /每周天数/);
     assert.match(runtime.appNode.innerHTML, /class="periodic-profile-name"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-periodic-profile-name=/);
+    assert.match(runtime.appNode.innerHTML, /仿真时长（天）/);
+    assert.match(runtime.appNode.innerHTML, /data-path="missionProfile\.durationDays"[^>]*value="14"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-periodic-field="weekComposite:/g) || []).length, 7);
+    await runtime.change(
+      "[data-path]",
+      { path: "missionProfile.durationDays" },
+      { value: "43", type: "number" }
+    );
 
     await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "month" });
     assert.match(runtime.appNode.innerHTML, /月剖面配置/);
@@ -1725,12 +1732,13 @@ test("periodic task editor uses named week month and year profiles without total
       const periodicTask = body.missionProfile?.periodicTasks?.[0];
       return periodicTask
         && !("parentTaskName" in periodicTask)
-        && periodicTask.repeatWeeks === 2
-        && periodicTask.cycleDays === 7
+        && !("repeatWeeks" in periodicTask)
+        && !("cycleDays" in periodicTask)
+        && body.missionProfile.durationDays === 43
         && !("durationHours" in body.missionProfile)
         && periodicTask.compositeTasks.some((row) => (
-          row.weekIndex === 1
-            && row.weekday === "mondayCompositeTaskId"
+          !("weekIndex" in row)
+            && row.weekday === "monday"
             && row.compositeTaskId === "composite-night"
         ));
     }, "expected periodic task edits to save canonical Project draft fields");

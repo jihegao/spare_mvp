@@ -150,6 +150,7 @@
         ]
       }
     ],
+    "durationDays": 1,
     "id": "mission-profile-day-night",
     "name": "日夜间任务剖面",
     "periodicProfileLists": {
@@ -158,7 +159,7 @@
           "id": "month-default",
           "name": "常规月",
           "weekProfileIds": [
-            "",
+            "periodic-carrier-day-night",
             "",
             "",
             ""
@@ -200,14 +201,11 @@
         "compositeTasks": [
           {
             "compositeTaskId": "composite-day-cap",
-            "weekIndex": 1,
-            "weekday": "mondayCompositeTaskId"
+            "weekday": "monday"
           }
         ],
-        "cycleDays": 7.0,
         "id": "periodic-carrier-day-night",
-        "name": "1天任务",
-        "repeatWeeks": 1.0
+        "name": "1天任务"
       }
     ],
     "profileId": "MP-CV-01",

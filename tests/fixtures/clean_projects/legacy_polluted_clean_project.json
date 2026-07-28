@@ -57,7 +57,7 @@
   ],
   "missionProfile": {
     "compositeTasks": [],
-    "durationHours": 1,
+    "durationDays": 1,
     "name": "clean mission",
     "periodicTasks": []
   },

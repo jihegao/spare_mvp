@@ -10679,50 +10679,95 @@
         ]
       }
     ],
+    "durationDays": 14,
     "id": "mission-profile-j16-multilevel-equipment",
     "name": "J16多层装备构成保障能力评估",
+    "periodicProfileLists": {
+      "week": [
+        {
+          "id": "week-j16-recon",
+          "name": "侦查周"
+        },
+        {
+          "id": "week-j16-training",
+          "name": "训练周"
+        }
+      ],
+      "month": [
+        {
+          "id": "month-j16-two-week",
+          "name": "两周任务月",
+          "weekProfileIds": [
+            "week-j16-recon",
+            "week-j16-training",
+            "",
+            ""
+          ]
+        }
+      ],
+      "year": [
+        {
+          "id": "year-j16-two-week",
+          "name": "两周任务年",
+          "monthProfileIds": [
+            "month-j16-two-week",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ]
+        }
+      ]
+    },
     "periodicTasks": [
       {
         "compositeTaskIds": [
-          "composite-j16-high-intensity-sortie",
-          "composite-task-1783477395208-2"
+          "composite-j16-high-intensity-sortie"
         ],
         "compositeTasks": [
           {
             "compositeTaskId": "composite-j16-high-intensity-sortie",
-            "weekIndex": 1,
-            "weekday": "mondayCompositeTaskId"
+            "weekday": "monday"
           },
           {
             "compositeTaskId": "composite-j16-high-intensity-sortie",
-            "weekIndex": 1,
-            "weekday": "wednesdayCompositeTaskId"
+            "weekday": "wednesday"
           },
           {
             "compositeTaskId": "composite-j16-high-intensity-sortie",
-            "weekIndex": 1,
-            "weekday": "fridayCompositeTaskId"
-          },
-          {
-            "compositeTaskId": "composite-task-1783477395208-2",
-            "weekIndex": 2,
-            "weekday": "tuesdayCompositeTaskId"
-          },
-          {
-            "compositeTaskId": "composite-task-1783477395208-2",
-            "weekIndex": 2,
-            "weekday": "thursdayCompositeTaskId"
-          },
-          {
-            "compositeTaskId": "composite-task-1783477395208-2",
-            "weekIndex": 2,
-            "weekday": "saturdayCompositeTaskId"
+            "weekday": "friday"
           }
         ],
-        "cycleDays": 7.0,
-        "id": "periodic-1783420508857",
-        "name": "周期性任务1",
-        "repeatWeeks": 2.0
+        "id": "week-j16-recon",
+        "name": "侦查周"
+      },
+      {
+        "compositeTaskIds": [
+          "composite-task-1783477395208-2"
+        ],
+        "compositeTasks": [
+          {
+            "compositeTaskId": "composite-task-1783477395208-2",
+            "weekday": "tuesday"
+          },
+          {
+            "compositeTaskId": "composite-task-1783477395208-2",
+            "weekday": "thursday"
+          },
+          {
+            "compositeTaskId": "composite-task-1783477395208-2",
+            "weekday": "saturday"
+          }
+        ],
+        "id": "week-j16-training",
+        "name": "训练周"
       }
     ],
     "profileId": "MP-J16-MULTILEVEL-EQUIPMENT",

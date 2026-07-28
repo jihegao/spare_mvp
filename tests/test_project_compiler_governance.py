@@ -38,7 +38,7 @@ class ProjectCompilerGovernanceTest(unittest.TestCase):
         jsonschema.Draft202012Validator.check_schema(input_schema)
         validator = jsonschema.Draft202012Validator(input_schema)
         validator.validate(scenario["simulation_inputs"])
-        self.assertEqual(scenario["simulation_inputs"]["schema_version"], "aircraft-support-v1-input-v0")
+        self.assertEqual(scenario["simulation_inputs"]["schema_version"], "aircraft-support-v1-input-v1")
 
         exponential_component = scenario["simulation_inputs"]["equipment_tree"]["components"][0]
         self.assertIn(

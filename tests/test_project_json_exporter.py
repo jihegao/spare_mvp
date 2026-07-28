@@ -530,6 +530,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("profileType", clean["missionProfile"])
         self.assertNotIn("analysisRequests", clean["missionProfile"])
         self.assertNotIn("durationHours", clean["missionProfile"])
+        self.assertNotIn("durationMinutes", clean["missionProfile"])
+        self.assertEqual(clean["missionProfile"]["durationDays"], 1)
         task_item = clean["missionProfile"]["compositeTasks"][0]["taskItems"][0]
         self.assertEqual(
             task_item,
@@ -546,16 +548,12 @@ class ProjectJsonExporterTest(unittest.TestCase):
         periodic_task = clean["missionProfile"]["periodicTasks"][0]
         self.assertEqual(periodic_task["id"], "periodic-a")
         self.assertEqual(periodic_task["name"], "periodic clean")
-        self.assertEqual(periodic_task["repeatWeeks"], 2)
-        self.assertEqual(periodic_task["cycleDays"], 7)
         self.assertEqual(periodic_task["compositeTaskIds"], ["wave-a"])
         self.assertEqual(
             periodic_task["compositeTasks"],
             [
-                {"compositeTaskId": "wave-a", "weekIndex": 1, "weekday": "monday"},
-                {"compositeTaskId": "wave-a", "weekIndex": 1, "weekday": "tuesday"},
-                {"compositeTaskId": "wave-a", "weekIndex": 2, "weekday": "monday"},
-                {"compositeTaskId": "wave-a", "weekIndex": 2, "weekday": "tuesday"},
+                {"compositeTaskId": "wave-a", "weekday": "monday"},
+                {"compositeTaskId": "wave-a", "weekday": "tuesday"},
             ],
         )
         for field in (
@@ -570,6 +568,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "repeatCycleUnit",
             "repeatCycleValue",
             "repeatRounds",
+            "repeatWeeks",
+            "cycleDays",
             "taskCategory",
             "taskGroupName",
             "taskName",
@@ -609,6 +609,19 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("predecessors", clean["supportActivityJobs"][0])
         self.assertFalse(_contains_key(clean, "missionAreas"))
         self.assertFalse(_contains_key(clean, "mission_areas"))
+
+    def test_aircraft_support_v1_exporter_rejects_ambiguous_absolute_week_rows(self) -> None:
+        project = self._polluted_project()
+        periodic = project["missionProfile"]["periodicTasks"][0]
+        periodic.pop("weekdayAssignments", None)
+        periodic["compositeTasks"] = [{
+            "compositeTaskId": "wave-a",
+            "weekIndex": 2,
+            "weekday": "monday",
+        }]
+
+        with self.assertRaisesRegex(ValueError, "cannot silently migrate absolute week/weekIndex"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
     def test_export_preserves_periodic_profile_empty_slots_with_builtin_and_schema_validation(self) -> None:
         project = self._polluted_project()
@@ -890,6 +903,13 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         invalid_plan_type["supportActivities"][0]["planType"] = "自定义保障方案"
         with self.assertRaisesRegex(ValueError, "unexpected plan type"):
             self._export_with_old_jsonschema(invalid_plan_type)
+
+    def test_aircraft_support_v1_builtin_guard_rejects_excessive_duration_days(self) -> None:
+        project = self._polluted_project()
+        project["missionProfile"]["durationDays"] = 3651
+
+        with self.assertRaisesRegex(ValueError, "missionProfile.durationDays: expected <= 3650"):
+            self._export_with_old_jsonschema(project)
 
     def test_exporter_materializes_legacy_operations_plan_as_three_independent_phase_references(self) -> None:
         project = self._polluted_project()

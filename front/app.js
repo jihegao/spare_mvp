@@ -436,7 +436,7 @@ const MODELING_DATA_MODULES = [
         sourcePage: "周期性任务建模",
         fields: [
           fieldDef("periodicTaskId", "周期任务ID", "periodicTasks[].id"),
-          fieldDef("repeatCycle", "重复周期", "periodicTasks[].repeatCycleHours"),
+          fieldDef("durationDays", "仿真时长（天）", "missionProfile.durationDays"),
           fieldDef("weekdayPlan", "星期计划", "periodicTasks[].weekdayPlan"),
           fieldDef("intervalHours", "间隔小时", "periodicTasks[].intervalHours"),
           fieldDef("dailyRepeatCount", "每日次数", "periodicTasks[].dailyRepeatCount")
@@ -836,7 +836,6 @@ let selectedRunContextKey = "";
 let selectedRunContextFingerprint = "";
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
-let selectedPeriodicWeekIndex = 1;
 let periodicActiveProfile = "week";
 let selectedPeriodicProfileIds = { week: "", month: "", year: "" };
 let periodicProfileRenameState = null;
@@ -2112,21 +2111,6 @@ function bindEvents() {
     const periodicSelectButton = event.target.closest("[data-periodic-select]");
     if (periodicSelectButton) {
       selectedPeriodicTaskId = periodicSelectButton.dataset.periodicSelect;
-      render();
-      return;
-    }
-
-    const periodicWeekRow = event.target.closest("[data-periodic-select-week]");
-    if (periodicWeekRow) {
-      selectedPeriodicWeekIndex = Math.max(1, Math.floor(Number(periodicWeekRow.dataset.periodicSelectWeek || 1)));
-      render();
-      return;
-    }
-
-    const periodicRepeatButton = event.target.closest("[data-periodic-repeat]");
-    if (periodicRepeatButton) {
-      repeatSelectedPeriodicWeek(periodicRepeatButton.dataset.periodicRepeat);
-      markProjectDraftChanged();
       render();
       return;
     }
@@ -5615,13 +5599,14 @@ function renderProductCatalogEditor() {
 }
 
 function renderTaskModel(page) {
+  ensureMissionProfileDurationDays();
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
     <div class="form-table-grid">
       ${field("任务类型", "missionProfile.profileType")}
-      ${field("重复周期", "missionProfile.repeatCycleHours", "number")}
+      ${field("仿真时长（天）", "missionProfile.durationDays", "number", { min: "1", step: "1" })}
       ${field("结束条件", "missionProfile.endCondition")}
       ${field("基本任务", "basicMissions.0.missionId")}
       ${field("成功点", "basicMissions.0.successPoint", "number", { min: "0", max: "1", step: "0.01" })}
@@ -5650,6 +5635,7 @@ function renderTaskModel(page) {
 }
 
 function renderMissionProfileParameters(page) {
+  ensureMissionProfileDurationDays();
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
@@ -5663,7 +5649,7 @@ function renderMissionProfileParameters(page) {
           meta: "任务类型",
           root: true,
           children: [
-            { id: "mission-profile:repeat-cycle", label: `${scenario.missionProfile.repeatCycleHours} h`, meta: "重复周期" },
+            { id: "mission-profile:duration-days", label: `${scenario.missionProfile.durationDays} 天`, meta: "仿真时长" },
             { id: "mission-profile:end-condition", label: scenario.missionProfile.endCondition, meta: "结束条件" }
           ]
         }])}
@@ -5673,7 +5659,7 @@ function renderMissionProfileParameters(page) {
           <h4>任务剖面参数编辑</h4>
           <div class="form-table-grid">
             ${field("任务类型", "missionProfile.profileType")}
-            ${field("重复周期", "missionProfile.repeatCycleHours", "number")}
+            ${field("仿真时长（天）", "missionProfile.durationDays", "number", { min: "1", step: "1" })}
             ${field("结束条件", "missionProfile.endCondition")}
           </div>
         </div>
@@ -6082,12 +6068,11 @@ function renderCompositeTaskModeling(page) {
 
 function renderPeriodicTaskModeling(page) {
   const compositeTasks = scenario.missionProfile.compositeTasks || [];
+  ensureMissionProfileDurationDays();
   const periodicTasks = periodicTaskList();
   const selectedTask = selectedPeriodicTask(periodicTasks);
   const selectedDraft = selectedTask ? normalizePeriodicTask(selectedTask) : null;
-  const selectedWeekRows = selectedDraft
-    ? selectedDraft.compositeTasks.filter((row) => Number(row.weekIndex) === 1)
-    : [];
+  const selectedWeekRows = selectedDraft?.compositeTasks || [];
   const profiles = periodicProfileLists(periodicTasks);
   const simulationSource = periodicSimulationSource(profiles, periodicTasks, compositeTasks);
   if (!selectedPeriodicProfileIds.week || !profiles.week.some((item) => item.id === selectedPeriodicProfileIds.week)) {
@@ -6152,7 +6137,7 @@ function renderPeriodicTaskModeling(page) {
     ${selectedDraft ? `
       ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
       <div class="table-wrap"><table><thead><tr><th style="width:96px;">周内日</th><th>复合任务名称</th></tr></thead><tbody>${selectedWeekRows.map((row) => {
-        const rowIndex = selectedDraft.compositeTasks.findIndex((candidate) => candidate.weekIndex === row.weekIndex && candidate.weekday === row.weekday);
+        const rowIndex = selectedDraft.compositeTasks.findIndex((candidate) => candidate.weekday === row.weekday);
         return `<tr><td>${htmlEscape(periodicWeekdayLabel(row.weekday))}</td><td>${periodicValueSelect(`weekComposite:${rowIndex}`, row.compositeTaskId, compositeOptions)}</td></tr>`;
       }).join("")}</tbody></table></div>
     ` : `<div class="alert warn">暂无周剖面，请先新增。</div>`}
@@ -6182,6 +6167,12 @@ function renderPeriodicTaskModeling(page) {
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
       <span class="status-badge ${simulationSource.error ? "warn" : ""}" data-periodic-simulation-source>${htmlEscape(simulationSource.text)}</span>
+    </div>
+    <div class="detail-card periodic-duration-card">
+      <label>仿真时长（天）
+        ${valueInput("missionProfile.durationDays", "number", { min: "1", step: "1", "aria-label": "仿真时长（天）" })}
+      </label>
+      <p class="muted">任务日历只在该时长范围内展开；周、月、年剖面负责安排任务，不再单独设置周期或重复次数。</p>
     </div>
     <div class="periodic-profile-tabs">${profileTabs}</div>
     <div class="organization-layout task-modeling-periodic-layout">
@@ -6413,15 +6404,49 @@ function renamePeriodicProfile(id, type, value, options = {}) {
   item.name = name;
   if (type === "week") {
     const task = periodicTaskList().find((candidate) => String(candidate.id) === String(id));
-    if (task) {
-      task.name = name;
-      task.taskName = name;
-      task.periodicTaskName = name;
-      task.experimentName = name;
-    }
+    if (task) task.name = name;
   }
   if (options.updatePreview !== false) updatePreviewResultsThroughApiClient();
   return true;
+}
+
+function ensureMissionProfileDurationDays() {
+  const configured = Number(scenario.missionProfile.durationDays);
+  if (Number.isFinite(configured) && configured > 0) {
+    scenario.missionProfile.durationDays = Math.ceil(configured);
+    return scenario.missionProfile.durationDays;
+  }
+  const legacyHours = Number(scenario.missionProfile.durationHours);
+  const periodicDurations = (Array.isArray(scenario.missionProfile.periodicTasks)
+    ? scenario.missionProfile.periodicTasks
+    : []
+  ).map((task) => {
+    if (!task || typeof task !== "object") return 0;
+    const repeats = Number(task.repeatWeeks ?? task.repeatRounds ?? task.repeatCount ?? task.rounds);
+    const directCycleDays = Number(task.cycleDays ?? task.repeatCycleDays ?? task.periodDays ?? task.taskPeriodDays);
+    const repeatCycleValue = Number(task.repeatCycleValue);
+    const repeatCycleUnit = String(task.repeatCycleUnit || "day").toLowerCase();
+    const convertedCycleDays = ["week", "weeks", "周", "星期"].includes(repeatCycleUnit)
+      ? repeatCycleValue * 7
+      : ["hour", "hours", "小时"].includes(repeatCycleUnit)
+        ? repeatCycleValue / 24
+        : repeatCycleValue;
+    const cycleDays = Number.isFinite(directCycleDays) && directCycleDays > 0
+      ? directCycleDays
+      : Number.isFinite(convertedCycleDays) && convertedCycleDays > 0
+        ? convertedCycleDays
+        : 7;
+    const repeatedDuration = Number.isFinite(repeats) && repeats > 0 ? repeats * cycleDays : 0;
+    const indexedDuration = (Array.isArray(task.compositeTasks) ? task.compositeTasks : [])
+      .reduce((largest, row) => Math.max(largest, Number(row?.weekIndex ?? row?.week) || 0), 0) * 7;
+    return Math.max(repeatedDuration, indexedDuration);
+  });
+  scenario.missionProfile.durationDays = Math.max(
+    1,
+    Number.isFinite(legacyHours) && legacyHours > 0 ? Math.ceil(legacyHours / 24) : 0,
+    ...periodicDurations.map((value) => Math.ceil(value))
+  );
+  return scenario.missionProfile.durationDays;
 }
 
 function periodicTaskList() {
@@ -6432,32 +6457,11 @@ function periodicTaskList() {
   return scenario.missionProfile.periodicTasks;
 }
 
-function repeatSelectedPeriodicWeek(mode) {
-  const task = selectedPeriodicTask();
-  if (!task) return;
-  const sourceRows = (task.compositeTasks || []).filter((row) => Number(row.weekIndex) === selectedPeriodicWeekIndex);
-  const countInput = app.querySelector?.("[data-periodic-repeat-count]");
-  const requested = Math.max(1, Math.floor(Number(countInput?.value || 1)));
-  const lastWeek = mode === "remaining" ? 52 : Math.min(52, selectedPeriodicWeekIndex + requested);
-  const existing = new Map((task.compositeTasks || []).map((row) => [`${row.weekIndex}:${row.weekday}`, row]));
-  for (let week = selectedPeriodicWeekIndex + 1; week <= lastWeek; week += 1) {
-    for (const source of sourceRows) {
-      const copy = { ...structuredClone(source), weekIndex: week };
-      if ("id" in copy) copy.id = `${source.id || "periodic-task"}-week-${week}-${source.weekday || "day"}`;
-      existing.set(`${week}:${source.weekday}`, copy);
-    }
-  }
-  task.repeatWeeks = Math.max(Number(task.repeatWeeks || 1), lastWeek);
-  task.compositeTasks = [...existing.values()].sort((a, b) => a.weekIndex - b.weekIndex || String(a.weekday).localeCompare(String(b.weekday)));
-  updatePreviewResultsThroughApiClient();
-}
-
 function selectedPeriodicTask(periodicTasks = periodicTaskList()) {
   if (!periodicTasks.length) {
     const task = createPeriodicTaskDraft();
     scenario.missionProfile.periodicTasks = [task];
     selectedPeriodicTaskId = String(task.id);
-    selectedPeriodicWeekIndex = 1;
     return task;
   }
   const selected = periodicTasks.find((task) => String(task.id) === String(selectedPeriodicTaskId)) || periodicTasks[0];
@@ -6469,22 +6473,11 @@ function createPeriodicTaskDraft(source = {}) {
   const order = periodicTaskList().length + 1;
   return normalizePeriodicTask({
     id: source.id || `periodic-${Date.now()}`,
-    parentTaskName: source.parentTaskName || source.parentTask || "默认任务",
-    name: source.name || `周期性任务${order}`,
-    cycleDays: 7,
-    repeatWeeks: source.repeatWeeks || source.repeatRounds || 1
+    name: source.name || `周剖面${order}`
   });
 }
 
-function normalizePeriodicTaskCycleDays(source = {}) {
-  return 7;
-}
-
-function clampPeriodicCycleDays(value) {
-  return 7;
-}
-
-function parsePeriodicCompositeTasks(source, repeatWeeks, weekdayAssignments, validCompositeIds) {
+function parsePeriodicCompositeTasks(source, weekdayAssignments, validCompositeIds) {
   const rawRows = Array.isArray(source.compositeTasks)
     ? source.compositeTasks
     : typeof source.compositeTasks === "string"
@@ -6493,20 +6486,22 @@ function parsePeriodicCompositeTasks(source, repeatWeeks, weekdayAssignments, va
   const byWeekday = new Map();
   rawRows.forEach((row, index) => {
     if (!row || typeof row !== "object") return;
-    const weekIndex = Math.max(1, Math.floor(Number(row.weekIndex || row.week || Math.floor(index / 7) + 1)));
-    const weekday = String(row.weekday || PERIODIC_WEEKDAY_FIELDS[index % 7]?.key || "mondayCompositeTaskId");
+    const weekdayField = PERIODIC_WEEKDAY_FIELDS.find((field) => (
+      field.key === String(row.weekday) || field.legacyKey === String(row.weekday)
+    )) || PERIODIC_WEEKDAY_FIELDS[index % 7];
+    const weekday = weekdayField.legacyKey;
     const compositeTaskId = String(row.compositeTaskId || row.compositeTask || row.taskId || "");
-    byWeekday.set(`${weekIndex}:${weekday}`, validCompositeIds.has(compositeTaskId) ? compositeTaskId : "");
+    if (!byWeekday.has(weekday)) {
+      byWeekday.set(weekday, validCompositeIds.has(compositeTaskId) ? compositeTaskId : "");
+    }
   });
-  return Array.from({ length: repeatWeeks }).flatMap((_, weekIndex) => PERIODIC_WEEKDAY_FIELDS.map((field) => {
-    const key = `${weekIndex + 1}:${field.key}`;
+  return PERIODIC_WEEKDAY_FIELDS.map((field) => {
     const legacyCompositeId = String(weekdayAssignments[field.key] || "");
     return {
-      weekIndex: weekIndex + 1,
-      weekday: field.key,
-      compositeTaskId: byWeekday.has(key) ? byWeekday.get(key) : legacyCompositeId
+      weekday: field.legacyKey,
+      compositeTaskId: byWeekday.has(field.legacyKey) ? byWeekday.get(field.legacyKey) : legacyCompositeId
     };
-  }));
+  });
 }
 
 function safeJsonParse(value, fallback) {
@@ -6530,40 +6525,19 @@ function normalizePeriodicTask(source = {}) {
     weekdayAssignments[field.key] = validCompositeIds.has(candidate) ? candidate : "";
     weekdayAssignments[field.legacyKey] = weekdayAssignments[field.key];
   });
-  const cycleDays = normalizePeriodicTaskCycleDays(source);
-  const repeatWeeks = clamp(Math.floor(Number(source.repeatWeeks ?? source.repeatRounds ?? source.rounds ?? source.repeatCount ?? source.dailyRepeatCount ?? 1)), 1, 52);
-  const compositeTasks = parsePeriodicCompositeTasks(source, repeatWeeks, weekdayAssignments, validCompositeIds);
+  const compositeTasks = parsePeriodicCompositeTasks(source, weekdayAssignments, validCompositeIds);
   const legacyLinkedCompositeIds = PERIODIC_WEEKDAY_FIELDS
     .map((field) => weekdayAssignments[field.key])
     .filter(Boolean);
-  const linkedCompositeIds = Array.isArray(source.compositeTaskIds)
-    ? source.compositeTaskIds.map((id) => String(id)).filter((id) => validCompositeIds.has(id))
-    : [...compositeTasks.map((row) => row.compositeTaskId).filter(Boolean), ...legacyLinkedCompositeIds];
+  const linkedCompositeIds = [
+    ...compositeTasks.map((row) => row.compositeTaskId).filter(Boolean),
+    ...legacyLinkedCompositeIds
+  ];
   return {
-    ...source,
     id: String(source.id || `periodic-${Date.now()}`),
-    parentTaskName: String(source.parentTaskName || source.parentTask || source.taskGroupName || "默认任务"),
-    parentTask: String(source.parentTask || source.parentTaskName || source.taskGroupName || "默认任务"),
-    taskGroupName: String(source.taskGroupName || source.parentTaskName || source.parentTask || "默认任务"),
-    name: String(source.name || source.periodicTaskName || source.experimentName || "未命名周期性任务"),
-    taskName: String(source.taskName || source.name || source.periodicTaskName || source.experimentName || "未命名周期性任务"),
-    periodicTaskName: String(source.periodicTaskName || source.name || source.experimentName || "未命名周期性任务"),
-    experimentName: String(source.experimentName || source.name || source.periodicTaskName || "未命名周期性任务"),
-    taskCategory: "periodic",
-    cycleDays,
-    taskPeriodDays: cycleDays,
-    periodDays: cycleDays,
-    repeatCycleDays: cycleDays,
-    repeatCycleValue: cycleDays,
-    repeatCycleUnit: "day",
-    repeatRounds: repeatWeeks,
-    repeatWeeks,
-    repeatCount: repeatWeeks,
-    dailyRepeatCount: repeatWeeks,
-    weekdayAssignments,
+    name: String(source.name || source.periodicTaskName || source.experimentName || "未命名周剖面"),
     compositeTasks,
-    compositeTaskIds: Array.from(new Set(linkedCompositeIds)),
-    ...Object.fromEntries(PERIODIC_WEEKDAY_FIELDS.map((field) => [field.key, weekdayAssignments[field.key]]))
+    compositeTaskIds: Array.from(new Set(linkedCompositeIds))
   };
 }
 
@@ -6573,27 +6547,7 @@ function updateSelectedPeriodicTask(field, value, options = {}) {
   if (!selectedTask) return;
   const draft = normalizePeriodicTask(selectedTask);
   if (field === "name") {
-    draft.name = String(value || "").trim() || "未命名周期性任务";
-    draft.taskName = draft.name;
-    draft.periodicTaskName = draft.name;
-    draft.experimentName = draft.name;
-  } else if (field === "parentTaskName") {
-    draft.parentTaskName = String(value || "").trim() || "默认任务";
-    draft.parentTask = draft.parentTaskName;
-    draft.taskGroupName = draft.parentTaskName;
-  } else if (field === "cycleDays") {
-    draft.cycleDays = 7;
-    draft.taskPeriodDays = draft.cycleDays;
-    draft.periodDays = draft.cycleDays;
-    draft.repeatCycleDays = draft.cycleDays;
-    draft.repeatCycleValue = draft.cycleDays;
-    draft.repeatCycleUnit = "day";
-  } else if (field === "repeatWeeks") {
-    draft.repeatWeeks = clamp(Math.floor(Number(value || 1)), 1, 52);
-    draft.repeatRounds = draft.repeatWeeks;
-    draft.repeatCount = draft.repeatWeeks;
-    draft.dailyRepeatCount = draft.repeatWeeks;
-    selectedPeriodicWeekIndex = clamp(selectedPeriodicWeekIndex, 1, draft.repeatWeeks);
+    draft.name = String(value || "").trim() || "未命名周剖面";
   } else if (field.startsWith("dayComposite:") || field.startsWith("weekComposite:")) {
     const index = Number(field.split(":")[1]);
     if (Number.isInteger(index) && draft.compositeTasks[index]) {
@@ -12599,6 +12553,7 @@ const SCENARIO_FIELD_LABELS = Object.freeze({
   capacity: "容量",
   compositeTasks: "复合任务",
   constraints: "约束条件",
+  durationDays: "仿真时长（天）",
   durationHours: "持续时间(h)",
   equipmentCapacity: "设备容量",
   equipmentType: "装备类型",
@@ -12620,7 +12575,6 @@ const SCENARIO_FIELD_LABELS = Object.freeze({
   project_version: "项目版本",
   projectInfo: "项目信息",
   quantity: "数量",
-  repeatCycleHours: "重复周期(h)",
   sampleCount: "样本数",
   samples: "样本数",
   scenarioId: "场景编号",

@@ -29,7 +29,7 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             "airports": ["A"],
             "missionProfile": {
                 "name": "clean mission",
-                "durationHours": 1,
+                "durationDays": 1,
                 "compositeTasks": [],
                 "periodicTasks": [],
             },
@@ -166,7 +166,6 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
 
     def test_schema_accepts_canonical_mission_profile_tasks(self) -> None:
         project = self._clean_project()
-        project["missionProfile"].pop("durationHours", None)
         project["missionProfile"]["compositeTasks"] = [
             {
                 "id": "composite-day",
@@ -188,11 +187,9 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             {
                 "id": "periodic-a",
                 "name": "weekly mission",
-                "repeatWeeks": 2,
-                "cycleDays": 7,
                 "compositeTaskIds": ["composite-day"],
                 "compositeTasks": [
-                    {"compositeTaskId": "composite-day", "weekIndex": 1, "weekday": "monday"},
+                    {"compositeTaskId": "composite-day", "weekday": "monday"},
                 ],
             }
         ]
@@ -239,6 +236,8 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             "repeatCycleUnit",
             "repeatCycleValue",
             "repeatRounds",
+            "repeatWeeks",
+            "cycleDays",
             "saturdayCompositeTaskId",
             "sundayCompositeTaskId",
             "taskCategory",
@@ -255,10 +254,37 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                 project["missionProfile"]["periodicTasks"] = [{"id": "periodic-a", field: "legacy"}]
                 self.assertTrue(self._schema_errors(project))
 
-    def test_schema_rejects_duration_hours_when_periodic_duration_exists(self) -> None:
-        project = self._clean_project()
-        project["missionProfile"]["periodicTasks"] = [{"id": "periodic-a", "repeatWeeks": 2, "cycleDays": 7}]
+    def test_schema_rejects_legacy_duration_and_absolute_week_fields(self) -> None:
+        for field, value in (("durationHours", 24), ("durationMinutes", 1440)):
+            with self.subTest(field=field):
+                project = self._clean_project()
+                project["missionProfile"][field] = value
+                self.assertTrue(self._schema_errors(project))
+        for field in ("week", "weekIndex", "dayOfWeek"):
+            with self.subTest(field=field):
+                project = self._clean_project()
+                project["missionProfile"]["periodicTasks"] = [{
+                    "id": "periodic-a",
+                    "compositeTasks": [{
+                        "compositeTaskId": "composite-day",
+                        "weekday": "monday",
+                        field: 1,
+                    }],
+                }]
+                self.assertTrue(self._schema_errors(project))
 
+    def test_schema_rejects_ambiguous_integer_weekdays_and_excessive_duration(self) -> None:
+        project = self._clean_project()
+        project["missionProfile"]["periodicTasks"] = [{
+            "id": "periodic-a",
+            "name": "week profile",
+            "compositeTaskIds": ["composite-day"],
+            "compositeTasks": [{"compositeTaskId": "composite-day", "weekday": 1}],
+        }]
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["missionProfile"]["durationDays"] = 3651
         self.assertTrue(self._schema_errors(project))
 
     def test_schema_rejects_polluting_roots(self) -> None:

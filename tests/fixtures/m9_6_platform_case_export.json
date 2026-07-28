@@ -13,7 +13,7 @@
           "missionProfile.combatUnit.members[].preLifeCalendarDays",
           "missionProfile.combatUnit.members[].preLifeFlightHours",
           "missionProfile.combatUnit.members[].preLifeTakeoffLandingCount",
-          "missionProfile.durationHours",
+          "missionProfile.durationDays",
           "missionProfile.compositeTasks",
           "missionProfile.periodicTasks",
           "basicMissions",
@@ -114,7 +114,7 @@
           "missionProfile.combatUnit.members[].remainingLifeHours",
           "missionProfile.combatUnit.members[].takeoffLandingCount"
         ],
-        "mapping_version": "aircraft-support-v1-input-v0",
+        "mapping_version": "aircraft-support-v1-input-v1",
         "migration_notices": [],
         "model_family": "aircraft_support_v1",
         "modeling_snapshot_id": "snapshot-m9-6-platform-case",
@@ -165,6 +165,7 @@
             "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-15",
+            "preventive_cycles": [],
             "preventive_threshold_sources": {
               "calendar_days": [],
               "flight_hours": [],
@@ -196,6 +197,7 @@
             "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-15",
+            "preventive_cycles": [],
             "preventive_threshold_sources": {
               "calendar_days": [],
               "flight_hours": [],
@@ -227,6 +229,22 @@
             "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-35",
+            "preventive_cycles": [
+              {
+                "activity_id": "preventive",
+                "equipment_id": "j35-hydraulic",
+                "initial_life_state": {
+                  "calendar_days": 0,
+                  "flight_hours": 0.0,
+                  "takeoff_landing_cycles": 0
+                },
+                "thresholds": {
+                  "calendar_days": 1,
+                  "flight_hours": 8.0,
+                  "takeoff_landing_cycles": 6
+                }
+              }
+            ],
             "preventive_threshold_sources": {
               "calendar_days": [
                 {
@@ -273,6 +291,22 @@
             "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-35",
+            "preventive_cycles": [
+              {
+                "activity_id": "preventive",
+                "equipment_id": "j35-hydraulic",
+                "initial_life_state": {
+                  "calendar_days": 0,
+                  "flight_hours": 0.0,
+                  "takeoff_landing_cycles": 0
+                },
+                "thresholds": {
+                  "calendar_days": 1,
+                  "flight_hours": 8.0,
+                  "takeoff_landing_cycles": 6
+                }
+              }
+            ],
             "preventive_threshold_sources": {
               "calendar_days": [
                 {
@@ -319,6 +353,7 @@
             "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-15",
+            "preventive_cycles": [],
             "preventive_threshold_sources": {
               "calendar_days": [],
               "flight_hours": [],
@@ -350,6 +385,22 @@
             "initial_preventive_due": false,
             "initial_state": "available",
             "model": "J-35",
+            "preventive_cycles": [
+              {
+                "activity_id": "preventive",
+                "equipment_id": "j35-hydraulic",
+                "initial_life_state": {
+                  "calendar_days": 0,
+                  "flight_hours": 0.0,
+                  "takeoff_landing_cycles": 0
+                },
+                "thresholds": {
+                  "calendar_days": 1,
+                  "flight_hours": 8.0,
+                  "takeoff_landing_cycles": 6
+                }
+              }
+            ],
             "preventive_threshold_sources": {
               "calendar_days": [
                 {
@@ -769,6 +820,64 @@
           }
         ],
         "duration_minutes": 20160,
+        "mission_calendar": [
+          {
+            "composite_task_id": "composite-day-cap",
+            "day_index": 1
+          },
+          {
+            "composite_task_id": "composite-day-cap",
+            "day_index": 2
+          },
+          {
+            "composite_task_id": "composite-day-cap",
+            "day_index": 3
+          },
+          {
+            "composite_task_id": "composite-day-cap",
+            "day_index": 4
+          },
+          {
+            "composite_task_id": "composite-day-cap",
+            "day_index": 5
+          },
+          {
+            "composite_task_id": "composite-day-cap",
+            "day_index": 6
+          },
+          {
+            "composite_task_id": "composite-day-cap",
+            "day_index": 7
+          },
+          {
+            "composite_task_id": "composite-night-alert",
+            "day_index": 8
+          },
+          {
+            "composite_task_id": "composite-night-alert",
+            "day_index": 9
+          },
+          {
+            "composite_task_id": "composite-night-alert",
+            "day_index": 10
+          },
+          {
+            "composite_task_id": "composite-night-alert",
+            "day_index": 11
+          },
+          {
+            "composite_task_id": "composite-night-alert",
+            "day_index": 12
+          },
+          {
+            "composite_task_id": "composite-night-alert",
+            "day_index": 13
+          },
+          {
+            "composite_task_id": "composite-night-alert",
+            "day_index": 14
+          }
+        ],
         "mission_phases": [
           {
             "basicMissionId": "bm-cv-01",
@@ -827,40 +936,10 @@
         ],
         "name": "舰载机昼夜混合出动任务剖面",
         "periodic_source": {
-          "configured_slots": 1,
-          "label": "周剖面",
-          "level": "week"
+          "configured_slots": 2,
+          "label": "月剖面",
+          "level": "month"
         },
-        "periodic_tasks": [
-          {
-            "compositeTaskIds": [
-              "composite-day-cap",
-              "composite-night-alert"
-            ],
-            "compositeTasks": [
-              {
-                "compositeTaskId": "composite-day-cap",
-                "week": "1"
-              },
-              {
-                "compositeTaskId": "composite-night-alert",
-                "week": "2"
-              },
-              {
-                "compositeTaskId": "composite-day-cap",
-                "week": "3"
-              },
-              {
-                "compositeTaskId": "composite-night-alert",
-                "week": "4"
-              }
-            ],
-            "cycleDays": 7.0,
-            "id": "periodic-carrier-day-night",
-            "name": "航母昼夜保障周期任务",
-            "repeatWeeks": 2.0
-          }
-        ],
         "profile_id": "MP-CV-01"
       },
       "monte_carlo": {
@@ -889,7 +968,7 @@
         "scenario_id": "import-carrier-day-night-001",
         "source_import_id": "import-carrier-day-night-001"
       },
-      "schema_version": "aircraft-support-v1-input-v0",
+      "schema_version": "aircraft-support-v1-input-v1",
       "seed": 20260621,
       "stop_policy": {
         "conditions": [
@@ -2056,36 +2135,127 @@
               ]
             }
           ],
+          "durationDays": 14,
           "id": "mission-profile-day-night",
           "name": "舰载机昼夜混合出动任务剖面",
+          "periodicProfileLists": {
+            "month": [
+              {
+                "id": "month-carrier-day-night",
+                "name": "航母昼夜保障月剖面",
+                "weekProfileIds": [
+                  "week-carrier-day-cap",
+                  "week-carrier-night-alert",
+                  "",
+                  ""
+                ]
+              }
+            ],
+            "week": [
+              {
+                "id": "week-carrier-day-cap",
+                "name": "第1周昼间制空"
+              },
+              {
+                "id": "week-carrier-night-alert",
+                "name": "第2周夜间警戒"
+              }
+            ],
+            "year": [
+              {
+                "id": "year-default",
+                "monthProfileIds": [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                "name": "基准年度"
+              }
+            ]
+          },
           "periodicTasks": [
             {
               "compositeTaskIds": [
-                "composite-day-cap",
-                "composite-night-alert"
+                "composite-day-cap"
               ],
               "compositeTasks": [
                 {
                   "compositeTaskId": "composite-day-cap",
-                  "week": "1"
-                },
-                {
-                  "compositeTaskId": "composite-night-alert",
-                  "week": "2"
+                  "weekday": "monday"
                 },
                 {
                   "compositeTaskId": "composite-day-cap",
-                  "week": "3"
+                  "weekday": "tuesday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "wednesday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "thursday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "friday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "saturday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "sunday"
+                }
+              ],
+              "id": "week-carrier-day-cap",
+              "name": "第1周昼间制空"
+            },
+            {
+              "compositeTaskIds": [
+                "composite-night-alert"
+              ],
+              "compositeTasks": [
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "monday"
                 },
                 {
                   "compositeTaskId": "composite-night-alert",
-                  "week": "4"
+                  "weekday": "tuesday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "wednesday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "thursday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "friday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "saturday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "sunday"
                 }
               ],
-              "cycleDays": 7.0,
-              "id": "periodic-carrier-day-night",
-              "name": "航母昼夜保障周期任务",
-              "repeatWeeks": 2.0
+              "id": "week-carrier-night-alert",
+              "name": "第2周夜间警戒"
             }
           ],
           "profileId": "MP-CV-01",
@@ -3321,36 +3491,127 @@
             ]
           }
         ],
+        "durationDays": 14,
         "id": "mission-profile-day-night",
         "name": "舰载机昼夜混合出动任务剖面",
+        "periodicProfileLists": {
+          "month": [
+            {
+              "id": "month-carrier-day-night",
+              "name": "航母昼夜保障月剖面",
+              "weekProfileIds": [
+                "week-carrier-day-cap",
+                "week-carrier-night-alert",
+                "",
+                ""
+              ]
+            }
+          ],
+          "week": [
+            {
+              "id": "week-carrier-day-cap",
+              "name": "第1周昼间制空"
+            },
+            {
+              "id": "week-carrier-night-alert",
+              "name": "第2周夜间警戒"
+            }
+          ],
+          "year": [
+            {
+              "id": "year-default",
+              "monthProfileIds": [
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+              ],
+              "name": "基准年度"
+            }
+          ]
+        },
         "periodicTasks": [
           {
             "compositeTaskIds": [
-              "composite-day-cap",
-              "composite-night-alert"
+              "composite-day-cap"
             ],
             "compositeTasks": [
               {
                 "compositeTaskId": "composite-day-cap",
-                "week": "1"
-              },
-              {
-                "compositeTaskId": "composite-night-alert",
-                "week": "2"
+                "weekday": "monday"
               },
               {
                 "compositeTaskId": "composite-day-cap",
-                "week": "3"
+                "weekday": "tuesday"
+              },
+              {
+                "compositeTaskId": "composite-day-cap",
+                "weekday": "wednesday"
+              },
+              {
+                "compositeTaskId": "composite-day-cap",
+                "weekday": "thursday"
+              },
+              {
+                "compositeTaskId": "composite-day-cap",
+                "weekday": "friday"
+              },
+              {
+                "compositeTaskId": "composite-day-cap",
+                "weekday": "saturday"
+              },
+              {
+                "compositeTaskId": "composite-day-cap",
+                "weekday": "sunday"
+              }
+            ],
+            "id": "week-carrier-day-cap",
+            "name": "第1周昼间制空"
+          },
+          {
+            "compositeTaskIds": [
+              "composite-night-alert"
+            ],
+            "compositeTasks": [
+              {
+                "compositeTaskId": "composite-night-alert",
+                "weekday": "monday"
               },
               {
                 "compositeTaskId": "composite-night-alert",
-                "week": "4"
+                "weekday": "tuesday"
+              },
+              {
+                "compositeTaskId": "composite-night-alert",
+                "weekday": "wednesday"
+              },
+              {
+                "compositeTaskId": "composite-night-alert",
+                "weekday": "thursday"
+              },
+              {
+                "compositeTaskId": "composite-night-alert",
+                "weekday": "friday"
+              },
+              {
+                "compositeTaskId": "composite-night-alert",
+                "weekday": "saturday"
+              },
+              {
+                "compositeTaskId": "composite-night-alert",
+                "weekday": "sunday"
               }
             ],
-            "cycleDays": 7.0,
-            "id": "periodic-carrier-day-night",
-            "name": "航母昼夜保障周期任务",
-            "repeatWeeks": 2.0
+            "id": "week-carrier-night-alert",
+            "name": "第2周夜间警戒"
           }
         ],
         "profileId": "MP-CV-01",
@@ -4600,36 +4861,127 @@
           ]
         }
       ],
+      "durationDays": 14,
       "id": "mission-profile-day-night",
       "name": "舰载机昼夜混合出动任务剖面",
+      "periodicProfileLists": {
+        "month": [
+          {
+            "id": "month-carrier-day-night",
+            "name": "航母昼夜保障月剖面",
+            "weekProfileIds": [
+              "week-carrier-day-cap",
+              "week-carrier-night-alert",
+              "",
+              ""
+            ]
+          }
+        ],
+        "week": [
+          {
+            "id": "week-carrier-day-cap",
+            "name": "第1周昼间制空"
+          },
+          {
+            "id": "week-carrier-night-alert",
+            "name": "第2周夜间警戒"
+          }
+        ],
+        "year": [
+          {
+            "id": "year-default",
+            "monthProfileIds": [
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            "name": "基准年度"
+          }
+        ]
+      },
       "periodicTasks": [
         {
           "compositeTaskIds": [
-            "composite-day-cap",
-            "composite-night-alert"
+            "composite-day-cap"
           ],
           "compositeTasks": [
             {
               "compositeTaskId": "composite-day-cap",
-              "week": "1"
-            },
-            {
-              "compositeTaskId": "composite-night-alert",
-              "week": "2"
+              "weekday": "monday"
             },
             {
               "compositeTaskId": "composite-day-cap",
-              "week": "3"
+              "weekday": "tuesday"
+            },
+            {
+              "compositeTaskId": "composite-day-cap",
+              "weekday": "wednesday"
+            },
+            {
+              "compositeTaskId": "composite-day-cap",
+              "weekday": "thursday"
+            },
+            {
+              "compositeTaskId": "composite-day-cap",
+              "weekday": "friday"
+            },
+            {
+              "compositeTaskId": "composite-day-cap",
+              "weekday": "saturday"
+            },
+            {
+              "compositeTaskId": "composite-day-cap",
+              "weekday": "sunday"
+            }
+          ],
+          "id": "week-carrier-day-cap",
+          "name": "第1周昼间制空"
+        },
+        {
+          "compositeTaskIds": [
+            "composite-night-alert"
+          ],
+          "compositeTasks": [
+            {
+              "compositeTaskId": "composite-night-alert",
+              "weekday": "monday"
             },
             {
               "compositeTaskId": "composite-night-alert",
-              "week": "4"
+              "weekday": "tuesday"
+            },
+            {
+              "compositeTaskId": "composite-night-alert",
+              "weekday": "wednesday"
+            },
+            {
+              "compositeTaskId": "composite-night-alert",
+              "weekday": "thursday"
+            },
+            {
+              "compositeTaskId": "composite-night-alert",
+              "weekday": "friday"
+            },
+            {
+              "compositeTaskId": "composite-night-alert",
+              "weekday": "saturday"
+            },
+            {
+              "compositeTaskId": "composite-night-alert",
+              "weekday": "sunday"
             }
           ],
-          "cycleDays": 7.0,
-          "id": "periodic-carrier-day-night",
-          "name": "航母昼夜保障周期任务",
-          "repeatWeeks": 2.0
+          "id": "week-carrier-night-alert",
+          "name": "第2周夜间警戒"
         }
       ],
       "profileId": "MP-CV-01",
@@ -6021,7 +6373,8 @@
               ]
             }
           ],
-          "durationHours": 24,
+          "durationDays": 14,
+          "durationHours": 336,
           "endCondition": "完成 4 个昼夜任务波次",
           "equipment": {
             "deploymentLocation": "航母飞行甲板",
@@ -6111,52 +6464,124 @@
             ]
           },
           "name": "舰载机昼夜混合出动任务剖面",
+          "periodicProfileLists": {
+            "month": [
+              {
+                "id": "month-carrier-day-night",
+                "name": "航母昼夜保障月剖面",
+                "weekProfileIds": [
+                  "week-carrier-day-cap",
+                  "week-carrier-night-alert",
+                  "",
+                  ""
+                ]
+              }
+            ],
+            "week": [
+              {
+                "id": "week-carrier-day-cap",
+                "name": "第1周昼间制空"
+              },
+              {
+                "id": "week-carrier-night-alert",
+                "name": "第2周夜间警戒"
+              }
+            ],
+            "year": [
+              {
+                "id": "year-default",
+                "monthProfileIds": [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                "name": "基准年度"
+              }
+            ]
+          },
           "periodicTasks": [
             {
               "compositeTaskIds": [
-                "composite-day-cap",
-                "composite-night-alert"
+                "composite-day-cap"
               ],
               "compositeTasks": [
                 {
                   "compositeTaskId": "composite-day-cap",
-                  "week": "1"
-                },
-                {
-                  "compositeTaskId": "composite-night-alert",
-                  "week": "2"
+                  "weekday": "monday"
                 },
                 {
                   "compositeTaskId": "composite-day-cap",
-                  "week": "3"
+                  "weekday": "tuesday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "wednesday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "thursday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "friday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "saturday"
+                },
+                {
+                  "compositeTaskId": "composite-day-cap",
+                  "weekday": "sunday"
+                }
+              ],
+              "id": "week-carrier-day-cap",
+              "name": "第1周昼间制空"
+            },
+            {
+              "compositeTaskIds": [
+                "composite-night-alert"
+              ],
+              "compositeTasks": [
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "monday"
                 },
                 {
                   "compositeTaskId": "composite-night-alert",
-                  "week": "4"
+                  "weekday": "tuesday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "wednesday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "thursday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "friday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "saturday"
+                },
+                {
+                  "compositeTaskId": "composite-night-alert",
+                  "weekday": "sunday"
                 }
               ],
-              "cycleDays": 7,
-              "dailyRepeatCount": 2,
-              "id": "periodic-carrier-day-night",
-              "name": "航母昼夜保障周期任务",
-              "periodDays": 7,
-              "repeatCount": 2,
-              "repeatCycleDays": 7,
-              "repeatCycleUnit": "day",
-              "repeatCycleValue": 7,
-              "repeatRounds": 2,
-              "repeatWeeks": 2,
-              "taskName": "航母昼夜保障周期任务",
-              "taskPeriodDays": 7,
-              "weekdayAssignments": {
-                "friday": "composite-day-cap",
-                "monday": "composite-day-cap",
-                "saturday": "composite-night-alert",
-                "sunday": "composite-day-cap",
-                "thursday": "composite-day-cap",
-                "tuesday": "composite-day-cap",
-                "wednesday": "composite-night-alert"
-              }
+              "id": "week-carrier-night-alert",
+              "name": "第2周夜间警戒"
             }
           ],
           "profileId": "MP-CV-01",

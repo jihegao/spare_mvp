@@ -399,7 +399,7 @@ test("equipment task modeling omits built-in scenario and task profile parameter
   assert.match(appSource, /if \(page\.name === "任务剖面参数"\) return renderMissionProfileParameters\(page\)/);
   assert.match(appSource, /function renderMissionProfileParameters\(page\)/);
   assert.match(appSource, /field\("任务类型", "missionProfile\.profileType"\)/);
-  assert.match(appSource, /field\("重复周期", "missionProfile\.repeatCycleHours", "number"\)/);
+  assert.match(appSource, /field\("仿真时长（天）", "missionProfile\.durationDays", "number"/);
   assert.match(appSource, /field\("结束条件", "missionProfile\.endCondition"\)/);
 });
 
@@ -1989,8 +1989,9 @@ test("phase 1B mission modeling convergence contract is documented in source", a
   assert.doesNotMatch(periodicSource, /任务周期天数/);
   assert.doesNotMatch(periodicSource, /每周天数/);
   assert.doesNotMatch(periodicSource, /周期性任务名称/);
+  assert.match(periodicSource, /missionProfile\.durationDays/);
   assert.match(periodicSource, /周内日/);
-  assert.match(periodicModelSource, /weekIndex/);
+  assert.doesNotMatch(periodicModelSource, /weekIndex/);
   assert.match(periodicModelSource, /weekday/);
 });
 
@@ -2123,9 +2124,10 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.match(periodicSource, /周内日/);
   assert.match(periodicSource, /复合任务名称/);
   assert.match(periodicSource, /periodicWeekdayLabel/);
-  assert.match(appSource, /let selectedPeriodicWeekIndex = 1/);
-  assert.match(appSource, /const periodicWeekRow = event\.target\.closest\("\[data-periodic-select-week\]"\)/);
-  assert.match(appSource, /return 7;/);
+  assert.match(periodicSource, /missionProfile\.durationDays/);
+  assert.doesNotMatch(appSource, /selectedPeriodicWeekIndex/);
+  assert.doesNotMatch(appSource, /data-periodic-select-week/);
+  assert.doesNotMatch(appSource, /repeatSelectedPeriodicWeek/);
   assert.match(appSource, /let selectedCompositeTaskId = ""/);
   assert.match(appSource, /function addCompositeTask\(\)/);
   assert.match(appSource, /function deleteSelectedCompositeTask\(\)/);
