@@ -199,9 +199,9 @@ test("result schema exposes only aircraft_support_v1 metrics", async () => {
 });
 
 test("aircraft support result metrics stay aligned with snapshot fields", async () => {
-  const modelSource = await readText("src/spare_mvp_abm/aircraft_support_v1/model.py");
-  const snapshotMatch = modelSource.match(/def snapshot\(self\) -> dict\[str, Any\]:[\s\S]*?return \{([\s\S]*?)\n        \}/);
-  assert.ok(snapshotMatch, "could not find AircraftSupportV1Model snapshot return fields");
+  const metricsSource = await readText("src/spare_mvp_abm/aircraft_support_v1/metrics_engine.py");
+  const snapshotMatch = metricsSource.match(/def snapshot\(self\) -> dict\[str, Any\]:[\s\S]*?return \{([\s\S]*?)\n        \}/);
+  assert.ok(snapshotMatch, "could not find MetricsEngineMixin snapshot return fields");
 
   const sourceMetricIds = new Set(
     [...snapshotMatch[1].matchAll(/"([^"]+)":/g)].map((match) => match[1])

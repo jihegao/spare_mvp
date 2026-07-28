@@ -8725,7 +8725,7 @@ function ensureSupportActivityForPage(page) {
     return null;
   }
   if (page.name.includes("预防性")) {
-    return ensurePreventiveMaintenanceActivityForAircraftModel(defaultSupportActivityAircraftModel());
+    return null;
   }
   if (page.name.includes("修复性")) {
     return ensureCorrectiveMaintenanceActivityDraft();
@@ -11916,7 +11916,6 @@ function spareModelingNames() {
 
 function renderSupportActivityWorkbench(page) {
   const activity = ensureSupportActivityForPage(page);
-  const activePlan = supportActivityPlanForPage(page, activity);
   const locked = currentModelingPageLocked(page);
   const lockedAttr = modelingLockDisabledAttr(locked);
   if (page.name.includes("基本保障活动")) {
@@ -11933,6 +11932,18 @@ function renderSupportActivityWorkbench(page) {
       </div>
     `;
   }
+  if (page.name.includes("预防性") && !activity) {
+    return `
+      <div class="ship-front-workbench">
+        <section class="detail-panel empty-state">
+          <strong>暂无预防性维修活动</strong>
+          <p>可按需新增预防性维修活动；删除最后一条后将保持为空。</p>
+          <button type="button" class="btn-primary" data-preventive-activity-plan-add${lockedAttr}>新增节点</button>
+        </section>
+      </div>
+    `;
+  }
+  const activePlan = supportActivityPlanForPage(page, activity);
   if (page.name.includes("修复性")) {
     return `<div class="ship-front-workbench">${renderCorrectiveMaintenanceActivity(activity)}</div>`;
   }
