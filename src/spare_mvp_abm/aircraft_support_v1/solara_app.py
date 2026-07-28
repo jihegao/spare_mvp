@@ -9,20 +9,17 @@ import json
 import math
 import os
 import re
+import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
 import solara
-from mesa.visualization.solara_viz import update_counter
 
 from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
-from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
-    organization_dispatch_summary,
-)
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -471,10 +468,11 @@ def _safe_visualization_session_inputs(
 
 
 @solara.component
-def MetricsPanel(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    metrics = model.snapshot()
-    rows = _metrics_rows(model, metrics)
+def MetricsPanel(
+    metrics: dict[str, Any],
+    frame: dict[str, Any],
+) -> None:
+    rows = _metrics_rows(metrics, frame)
     metric_cards = "".join(
         f'<div class="sim-metric"><span>{html.escape(str(label))}</span><strong>{html.escape(str(value))}</strong></div>'
         for label, value in rows
@@ -485,34 +483,39 @@ def MetricsPanel(model: AircraftSupportV1Model) -> None:
     )
 
 
-def _metrics_rows(model: AircraftSupportV1Model, metrics: dict[str, Any] | None = None) -> list[tuple[str, Any]]:
-    values = metrics or model.snapshot()
-    organization = organization_dispatch_summary(
-        model.event_log,
-        identity=model.organization_graph_identity,
-    )
+def _metrics_rows(
+    metrics: dict[str, Any],
+    frame: dict[str, Any],
+) -> list[tuple[str, Any]]:
+    organization = frame.get("organization_dispatch_summary") or {}
     fulfillment_rate = organization.get("observed_fulfillment_rate")
-    operational_availability = values.get("operational_availability")
+    operational_availability = metrics.get("operational_availability")
     return [
-        ("仿真分钟", model.minute),
-        ("任务成功率", f"{values['mission_success_rate']:.1%}"),
+        ("仿真分钟", frame.get("simulation_time", 0)),
+        ("任务成功率", f"{metrics['mission_success_rate']:.1%}"),
         ("使用可用度(A)", "--" if operational_availability is None else f"{operational_availability:.1%}"),
-        ("战备完好率", f"{values['ready_rate']:.1%}"),
-        ("可用飞机", values["available_aircraft"]),
-        ("维修中", values["repairing_count"]),
-        ("缺件事件", values["shortage_events"]),
+        ("战备完好率", f"{metrics['ready_rate']:.1%}"),
+        ("可用飞机", metrics["available_aircraft"]),
+        ("维修中", metrics["repairing_count"]),
+        ("缺件事件", metrics["shortage_events"]),
         ("组织已观察满足率", "--" if fulfillment_rate is None else f"{fulfillment_rate:.1%}"),
-        ("组织调运批次", organization["transport_batch_count"]),
+        ("组织调运批次", organization.get("transport_batch_count", 0)),
     ]
 
 
-def _frame(model: AircraftSupportV1Model) -> dict[str, Any]:
+def _frame(
+    model: AircraftSupportV1Model,
+    *,
+    metrics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     session_id = str(getattr(model, "_visualization_session_id", "") or "")
     input_fingerprint = str(getattr(model, "_input_fingerprint", "") or "")
     frame = model.visualization_frame(
         run_id=session_id or "solara-session",
         step=model.steps,
+        metrics=metrics,
     )
+    frame["running"] = model.running
     if session_id:
         frame["visualization_session_id"] = session_id
     if input_fingerprint:
@@ -763,9 +766,8 @@ def _time_label(minutes: Any) -> str:
 
 
 @solara.component
-def ResourceOverviewPanel(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    resources = _frame(model).get("resources", [])
+def ResourceOverviewPanel(frame: dict[str, Any]) -> None:
+    resources = frame.get("resources", [])
     cards = "".join(
         "<div class=\"sim-resource\">"
         f"<strong>{html.escape(str(item.get('display_name') or item.get('name') or '保障资源'))}</strong>"
@@ -781,9 +783,7 @@ def ResourceOverviewPanel(model: AircraftSupportV1Model) -> None:
 
 
 @solara.component
-def AircraftPanel(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    frame = _frame(model)
+def AircraftPanel(frame: dict[str, Any]) -> None:
     missions = frame.get("missions", [])
     rows = "".join(
         "<tr>"
@@ -805,9 +805,7 @@ def AircraftPanel(model: AircraftSupportV1Model) -> None:
 
 
 @solara.component
-def EventPanel(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    events = list(model.event_log[-12:])
+def EventPanel(events: list[dict[str, Any]]) -> None:
     event_rows = "".join(_event_row_html(item) for item in events) or '<div class="sim-empty">等待模型推进后显示事件。</div>'
     solara.HTML(
         unsafe_innerHTML=f'<div class="sim-detail-title">事件流</div><div class="sim-event-list">{event_rows}</div>',
@@ -828,6 +826,14 @@ def _event_row_html(event: dict[str, Any]) -> str:
 
 def _new_model(inputs: dict[str, Any]) -> AircraftSupportV1Model:
     model = AircraftSupportV1Model(copy.deepcopy(inputs))
+    _attach_model_source_context(model, inputs)
+    return model
+
+
+def _attach_model_source_context(
+    model: AircraftSupportV1Model,
+    inputs: dict[str, Any],
+) -> None:
     source_context = (
         inputs.get("source_context")
         if isinstance(inputs.get("source_context"), dict)
@@ -839,18 +845,31 @@ def _new_model(inputs: dict[str, Any]) -> AircraftSupportV1Model:
     model._input_fingerprint = str(  # noqa: SLF001
         source_context.get("input_fingerprint") or ""
     )
-    return model
 
 
 def _reset_model_in_place(model: AircraftSupportV1Model, inputs: dict[str, Any]) -> None:
-    """Restore model state without replacing Solara's subscribed object reference."""
-    replacement = _new_model(inputs)
+    """Restore model state while retaining the session's sole model object."""
     model.__dict__.clear()
-    model.__dict__.update(replacement.__dict__)
+    AircraftSupportV1Model.__init__(model, copy.deepcopy(inputs))
+    _attach_model_source_context(model, inputs)
 
 
-def _notify_model_changed() -> None:
-    update_counter.set(update_counter.get() + 1)
+def _render_bundle(
+    model: AircraftSupportV1Model,
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    """Capture one internally consistent display projection for a revision."""
+    metrics = model.snapshot()
+    frame = _frame(model, metrics=metrics)
+    events = copy.deepcopy(model.event_log[-12:])
+    return frame, metrics, events
+
+
+def _render_bundle_locked(
+    model: AircraftSupportV1Model,
+    model_lock: threading.RLock,
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    with model_lock:
+        return _render_bundle(model)
 
 
 def _playback_delay_seconds(playback_speed: Any) -> float:
@@ -919,13 +938,29 @@ def _step_model_once(
     return model.steps % sample_every == 0 or not model.running
 
 
+def _run_play_loop(
+    *,
+    should_continue: Callable[[], bool],
+    delay_seconds: Callable[[], float],
+    step_once: Callable[[], None],
+) -> None:
+    """Advance cooperatively so a sleeping stale task cannot mutate its model."""
+    while should_continue():
+        time.sleep(delay_seconds())
+        if not should_continue():
+            break
+        step_once()
+
+
 @solara.component
 def ControlPanel(
-    model_state: solara.Reactive[AircraftSupportV1Model],
+    model: AircraftSupportV1Model,
     inputs: dict[str, Any],
+    input_key: str,
+    render_revision: solara.Reactive[int],
+    model_lock: threading.RLock,
     runtime: dict[str, Any] | None = None,
 ) -> None:
-    update_counter.get()
     runtime_config = runtime or {}
     initial_playback_exponent = _playback_speed_to_exponent(
         runtime_config.get("playback_speed") or 1.0
@@ -945,45 +980,95 @@ def ControlPanel(
             )
         ),
     )
-    playback_speed_exponent = solara.use_reactive(initial_playback_exponent)
-    render_interval = solara.use_reactive(initial_frame_sample)
-    playing = solara.use_reactive(False)
+    playback_speed_exponent = solara.use_memo(
+        lambda: solara.Reactive(initial_playback_exponent),
+        [input_key],
+    )
+    render_interval = solara.use_memo(
+        lambda: solara.Reactive(initial_frame_sample),
+        [input_key],
+    )
+    playing = solara.use_memo(lambda: solara.Reactive(False), [input_key])
+    playback_epoch = solara.use_memo(lambda: solara.Reactive(0), [input_key])
+    playback_stop = solara.use_memo(threading.Event, [input_key])
 
-    def step_once() -> None:
-        model = model_state.value
-        should_publish = _step_model_once(
-            model,
-            max_steps=max_steps,
-            frame_sample_every_steps=render_interval.value,
-        )
-        if not model.running:
+    def publish_revision() -> None:
+        render_revision.set(render_revision.value + 1)
+
+    def step_once(expected_epoch: int | None = None) -> None:
+        with model_lock:
+            if expected_epoch is not None and (
+                playback_stop.is_set()
+                or not playing.value
+                or playback_epoch.value != expected_epoch
+            ):
+                return
+            should_publish = _step_model_once(
+                model,
+                max_steps=max_steps,
+                frame_sample_every_steps=render_interval.value,
+            )
+            model_running = model.running
+        if expected_epoch is not None and (
+            playback_stop.is_set()
+            or not playing.value
+            or playback_epoch.value != expected_epoch
+        ):
+            return
+        if not model_running:
             playing.set(False)
         if should_publish:
-            _notify_model_changed()
+            publish_revision()
+
+    def cancel_playback() -> None:
+        playback_stop.set()
+        playing.set(False)
+        playback_epoch.set(playback_epoch.value + 1)
+        if not play_task.not_called and not play_task.finished and not play_task.cancelled:
+            play_task.cancel()
 
     def reset_model() -> None:
-        playing.set(False)
-        _reset_model_in_place(model_state.value, inputs)
-        _notify_model_changed()
+        cancel_playback()
+        with model_lock:
+            _reset_model_in_place(model, inputs)
+        publish_revision()
 
     def toggle_playing() -> None:
-        playing.set(not playing.value)
+        if playing.value:
+            cancel_playback()
+        else:
+            playback_stop.clear()
+            playing.set(True)
 
     def play_loop() -> None:
-        while playing.value and model_state.value.running:
-            time.sleep(
-                _playback_delay_seconds(
-                    _playback_speed_from_exponent(playback_speed_exponent.value)
-                )
-            )
-            # Reset/pause may occur while this worker is sleeping.  Recheck
-            # before advancing so an already-scheduled iteration cannot step
-            # the freshly reset model.
-            if not playing.value or not model_state.value.running:
-                break
-            step_once()
+        task_epoch = playback_epoch.value
+        _run_play_loop(
+            should_continue=lambda: (
+                playing.value
+                and playback_epoch.value == task_epoch
+                and model.running
+            ),
+            delay_seconds=lambda: _playback_delay_seconds(
+                _playback_speed_from_exponent(playback_speed_exponent.value)
+            ),
+            step_once=lambda: step_once(task_epoch),
+        )
 
-    solara.lab.use_task(play_loop, dependencies=[playing.value], prefer_threaded=True)
+    play_task = solara.lab.use_task(
+        play_loop,
+        dependencies=[playing.value, playback_epoch.value, input_key],
+        prefer_threaded=True,
+    )
+
+    def playback_cleanup() -> Callable[[], None]:
+        def cleanup() -> None:
+            playback_stop.set()
+            if not play_task.not_called and not play_task.finished and not play_task.cancelled:
+                play_task.cancel()
+
+        return cleanup
+
+    solara.use_effect(playback_cleanup, [input_key])
 
     with solara.Column(classes=["sim-control-panel"], gap="0px", style="width:100%;"):
         with solara.Card(CONTROL_PANEL_TITLE, margin=0):
@@ -1018,13 +1103,13 @@ def ControlPanel(
                         label="暂停" if playing.value else "推演",
                         color="primary",
                         on_click=toggle_playing,
-                        disabled=not model_state.value.running,
+                        disabled=not model.running,
                     )
                     solara.Button(
                         label=STEP_BUTTON_LABEL,
                         color="primary",
                         on_click=step_once,
-                        disabled=playing.value or not model_state.value.running,
+                        disabled=playing.value or not model.running,
                     )
 
 
@@ -1043,25 +1128,29 @@ def _model_parameter_rows(inputs: dict[str, Any]) -> list[tuple[str, Any]]:
 
 
 @solara.component
-def InformationPanel(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
+def InformationPanel(frame: dict[str, Any]) -> None:
+    organization_identity = frame.get("organization_graph_identity") or {}
     solara.Markdown(
         "\n".join(
             [
-                f"- 当前步数：{model.steps}",
-                f"- 运行状态：{'运行中' if model.running else '已结束'}",
-                f"- 组织运行模式：{model.organization_graph_identity['runtime_mode']}",
-                f"- 组织图摘要：{model.organization_graph_identity['graph_hash'][:12]}",
+                f"- 当前步数：{frame.get('step', 0)}",
+                f"- 运行状态：{'运行中' if frame.get('running', False) else '已结束'}",
+                f"- 组织运行模式：{organization_identity.get('runtime_mode', '-')}",
+                f"- 组织图摘要：{str(organization_identity.get('graph_hash') or '')[:12]}",
             ]
         )
     )
 
 
 @solara.component
-def AircraftStage(model: AircraftSupportV1Model, selected_tail: solara.Reactive[str]) -> None:
-    update_counter.get()
-    frame = _frame(model)
+def AircraftStage(frame: dict[str, Any], selected_tail: solara.Reactive[str]) -> None:
     aircraft = frame.get("aircraft", [])
+    tails = [str(item.get("tail_number") or "-") for item in aircraft]
+    effective_tail = (
+        selected_tail.value
+        if selected_tail.value in tails
+        else (tails[0] if tails else "")
+    )
     solara.HTML(
         unsafe_innerHTML=(
             '<div class="sim-stage-heading"><div><span>飞机态势</span>'
@@ -1084,16 +1173,14 @@ def AircraftStage(model: AircraftSupportV1Model, selected_tail: solara.Reactive[
                 on_click=select_aircraft,
                 color="primary",
                 outlined=True,
-                classes=["sim-aircraft-node", state, "selected" if selected_tail.value == tail else ""],
+                classes=["sim-aircraft-node", state, "selected" if effective_tail == tail else ""],
                 style="min-width:108px; min-height:80px;",
             )
-    MissionTimeline(model)
+    MissionTimeline(frame.get("missions", []))
 
 
 @solara.component
-def MissionTimeline(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    missions = _frame(model).get("missions", [])
+def MissionTimeline(missions: list[dict[str, Any]]) -> None:
     solara.HTML(unsafe_innerHTML=_mission_timeline_html(missions), classes=["sim-html"])
 
 
@@ -1111,9 +1198,8 @@ def _mission_timeline_html(missions: list[dict[str, Any]]) -> str:
 
 
 @solara.component
-def MissionStage(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    missions = _frame(model).get("missions", [])
+def MissionStage(frame: dict[str, Any]) -> None:
+    missions = frame.get("missions", [])
     rows = _mission_stage_rows_html(missions)
     solara.HTML(
         unsafe_innerHTML=(
@@ -1123,7 +1209,7 @@ def MissionStage(model: AircraftSupportV1Model) -> None:
         ),
         classes=["sim-html"],
     )
-    MissionTimeline(model)
+    MissionTimeline(missions)
 
 
 def _mission_stage_rows_html(missions: list[dict[str, Any]]) -> str:
@@ -1141,20 +1227,21 @@ def _mission_stage_rows_html(missions: list[dict[str, Any]]) -> str:
 
 
 @solara.component
-def SupportStage(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    frame = _frame(model)
+def SupportStage(frame: dict[str, Any]) -> None:
     resources = frame.get("resources", [])
     spares = frame.get("spares", [])
     support_point_choices, support_point_ids = _support_point_choices(resources, spares)
     selected_support_point = solara.use_reactive(SUPPORT_POINT_SUMMARY_LABEL)
-    if selected_support_point.value not in support_point_ids:
-        selected_support_point.set(SUPPORT_POINT_SUMMARY_LABEL)
-    selected_support_node_id = support_point_ids.get(selected_support_point.value, "")
+    effective_support_point = (
+        selected_support_point.value
+        if selected_support_point.value in support_point_ids
+        else SUPPORT_POINT_SUMMARY_LABEL
+    )
+    selected_support_node_id = support_point_ids.get(effective_support_point, "")
     selected_resources = _support_resources_for_point(resources, selected_support_node_id)
     selected_spares = _support_spare_rows(spares, selected_support_node_id)
     support_scope_label = (
-        selected_support_point.value
+        effective_support_point
         if selected_support_node_id
         else SUPPORT_POINT_SUMMARY_LABEL
     )
@@ -1180,7 +1267,13 @@ def SupportStage(model: AircraftSupportV1Model) -> None:
         ),
         classes=["sim-html"],
     )
-    solara.Select("保障点", value=selected_support_point, values=support_point_choices, dense=True)
+    solara.Select(
+        "保障点",
+        value=effective_support_point,
+        values=support_point_choices,
+        on_value=selected_support_point.set,
+        dense=True,
+    )
     solara.HTML(
         unsafe_innerHTML=(
             f'<div class="sim-support-grid">{resource_cards}</div><div class="sim-detail-title">{html.escape(support_scope_label)}：备件库存量 / 已消耗 / 在途</div>'
@@ -1265,16 +1358,23 @@ def _nonnegative_int(value: Any) -> int:
 
 
 @solara.component
-def AircraftDetailPanel(model: AircraftSupportV1Model, selected_tail: solara.Reactive[str]) -> None:
-    update_counter.get()
-    frame = _frame(model)
+def AircraftDetailPanel(frame: dict[str, Any], selected_tail: solara.Reactive[str]) -> None:
     aircraft = frame.get("aircraft", [])
     tails = [str(item.get("tail_number") or "-") for item in aircraft]
-    if tails and selected_tail.value not in tails:
-        selected_tail.set(tails[0])
+    effective_tail = (
+        selected_tail.value
+        if selected_tail.value in tails
+        else (tails[0] if tails else "")
+    )
     if tails:
-        solara.Select("单机状态", value=selected_tail, values=tails, dense=True)
-    item = next((entry for entry in aircraft if str(entry.get("tail_number")) == selected_tail.value), aircraft[0] if aircraft else {})
+        solara.Select(
+            "单机状态",
+            value=effective_tail,
+            values=tails,
+            on_value=selected_tail.set,
+            dense=True,
+        )
+    item = next((entry for entry in aircraft if str(entry.get("tail_number")) == effective_tail), aircraft[0] if aircraft else {})
     failed = str(item.get("failed_lru") or "无")
     rows = [
         ("当前状态", _state_label(item.get("state"))),
@@ -1292,9 +1392,8 @@ def AircraftDetailPanel(model: AircraftSupportV1Model, selected_tail: solara.Rea
 
 
 @solara.component
-def MissionDetailPanel(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    missions = _frame(model).get("missions", [])
+def MissionDetailPanel(frame: dict[str, Any]) -> None:
+    missions = frame.get("missions", [])
     cards = _mission_detail_cards_html(missions)
     solara.HTML(unsafe_innerHTML=f'<div class="sim-detail-title">执行进度</div><div class="sim-detail-list">{cards}</div>', classes=["sim-html"])
 
@@ -1312,12 +1411,14 @@ def _mission_detail_cards_html(missions: list[dict[str, Any]]) -> str:
 
 
 @solara.component
-def SupportDetailPanel(model: AircraftSupportV1Model) -> None:
-    update_counter.get()
-    jobs = _frame(model).get("jobs", [])
+def SupportDetailPanel(
+    frame: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> None:
+    jobs = frame.get("jobs", [])
     cards = "".join(_support_job_row_html(item) for item in jobs) or '<div class="sim-empty">当前没有等待或执行中的保障作业。</div>'
     solara.HTML(unsafe_innerHTML=f'<div class="sim-detail-title">保障作业</div><div class="sim-detail-list">{cards}</div>', classes=["sim-html"])
-    EventPanel(model)
+    EventPanel(events)
 
 
 def _support_job_row_html(item: dict[str, Any]) -> str:
@@ -1334,7 +1435,10 @@ def _support_job_row_html(item: dict[str, Any]) -> str:
 
 
 @solara.component
-def VisualPanelTabs(model: AircraftSupportV1Model) -> None:
+def VisualPanelTabs(
+    frame: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> None:
     current_view = solara.use_reactive("飞机视图")
     selected_tail = solara.use_reactive("")
     with solara.Row(classes=["sim-view-tabs"], gap="0px"):
@@ -1352,18 +1456,18 @@ def VisualPanelTabs(model: AircraftSupportV1Model) -> None:
     with solara.Row(classes=["sim-content-row"], gap="12px", style="width:100%; flex-wrap:nowrap;"):
         with solara.Column(classes=["sim-stage-card"], gap="12px", style="flex: 1 1 450px; min-width:0;"):
             if current_view.value == "飞机视图":
-                AircraftStage(model, selected_tail)
+                AircraftStage(frame, selected_tail)
             elif current_view.value == "任务视图":
-                MissionStage(model)
+                MissionStage(frame)
             else:
-                SupportStage(model)
+                SupportStage(frame)
         with solara.Column(classes=["sim-detail-card"], gap="12px", style="flex: 0 1 270px; min-width:240px;"):
             if current_view.value == "飞机视图":
-                AircraftDetailPanel(model, selected_tail)
+                AircraftDetailPanel(frame, selected_tail)
             elif current_view.value == "任务视图":
-                MissionDetailPanel(model)
+                MissionDetailPanel(frame)
             else:
-                SupportDetailPanel(model)
+                SupportDetailPanel(frame, events)
 
 
 VISUAL_SIMULATION_STYLE = """
@@ -1415,6 +1519,43 @@ VISUAL_SIMULATION_STYLE = """
 
 
 @solara.component
+def SimulationPage(
+    inputs: dict[str, Any],
+    source: dict[str, Any] | None,
+    input_key: str,
+) -> None:
+    model = solara.use_memo(lambda: _new_model(inputs), [input_key])
+    model_lock = solara.use_memo(threading.RLock, [input_key])
+    render_revision = solara.use_memo(
+        lambda: solara.Reactive(0),
+        [input_key],
+    )
+    frame, metrics, events = solara.use_memo(
+        lambda: _render_bundle_locked(model, model_lock),
+        [input_key, render_revision.value],
+    )
+    with solara.Column(classes=["visual-simulation-page"], gap="12px", style="width:100%;"):
+        ControlPanel(
+            model,
+            inputs,
+            input_key,
+            render_revision,
+            model_lock,
+            runtime=(source or {}).get("runtime"),
+        )
+        with solara.Row(classes=["sim-layout"], gap="12px", style="width:100%; flex-wrap:wrap;"):
+            with solara.Column(classes=["sim-left-rail"], gap="12px"):
+                MetricsPanel(metrics, frame)
+                ResourceOverviewPanel(frame)
+                with solara.Card(MODEL_PARAMETERS_TITLE, margin=0):
+                    ModelParametersPanel(inputs)
+                with solara.Card(INFORMATION_TITLE, margin=0):
+                    InformationPanel(frame)
+            with solara.Column(classes=["sim-main"], gap="12px"):
+                VisualPanelTabs(frame, events)
+
+
+@solara.component
 def Page() -> None:
     router = solara.use_router()
     query = parse_qs(router.search or "", keep_blank_values=True)
@@ -1455,16 +1596,4 @@ def Page() -> None:
         a[href*="solara.dev"], .solara-watermark { display: none !important; }
         .v-main__wrap { padding-bottom: 0; background: #f3f7fb; }
     """)
-    model_state = solara.use_reactive(_new_model(inputs))  # noqa: SH101
-    with solara.Column(classes=["visual-simulation-page"], gap="12px", style="width:100%;"):
-        ControlPanel(model_state, inputs, runtime=(source or {}).get("runtime"))
-        with solara.Row(classes=["sim-layout"], gap="12px", style="width:100%; flex-wrap:wrap;"):
-            with solara.Column(classes=["sim-left-rail"], gap="12px"):
-                MetricsPanel(model_state.value)
-                ResourceOverviewPanel(model_state.value)
-                with solara.Card(MODEL_PARAMETERS_TITLE, margin=0):
-                    ModelParametersPanel(inputs)
-                with solara.Card(INFORMATION_TITLE, margin=0):
-                    InformationPanel(model_state.value)
-            with solara.Column(classes=["sim-main"], gap="12px"):
-                VisualPanelTabs(model_state.value)
+    SimulationPage(inputs, source, input_key)

@@ -200,6 +200,12 @@ test("frontend API client sends current and frozen run contexts without frozen s
           playback_speed: 1.5
         };
       }
+      if (request.path === "/visualization-sessions/visual-api-session") {
+        return {
+          visualization_session_id: "visual-api-session",
+          deleted: true
+        };
+      }
       if (request.path === "/mesa-analysis-runs") {
         return { status: "session_complete", source: "lite_mesa_aircraft_support_v1" };
       }
@@ -228,15 +234,22 @@ test("frontend API client sends current and frozen run contexts without frozen s
     frameSampleEverySteps: 2,
     playbackSpeed: 1.5
   });
+  const deletedVisualizationSession = await client.deleteVisualizationSession(
+    visualizationSession.visualization_session_id,
+    { keepalive: true }
+  );
 
   assert.equal(result.source, "lite_mesa_aircraft_support_v1");
   assert.equal(visualizationSession.visualization_session_id, "visual-api-session");
   assert.equal(visualizationSession.session_access_token, "visual-api-token");
+  assert.equal(deletedVisualizationSession.deleted, true);
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "POST /mesa-analysis-runs",
     "POST /mesa-analysis-runs",
-    "POST /visualization-sessions"
+    "POST /visualization-sessions",
+    "DELETE /visualization-sessions/visual-api-session"
   ]);
+  assert.equal(calls.at(-1).keepalive, true);
   assert.deepEqual(calls[0].body, {
       context: { kind: "current_project", project: { project_id: "project-ui" } },
       analysis_type: "mission_reliability",
@@ -3027,6 +3040,41 @@ test("frontend API fetch transport sends an abort signal for timeout control", a
 
     assert.ok(observedSignal);
     assert.equal(typeof observedSignal.aborted, "boolean");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("frontend API visualization cleanup keeps the authenticated DELETE alive during page exit", async () => {
+  const originalFetch = globalThis.fetch;
+  let observedRequest = null;
+  globalThis.fetch = async (url, init = {}) => {
+    observedRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        visualization_session_id: "session/with space",
+        deleted: true
+      })
+    };
+  };
+  try {
+    const client = createBackendApiClient({
+      baseUrl: "/api",
+      getAuthToken: () => "session-cleanup"
+    });
+
+    const deleted = await client.deleteVisualizationSession("session/with space", {
+      keepalive: true,
+      authToken: "captured-cleanup"
+    });
+
+    assert.equal(deleted.deleted, true);
+    assert.equal(observedRequest.url, "/api/visualization-sessions/session%2Fwith%20space");
+    assert.equal(observedRequest.init.method, "DELETE");
+    assert.equal(observedRequest.init.keepalive, true);
+    assert.equal(observedRequest.init.headers.authorization, "Bearer captured-cleanup");
   } finally {
     globalThis.fetch = originalFetch;
   }

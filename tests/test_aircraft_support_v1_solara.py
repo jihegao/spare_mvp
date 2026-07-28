@@ -2,6 +2,7 @@ import ast
 import copy
 import hashlib
 import json
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -495,14 +496,17 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         ]:
             self.assertNotIn(retired_label, string_literals)
 
-        page_source = source[source.index("def Page()") :]
-        self.assertNotIn("solara.AppBar", page_source)
-        control_index = page_source.index("ControlPanel(model_state, inputs, runtime=")
-        layout_index = page_source.index('classes=["sim-layout"]')
-        left_rail_index = page_source.index('classes=["sim-left-rail"]')
+        simulation_page_source = source[
+            source.index("def SimulationPage("):
+            source.index("def Page()")
+        ]
+        self.assertNotIn("solara.AppBar", simulation_page_source)
+        control_index = simulation_page_source.index("ControlPanel(")
+        layout_index = simulation_page_source.index('classes=["sim-layout"]')
+        left_rail_index = simulation_page_source.index('classes=["sim-left-rail"]')
         self.assertLess(control_index, layout_index)
         self.assertLess(layout_index, left_rail_index)
-        self.assertEqual(page_source.count("ControlPanel(model_state, inputs, runtime="), 1)
+        self.assertEqual(simulation_page_source.count("ControlPanel("), 1)
 
     def test_support_view_groups_spares_without_a_selected_support_point(self) -> None:
         spares = [
@@ -546,9 +550,10 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
 
         source = Path(solara_app.__file__).read_text(encoding="utf-8")
         support_stage_source = source[source.index("def SupportStage"):source.index("def _support_point_choices")]
-        self.assertIn('solara.Select("保障点"', support_stage_source)
+        self.assertIn('"保障点",', support_stage_source)
         self.assertIn("_support_spare_rows(spares, selected_support_node_id)", support_stage_source)
         self.assertIn("SUPPORT_POINT_SUMMARY_LABEL", support_stage_source)
+        self.assertNotIn("selected_support_point.set(SUPPORT_POINT_SUMMARY_LABEL)", support_stage_source)
 
     def test_reset_restores_model_state_without_replacing_its_reactive_reference(self) -> None:
         inputs = copy.deepcopy(self.default_inputs)
@@ -556,32 +561,175 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         model = AircraftSupportV1Model(inputs)
         original_model = model
         model.step()
+        model._stale_runtime_sentinel = True
 
-        solara_app._reset_model_in_place(model, inputs)
+        with patch.object(solara_app, "_new_model") as constructor:
+            solara_app._reset_model_in_place(model, inputs)
 
+        constructor.assert_not_called()
         self.assertIs(model, original_model)
         self.assertEqual(model.minute, 0)
         self.assertEqual(model.steps, 0)
         self.assertTrue(model.running)
+        self.assertFalse(hasattr(model, "_stale_runtime_sentinel"))
 
     def test_play_loop_rechecks_pause_before_advancing_after_sleep(self) -> None:
+        active = True
+        steps = []
+
+        def cancel_during_sleep(_seconds: float) -> None:
+            nonlocal active
+            active = False
+
+        with patch.object(solara_app.time, "sleep", side_effect=cancel_during_sleep):
+            solara_app._run_play_loop(
+                should_continue=lambda: active,
+                delay_seconds=lambda: 1,
+                step_once=lambda: steps.append("stepped"),
+            )
+
+        self.assertEqual(steps, [])
+
+    def test_render_bundle_computes_snapshot_and_frame_once(self) -> None:
+        model = unittest.mock.MagicMock()
+        metrics = {"mission_success_rate": 0.5}
+        model.snapshot.return_value = metrics
+        model.event_log = [{"time": 1, "event": "mission_launched"}]
+        model.steps = 7
+        model.running = True
+        model._visualization_session_id = ""
+        model._input_fingerprint = ""
+        model.visualization_frame.return_value = {"step": 7}
+
+        frame, actual_metrics, events = solara_app._render_bundle(model)
+
+        model.snapshot.assert_called_once_with()
+        model.visualization_frame.assert_called_once_with(
+            run_id="solara-session",
+            step=7,
+            metrics=metrics,
+        )
+        self.assertEqual(frame, {"step": 7, "running": True})
+        self.assertIs(actual_metrics, metrics)
+        self.assertEqual(events, model.event_log)
+        self.assertIsNot(events, model.event_log)
+
+    def test_model_lock_serializes_an_in_flight_step_before_reset(self) -> None:
+        inputs = copy.deepcopy(self.default_inputs)
+        inputs["time"] = {**inputs.get("time", {}), "duration_minutes": 3, "tick_minutes": 1}
+        model = AircraftSupportV1Model(inputs)
+        model_lock = threading.RLock()
+        step_started = threading.Event()
+        release_step = threading.Event()
+        reset_finished = threading.Event()
+
+        def blocking_step() -> None:
+            with model_lock:
+                step_started.set()
+                self.assertTrue(release_step.wait(timeout=2))
+                model.step()
+
+        def reset_after_step() -> None:
+            with model_lock:
+                solara_app._reset_model_in_place(model, inputs)
+            reset_finished.set()
+
+        step_thread = threading.Thread(target=blocking_step)
+        reset_thread = threading.Thread(target=reset_after_step)
+        step_thread.start()
+        self.assertTrue(step_started.wait(timeout=2))
+        reset_thread.start()
+        self.assertFalse(reset_finished.wait(timeout=0.05))
+        release_step.set()
+        step_thread.join(timeout=2)
+        reset_thread.join(timeout=2)
+
+        self.assertTrue(reset_finished.is_set())
+        self.assertEqual(model.minute, 0)
+        self.assertEqual(model.steps, 0)
+        self.assertTrue(model.running)
+
+    def test_solara_render_lifecycle_is_session_local_and_projection_driven(self) -> None:
         source = Path(solara_app.__file__).read_text(encoding="utf-8")
-        play_loop_source = source[
-            source.index("    def play_loop() -> None:"):
-            source.index("    solara.lab.use_task", source.index("    def play_loop() -> None:"))
+        simulation_page_source = source[
+            source.index("def SimulationPage("):
+            source.index("def Page()")
+        ]
+        self.assertIn(
+            "model = solara.use_memo(lambda: _new_model(inputs), [input_key])",
+            simulation_page_source,
+        )
+        self.assertIn("[input_key, render_revision.value]", simulation_page_source)
+        self.assertEqual(
+            simulation_page_source.count("_render_bundle_locked(model, model_lock)"),
+            1,
+        )
+        self.assertIn("model_lock = solara.use_memo(threading.RLock, [input_key])", simulation_page_source)
+        self.assertNotIn("update_counter", source)
+        self.assertNotIn("mesa.visualization.solara_viz", source)
+        self.assertEqual(source.count("model.snapshot()"), 1)
+        self.assertEqual(source.count("_frame(model, metrics=metrics)"), 1)
+
+    def test_simulation_page_constructs_once_for_each_input_key(self) -> None:
+        inputs = copy.deepcopy(self.default_inputs)
+        original_constructor = solara_app._new_model
+        original_projection = solara_app._render_bundle
+
+        with (
+            patch.object(
+                solara_app,
+                "_new_model",
+                wraps=original_constructor,
+            ) as constructor,
+            patch.object(
+                solara_app,
+                "_render_bundle",
+                wraps=original_projection,
+            ) as projection,
+        ):
+            _container, render_context = solara_app.solara.render(
+                solara_app.SimulationPage(inputs, {}, "input-one"),
+                handle_error=False,
+            )
+            try:
+                render_context.render(
+                    solara_app.SimulationPage(inputs, {}, "input-one"),
+                    render_context.container,
+                )
+                self.assertEqual(constructor.call_count, 1)
+                self.assertEqual(projection.call_count, 1)
+
+                render_context.render(
+                    solara_app.SimulationPage(inputs, {}, "input-two"),
+                    render_context.container,
+                )
+                self.assertEqual(constructor.call_count, 2)
+                self.assertEqual(projection.call_count, 2)
+            finally:
+                render_context.close()
+
+    def test_selection_fallbacks_do_not_write_reactive_state_during_render(self) -> None:
+        source = Path(solara_app.__file__).read_text(encoding="utf-8")
+        support_source = source[
+            source.index("def SupportStage"):
+            source.index("def _support_point_choices")
+        ]
+        detail_source = source[
+            source.index("def AircraftDetailPanel"):
+            source.index("def MissionDetailPanel")
         ]
 
-        self.assertIn("time.sleep", play_loop_source)
-        self.assertIn("if not playing.value or not model_state.value.running:", play_loop_source)
-        self.assertLess(
-            play_loop_source.index("if not playing.value or not model_state.value.running:"),
-            play_loop_source.index("step_once()"),
-        )
+        self.assertNotIn("selected_support_point.set(", support_source)
+        self.assertNotIn("selected_tail.set(", detail_source)
+        self.assertIn("effective_support_point", support_source)
+        self.assertIn("effective_tail", detail_source)
 
     def test_visible_metrics_and_model_parameters_hide_project_metadata(self) -> None:
         model = AircraftSupportV1Model(self.default_inputs)
+        metrics = model.snapshot()
+        frame = solara_app._frame(model, metrics=metrics)
 
-        metric_labels = [label for label, _value in solara_app._metrics_rows(model)]
+        metric_labels = [label for label, _value in solara_app._metrics_rows(metrics, frame)]
         parameter_labels = [label for label, _value in solara_app._model_parameter_rows(self.default_inputs)]
 
         self.assertNotIn("数据来源", metric_labels)
@@ -591,7 +739,7 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
             "仿真分钟", "任务成功率", "使用可用度(A)", "战备完好率", "可用飞机", "维修中", "缺件事件",
             "组织已观察满足率", "组织调运批次",
         ])
-        self.assertEqual(dict(solara_app._metrics_rows(model))["使用可用度(A)"], "--")
+        self.assertEqual(dict(solara_app._metrics_rows(metrics, frame))["使用可用度(A)"], "--")
         self.assertEqual(parameter_labels, ["仿真时长", "随机种子"])
 
     def test_event_stream_localizes_types_statuses_and_shortage_reasons(self) -> None:
