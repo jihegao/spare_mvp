@@ -65,7 +65,7 @@ class AnalysisXlsxExportTest(unittest.TestCase):
                 self.assertEqual(workbook["结果摘要"]["B2"].value, "80%")
                 self.assertEqual(workbook["结果明细"]["A3"].value, "安全结果")
 
-    def test_task_reliability_keeps_summary_rounding_and_every_sample_wave_row(self) -> None:
+    def test_task_reliability_keeps_summary_rounding_and_aggregated_wave_rows(self) -> None:
         payload = self._payload("mission_reliability")
         payload["summary"] = [
             ["出动架次率", "0.502", ""],
@@ -76,12 +76,11 @@ class AnalysisXlsxExportTest(unittest.TestCase):
             ["成功次数", 1, "次"],
         ]
         payload["detail_sections"][0] = {
-            "title": "逐样本逐波次任务可靠度明细",
-            "columns": ["样本", "波次", "成功比例"],
+            "title": "各波次任务可靠度明细",
+            "columns": ["波次", "样本数", "波次成功率"],
             "rows": [
-                ["样本 1", "第1天 第1波", "100%"],
-                ["样本 1", "第1天 第2波", "50%"],
-                ["样本 2", "第1天 第1波", "0%"],
+                ["第1天 第1波", 2, "50%"],
+                ["第1天 第2波", 2, "75%"],
             ],
         }
         workbook = load_workbook(
@@ -95,12 +94,11 @@ class AnalysisXlsxExportTest(unittest.TestCase):
         self.assertEqual(
             [
                 [workbook["结果明细"].cell(row=row, column=column).value for column in range(1, 4)]
-                for row in range(3, 6)
+                for row in range(3, 5)
             ],
             [
-                ["样本 1", "第1天 第1波", "100%"],
-                ["样本 1", "第1天 第2波", "50%"],
-                ["样本 2", "第1天 第1波", "0%"],
+                ["第1天 第1波", 2, "50%"],
+                ["第1天 第2波", 2, "75%"],
             ],
         )
 

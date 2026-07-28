@@ -2946,10 +2946,9 @@ def _sample_mission_wave_reliability(missions: list[Any]) -> list[dict[str, Any]
 
 
 def _sample_mission_wave_rows(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for fallback_sample_index, sample in enumerate(samples):
-        sample_index = _metric_int(sample.get("sample_index"), default=fallback_sample_index)
-        for row in sample.get("mission_wave_reliability") or []:
+    rows_by_wave_position: dict[int, list[dict[str, Any]]] = {}
+    for sample in samples:
+        for wave_position, row in enumerate(sample.get("mission_wave_reliability") or []):
             day = max(1, _metric_int(row.get("dayIndex", row.get("day_index")), default=1))
             wave = max(1, _metric_int(row.get("waveIndex", row.get("wave_index")), default=1))
             planned_sorties = _metric_float(row.get("plannedSorties", row.get("planned_sorties")), default=0)
@@ -2966,9 +2965,7 @@ def _sample_mission_wave_rows(samples: list[dict[str, Any]]) -> list[dict[str, A
                 if planned_sorties > 0
                 else row.get("sortieRate", row.get("sortie_rate", row.get("mean_sortie_rate")))
             )
-            rows.append({
-                "sampleIndex": sample_index,
-                "sampleLabel": f"样本 {sample_index + 1}",
+            rows_by_wave_position.setdefault(wave_position, []).append({
                 "dayIndex": day,
                 "waveIndex": wave,
                 "waveKey": _mission_wave_key(day, wave),
@@ -2983,9 +2980,31 @@ def _sample_mission_wave_rows(samples: list[dict[str, Any]]) -> list[dict[str, A
                 "meanSortieRate": sortie_rate,
                 "sortieRate": sortie_rate,
             })
-    rows.sort(key=lambda row: (row["sampleIndex"], row["dayIndex"], row["waveIndex"]))
-    for sequence, row in enumerate(rows, start=1):
-        row["sequence"] = sequence
+
+    rows: list[dict[str, Any]] = []
+    for wave_position in sorted(rows_by_wave_position):
+        sample_rows = rows_by_wave_position[wave_position]
+        reference = sample_rows[0]
+        sample_count = len(sample_rows)
+        mission_success_rate = sum(row["missionSuccessRate"] for row in sample_rows) / sample_count
+        sortie_rate = sum(row["sortieRate"] for row in sample_rows) / sample_count
+        rows.append({
+            "sequence": wave_position + 1,
+            "dayIndex": reference["dayIndex"],
+            "waveIndex": reference["waveIndex"],
+            "waveKey": reference["waveKey"],
+            "waveLabel": reference["waveLabel"],
+            "sampleCount": sample_count,
+            "plannedSorties": sum(row["plannedSorties"] for row in sample_rows) / sample_count,
+            "launchedSorties": sum(row["launchedSorties"] for row in sample_rows) / sample_count,
+            "successfulSorties": sum(row["successfulSorties"] for row in sample_rows) / sample_count,
+            "plannedWaves": sum(row["plannedWaves"] for row in sample_rows) / sample_count,
+            "successfulWaves": sum(row["successfulWaves"] for row in sample_rows) / sample_count,
+            "meanMissionSuccessRate": mission_success_rate,
+            "missionSuccessRate": mission_success_rate,
+            "meanSortieRate": sortie_rate,
+            "sortieRate": sortie_rate,
+        })
     return rows
 
 

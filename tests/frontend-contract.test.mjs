@@ -4043,7 +4043,7 @@ test("phase 6B carry list analysis fixes objective to minimum carried spares", a
   assert.match(formalCarrySource, /projection payload/);
 });
 
-test("phase 6C mission reliability chart uses formal per-sample wave projection without hard-coded rates", async () => {
+test("phase 6C mission reliability chart uses formal cross-sample wave averages without hard-coded rates", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const lineChartSource = appSource.slice(
     appSource.indexOf("function renderLineChart"),
@@ -4076,7 +4076,9 @@ test("phase 6C mission reliability chart uses formal per-sample wave projection 
   assert.match(appSource, /function renderLiteMesaMissionReliabilityWaveChart/);
   assert.match(appSource, /meanMissionSuccessRate/);
   assert.match(lineChartSource, /point\.tooltip/);
-  assert.doesNotMatch(formalReliabilitySource, /最大下降波次|任务波次|样本数|状态/);
+  assert.match(formalReliabilitySource, /<th>波次<\/th><th>样本数<\/th><th>波次成功率<\/th>/);
+  assert.match(formalReliabilitySource, /row\.sampleCount/);
+  assert.doesNotMatch(formalReliabilitySource, /最大下降波次|任务波次|状态/);
   assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
   assert.doesNotMatch(dashboardSource + formalReliabilitySource, /具体需求待甲方确定/);
 });
@@ -4145,12 +4147,12 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
   assert.match(metricSource, /metricId: "sortie_rate", label: "出动架次率"/);
   assert.match(reliabilitySource, /metricLabels: \["出动架次率", "波次成功率", "整周期任务可靠度", "任务周期"\]/);
   assert.match(reliabilityTableSource, /task-reliability-result-table/);
-  assert.match(reliabilityTableSource, /<th>样本<\/th><th>波次<\/th><th>成功比例<\/th>/);
+  assert.match(reliabilityTableSource, /<th>波次<\/th><th>样本数<\/th><th>波次成功率<\/th>/);
   assert.doesNotMatch(reliabilityTableSource, /平均出动架次率|formatLiteMesaAnalysisMetricValue|样本明细/);
   assert.doesNotMatch(metricSource + reliabilitySource + reliabilityTableSource, /出动完成率/);
 });
 
-test("lite Mesa analysis visible copy omits Mesa session wording and preserves sample-wave rows", async () => {
+test("lite Mesa analysis visible copy omits Mesa session wording and renders aggregated wave rows", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const analysisSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaAnalysisPage"),
@@ -4163,8 +4165,8 @@ test("lite Mesa analysis visible copy omits Mesa session wording and preserves s
 
   assert.match(analysisSource, /后端内存运行/);
   assert.match(reliabilityTableSource, /task-reliability-result-table/);
-  assert.match(reliabilityTableSource, /<th>样本<\/th><th>波次<\/th><th>成功比例<\/th>/);
-  assert.match(reliabilityTableSource, /row\.sampleLabel/);
+  assert.match(reliabilityTableSource, /<th>波次<\/th><th>样本数<\/th><th>波次成功率<\/th>/);
+  assert.match(reliabilityTableSource, /row\.sampleCount/);
   assert.match(reliabilityTableSource, /renderLiteMesaMissionReliabilityWaveChart/);
   assert.doesNotMatch(reliabilityTableSource, /平均任务成功率|成功 \/ 总实验|失败实验|row\.seed|readyRate/);
   assert.doesNotMatch(appSource, /任务剖面可靠性/);

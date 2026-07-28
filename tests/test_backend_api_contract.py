@@ -3614,8 +3614,9 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(payload["rows"])
         self.assertEqual(payload["rows"], payload["wave_rows"])
         self.assertEqual(payload["wave_rows"][0]["dayIndex"], 1)
-        self.assertEqual(payload["wave_rows"][0]["sampleIndex"], 0)
-        self.assertEqual(payload["wave_rows"][0]["sampleLabel"], "样本 1")
+        self.assertEqual(payload["wave_rows"][0]["sampleCount"], 2)
+        self.assertNotIn("sampleIndex", payload["wave_rows"][0])
+        self.assertNotIn("sampleLabel", payload["wave_rows"][0])
         self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
         self.assertNotIn("seed", payload["wave_rows"][0])
         self.assertEqual([field["key"] for field in payload["result_fields"]], [
@@ -3791,7 +3792,7 @@ class BackendApiContractTest(unittest.TestCase):
         ])
         self.assertNotIn("任务失败次数", {label for label, _value in result["metrics"]})
 
-    def test_lite_mesa_mission_reliability_rows_preserve_every_sample_wave(self) -> None:
+    def test_lite_mesa_mission_reliability_rows_average_each_wave_across_samples(self) -> None:
         result = _lite_mesa_mission_reliability_result(
             {"data": {"mission_success_probability": 0.8, "sortie_rate": 0.4}},
             [
@@ -3815,17 +3816,18 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
         self.assertEqual(result["rows"], result["wave_rows"])
-        self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2", "d1-w1"])
-        self.assertEqual([row["sampleIndex"] for row in result["rows"]], [0, 0, 1])
-        self.assertEqual([row["sampleLabel"] for row in result["rows"]], ["样本 1", "样本 1", "样本 2"])
-        self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 2)
-        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 1)
+        self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2"])
+        self.assertEqual([row["sampleCount"] for row in result["rows"]], [2, 1])
+        self.assertTrue(all("sampleIndex" not in row for row in result["rows"]))
+        self.assertTrue(all("sampleLabel" not in row for row in result["rows"]))
+        self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 4)
+        self.assertAlmostEqual(result["rows"][0]["launchedSorties"], 3)
+        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 0.5)
         self.assertAlmostEqual(result["rows"][0]["plannedWaves"], 1)
-        self.assertAlmostEqual(result["rows"][0]["successfulWaves"], 1)
-        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 1)
-        self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 1)
+        self.assertAlmostEqual(result["rows"][0]["successfulWaves"], 0.5)
+        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 0.5)
+        self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 5 / 6)
         self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
-        self.assertEqual(result["rows"][2]["meanMissionSuccessRate"], 0)
         self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
         self.assertNotIn("seed", result["rows"][0])
 

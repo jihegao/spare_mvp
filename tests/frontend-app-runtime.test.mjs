@@ -2734,7 +2734,7 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
   }
 });
 
-test("task reliability Excel export preserves summary rounding and every sample wave row", async () => {
+test("task reliability Excel export preserves summary rounding and aggregated wave rows", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson(),
@@ -2748,9 +2748,8 @@ test("task reliability Excel export preserves summary rounding and every sample 
       period_total_samples: 2,
       successful_samples: 1,
       wave_rows: [
-        { sampleIndex: 0, sampleLabel: "样本 1", waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 1 },
-        { sampleIndex: 0, sampleLabel: "样本 1", waveKey: "d1-w2", waveLabel: "第1天 第2波", meanMissionSuccessRate: 0.5 },
-        { sampleIndex: 1, sampleLabel: "样本 2", waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 0 }
+        { sequence: 1, sampleCount: 2, waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 0.5 },
+        { sequence: 2, sampleCount: 2, waveKey: "d1-w2", waveLabel: "第1天 第2波", meanMissionSuccessRate: 0.25 }
       ]
     },
     analysisXlsxExportDelayMs: 40
@@ -2775,11 +2774,10 @@ test("task reliability Excel export preserves summary rounding and every sample 
       ["仿真总次数", 2],
       ["成功次数", 1]
     ]);
-    assert.deepEqual(body.detail_sections[0].columns, ["样本", "波次", "成功比例"]);
+    assert.deepEqual(body.detail_sections[0].columns, ["波次", "样本数", "波次成功率"]);
     assert.deepEqual(body.detail_sections[0].rows, [
-      ["样本 1", "第1天 第1波", "100%"],
-      ["样本 1", "第1天 第2波", "50%"],
-      ["样本 2", "第1天 第1波", "0%"]
+      ["第1天 第1波", 2, "50%"],
+      ["第1天 第2波", 2, "25%"]
     ]);
     assert.equal(runtime.downloads.length, 1);
   } finally {
@@ -2935,7 +2933,7 @@ test("task reliability analysis restores its title and project context", async (
   }
 });
 
-test("task reliability analysis renders summary counts and every sample wave detail", async () => {
+test("task reliability analysis renders summary counts and cross-sample wave averages", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson(),
@@ -2949,9 +2947,8 @@ test("task reliability analysis renders summary counts and every sample wave det
       period_total_samples: 2,
       successful_samples: 1,
       wave_rows: [
-        { sampleIndex: 0, sampleLabel: "样本 1", waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 1 },
-        { sampleIndex: 0, sampleLabel: "样本 1", waveKey: "d1-w2", waveLabel: "第1天 第2波", meanMissionSuccessRate: 0.5 },
-        { sampleIndex: 1, sampleLabel: "样本 2", waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 0 }
+        { sequence: 1, sampleCount: 2, waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 0.5 },
+        { sequence: 2, sampleCount: 2, waveKey: "d1-w2", waveLabel: "第1天 第2波", meanMissionSuccessRate: 0.25 }
       ]
     }
   });
@@ -2969,15 +2966,13 @@ test("task reliability analysis renders summary counts and every sample wave det
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(runtime.appNode.innerHTML, /<span>仿真总次数<\/span>\s*<strong>2<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<span>成功次数<\/span>\s*<strong>1<\/strong>/);
-    assert.match(detailPanel, /<thead><tr><th>样本<\/th><th>波次<\/th><th>成功比例<\/th><\/tr><\/thead>/);
-    assert.match(detailPanel, /样本 1[\s\S]*第1天 第1波[\s\S]*100%[\s\S]*样本 1[\s\S]*第1天 第2波[\s\S]*50%[\s\S]*样本 2[\s\S]*第1天 第1波[\s\S]*0%/);
+    assert.match(detailPanel, /<thead><tr><th>波次<\/th><th>样本数<\/th><th>波次成功率<\/th><\/tr><\/thead>/);
+    assert.match(detailPanel, /第1天 第1波[\s\S]*2[\s\S]*50%[\s\S]*第1天 第2波[\s\S]*2[\s\S]*25%/);
     assert.match(detailPanel, /波次成功率趋势/);
     assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
     assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);
-    assert.match(detailPanel, /<title>样本 1 \/ 第1天 第1波：100%<\/title>/);
-    assert.match(runtime.appNode.innerHTML, />1\.0<\/text>/);
+    assert.match(detailPanel, /<title>第1天 第1波（2 个样本）：50%<\/title>/);
     assert.match(runtime.appNode.innerHTML, />0\.5<\/text>/);
-    assert.match(runtime.appNode.innerHTML, />0\.0<\/text>/);
     assert.doesNotMatch(detailPanel, /任务剖面可靠性|整周期任务失败次数|任务可靠度百分比|平均任务成功率/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<span>时间窗口<\/span>|data-lite-mesa-analysis-field="maxTimeWindow"/);
   } finally {
@@ -3002,7 +2997,7 @@ test("task reliability analysis marks missing counts unavailable and does not in
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(runtime.appNode.innerHTML, /<span>仿真总次数<\/span>\s*<strong>不可用<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<span>成功次数<\/span>\s*<strong>不可用<\/strong>/);
-    assert.match(detailPanel, /当前会话没有逐样本波次明细/);
+    assert.match(detailPanel, /当前会话没有波次成功率明细/);
     assert.doesNotMatch(detailPanel, /样本 1|projection/);
   } finally {
     runtime.restore();
