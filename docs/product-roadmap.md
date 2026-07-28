@@ -312,7 +312,7 @@ Project JSON 持久化字段边界在当前实现中进一步收窄：保存和�
 
 本次三阶段改动只收敛 Project 编辑与持久化隔离：`planGroupId` 和阶段型 `planType` 不进入当前 `aircraft_support_v1_input`，也不新增“再次出动”调度语义；模型原有飞行前/飞行后活动选择行为保持不变。Adapter 仍可用修复性/预防性 `planType` 做维修分类兼容，但不能据此把三个使用保障阶段标记为已被正式运行时消费。再次出动的触发条件、任务波次衔接和执行状态机需要后续单独定义输入契约与模型行为。
 
-#305 已把飞机寿命前置数据接入正式行为；当前语义进一步明确为“历史完整周期已按时执行”。三项 canonical 累计值缺失时默认 0，不迁移 `takeoffLandingCount`、要求小时或剩余小时。适用预防性维修方案的三个 interval 是唯一正式阈值来源，`0/null` 禁用；正累计值缺阈值、作用域未知、单位非法或同维阈值冲突均按精确路径失败关闭。Scenario 保留 `source_initial_life_state`，并让每个启用计数器对周期取余后写入 `initial_life_state`；历史完整周期不在 minute=0 重复建 preventive 工单，余量继续驱动下一次定检。单次、Monte Carlo、lite Mesa 与 Solara 共用同一初始化状态。
+#305 已把飞机寿命前置数据接入正式行为；当前语义进一步明确为“历史完整周期已按时执行”。三项 canonical 累计值缺失时默认 0，不迁移 `takeoffLandingCount`、要求小时或剩余小时。适用预防性维修方案的三个 interval 是唯一正式阈值来源，`0/null` 禁用；禁用维度的历史累计值仅保留用于追溯，不约束编译或驱动维修，作用域未知或单位非法仍按精确路径失败关闭。Scenario 保留 `source_initial_life_state`，并让每个启用计数器对周期取余后写入 `initial_life_state`；历史完整周期不在 minute=0 重复建 preventive 工单，余量继续驱动下一次定检。单次、Monte Carlo、lite Mesa 与 Solara 共用同一初始化状态。
 
 M6.2.x 当前收束：`docs/archive/deprecated/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md` 记录前台静态业务数据退场实施。前台建模和正式 run 功能测试的业务样例源已收敛到 `tests/fixtures/modeling_import_project.json`：页面缺少 imported JSON 数据时显示空态或创建入口，不再由前端静态常量偷偷补出任务、装备、保障组织、保障活动或 Monte Carlo 配置；完整 JSON 导入后可通过 published modeling import 生成 imported sample Project。后端 `modeling_import_to_project()` 已保留 `projectInfo`、`supportOrganization` 和显式空集合，`objects.analysisRequests` 与 `objects.missionProfiles[].experiment` 只进入 ExperimentPlan/runtime config，不进入 Project。该切片只治理建模/运行输入源；在线状态流由 M9.2 的 run subscription 切片提供。
 

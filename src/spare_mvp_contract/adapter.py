@@ -2395,7 +2395,6 @@ class SimulationAdapter:
         known_models = member_models | {
             str(component.get("aircraftModel") or "").strip() for component in components
         } - {""}
-        preventive: list[tuple[int, dict[str, Any]]] = []
         interval_specs = (
             ("calendarDayInterval", "preLifeCalendarDays", "integer"),
             ("runHourInterval", "preLifeFlightHours", "number"),
@@ -2404,7 +2403,6 @@ class SimulationAdapter:
         for activity_index, activity in enumerate(self._dict_list(project.get("supportActivities"))):
             if self._support_activity_maintenance_kind(activity) != "preventive":
                 continue
-            preventive.append((activity_index, activity))
             activity_model = str(activity.get("aircraftModel") or "").strip()
             if activity_model and activity_model not in known_models:
                 issues.append(self._compile_issue(
@@ -2436,38 +2434,6 @@ class SimulationAdapter:
                         f"{interval_field} 必须是同单位的非负{'整数' if kind == 'integer' else '有限数值'}；0/null 表示禁用。",
                         "保障活动建模",
                     ))
-
-        for member_index, member in enumerate(members):
-            member_model = str(member.get("model") or "").strip()
-            applicable: list[tuple[int, dict[str, Any]]] = []
-            for activity_index, activity in preventive:
-                activity_model = str(activity.get("aircraftModel") or "").strip()
-                equipment_id = str(activity.get("equipmentId") or "").strip()
-                component_model = str((components_by_id.get(equipment_id) or {}).get("aircraftModel") or "").strip()
-                effective_model = activity_model or component_model
-                if effective_model and effective_model != member_model:
-                    continue
-                applicable.append((activity_index, activity))
-            for interval_field, pre_life_field, _kind in interval_specs:
-                enabled = [
-                    (activity_index, activity[interval_field])
-                    for activity_index, activity in applicable
-                    if isinstance(activity.get(interval_field), (int, float))
-                    and not isinstance(activity.get(interval_field), bool)
-                    and math.isfinite(activity[interval_field])
-                    and activity[interval_field] > 0
-                ]
-                pre_life = member.get(pre_life_field, 0)
-                if not isinstance(pre_life, (int, float)) or isinstance(pre_life, bool) or pre_life <= 0:
-                    continue
-                if not enabled:
-                    issues.append(self._compile_issue(
-                        "missing_preventive_threshold",
-                        f"combatUnit.members[{member_index}].{pre_life_field}",
-                        f"{pre_life_field}>0，但型号 {member_model or '<empty>'} 没有启用对应的 {interval_field} 阈值。",
-                        "基本作战单元建模",
-                    ))
-                    continue
         return issues
 
     def _compile_issue(self, code: str, field_path: str, message: str, page: str) -> dict[str, str]:

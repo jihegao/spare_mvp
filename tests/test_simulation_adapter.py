@@ -360,15 +360,19 @@ class SimulationAdapterTest(unittest.TestCase):
         preventive_jobs = [job for job in model.jobs if job.kind == "preventive"]
         self.assertEqual(preventive_jobs, [])
 
-    def test_compile_blocks_positive_pre_life_without_dimension_threshold_at_exact_field(self) -> None:
+    def test_compile_ignores_positive_pre_life_when_dimension_threshold_is_disabled(self) -> None:
         project = self._project_with_pre_life()
-        project["supportActivities"][-1]["runHourInterval"] = 0
+        project["supportActivities"][-1]["takeoffLandingInterval"] = 0
 
         result = self.adapter.compile_scenario_with_gate(project)
 
-        self.assertEqual(result["status"], "blocked")
-        issue = next(issue for issue in result["issues"] if issue["code"] == "missing_preventive_threshold")
-        self.assertEqual(issue["field_path"], "combatUnit.members[0].preLifeFlightHours")
+        self.assertEqual(result["status"], "compiled")
+        asset = result["scenario"]["simulation_inputs"]["aircraft"]["assets"][0]
+        self.assertEqual(asset["source_initial_life_state"]["takeoff_landing_cycles"], 3)
+        self.assertEqual(asset["initial_life_state"]["takeoff_landing_cycles"], 3)
+        self.assertEqual(asset["preventive_thresholds"]["takeoff_landing_cycles"], 0)
+        self.assertEqual(asset["preventive_threshold_sources"]["takeoff_landing_cycles"], [])
+        self.assertEqual(asset["preventive_cycles"][0]["thresholds"]["takeoff_landing_cycles"], 0)
 
     def test_compile_preserves_independent_preventive_threshold_cycles(self) -> None:
         project = self._project_with_pre_life()
