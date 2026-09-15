@@ -6,6 +6,7 @@ import json
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import mimetypes
+import os
 from pathlib import Path
 import sqlite3
 import threading
@@ -22,6 +23,13 @@ from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
 MAX_JSON_BODY_BYTES = 1024 * 1024
+STATIC_CONTENT_TYPES = {
+    '.css': 'text/css', '.html': 'text/html', '.js': 'text/javascript',
+    '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.ico': 'image/x-icon', '.webp': 'image/webp',
+    '.wasm': 'application/wasm',
+}
 MAX_PROJECT_XLSX_JSON_BODY_BYTES = 16 * 1024 * 1024
 LEGACY_RUN_API_MIGRATION = {
     "docs": "docs/archive/deprecated/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
@@ -94,6 +102,9 @@ def create_backend_server(
 
         def _handle(self) -> None:
             parsed_path = unquote(urlparse(self.path).path)
+            if self.command == 'GET' and parsed_path == '/_spare_mvp/health':
+                self._send_json(200, {'service': 'spare-mvp-backend', 'status': 'ok', 'pid': os.getpid()})
+                return
             is_api_path = parsed_path == "/api" or parsed_path.startswith("/api/")
             if self.command == "GET" and not is_api_path:
                 self._send_static(parsed_path)
@@ -576,11 +587,13 @@ def create_backend_server(
                 self._send_json(404, {"code": "not_found", "message": path})
                 return
             data = target.read_bytes()
-            content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-            if target.suffix == ".mjs":
-                content_type = "text/javascript"
+            content_type = STATIC_CONTENT_TYPES.get(target.suffix.lower(), mimetypes.guess_type(target.name)[0] or 'application/octet-stream')
             self.send_response(200)
-            self.send_header("content-type", f"{content_type}; charset=utf-8")
+            is_text = content_type.startswith('text/') or content_type in {'application/json', 'image/svg+xml'}
+            self.send_header('content-type', f'{content_type}; charset=utf-8' if is_text else content_type)
+            self.send_header('x-content-type-options', 'nosniff')
+            if target.suffix.lower() in {'.html', '.js', '.mjs'}:
+                self.send_header('cache-control', 'no-cache')
             self.send_header("content-length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)

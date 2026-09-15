@@ -1,3 +1,5 @@
+import "./browser-compat.mjs";
+
 import {
   FEATURE_PAGES,
   getAccessibleFeaturePageById,

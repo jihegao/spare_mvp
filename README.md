@@ -56,6 +56,8 @@
 
 ## 本地运行
 
+Windows 案例包的构建、启动及本地案例加载说明见 [Windows 案例交付](docs/windows-portable.md)。
+
 当前用户可见运行主线是 `当前 Project -> POST /api/mesa-analysis-runs -> aircraft_support_v1 simulation inputs -> in-memory AircraftSupportV1Model -> lite Mesa 会话摘要`。旧 `/api/runs` 运行账本链路仍保留为历史实现、内部治理能力和后续持久化运行治理候选；旧 contract provider、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除；`scripts/start-system.sh` 只启动同源 app/backend 和 SQLite。
 
 首次克隆仓库后，先创建仓库本地 Python 环境 `.abm-mesa-test-env`。该目录只用于本机运行和测试，不提交到 Git。
