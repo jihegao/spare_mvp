@@ -156,6 +156,7 @@ class AircraftSupportV1Model(
         self.equipment_tree_components = self._equipment_tree_components()
         self.components = self._behavior_components()
         self.component_applicability_index = ComponentApplicabilityIndex(self.components, self.aircraft)
+        self._failure_tree_runtime_by_aircraft_type: dict[tuple[str, str], dict[str, Any]] = {}
         self._initialize_aircraft_lru_failure_timers()
         self.nodes = self._build_support_nodes()
         self._initialize_organization_graph()
