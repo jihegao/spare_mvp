@@ -282,9 +282,107 @@ class TelemetryMixin:
         }
 
     def _aircraft_failure_tree_root_failed(self, item: AircraftState) -> bool:
-        tree = self._aircraft_failure_tree_payload(item)
-        root_id = str(tree.get("root_id") or "")
-        return any(str(node.get("id")) == root_id and node.get("failed") for node in tree.get("nodes", []))
+        runtime = self._aircraft_failure_tree_runtime(item)
+        direct_failed = {str(component_id) for component_id in item.component_failure_minutes}
+        if not direct_failed.issubset(runtime["node_ids"]):
+            # Preserve the payload builder's compatibility behavior for a
+            # dynamically injected failure that is absent from the compiled
+            # equipment tree. Canonical scenarios stay on the compact path.
+            tree = self._aircraft_failure_tree_payload(item)
+            root_id = str(tree.get("root_id") or "")
+            return any(
+                str(node.get("id")) == root_id and node.get("failed")
+                for node in tree.get("nodes", [])
+            )
+
+        failed_ids = set(direct_failed)
+        changed = True
+        while changed:
+            changed = False
+            for node_id in runtime["evaluation_order"]:
+                if node_id in failed_ids:
+                    continue
+                failed_children = sum(
+                    child_id in failed_ids
+                    for child_id in runtime["children_by_parent"].get(node_id, ())
+                )
+                if failed_children and failed_children >= runtime["threshold_by_id"][node_id]:
+                    failed_ids.add(node_id)
+                    changed = True
+        return runtime["root_id"] in failed_ids
+
+    def _aircraft_failure_tree_runtime(self, item: AircraftState) -> dict[str, Any]:
+        cache = self._failure_tree_runtime_by_aircraft_type
+        cache_key = (item.aircraft_type, item.model)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        component_nodes = tuple(
+            component
+            for component in self.equipment_tree_components
+            if self._component_applies_to_aircraft(component, item)
+        )
+        if not component_nodes:
+            component_nodes = tuple(self.equipment_tree_components)
+        equipment_root_id = self._equipment_tree_root_id(list(component_nodes))
+        node_by_id = {
+            str(component.get("id")): component
+            for component in component_nodes
+        }
+        whole_aircraft_root_id = self._whole_aircraft_root_id(
+            set(node_by_id) | {equipment_root_id}
+        )
+        parent_by_id = {
+            node_id: (
+                whole_aircraft_root_id
+                if node_id == equipment_root_id
+                else str(component.get("parent_id") or "")
+            )
+            for node_id, component in node_by_id.items()
+        }
+        if equipment_root_id not in node_by_id:
+            node_by_id[equipment_root_id] = {"k_out_of_n": {}}
+            parent_by_id[equipment_root_id] = whole_aircraft_root_id
+        node_by_id[whole_aircraft_root_id] = {"k_out_of_n": {}}
+        parent_by_id[whole_aircraft_root_id] = ""
+
+        children_by_parent: dict[str, list[str]] = {
+            node_id: [] for node_id in node_by_id
+        }
+        for node_id, parent_id in parent_by_id.items():
+            if parent_id and parent_id in node_by_id and node_id != whole_aircraft_root_id:
+                children_by_parent[parent_id].append(node_id)
+
+        def depth(node_id: str) -> int:
+            value = 0
+            current_id = node_id
+            seen = {node_id}
+            while (parent_id := parent_by_id.get(current_id, "")):
+                if parent_id in seen:
+                    break
+                seen.add(parent_id)
+                value += 1
+                current_id = parent_id
+            return value
+
+        runtime = {
+            "root_id": whole_aircraft_root_id,
+            "node_ids": frozenset(node_by_id),
+            "children_by_parent": {
+                node_id: tuple(child_ids)
+                for node_id, child_ids in children_by_parent.items()
+            },
+            "threshold_by_id": {
+                node_id: self._failure_threshold(node)
+                for node_id, node in node_by_id.items()
+            },
+            "evaluation_order": tuple(
+                sorted(node_by_id, key=depth, reverse=True)
+            ),
+        }
+        cache[cache_key] = runtime
+        return runtime
 
     def _first_failed_component_id(self, item: AircraftState) -> str | None:
         if not item.component_failure_minutes:

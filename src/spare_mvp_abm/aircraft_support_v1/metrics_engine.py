@@ -116,29 +116,43 @@ class MetricsEngineMixin:
     def _record_downtime_minutes(self) -> None:
         tick = max(1.0, float(self.tick_minutes or 1))
         interval_start = max(0.0, float(self.minute) - tick)
-        current: dict[str, dict[str, Any]] = {}
+        active_jobs_by_tail: dict[str, list[JobState]] = {}
+        for job in self.jobs:
+            if job.state in {"waiting", "running"}:
+                active_jobs_by_tail.setdefault(job.tail_number, []).append(job)
+        observed_tails: set[str] = set()
         for aircraft in self.aircraft:
-            event = self._current_downtime_event(aircraft, interval_start)
-            if event is not None:
-                current[aircraft.tail_number] = event
-
-        for tail_number, active in list(self._active_downtime_events.items()):
-            candidate = current.get(tail_number)
-            if (
-                candidate is None
-                or self._downtime_event_context_key(candidate) != self._downtime_event_context_key(active)
-            ):
-                self._close_downtime_event(tail_number)
-
-        for tail_number, candidate in current.items():
-            active = self._active_downtime_events.get(tail_number)
+            observed_tails.add(aircraft.tail_number)
+            context = self._current_downtime_context(
+                aircraft,
+                active_jobs=active_jobs_by_tail.get(aircraft.tail_number, ()),
+            )
+            active = self._active_downtime_events.get(aircraft.tail_number)
+            if context is None:
+                if active is not None:
+                    self._close_downtime_event(aircraft.tail_number)
+                continue
+            factor, job = context
+            context_key = self._downtime_context_key(factor, aircraft, job)
+            if active is not None and context_key != self._downtime_event_context_key(active):
+                self._close_downtime_event(aircraft.tail_number)
+                active = None
             if active is None:
+                active = self._downtime_event_payload(
+                    factor,
+                    aircraft,
+                    job,
+                    interval_start,
+                )
                 self._downtime_event_sequence += 1
-                candidate["event_id"] = f"downtime-{self._downtime_event_sequence:06d}"
-                self._active_downtime_events[tail_number] = candidate
-                active = candidate
+                active["event_id"] = f"downtime-{self._downtime_event_sequence:06d}"
+                self._active_downtime_events[aircraft.tail_number] = active
             active["end_minute"] = float(self.minute)
             active["duration_minutes"] = max(0.0, float(active["end_minute"]) - float(active["start_minute"]))
+
+        for tail_number in tuple(self._active_downtime_events):
+            if tail_number not in observed_tails:
+                self._close_downtime_event(tail_number)
 
         summary = self._downtime_event_summary()
         self.downtime_minutes = {factor: values["duration_minutes"] for factor, values in summary.items()}
@@ -158,11 +172,30 @@ class MetricsEngineMixin:
             )
         )
 
-    def _current_downtime_event(self, aircraft: AircraftState, start_minute: float) -> dict[str, Any] | None:
-        active_jobs = [
-            job for job in self.jobs
-            if job.tail_number == aircraft.tail_number and job.state in {"waiting", "running"}
-        ]
+    def _current_downtime_event(
+        self,
+        aircraft: AircraftState,
+        start_minute: float,
+        *,
+        active_jobs: list[JobState] | tuple[JobState, ...] | None = None,
+    ) -> dict[str, Any] | None:
+        if active_jobs is None:
+            active_jobs = [
+                job for job in self.jobs
+                if job.tail_number == aircraft.tail_number and job.state in {"waiting", "running"}
+            ]
+        context = self._current_downtime_context(aircraft, active_jobs=active_jobs)
+        if context is None:
+            return None
+        factor, job = context
+        return self._downtime_event_payload(factor, aircraft, job, start_minute)
+
+    def _current_downtime_context(
+        self,
+        aircraft: AircraftState,
+        *,
+        active_jobs: list[JobState] | tuple[JobState, ...],
+    ) -> tuple[str, JobState | None] | None:
         spare_job = next(
             (job for job in active_jobs if job.state == "waiting" and str(job.shortage_reason or "").startswith(("spare:", "in_transit"))),
             None,
@@ -176,14 +209,38 @@ class MetricsEngineMixin:
         # A direct waiting gate overrides the underlying maintenance cause.  If no
         # gate exists, unplanned repair precedes planned preventive maintenance.
         if spare_job is not None:
-            return self._downtime_event_payload("spare_shortage", aircraft, spare_job, start_minute)
+            return "spare_shortage", spare_job
         if equipment_job is not None:
-            return self._downtime_event_payload("equipment_shortage", aircraft, equipment_job, start_minute)
+            return "equipment_shortage", equipment_job
         if aircraft.failed_component_id is not None or repair_job is not None:
-            return self._downtime_event_payload("failure", aircraft, repair_job, start_minute)
+            return "failure", repair_job
         if preventive_job is not None:
-            return self._downtime_event_payload("preventive", aircraft, preventive_job, start_minute)
+            return "preventive", preventive_job
         return None
+
+    @staticmethod
+    def _downtime_context_key(
+        factor: str,
+        aircraft: AircraftState,
+        job: JobState | None,
+    ) -> tuple[str, ...]:
+        task = job.current_task if job is not None and isinstance(job.current_task, dict) else {}
+        mission_id = job.mission_id if job is not None else aircraft.current_mission_id
+        phase_id = str(task.get("activityCode") or task.get("id") or (job.kind if job is not None else ""))
+        phase_name = str(
+            task.get("workName")
+            or task.get("name")
+            or (job.activity_name if job is not None else "")
+        )
+        return (
+            factor,
+            str(mission_id or ""),
+            str(job.kind if job is not None else ""),
+            phase_id,
+            phase_name,
+            str(job.resource_node_id if job is not None else ""),
+            str(job.job_id if job is not None else ""),
+        )
 
     def _downtime_event_payload(
         self,

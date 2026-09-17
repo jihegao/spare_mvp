@@ -190,13 +190,13 @@ class MaintenanceEngineMixin:
             self._event("job_started", f"{job.job_id} started {task.get('workName') or task.get('activityCode') or 'task'}")
 
     def _generate_preventive_jobs(self) -> None:
+        active_preventive_tails = {
+            job.tail_number
+            for job in self.jobs
+            if job.kind == "preventive" and job.state in {"waiting", "running"}
+        }
         for aircraft in self.aircraft:
-            if any(
-                job.kind == "preventive"
-                and job.tail_number == aircraft.tail_number
-                and job.state in {"waiting", "running"}
-                for job in self.jobs
-            ):
+            if aircraft.tail_number in active_preventive_tails:
                 continue
             due_cycles = self._due_preventive_cycles(aircraft)
             if not due_cycles:
@@ -221,6 +221,7 @@ class MaintenanceEngineMixin:
                 kind="preventive",
                 due_dimensions=due_dimensions,
             )
+            active_preventive_tails.add(aircraft.tail_number)
             self._event(
                 "preventive_created",
                 f"{aircraft.tail_number} preventive maintenance created",
