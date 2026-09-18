@@ -92,6 +92,23 @@ try {
   await download.saveAs(`${output}/task-reliability.xlsx`);
   check('XLSX downloaded', (await download.failure()) === null);
   await shot('06-reliability');
+  await feature('system-management-project-data-management');
+  const templateDownloadEvent = page.waitForEvent('download');
+  await page.locator('[data-project-xlsx-template]').click();
+  const templateDownload = await templateDownloadEvent;
+  const templatePath = `${output}/project-standard-template.xlsx`;
+  await templateDownload.saveAs(templatePath);
+  check('Project template downloaded', (await templateDownload.failure()) === null);
+  const previewResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/projects/import-xlsx/preview');
+  await page.locator('input[data-project-replacement-file]').setInputFiles(templatePath);
+  const preview = await (await previewResponse).json();
+  check('Project Excel public compilation', preview.ok && preview.format_version === 'project-xlsx-v1' && preview.compile_status === 'compiled',
+    { format: preview.format_version, compileStatus: preview.compile_status, errors: (preview.errors || []).length });
+  await shot('07-project-import-preview');
+  const createResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/projects/import-xlsx/create');
+  await page.locator('[data-project-xlsx-create]').click();
+  check('Project Excel confirmed import', (await createResponse).ok());
+  await page.waitForTimeout(1000);
   await feature('spare-planning-visual-mesa-page');
   const visResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/visualization-sessions', { timeout: 180000 });
   await page.locator('[data-visualization-session-start]').click();
@@ -108,7 +125,7 @@ try {
     after = await minute();
   }
   check('visualization model advanced', after > before, { before, after });
-  await shot('07-visualization');
+  await shot('08-visualization');
   check('no uncaught browser errors', evidence.consoleErrors.length === 0);
   check('no external web assets required', evidence.externalRequests.length === 0);
 } catch (error) {
