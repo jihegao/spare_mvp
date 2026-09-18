@@ -3646,8 +3646,6 @@ function renderProjectListPage() {
         ${demoProjects.length ? demoProjects.map((project) => `
           <article class="project-card ${project.id === currentProject?.id ? "active" : ""}">
             <div>
-              <span>基地 ${project.baseCode}</span>
-              ${projectSourceBadge(project)}
               <h3>${htmlEscape(project.name)}</h3>
               <p>${htmlEscape(project.summary)}</p>
               <p class="inline-status">${projectSourceHelpText(project)}</p>
@@ -3682,13 +3680,6 @@ function renderProjectListPage() {
       </section>
     </main>
   `;
-}
-
-function projectSourceBadge(project) {
-  const labels = {
-    [PROJECT_SOURCE.imported_sample]: "模板项目"
-  };
-  return `<span class="status-badge success">${htmlEscape(labels[project.sourceKind] || labels[PROJECT_SOURCE.imported_sample])}</span>`;
 }
 
 function projectSourceHelpText(project) {

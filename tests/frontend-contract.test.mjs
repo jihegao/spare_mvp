@@ -3850,7 +3850,7 @@ test("project list creates projects only from marked project templates", async (
   assert.doesNotMatch(projectListSource, /data-modeling-import-template|MODELING_IMPORT_TEMPLATES|Level 0|Level 1|选择内置导入模板/);
   assert.doesNotMatch(projectListSource, /当前发布快照|当前项目数据模板|从选中模板创建项目/);
   assert.match(projectListSource, /暂无项目/);
-  assert.match(projectListSource, /projectSourceBadge\(project\)/);
+  assert.doesNotMatch(projectListSource, /projectSourceBadge\(project\)|基地 \$\{project\.baseCode\}/);
   assert.match(projectListSource, /projectSourceHelpText\(project\)/);
   assert.doesNotMatch(hydrateSource, /readManualDraftProjectsFromStorage|fallbackProjects|localManualProjects/);
   assert.match(hydrateSource, /请先选择项目模板创建项目/);
