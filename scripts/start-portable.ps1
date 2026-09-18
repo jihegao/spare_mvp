@@ -53,8 +53,9 @@ function Get-PortableProcess {
         return $null
     }
     try {
-        $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop).CommandLine
-        if (-not [string]::IsNullOrWhiteSpace($commandLine) -and -not $commandLine.Contains($PackageRoot)) {
+        $details = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop
+        $commandLine = $details.CommandLine
+        if ($details.ExecutablePath -ine $Python -or (-not [string]::IsNullOrWhiteSpace($commandLine) -and -not $commandLine.Contains($PackageRoot))) {
             # Windows may reuse a PID recorded by an earlier, crashed launch.
             Remove-Item -LiteralPath $PidPath -Force
             return $null

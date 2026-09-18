@@ -48,6 +48,8 @@ def app_file(name: str) -> bool:
 def source_manifest(repo: Path) -> dict:
     tracked = subprocess.check_output(['git', '-C', str(repo), 'ls-files', '-z']).decode().split('\0')
     files = sorted(name for name in tracked if name and app_file(name))
+    if subprocess.run(['git', '-C', str(repo), 'diff', '--quiet', 'HEAD', '--', *files]).returncode:
+        raise ValueError('Application source differs from the recorded commit; commit the candidate before packaging')
     missing = APP_FILES - set(files)
     if missing:
         raise ValueError(f'Missing reviewed fixtures: {sorted(missing)}')

@@ -20,12 +20,15 @@ function Stop-RecordedPortableProcess {
         $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
         if ($null -ne $process) {
             $commandLine = ''
+            $executablePath = ''
             try {
-                $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop).CommandLine
+                $details = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop
+                $commandLine = $details.CommandLine
+                $executablePath = $details.ExecutablePath
             } catch {
                 # Unknown ownership must never terminate a process from another environment.
             }
-            if (-not [string]::IsNullOrWhiteSpace($commandLine) -and $commandLine.Contains($PackageRoot)) {
+            if ($executablePath -ieq (Join-Path $PackageRoot 'runtime\python.exe') -and -not [string]::IsNullOrWhiteSpace($commandLine) -and $commandLine.Contains($PackageRoot)) {
                 Stop-Process -Id $pidValue -Force
                 Write-Output "Stopped $Name service."
             } else {
