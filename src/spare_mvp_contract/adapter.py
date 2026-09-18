@@ -3878,6 +3878,9 @@ class SimulationAdapter:
             metrics=metrics,
             samples=samples or [],
         )
+        planned_wave_total = sum(row["planned_waves"] for row in mission_wave_rows)
+        if planned_wave_total > 0:
+            mission_success = sum(row["successful_waves"] for row in mission_wave_rows) / planned_wave_total
         task_reliability_result_fields = build_task_reliability_result_fields(
             sortie_rate=sortie_rate,
             wave_success_rate=mission_success,
@@ -4386,11 +4389,11 @@ class SimulationAdapter:
                     "wave_index": wave,
                     "wave_key": self._mission_wave_key(day, wave),
                     "wave_label": self._mission_wave_label(day, wave),
-                    "planned_sorties": planned_sorties,
-                    "launched_sorties": launched_sorties,
-                    "successful_sorties": self._float_value(row.get("successful_sorties", row.get("successfulSorties")), 0.0),
-                    "planned_waves": planned_waves,
-                    "successful_waves": successful_waves,
+                    "planned_sorties": int(planned_sorties),
+                    "launched_sorties": int(launched_sorties),
+                    "successful_sorties": int(self._float_value(row.get("successful_sorties", row.get("successfulSorties")), 0.0)),
+                    "planned_waves": int(planned_waves),
+                    "successful_waves": int(successful_waves),
                     "mean_mission_success_rate": mission_success,
                     "mission_success_probability": mission_success,
                     "mean_sortie_rate": sortie_rate,
@@ -4405,7 +4408,7 @@ class SimulationAdapter:
         return f"d{day}-w{wave}"
 
     def _mission_wave_label(self, day: int, wave: int) -> str:
-        return f"第{day}天 第{wave}波"
+        return f"第{day}天第{wave}波次"
 
     def _clamp01(self, value: Any) -> float:
         return min(1.0, max(0.0, self._float_value(value, 0.0)))

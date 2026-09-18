@@ -3725,9 +3725,9 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(payload["rows"])
         self.assertEqual(payload["rows"], payload["wave_rows"])
         self.assertEqual(payload["wave_rows"][0]["dayIndex"], 1)
-        self.assertEqual(payload["wave_rows"][0]["sampleCount"], 2)
-        self.assertNotIn("sampleIndex", payload["wave_rows"][0])
-        self.assertNotIn("sampleLabel", payload["wave_rows"][0])
+        self.assertEqual(payload["wave_rows"][0]["sampleIndex"], 0)
+        self.assertEqual(payload["wave_rows"][0]["sampleLabel"], "样本 1")
+        self.assertEqual({row["sampleIndex"] for row in payload["wave_rows"]}, {0, 1})
         self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
         self.assertNotIn("seed", payload["wave_rows"][0])
         self.assertEqual([field["key"] for field in payload["result_fields"]], [
@@ -3903,44 +3903,33 @@ class BackendApiContractTest(unittest.TestCase):
         ])
         self.assertNotIn("任务失败次数", {label for label, _value in result["metrics"]})
 
-    def test_lite_mesa_mission_reliability_rows_average_each_wave_across_samples(self) -> None:
+    def test_lite_mesa_mission_reliability_preserves_authoritative_sample_rows(self) -> None:
+        samples = [
+            {"sample_index": sample, "mission_wave_reliability": [
+                {"day_index": day, "wave_index": wave, "planned_waves": 3 if sample else 1,
+                 "successful_waves": 1, "planned_sorties": 4, "launched_sorties": 2}
+                for day in range(1, 14) for wave in (1, 2)
+            ]}
+            for sample in range(4)
+        ]
+        adapter = SimulationAdapter()
+        detail = adapter._aircraft_support_v1_mission_wave_rows(samples)
         result = _lite_mesa_mission_reliability_result(
-            {"data": {"mission_success_probability": 0.8, "sortie_rate": 0.4}},
-            [
-                {
-                    "seed": 1,
-                    "metrics": {"failed_sorties": 0, "ready_rate": 1},
-                    "mission_wave_reliability": [
-                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 2, "launchedSorties": 2, "successfulSorties": 1, "plannedWaves": 1, "successfulWaves": 1, "missionSuccessRate": 1, "sortieRate": 1},
-                        {"dayIndex": 1, "waveIndex": 2, "plannedSorties": 2, "launchedSorties": 1, "successfulSorties": 0, "plannedWaves": 1, "successfulWaves": 0, "missionSuccessRate": 0, "sortieRate": 0.5},
-                    ],
-                },
-                {
-                    "seed": 2,
-                    "metrics": {"failed_sorties": 0, "ready_rate": 1},
-                    "mission_wave_reliability": [
-                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 6, "launchedSorties": 4, "successfulSorties": 0, "plannedWaves": 1, "successfulWaves": 0, "missionSuccessRate": 0, "sortieRate": 4 / 6},
-                    ],
-                },
-            ],
-            {"maxTimeWindow": 1},
+            {"data": {"mission_wave_rows": detail, "mission_success_probability": 0.4, "sortie_rate": 0.5}},
+            samples, {},
         )
-
+        self.assertEqual(len(result["wave_rows"]), 104)
         self.assertEqual(result["rows"], result["wave_rows"])
-        self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2"])
-        self.assertEqual([row["sampleCount"] for row in result["rows"]], [2, 1])
-        self.assertTrue(all("sampleIndex" not in row for row in result["rows"]))
-        self.assertTrue(all("sampleLabel" not in row for row in result["rows"]))
-        self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 4)
-        self.assertAlmostEqual(result["rows"][0]["launchedSorties"], 3)
-        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 0.5)
-        self.assertAlmostEqual(result["rows"][0]["plannedWaves"], 1)
-        self.assertAlmostEqual(result["rows"][0]["successfulWaves"], 0.5)
-        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 0.5)
-        self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 5 / 6)
-        self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
-        self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
-        self.assertNotIn("seed", result["rows"][0])
+        self.assertEqual({row["sampleIndex"] for row in result["rows"]}, {0, 1, 2, 3})
+        self.assertEqual(result["rows"][0]["waveLabel"], "第1天第1波次")
+        self.assertTrue(all(isinstance(row["plannedWaves"], int) for row in result["rows"]))
+        # Source samples can be missing or shuffled; transport follows the formal projection.
+        reordered = _lite_mesa_mission_reliability_result(
+            {"data": {"mission_wave_rows": detail}}, list(reversed(samples)), {},
+        )
+        self.assertEqual(result["rows"], reordered["rows"])
+        no_detail = _lite_mesa_mission_reliability_result({"data": {}}, samples, {})
+        self.assertEqual(no_detail["rows"], [])
 
     def test_task_reliability_result_fields_keep_percent_and_period_contract(self) -> None:
         fields = build_task_reliability_result_fields(

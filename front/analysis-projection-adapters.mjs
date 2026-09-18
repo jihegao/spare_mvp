@@ -6,6 +6,8 @@ import {
   formatDowntimeSimulationTime
 } from "./downtime-analysis.mjs";
 import {
+  aggregateTaskReliabilityWaves,
+  normalizeTaskReliabilityWaveRows,
   normalizeTaskReliabilityResultFields,
   taskReliabilityMetricPairs
 } from "./task-reliability-contract.mjs";
@@ -252,7 +254,8 @@ function normalizeMissionReliability(payload) {
   const sortieRate = requireFiniteNumber(data.sortie_rate, "sortie_rate");
   const state = data.target_met ? "满足" : "未达标";
   const seriesRows = normalizeMissionReliabilitySeries(data, { probability, sortieRate, state });
-  const steepestDrop = missionReliabilitySteepestDrop(seriesRows);
+  const chartRows = aggregateTaskReliabilityWaves(seriesRows);
+  const steepestDrop = missionReliabilitySteepestDrop(chartRows);
   const resultFields = normalizeTaskReliabilityResultFields({
     result_fields: data.result_fields,
     sortie_rate: sortieRate,
@@ -267,6 +270,7 @@ function normalizeMissionReliability(payload) {
     formal: true,
     source: "projection payload",
     rows: seriesRows,
+    chartRows,
     steepestDrop,
     resultFields,
     profileReliability: clamp01(numberOrZero(data.profile_reliability ?? probability)),
@@ -285,73 +289,8 @@ function normalizeMissionReliability(payload) {
 }
 
 function normalizeMissionReliabilitySeries(data, fallback) {
-  const rawRows = Array.isArray(data.mission_wave_rows) ? data.mission_wave_rows : [];
-  const normalizedRows = rawRows.map((row, index) => {
-    const probability = clamp01(requireFiniteNumber(
-      row.mean_mission_success_rate ?? row.mission_success_probability,
-      "series mission_success_probability"
-    ));
-    const sortieRate = clamp01(requireFiniteNumber(row.mean_sortie_rate ?? row.sortie_rate ?? data.sortie_rate, "series sortie_rate"));
-    const dayIndex = Number.isFinite(row.day_index) ? Math.max(1, Math.round(row.day_index)) : null;
-    const waveIndex = Number.isFinite(row.wave_index) ? Math.max(1, Math.round(row.wave_index)) : null;
-    const waveLabel = stringValue(
-      row.wave_label ?? (dayIndex && waveIndex ? `第${dayIndex}天 第${waveIndex}波` : row.simulation_time),
-      `${index + 1}`
-    );
-    const sampleIndex = optionalNonNegativeInteger(row.sample_index, "series sample_index");
-    return {
-      timeLabel: waveLabel,
-      waveLabel,
-      waveKey: stringValue(row.wave_key, dayIndex && waveIndex ? `d${dayIndex}-w${waveIndex}` : `wave-${index + 1}`),
-      dayIndex,
-      waveIndex,
-      sampleIndex,
-      sampleCount: optionalNonNegativeInteger(row.sample_count, "series sample_count"),
-      probability,
-      meanMissionSuccessRate: probability,
-      sortieRate,
-      sorties: Math.round(sortieRate * 100),
-      available: Math.round(probability * 100),
-      state: fallback.state
-    };
-  });
-
-  if (!normalizedRows.some((row) => row.sampleIndex !== null)) {
-    return normalizedRows.map((row, index) => ({
-      ...row,
-      sequence: index + 1,
-      sampleCount: row.sampleCount ?? optionalNonNegativeInteger(data.total_samples, "total_samples") ?? 0
-    }));
-  }
-
-  const rowsByWave = new Map();
-  normalizedRows.forEach((row) => {
-    const group = rowsByWave.get(row.waveKey) || [];
-    group.push(row);
-    rowsByWave.set(row.waveKey, group);
-  });
-  return [...rowsByWave.values()]
-    .sort((left, right) => (
-      (left[0].dayIndex || 0) - (right[0].dayIndex || 0)
-      || (left[0].waveIndex || 0) - (right[0].waveIndex || 0)
-    ))
-    .map((sampleRows, index) => {
-      const reference = sampleRows[0];
-      const sampleCount = sampleRows.length;
-      const probability = sampleRows.reduce((sum, row) => sum + row.probability, 0) / sampleCount;
-      const sortieRate = sampleRows.reduce((sum, row) => sum + row.sortieRate, 0) / sampleCount;
-      return {
-        ...reference,
-        sequence: index + 1,
-        sampleIndex: null,
-        sampleCount,
-        probability,
-        meanMissionSuccessRate: probability,
-        sortieRate,
-        sorties: Math.round(sortieRate * 100),
-        available: Math.round(probability * 100)
-      };
-    });
+  return normalizeTaskReliabilityWaveRows(Array.isArray(data.mission_wave_rows) ? data.mission_wave_rows : [])
+    .map((row) => ({ ...row, state: fallback.state }));
 }
 
 function missionReliabilitySteepestDrop(rows) {

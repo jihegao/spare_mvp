@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   TASK_RELIABILITY_RESULT_COLUMNS,
+  aggregateTaskReliabilityWaves,
+  normalizeTaskReliabilityWaveRows,
   formatReliabilityPercent,
   normalizeTaskReliabilityResultFields,
   taskReliabilityMetricPairs
@@ -100,4 +102,44 @@ test("formats decimal half-even values consistently at binary, negative, zero, a
     [1, "100%", "%"],
     [2.675, "2.68 天", "天"]
   ]);
+});
+
+
+test("wave detail retains 104 observations while chart uses count-weighted business keys", () => {
+  const source = Array.from({ length: 4 }, (_, sampleIndex) =>
+    Array.from({ length: 26 }, (_, index) => ({
+      sample_index: sampleIndex, day_index: Math.floor(index / 2) + 1, wave_index: index % 2 + 1,
+      planned_waves: sampleIndex === 0 ? 1 : 3, successful_waves: sampleIndex === 0 ? 1 : 0,
+      planned_sorties: sampleIndex === 0 ? 2 : 4, launched_sorties: 2
+    }))
+  ).flat().reverse();
+  const detail = normalizeTaskReliabilityWaveRows(source);
+  const chart = aggregateTaskReliabilityWaves(detail);
+  assert.equal(detail.length, 104);
+  assert.equal(chart.length, 26);
+  assert.equal(chart[0].waveLabel, "第1天第1波次");
+  assert.equal(chart[0].plannedWaves, 10);
+  assert.equal(chart[0].successfulWaves, 1);
+  assert.equal(chart[0].probability, 0.1);
+  assert.equal(chart[0].sortieRate, 8 / 14);
+  assert.equal(chart[0].sampleCount, 4);
+  assert.equal(detail.filter((row) => row.sampleIndex === 0).length, 26);
+  // Missing a business wave never shifts another sample's following observation.
+  const missing = source.filter((row) => row.sample_index !== 0 || row.day_index !== 1 || row.wave_index !== 1);
+  const incomplete = aggregateTaskReliabilityWaves(missing);
+  assert.equal(incomplete[0].sampleCount, 3);
+  assert.equal(incomplete[0].probability, 0);
+  assert.equal(incomplete[1].probability, 0.1);
+  assert.equal(source.length, 104);
+});
+
+
+test("missing sample counts do not silently become unweighted chart averages", () => {
+  const rows = [
+    { sample_index: 0, day_index: 1, wave_index: 1, mean_mission_success_rate: 1 },
+    { sample_index: 1, day_index: 1, wave_index: 1, mean_mission_success_rate: 0 }
+  ];
+  assert.equal(normalizeTaskReliabilityWaveRows(rows).length, 2);
+  assert.deepEqual(aggregateTaskReliabilityWaves(rows), []);
+  assert.equal(aggregateTaskReliabilityWaves([{ waveKey: "d1-w1", sampleCount: 2, meanMissionSuccessRate: 0.5 }])[0].probability, 0.5);
 });

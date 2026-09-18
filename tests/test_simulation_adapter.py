@@ -2361,6 +2361,24 @@ class SimulationAdapterTest(unittest.TestCase):
             [],
         )
 
+    def test_mission_projection_summary_uses_count_totals_not_mean_sample_rates(self) -> None:
+        samples = [
+            {"sample_index": 2, "mission_wave_reliability": [
+                {"day_index": 2, "wave_index": 1, "planned_waves": 1, "successful_waves": 1},
+            ]},
+            {"sample_index": 7, "mission_wave_reliability": [
+                {"day_index": 1, "wave_index": 2, "planned_waves": 3, "successful_waves": 0},
+            ]},
+        ]
+        projection = self.adapter._aircraft_support_v1_analysis_projections(
+            {"mission_success_rate": 0.5, "sortie_rate": 1},
+            "artifact-counts", samples=samples, run_id="run-counts",
+        )["mission_reliability"]["data"]
+        self.assertEqual(projection["wave_success_rate"], 0.25)
+        self.assertEqual(projection["result_fields"][1]["display_value"], "25%")
+        self.assertEqual([row["sample_index"] for row in projection["mission_wave_rows"]], [2, 7])
+        self.assertEqual([row["wave_label"] for row in projection["mission_wave_rows"]], ["第2天第1波次", "第1天第2波次"])
+
     def test_aircraft_support_v1_monte_carlo_isolates_failed_samples(self) -> None:
         class FailingSampleAdapter(SimulationAdapter):
             def _run_aircraft_support_v1_monte_carlo_sample(self, *args, sample_index: int, **kwargs):

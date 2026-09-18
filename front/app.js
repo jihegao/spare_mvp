@@ -31,6 +31,8 @@ import {
   normalizeMonteCarloMetricMoments
 } from "./monte-carlo-moments.mjs";
 import {
+  aggregateTaskReliabilityWaves,
+  normalizeTaskReliabilityWaveRows,
   formatReliabilityPercent,
   normalizeTaskReliabilityResultFields,
   taskReliabilityMetricPairs
@@ -19605,18 +19607,7 @@ function renderFormalProjectionBody(formalProjection) {
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
-    return `
-      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
-        <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.probability))}</td></tr>`).join("") || '<tr><td colspan="3">当前结果没有波次成功率明细</td></tr>'}</tbody>
-      </table></div>
-      ${renderLiteMesaMissionReliabilityWaveChart(rows.map((row) => ({
-        sequence: row.sequence,
-        waveLabel: row.waveLabel || row.timeLabel,
-        sampleCount: row.sampleCount,
-        meanMissionSuccessRate: row.probability
-      })))}
-    `;
+    return `${renderTaskReliabilityDetailTable(rows)}${renderLiteMesaMissionReliabilityWaveChart(rows)}`;
   }
   if (formalProjection.analysisType === "downtime_factors") {
     const rows = formalProjection.rows || [];
@@ -20051,12 +20042,8 @@ function analysisXlsxPayloadForPage(page, result) {
     ],
     detail_sections: [{
       title: "各波次任务可靠度明细",
-      columns: ["波次", "样本数", "波次成功率"],
-      rows: rows.map((row) => [
-        row.waveLabel || row.waveKey || "-",
-        Number(row.sampleCount || 0),
-        formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)
-      ])
+      columns: ["样本", "波次", "成功数", "计划数", "波次成功率"],
+      rows: normalizeTaskReliabilityWaveRows(rows).map(taskReliabilityDetailCells)
     }]
   };
 }
@@ -20866,13 +20853,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     `;
   }
   if (definition.analysisType === "mission_reliability") {
-    return `
-      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table" data-paginate="renderLiteMesaAnalysisSessionBody-3">
-        <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate))}</td></tr>`).join("") || '<tr><td colspan="3">当前会话没有波次成功率明细</td></tr>'}</tbody>
-      </table></div>
-      ${renderLiteMesaMissionReliabilityWaveChart(rows)}
-    `;
+    return `${renderTaskReliabilityDetailTable(rows)}${renderLiteMesaMissionReliabilityWaveChart(rows)}`;
   }
   if (definition.analysisType === "downtime_factors") {
     return renderLiteMesaDowntimeFactorAnalysis(result);
@@ -21013,9 +20994,21 @@ function renderDowntimeFactorSpecificDetails(rows) {
   return `<details class="downtime-factor-specific"><summary>查看</summary>${rows.map(([label, value]) => `<div><span>${htmlEscape(label)}</span><strong>${htmlEscape(downtimeDisplayValue(value))}</strong></div>`).join("")}</details>`;
 }
 
-function renderLiteMesaMissionReliabilityWaveChart(rows) {
+function taskReliabilityDetailCells(row) {
+  return [row.sampleLabel, row.waveLabel, row.successfulWaves ?? "不可用", row.plannedWaves ?? "不可用", formatReliabilityPercent(row.probability)];
+}
+
+function renderTaskReliabilityDetailTable(rows) {
+  return `<div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
+    <thead><tr><th>样本</th><th>波次</th><th>成功数</th><th>计划数</th><th>波次成功率</th></tr></thead>
+    <tbody>${normalizeTaskReliabilityWaveRows(rows).map((row) => `<tr>${taskReliabilityDetailCells(row).map((value) => `<td>${htmlEscape(value)}</td>`).join("")}</tr>`).join("") || '<tr><td colspan="5">当前结果没有波次成功率明细</td></tr>'}</tbody>
+  </table></div>`;
+}
+
+function renderLiteMesaMissionReliabilityWaveChart(detailRows) {
+  const rows = aggregateTaskReliabilityWaves(detailRows);
   if (!rows.length) {
-    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>当前会话未返回波次成功率明细。</p></div>`;
+    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>${detailRows.length ? "波次计数不完整，无法汇总趋势。" : "当前会话未返回波次成功率明细。"}</p></div>`;
   }
   const points = rows.map((row, index) => ({
     x: Number(row.sequence || index + 1),

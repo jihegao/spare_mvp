@@ -2982,75 +2982,30 @@ def _sample_mission_wave_reliability(missions: list[Any]) -> list[dict[str, Any]
     return rows
 
 
-def _sample_mission_wave_rows(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows_by_wave_position: dict[int, list[dict[str, Any]]] = {}
-    for sample in samples:
-        for wave_position, row in enumerate(sample.get("mission_wave_reliability") or []):
-            day = max(1, _metric_int(row.get("dayIndex", row.get("day_index")), default=1))
-            wave = max(1, _metric_int(row.get("waveIndex", row.get("wave_index")), default=1))
-            planned_sorties = _metric_float(row.get("plannedSorties", row.get("planned_sorties")), default=0)
-            launched_sorties = _metric_float(row.get("launchedSorties", row.get("launched_sorties")), default=0)
-            planned_waves = _metric_float(row.get("plannedWaves", row.get("planned_waves")), default=0)
-            successful_waves = _metric_float(row.get("successfulWaves", row.get("successful_waves")), default=0)
-            mission_success = _clamp01(
-                successful_waves / planned_waves
-                if planned_waves > 0
-                else row.get("missionSuccessRate", row.get("mission_success_rate", row.get("mean_mission_success_rate")))
-            )
-            sortie_rate = _clamp01(
-                launched_sorties / planned_sorties
-                if planned_sorties > 0
-                else row.get("sortieRate", row.get("sortie_rate", row.get("mean_sortie_rate")))
-            )
-            rows_by_wave_position.setdefault(wave_position, []).append({
-                "dayIndex": day,
-                "waveIndex": wave,
-                "waveKey": _mission_wave_key(day, wave),
-                "waveLabel": _mission_wave_label(day, wave),
-                "plannedSorties": planned_sorties,
-                "launchedSorties": launched_sorties,
-                "successfulSorties": _metric_float(row.get("successfulSorties", row.get("successful_sorties")), default=0),
-                "plannedWaves": planned_waves,
-                "successfulWaves": successful_waves,
-                "meanMissionSuccessRate": mission_success,
-                "missionSuccessRate": mission_success,
-                "meanSortieRate": sortie_rate,
-                "sortieRate": sortie_rate,
-            })
-
-    rows: list[dict[str, Any]] = []
-    for wave_position in sorted(rows_by_wave_position):
-        sample_rows = rows_by_wave_position[wave_position]
-        reference = sample_rows[0]
-        sample_count = len(sample_rows)
-        mission_success_rate = sum(row["missionSuccessRate"] for row in sample_rows) / sample_count
-        sortie_rate = sum(row["sortieRate"] for row in sample_rows) / sample_count
-        rows.append({
-            "sequence": wave_position + 1,
-            "dayIndex": reference["dayIndex"],
-            "waveIndex": reference["waveIndex"],
-            "waveKey": reference["waveKey"],
-            "waveLabel": reference["waveLabel"],
-            "sampleCount": sample_count,
-            "plannedSorties": sum(row["plannedSorties"] for row in sample_rows) / sample_count,
-            "launchedSorties": sum(row["launchedSorties"] for row in sample_rows) / sample_count,
-            "successfulSorties": sum(row["successfulSorties"] for row in sample_rows) / sample_count,
-            "plannedWaves": sum(row["plannedWaves"] for row in sample_rows) / sample_count,
-            "successfulWaves": sum(row["successfulWaves"] for row in sample_rows) / sample_count,
-            "meanMissionSuccessRate": mission_success_rate,
-            "missionSuccessRate": mission_success_rate,
-            "meanSortieRate": sortie_rate,
-            "sortieRate": sortie_rate,
-        })
-    return rows
-
-
 def _mission_wave_key(day: int, wave: int) -> str:
     return f"d{day}-w{wave}"
 
 
 def _mission_wave_label(day: int, wave: int) -> str:
-    return f"第{day}天 第{wave}波"
+    return f"第{day}天第{wave}波次"
+
+
+def _projection_mission_wave_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Transport the adapter's authoritative per-sample detail without regrouping."""
+    names = {
+        "sample_index": "sampleIndex", "sample_label": "sampleLabel",
+        "day_index": "dayIndex", "wave_index": "waveIndex",
+        "wave_key": "waveKey", "wave_label": "waveLabel",
+        "planned_sorties": "plannedSorties", "launched_sorties": "launchedSorties",
+        "successful_sorties": "successfulSorties", "planned_waves": "plannedWaves",
+        "successful_waves": "successfulWaves", "mean_mission_success_rate": "meanMissionSuccessRate",
+        "mean_sortie_rate": "meanSortieRate", "sortie_rate": "sortieRate",
+        "mission_success_probability": "missionSuccessRate",
+    }
+    return [
+        {names.get(key, key): value for key, value in row.items()}
+        for row in data.get("mission_wave_rows", []) if isinstance(row, dict)
+    ]
 
 
 def _lite_mesa_analysis_page_result(
@@ -3242,7 +3197,7 @@ def _lite_mesa_mission_reliability_result(
     settings: dict[str, Any],
 ) -> dict[str, Any]:
     data = projection.get("data") if isinstance(projection.get("data"), dict) else {}
-    rows = _sample_mission_wave_rows(samples)
+    rows = _projection_mission_wave_rows(data)
     period_summary = period_completion_summary(samples)
     total_samples = period_summary["total_samples"]
     successful_samples = period_summary["successful_samples"]
