@@ -3677,7 +3677,9 @@ function renderSystemManagementNavigation(activePage, secondaryGroups) {
 }
 
 function renderFeaturePage(page) {
-  const siblingPages = currentFeatureGroups()[page.module]?.[page.secondary]?.[page.tertiary] || [page];
+  const navigationModule = page.module === SYSTEM_SUPPORT_MODULE_NAME ? page.module : "备件规划及任务可靠度验证评估模块";
+  const navigationGroup = page.tertiary === "仿真实验方案管理" ? "仿真实验管理" : page.tertiary;
+  const siblingPages = unifiedNavigationGroups()[navigationModule]?.[page.secondary]?.[navigationGroup] || [page];
   const currentContext = shouldEmbedExperimentPlanContextInComponent(page) ? "" : renderCurrentContext(page);
   return `
     <section class="deck-modeling-content feature-page">
@@ -20999,7 +21001,7 @@ function taskReliabilityDetailCells(row) {
 }
 
 function renderTaskReliabilityDetailTable(rows) {
-  return `<div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
+  return `<div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table" data-paginate="task-reliability-detail">
     <thead><tr><th>样本</th><th>波次</th><th>成功数</th><th>计划数</th><th>波次成功率</th></tr></thead>
     <tbody>${normalizeTaskReliabilityWaveRows(rows).map((row) => `<tr>${taskReliabilityDetailCells(row).map((value) => `<td>${htmlEscape(value)}</td>`).join("")}</tr>`).join("") || '<tr><td colspan="5">当前结果没有波次成功率明细</td></tr>'}</tbody>
   </table></div>`;
