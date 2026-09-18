@@ -332,5 +332,52 @@
     "observations": 362,
     "elapsed_seconds": 796.81
   },
-  "scope": "Candidate app on native Windows Edge, five independent original page requests; final main package and cutover verified separately."
+  "scope": "Candidate app on native Windows Edge, five independent original page requests; final main package and cutover verified separately.",
+  "current_project_input": {
+    "aircraft_count": 9,
+    "behavior_component_count": 423,
+    "compiled_input_hash": "ad13e1afd88f3f90fb430e2aa3f1da33c0ab0d0e0c692baee1d89950eb61d532",
+    "compiled_input_hash_encoding": "sha256 canonical JSON sorted keys, compact separators, UTF-8",
+    "configured_aircraft_assets": 9,
+    "configured_fleet_count": 9,
+    "context_fingerprint_hash": "6911822d46879224ed604a1cc558f2358f61143306f5d0d8ffd23709eec1ce02",
+    "context_type": "current_project",
+    "duration_minutes": 61920,
+    "equipment_component_count": 424,
+    "generated_wave_count": 104,
+    "initial_aircraft_state_counts": {
+      "available": 9,
+      "flying": 0,
+      "maintenance": 0
+    },
+    "operations_phases_enabled": true,
+    "operations_policy": "daily-v1",
+    "phase_activity_counts": {
+      "postflight": 1,
+      "preflight": 1,
+      "relaunch": 1
+    },
+    "phase_job_counts": {
+      "postflight": 0,
+      "preflight": 14,
+      "relaunch": 0
+    },
+    "plan_fingerprint_hash": null,
+    "plan_hash": null,
+    "project_hash": "74d8343652b6942234d6fd26856f3693e774a8598a37682250ede0447ba7567c",
+    "project_version_hash": "80fa8d5508e5d451b9200dcfe6a7923b4ac52f7466063f9483b14645fae26428",
+    "repository_initialized": false,
+    "runtime_settings": {
+      "parallelCores": 4,
+      "samples": 4,
+      "seed": 20260621
+    },
+    "scenario_days": 43.0,
+    "scenario_hash": "779cdab3eea5173a70dbec4353acbf70165cb6a844bff4f473bb1789ab5707f9",
+    "scenario_version_hash": "a95eb5257e5dae0dfbe6be2743bc40ddf8e0bd995fdcd39d004e995559108bf3",
+    "schema": "issue-376-readonly-input-summary-v1",
+    "simulation_executed": false,
+    "sqlite_mode": "ro/query_only",
+    "support_activity_count": 13
+  }
 }
