@@ -290,9 +290,11 @@ def create_backend_server(
                 and len(parts) == 5
                 and parts[0] == "projects"
                 and parts[2] == "experiment-plans"
-                and parts[4] == "freeze"
+                and parts[4] in {"freeze", "unfreeze"}
             ):
-                self._require_user()
+                actor = self._require_user()
+                if parts[4] == "unfreeze":
+                    return api.unfreeze_experiment_plan(parts[1], parts[3], actor_user_id=actor["user_id"])
                 return api.freeze_experiment_plan(parts[1], parts[3])
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
@@ -336,13 +338,13 @@ def create_backend_server(
             if self.command == "GET" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 return api.list_experiment_plans(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "experiment-plans":
-                self._require_user()
-                return api.create_experiment_plan(parts[1], body.get("config", {}))
+                actor = self._require_user()
+                return api.create_experiment_plan(parts[1], body.get("config", {}), actor_user_id=actor["user_id"])
             if self.command == "PUT" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 self._require_user()
                 return api.update_experiment_plan(parts[1], parts[3], body.get("config", {}))
             if self.command == "DELETE" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "experiment-plans":
-                actor = self._require_user({"系统管理员", "数据管理员"})
+                actor = self._require_user()
                 return api.delete_experiment_plan(parts[1], parts[3], actor_user_id=actor["user_id"])
             if self.command == "POST" and route == "/mesa-analysis-runs":
                 self._require_user()

@@ -101,3 +101,18 @@ test("visualization request uses draft or frozen identity and session invalidati
   assert.equal(shouldInvalidateVisualizationSession("frameSampleEverySteps"), true);
   assert.equal(shouldInvalidateVisualizationSession("playbackSpeed"), false);
 });
+
+// Display names must not become identifiers when plans share a name.
+test("frozen plan labels contain only the saved name while selection keeps distinct IDs", () => {
+  const options = buildRunContextOptions({
+    projectId: "project-ui",
+    projectName: "项目名称",
+    module: "任务可靠度分析",
+    plans: [frozenPlan, { ...frozenPlan, experiment_plan_id: "plan-frozen-copy" }]
+  }).filter((option) => option.kind === "experiment-plan");
+
+  assert.deepEqual(options.map((option) => option.name), ["冻结方案", "冻结方案"]);
+  assert.deepEqual(options.map((option) => buildBackendRunContext(option).experimentPlanId), [
+    "plan-frozen", "plan-frozen-copy"
+  ]);
+});

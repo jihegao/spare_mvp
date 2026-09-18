@@ -1764,10 +1764,38 @@ test("periodic task editor uses named week month and year profiles without total
     assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 4 周已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置周剖面<\/option>/g) || []).length, 3);
     await reopenedRuntime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
-    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周/);
+    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周 · 有效/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置月剖面<\/option>/g) || []).length, 11);
   } finally {
     reopenedRuntime.restore();
+  }
+});
+
+test("year profile status accepts any configured month while preserving invalid-reference errors", async () => {
+  for (const configured of [0, 1, 12, "missing"]) {
+    const monthProfileIds = Array(12).fill("");
+    if (configured === "missing") monthProfileIds[0] = "missing-month";
+    else monthProfileIds.fill("month-status", 0, configured);
+    const runtime = await setupRuntimeApp({
+      hash: "feature=spare-planning-periodic-task",
+      projectJson: createRuntimeProjectJson({ missionProfile: {
+        periodicTasks: [{ id: "week-status", name: "week", compositeTasks: [] }],
+        periodicProfileLists: {
+          week: [{ id: "week-status", name: "week" }],
+          month: [{ id: "month-status", name: "month", weekProfileIds: ["week-status", "", "", ""] }],
+          year: [{ id: "year-status", name: "year", monthProfileIds }]
+        }
+      } })
+    });
+    try {
+      await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+      if (configured === "missing") {
+        assert.match(runtime.appNode.innerHTML, /年剖面引用不存在的月剖面 missing-month/);
+        assert.match(runtime.appNode.innerHTML, /0 \/ 12 月 · 0 \/ 52 周 · 待完善/);
+      } else {
+        assert.match(runtime.appNode.innerHTML, new RegExp(`${configured} / 12 月 · ${configured} / 52 周 · ${configured ? "有效" : "待完善"}`));
+      }
+    } finally { runtime.restore(); }
   }
 });
 
@@ -3337,6 +3365,42 @@ test("project list rename persists and survives creating another project from th
   }
 });
 
+test("equipment pagination renders twenty rows, retains original edit indexes and exports every row", async () => {
+  const components = Array.from({ length: 41 }, (_, index) => ({
+    id: `paged-part-${index}`, name: `分页组件${index}`, aircraftModel: "J-15",
+    parentId: "aircraft-root", productType: "LRU", quantity: 1
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-equipment-system",
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 }, components
+    })
+  });
+  const tableHtml = () => runtime.appNode.innerHTML.split('<table class="equipment-system-table">')[1].split('</table>')[0];
+  try {
+    await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页 · 共 42 条/);
+    assert.equal((tableHtml().split('<tbody>')[1].match(/<tr/g) || []).length, 20);
+    assert.match(tableHtml(), /data-path="components\.18\.name"/);
+    assert.doesNotMatch(tableHtml(), /data-path="components\.19\.name"/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "equipment-system", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 3 页/);
+    assert.match(tableHtml(), /data-path="components\.19\.name"/);
+    assert.doesNotMatch(tableHtml(), /data-path="components\.0\.name"/);
+    await runtime.change("[data-path]", { path: "components.19.name" }, { value: "改名第20组件" });
+    await runtime.click("[data-equipment-export-data]");
+    const csv = await runtime.downloads[0].blob.text();
+    assert.match(csv, /改名第20组件/);
+    for (let index = 0; index < 41; index += 1) assert.ok(csv.includes(`paged-part-${index},`));
+    await runtime.click("[data-pagination-key]", { paginationKey: "equipment-system", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 3 \/ 3 页/);
+    assert.equal((tableHtml().split('<tbody>')[1].match(/<tr/g) || []).length, 2);
+    await runtime.input("[data-equipment-search]", {}, { value: "no-match-pagination-context" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+    assert.match(tableHtml(), /data-path="components\.0\.name"/);
+  } finally { runtime.restore(); }
+});
+
 test("equipment aircraft-list selection renders whole aircraft rows and descendants", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -3395,7 +3459,7 @@ test("equipment parent node selector uses Chinese names while retaining parent I
 
     const equipmentHtml = runtime.appNode.innerHTML;
     const treePanel = equipmentHtml.slice(
-      equipmentHtml.indexOf('<aside class="tree-container">'),
+      equipmentHtml.indexOf('<aside class="tree-container equipment-modeling-tree"'),
       equipmentHtml.indexOf('class="detail-panel equipment-system-table-panel"')
     );
     const rightPanel = equipmentHtml.slice(equipmentHtml.indexOf("equipment-system-table-panel"));
@@ -6484,6 +6548,31 @@ test("experiment plan row selection is interactive for template-created projects
   }
 });
 
+test("opening an experiment branch copies configuration without running simulations", () => {
+  const appSource = fs.readFileSync(new URL("../front/app.js", import.meta.url), "utf8");
+  const branchSource = appSource.slice(
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject()"),
+    appSource.indexOf("function renderCollapsibleTree(")
+  );
+  const source = { components: [{ id: "component-one", quantity: 2 }] };
+  const openBranch = new Function("scenario", "updatePreviewResultsThroughApiClient", `
+    let experimentPlanDraft, experimentPlanBranchActive = false;
+    const selectedFeatureId = "plan-management", experimentPlanManagementMode = "editor";
+    const getFeaturePageById = () => ({ component: "experiment-plan-management" });
+    const cloneScenario = structuredClone;
+    const ensureMonteCarloSweepDefaults = () => {};
+    const ensureExperimentPlanDraftDefaults = () => {};
+    ${branchSource}
+    createExperimentPlanBranchFromCurrentProject();
+    return { draft: experimentPlanDraft, active: experimentPlanBranchActive };
+  `);
+  const result = openBranch(source, () => assert.fail("opening a plan must not run preview simulations"));
+  assert.equal(result.active, true);
+  assert.deepEqual(result.draft, source);
+  result.draft.components[0].quantity = 99;
+  assert.equal(source.components[0].quantity, 2);
+});
+
 test("experiment plan add opens an editable plan branch", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-management" });
 
@@ -7483,6 +7572,28 @@ test("run context defaults to current Project and excludes unsaved or invalid ex
   } finally {
     runtime.restore();
   }
+});
+
+test("restored ordinary user can delete owned plans but not other or unowned plans", async () => {
+  const projectJson = createRuntimeProjectJson();
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    sessionUser: { user_id: "user-basic", username: "user", role: "普通用户" },
+    projectJson,
+    experimentPlans: [
+      { experiment_plan_id: "own-plan", created_by: "user-basic", runs: [{ run_id: "completed-run", status: "succeeded" }] },
+      { experiment_plan_id: "other-plan", created_by: "user-data" },
+      { experiment_plan_id: "legacy-plan" }
+    ].map((plan) => ({ ...plan, status: "frozen", config: { name: plan.experiment_plan_id, projectJson } }))
+  });
+  try {
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-delete="own-plan"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-delete="(?:other|legacy)-plan"/);
+    for (const id of ["own-plan", "other-plan", "legacy-plan"]) {
+      assert.ok(runtime.appNode.innerHTML.includes(`data-experiment-plan-unfreeze="${id}"`));
+    }
+  } finally { runtime.restore(); }
 });
 
 test("experiment plan list selection editing and saving do not change the run context", async () => {

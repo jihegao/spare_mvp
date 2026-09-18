@@ -1,4 +1,6 @@
 import "./browser-compat.mjs";
+import { createPaginationState, renderPagination } from "./pagination.mjs";
+const tablePagination = createPaginationState();
 import { ANALYSIS_SUITE_TYPES, analysisSuiteRows } from "./analysis-suite.mjs";
 
 import {
@@ -848,6 +850,7 @@ let periodicProfileRenameState = null;
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let equipmentSearchQuery = "";
+let equipmentTreeWidth = 300;
 let equipmentProductEditorComponentId = "";
 let equipmentProductQuery = "";
 let equipmentProductActiveOptionIndex = -1;
@@ -1068,7 +1071,48 @@ render();
 bindEvents();
 restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi());
 
+function bindEquipmentTreeResize() {
+  let drag = null;
+  const applyWidth = (handle, width) => {
+    const layout = handle.closest(".equipment-modeling-layout");
+    if (!layout) return;
+    // CSS owns the responsive bounds. Read the rendered width so keyboard and
+    // pointer updates cannot accumulate invisible width beyond the current cap.
+    layout.style.setProperty("--equipment-tree-width", "900px");
+    const maximum = handle.parentElement.getBoundingClientRect().width;
+    layout.style.setProperty("--equipment-tree-width", `${width}px`);
+    equipmentTreeWidth = Math.round(handle.parentElement.getBoundingClientRect().width);
+    layout.style.setProperty("--equipment-tree-width", `${equipmentTreeWidth}px`);
+    handle.setAttribute("aria-valuenow", String(equipmentTreeWidth));
+    handle.setAttribute("aria-valuemax", String(maximum));
+  };
+  app.addEventListener("pointerdown", (event) => {
+    const handle = event.target.closest("[data-equipment-tree-resize]");
+    if (!handle || event.button !== 0) return;
+    event.preventDefault();
+    drag = { handle, pointerId: event.pointerId, startX: event.clientX, width: handle.parentElement.getBoundingClientRect().width };
+    handle.setPointerCapture(event.pointerId);
+  });
+  app.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    applyWidth(drag.handle, drag.width + event.clientX - drag.startX);
+  });
+  const stopDrag = () => { drag = null; };
+  app.addEventListener("pointerup", stopDrag);
+  app.addEventListener("pointercancel", stopDrag);
+  app.addEventListener("lostpointercapture", stopDrag);
+  app.addEventListener("keydown", (event) => {
+    const handle = event.target.closest("[data-equipment-tree-resize]");
+    if (!handle || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const width = event.key === "Home" ? 300 : event.key === "End" ? 900
+      : handle.parentElement.getBoundingClientRect().width + (event.key === "ArrowRight" ? 20 : -20);
+    applyWidth(handle, width);
+  });
+}
+
 function bindEvents() {
+  bindEquipmentTreeResize();
   window.addEventListener("hashchange", () => {
     const previousPage = getFeaturePageById(selectedFeatureId);
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
@@ -1090,6 +1134,13 @@ function bindEvents() {
   });
 
   app.addEventListener("click", (event) => {
+    const paginationButton = event.target.closest("[data-pagination-key]");
+    if (paginationButton) {
+      tablePagination.move(paginationButton.dataset.paginationKey, Number(paginationButton.dataset.paginationDelta));
+      render();
+      return;
+    }
+
     const clickedTreeToggleIcon = event.target.closest(".tree-node-toggle");
     if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CLICK_SELECTORS)) {
       event.preventDefault?.();
@@ -2262,6 +2313,12 @@ function bindEvents() {
       selectedFeatureId = getPlanListFeatureId(page.module);
       location.hash = workbenchHash(selectedFeatureId);
       render();
+      return;
+    }
+
+    const experimentPlanUnfreezeButton = event.target.closest("[data-experiment-plan-unfreeze]");
+    if (experimentPlanUnfreezeButton) {
+      unfreezeExperimentPlanFromList(experimentPlanUnfreezeButton.dataset.experimentPlanUnfreeze || "").finally(() => render());
       return;
     }
 
@@ -3848,7 +3905,7 @@ function createExperimentPlanBranchFromCurrentProject() {
   ensureMonteCarloSweepDefaults(experimentPlanDraft);
   ensureExperimentPlanDraftDefaults(experimentPlanDraft);
   experimentPlanBranchActive = true;
-  updatePreviewResultsThroughApiClient(experimentPlanDraft);
+  // Opening this configuration editor does not consume preview simulation results.
 }
 
 function renderCollapsibleTree(nodes, options = {}) {
@@ -6283,13 +6340,13 @@ function renderPeriodicTaskModeling(page) {
   `;
   const yearMonths = selectedProfile?.monthProfileIds || [];
   const selectedYearIndex = Math.max(0, profiles.year.findIndex((item) => item.id === selectedProfile?.id));
-  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => Boolean(monthProfileId)).length;
+  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => profiles.month.some((month) => month.id === monthProfileId)).length;
   const yearTotalWeeks = yearMonths.reduce((sum, monthProfileId) => {
     const monthProfile = profiles.month.find((item) => item.id === monthProfileId);
     return sum + (monthProfile?.weekProfileIds?.filter((weekProfileId) => Boolean(weekProfileId)).length || 0);
   }, 0);
   const yearEditor = `
-    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "有效" : "待完善"}</span>` : ""}</div>
+    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount > 0 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount > 0 ? "有效" : "待完善"}</span>` : ""}</div>
     ${selectedProfile ? `<div class="toolbar-row periodic-year-actions"><button type="button" data-periodic-year-action="duplicate" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">复制为下一年</button><button type="button" data-periodic-year-action="up" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">上移一年</button><button type="button" data-periodic-year-action="down" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">下移一年</button></div>` : ""}
     ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}"><option value="" ${yearMonths[index] ? "" : "selected"}>未配置月剖面</option>${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
   `;
@@ -6803,8 +6860,8 @@ function renderEquipmentModeling(page) {
     <div class="section-head section-context">
       <span>装备结构树 / 装备系统建模表</span>
     </div>
-    <div class="organization-layout equipment-layout">
-      <aside class="tree-container">
+    <div class="organization-layout equipment-layout equipment-modeling-layout" style="--equipment-tree-width: ${equipmentTreeWidth}px">
+      <aside class="tree-container equipment-modeling-tree" id="equipment-modeling-tree">
         <div class="tree-toolbar equipment-tree-toolbar">
           <h4>装备结构树</h4>
           <div class="equipment-tree-actions">
@@ -6823,6 +6880,7 @@ function renderEquipmentModeling(page) {
         </section>
         <label class="equipment-tree-search">搜索名称<input data-equipment-search value="${htmlEscape(equipmentSearchQuery)}" placeholder="输入系统或组件名称"></label>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
+        <div class="equipment-tree-resize" data-equipment-tree-resize role="separator" tabindex="0" aria-label="调整装备树宽度" aria-orientation="vertical" aria-controls="equipment-modeling-tree" aria-valuemin="300" aria-valuemax="900" aria-valuenow="${equipmentTreeWidth}"></div>
       </aside>
       <section class="detail-panel equipment-system-table-panel">
         <div class="detail-card">
@@ -7516,6 +7574,8 @@ function renderEquipmentSystemTable(selectedState, productsById) {
   const aircraftRows = selectedState.kind === "aircraft-list"
     ? wholeMachineModels().map((model) => renderEquipmentAircraftTableRow(model, { editable: false }))
     : (selectedState.kind === "aircraft" ? [renderEquipmentAircraftTableRow(selectedState.aircraftModel)] : []);
+  const allRows = [...aircraftRows, ...rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById))];
+  const page = tablePagination.slice("equipment-system", allRows, JSON.stringify([currentBackendProjectId(), selectedEquipmentNodeKey, equipmentSearchQuery]));
   return `
     <div class="table-wrap equipment-system-table-wrap">
       <table class="equipment-system-table">
@@ -7534,11 +7594,11 @@ function renderEquipmentSystemTable(selectedState, productsById) {
           </tr>
         </thead>
         <tbody>
-          ${aircraftRows.join("")}
-          ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById)).join("")}
+          ${page.rows.join("")}
         </tbody>
       </table>
     </div>
+    ${renderPagination("equipment-system", page)}
   `;
 }
 
@@ -12192,11 +12252,11 @@ function renderExperimentPlanList(page) {
               <td>${htmlEscape(plan.run_count ?? 0)}</td>
               <td><span class="badge">${htmlEscape(plan.status)}</span></td>
               <td class="table-action-cell">
-                ${String(plan.status || "").toLowerCase() === "frozen"
-                  ? `<span class="badge">已冻结，不可编辑</span>`
+                ${String(plan.plan_status || plan.status || "").toLowerCase() === "frozen"
+                  ? `<span class="badge">已冻结，不可编辑</span><button type="button" class="btn-secondary" data-experiment-plan-unfreeze="${htmlEscape(plan.experiment_plan_id)}">取消冻结实验</button>`
                   : `<button type="button" class="inline-action" data-experiment-plan-edit="${htmlEscape(plan.experiment_plan_id)}" data-experiment-plan-name="${htmlEscape(plan.name)}">编辑</button>
                     <button type="button" class="btn-secondary" data-experiment-plan-freeze="${htmlEscape(plan.experiment_plan_id)}">冻结</button>`}
-                <button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>
+                ${canDeleteExperimentPlan(plan) ? `<button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>` : ""}
               </td>
             </tr>
           `).join("") : `<tr><td colspan="8">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
@@ -12212,6 +12272,8 @@ function experimentPlanRowFromBackend(plan, page) {
   const latestRun = Array.isArray(plan.runs) && plan.runs.length ? plan.runs[0] : null;
   return {
     experiment_plan_id: plan.experiment_plan_id || "",
+    created_by: plan.created_by || null,
+    plan_status: plan.status || "draft",
     selectionKey: experimentPlanSelectionKey(plan),
     name: config.name || projectJson.experiment?.name || plan.experiment_plan_id || "未命名方案",
     module: page.module,
@@ -13037,6 +13099,7 @@ async function handleLogin() {
     backendAuthToken = session.session.token;
     localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
     currentUser = {
+      user_id: session.user.user_id,
       username: session.user.username,
       role: session.user.role
     };
@@ -13063,6 +13126,7 @@ async function restoreStoredBackendSessionOnBoot() {
     const session = await backendApi.getSession();
     const user = session?.user || {};
     currentUser = {
+      user_id: user.user_id,
       username: user.username || currentUser.username,
       role: user.role || currentUser.role
     };
@@ -13661,7 +13725,7 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     experimentPlanListStatus = "当前方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
     return;
   }
-  if (!canManageM7Lifecycle()) {
+  if (!canDeleteExperimentPlan(backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId))) {
     experimentPlanListStatus = `当前角色 ${currentUser.role || "未知"} 无权删除仿真实验方案`;
     return;
   }
@@ -13685,6 +13749,24 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     await refreshM7RunArtifactPanel();
   } catch (err) {
     experimentPlanListStatus = `删除方案失败：${formatBackendError(err)}`;
+  }
+}
+
+function canDeleteExperimentPlan(plan) {
+  return canManageM7Lifecycle() || Boolean(plan?.created_by && plan.created_by === currentUser?.user_id);
+}
+
+async function unfreezeExperimentPlanFromList(experimentPlanId) {
+  if (!experimentPlanId) return;
+  try {
+    await backendApi.unfreezeExperimentPlan(currentBackendProjectId(), experimentPlanId);
+    experimentPlanListStatus = `方案 ${experimentPlanId} 已取消冻结。`;
+    await refreshExperimentPlanList(currentBackendProjectId(), { force: true });
+    if (experimentPlan?.experiment_plan_id === experimentPlanId) {
+      experimentPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId) || null;
+    }
+  } catch (err) {
+    experimentPlanListStatus = `取消冻结失败：${formatBackendError(err)}`;
   }
 }
 
