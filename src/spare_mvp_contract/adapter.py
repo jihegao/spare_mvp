@@ -1708,6 +1708,19 @@ class SimulationAdapter:
         if reference:
             compatible = [row for row in compatible if row.get("activityName") == reference]
         groups = {str(row.get("planGroupId") or "") for row in compatible} - {""}
+        if not reference:
+            # An unrestricted stage alone cannot make its whole group eligible.
+            # Explicit references retain the phase-specific validation below.
+            groups = {
+                group for group in groups
+                if all(
+                    len(stage := [row for row in activities
+                                  if row.get("planGroupId") == group and row.get("planType") == phase]) == 1
+                    and (not (stage_models := aircraft_type_tokens(stage[0].get("aircraftModel")))
+                         or models <= stage_models)
+                    for phase in phases
+                )
+            }
         if len(groups) != 1:
             raise ValueError("task must identify one compatible operations support plan group")
         group = next(iter(groups))

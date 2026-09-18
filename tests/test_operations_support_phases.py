@@ -267,6 +267,30 @@ class OperationsSupportPhasesTest(unittest.TestCase):
         model.run()
         self.assertEqual(model.completed_sorties, 4)
 
+    def test_implicit_group_requires_all_stages_to_be_compatible(self):
+        project = self.project()
+        project["basicMissions"][0]["supportActivityName"] = ""
+        alternate = copy.deepcopy(project["supportActivities"])
+        for stage in alternate:
+            stage["id"] += "-j35"
+            stage["activityName"] += " J35"
+            stage["planGroupId"] = "ops-j35"
+            stage["aircraftModel"] = "J-35" if stage["planType"] == "直接准备方案" else ""
+            stage["activityCodes"] = []
+            stage["predecessors"] = {}
+        project["supportActivities"].extend(alternate)
+        model = self.model(project)
+        self.assertEqual({mission.operations_plan_group_id for mission in model.missions}, {"ops"})
+        model.run()
+        self.assertEqual(model.completed_sorties, 2)
+        # Naming an unrestricted stage of that incompatible group still reports
+        # the incompatible phase, rather than falling back to a different group.
+        project["basicMissions"][0]["supportActivityName"] = alternate[-1]["activityName"]
+        clean = ProjectJsonExporter(repo_root=ROOT).export(project)
+        result = SimulationAdapter(ROOT).compile_scenario_with_gate(clean)
+        issue = next(issue for issue in result["issues"] if issue["code"] == "invalid_operations_plan_reference")
+        self.assertIn("all operations plan phases", issue["message"])
+
     def test_multitype_task_requires_every_phase_to_cover_every_selectable_model(self):
         project = self.project()
         project["missionProfile"]["compositeTasks"][0]["taskItems"][0]["equipmentType"] = "J-15 / J-35"
