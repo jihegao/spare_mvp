@@ -12481,10 +12481,10 @@ function syncSelectedRunContextAfterPlanRefresh() {
 
 function resetMissingRunContextAfterPlanRefresh() {
   if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) return;
-  const selectedPlanStillExists = backendExperimentPlans.some((plan) => (
-    String(plan?.experiment_plan_id || "").trim() === selectedRunContextKey
+  const selectedPlanStillRunnable = experimentPlanContextOptions().some((option) => (
+    option.kind === "experiment-plan" && option.key === selectedRunContextKey
   ));
-  if (!selectedPlanStillExists) resetRunContextToCurrentProject();
+  if (!selectedPlanStillRunnable) resetRunContextToCurrentProject();
 }
 
 function selectCurrentExperimentPlan(planKey) {
@@ -13704,10 +13704,13 @@ function canDeleteExperimentPlan(plan) {
 
 async function unfreezeExperimentPlanFromList(experimentPlanId) {
   if (!experimentPlanId) return;
+  const projectId = currentBackendProjectId();
   try {
-    await backendApi.unfreezeExperimentPlan(currentBackendProjectId(), experimentPlanId);
+    await backendApi.unfreezeExperimentPlan(projectId, experimentPlanId);
+    if (currentBackendProjectId() !== projectId) return;
+    if (selectedRunContextKey === experimentPlanId) resetRunContextToCurrentProject();
     experimentPlanListStatus = `方案 ${experimentPlanId} 已取消冻结。`;
-    await refreshExperimentPlanList(currentBackendProjectId(), { force: true });
+    await refreshExperimentPlanList(projectId, { force: true });
     if (experimentPlan?.experiment_plan_id === experimentPlanId) {
       experimentPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId) || null;
     }

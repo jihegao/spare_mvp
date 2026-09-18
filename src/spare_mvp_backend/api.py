@@ -1089,13 +1089,13 @@ class BackendApi:
         actor_user_id: str | None = None,
     ) -> dict[str, Any]:
         actor_user_id = _require_m7_actor(actor_user_id)
-        plan = self.repository.get_experiment_plan(experiment_plan_id)
-        allowed_roles = {"系统管理员", "数据管理员"}
-        if plan.get("created_by") == actor_user_id:
-            allowed_roles.add("普通用户")
-        self._require_role(actor_user_id, allowed_roles, action="experiment_plans.delete",
-                           resource_type="experiment_plan", resource_id=experiment_plan_id)
         try:
+            plan = self.repository.get_experiment_plan(experiment_plan_id)
+            allowed_roles = {"系统管理员", "数据管理员"}
+            if plan.get("created_by") == actor_user_id:
+                allowed_roles.add("普通用户")
+            self._require_role(actor_user_id, allowed_roles, action="experiment_plans.delete",
+                               resource_type="experiment_plan", resource_id=experiment_plan_id)
             with self.visualization_session_lifecycle_lock:
                 deleted = self.run_service.delete_experiment_plan(
                     project_id,

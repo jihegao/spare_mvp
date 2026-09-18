@@ -7402,6 +7402,65 @@ test("an in-flight Monte Carlo response cannot restore results from an updated f
   }
 });
 
+test("unfreezing the selected plan clears completed analysis and persists current-project context", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-unfreeze", name: "待取消方案", projectJson: createRuntimeProjectJson(), samples: 7, seed: 707 })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis", experimentPlans,
+    liteMesaAnalysisResponseOverrides: { sample_count: 7 }
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-unfreeze" });
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    assert.match(runtime.appNode.innerHTML, /分析结果已生成：7 个样本/);
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    await runtime.click("[data-lite-mesa-action='run']");
+    assert.match(runtime.appNode.innerHTML, /总样本/);
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-unfreeze]", { experimentPlanUnfreeze: "plan-unfreeze" });
+    assert.equal(experimentPlans[0].status, "draft");
+    assert.equal(JSON.parse(runtime.storage.get("spare-mvp:selectedRunContextByProject"))["project-runtime"], "current-project:project-runtime");
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /冻结方案参数只读/);
+    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /分析结果已生成：7 个样本/);
+  } finally { runtime.restore(); }
+});
+
+test("late frozen analysis responses cannot reappear after unfreeze", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-unfreeze-flight", name: "并发取消方案", projectJson: createRuntimeProjectJson(), samples: 7 })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail", experimentPlans, liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-unfreeze-flight" });
+    await runtime.click("[data-lite-mesa-action='run']");
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-unfreeze]", { experimentPlanUnfreeze: "plan-unfreeze-flight" });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    await runtime.flush();
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本/);
+  } finally { runtime.restore(); }
+});
+
+test("refreshing a selected plan that became draft resets its runnable context", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-remote-unfreeze", name: "远程取消方案", projectJson: createRuntimeProjectJson(), samples: 7 })];
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-monte-carlo-experiment-detail", experimentPlans });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-remote-unfreeze" });
+    experimentPlans[0].status = "draft";
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", {});
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.equal(JSON.parse(runtime.storage.get("spare-mvp:selectedRunContextByProject"))["project-runtime"], "current-project:project-runtime");
+  } finally { runtime.restore(); }
+});
+
 test("frozen run context survives a cold workbench restore", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
@@ -8165,6 +8224,17 @@ async function setupRuntimeApp({
         experiment_plan_id: "plan-runtime-created",
         config: body.config || {}
       });
+    }
+    const unfreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/unfreeze$/);
+    if (unfreezeMatch && method === "POST") {
+      const id = decodeURIComponent(unfreezeMatch[2]);
+      const plan = experimentPlans.find((item) => item.experiment_plan_id === id);
+      if (plan) {
+        plan.status = "draft";
+        delete plan.canonical_fingerprint;
+        delete plan.frozen_at;
+      }
+      return jsonResponse(plan || { experiment_plan_id: id, status: "draft" });
     }
     const experimentPlanFreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/freeze$/);
     if (experimentPlanFreezeMatch && method === "POST") {
