@@ -49,7 +49,7 @@ if (-not $OfflineSource) {
     if ($LASTEXITCODE -ne 0) { throw 'Locked wheel download failed.' }
 }
 # Installing from this point never consults an index or developer cache.
-& $python -I -B -m pip --isolated install --no-warn-script-location --disable-pip-version-check --no-cache-dir --no-index --only-binary=:all: --require-hashes --find-links $wheels -r $lockFile
+& $python -I -B -m pip --isolated install --no-compile --no-warn-script-location --disable-pip-version-check --no-cache-dir --no-index --only-binary=:all: --require-hashes --find-links $wheels -r $lockFile
 if ($LASTEXITCODE -ne 0) { throw 'Offline dependency installation failed.' }
 & $python -I -B -m pip --isolated check
 if ($LASTEXITCODE -ne 0) { throw 'Installed dependency closure is inconsistent.' }
@@ -59,6 +59,11 @@ Copy-Item -LiteralPath $specFile -Destination (Join-Path $root 'windows-runtime.
 Copy-Item -LiteralPath $lockFile -Destination (Join-Path $root 'requirements-windows.lock')
 & $python -I -B -m pip --isolated list --format=json --disable-pip-version-check | Set-Content -LiteralPath (Join-Path $root 'installed-distributions.json') -Encoding UTF8
 if ($LASTEXITCODE -ne 0) { throw 'Dependency inventory failed.' }
-& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $root
+# Only this freshly extracted and installed runtime establishes a baseline.
+Get-ChildItem -LiteralPath $runtime -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
+Get-ChildItem -LiteralPath $runtime -Recurse -File | Where-Object { $_.Extension -in @('.pyc', '.pyo') } | Remove-Item -Force
+& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') finalize-runtime --root $root
+if ($LASTEXITCODE -ne 0) { throw 'Prepared runtime manifest creation failed.' }
+& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $root --runtime-source $runtime
 if ($LASTEXITCODE -ne 0) { throw 'Prepared bundle verification failed.' }
 Write-Output "Prepared isolated Windows runtime and offline wheelhouse: $root"

@@ -116,6 +116,8 @@ def seal(root: Path) -> None:
     for name, expected in source.get('files', {}).items():
         if digest(root / package_destination(name)) != expected:
             raise ValueError(f'Staged source differs from candidate: {name}')
+    if (root / 'runtime').exists():
+        verify_runtime_manifest(root / 'dependencies', root / 'runtime')
     manifest = {'format_version': 1, 'source_commit': source['source_commit'],
                 'files': {name: digest(path) for name, path in immutable_files(root)}}
     (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
@@ -132,10 +134,12 @@ def verify(root: Path) -> None:
 
 
 
-def verify_runtime(bundle: Path) -> None:
+def verify_runtime_dependencies(bundle: Path, runtime_source: Path) -> None:
     spec = json.loads((bundle / 'windows-runtime.json').read_text(encoding='utf-8'))
     if sys.version.split()[0] != spec['version'] or sys.maxsize <= 2 ** 32 or sys.platform != 'win32':
         raise ValueError('Runtime interpreter does not match Windows x64 specification')
+    if Path(sys.executable).resolve() != (runtime_source / 'python.exe').resolve():
+        raise ValueError('Verifier interpreter differs from the requested RuntimeSource')
     expected = {}
     for line in (bundle / 'requirements-windows.lock').read_text(encoding='utf-8').splitlines():
         if not line or line.startswith('#'):
@@ -167,12 +171,74 @@ def verify_runtime(bundle: Path) -> None:
     print(f'Verified Windows runtime and {len(expected)} locked wheels')
 
 
+
+def runtime_file_hashes(runtime_source: Path) -> dict[str, str]:
+    if runtime_source.is_symlink() or not (runtime_source / 'python.exe').is_file():
+        raise ValueError('RuntimeSource must be a complete prepared runtime directory')
+    files = {}
+    for path in sorted(runtime_source.rglob('*')):
+        relative = path.relative_to(runtime_source)
+        if path.is_symlink():
+            raise ValueError(f'Runtime symlink is not allowed: {relative}')
+        if '__pycache__' in relative.parts or path.suffix.lower() in {'.pyc', '.pyo'}:
+            raise ValueError(f'Unexpected runtime bytecode: {relative}; prepare a fresh runtime')
+        if path.is_file():
+            files[relative.as_posix()] = digest(path)
+    return files
+
+
+def runtime_bindings(bundle: Path) -> dict:
+    spec = json.loads((bundle / 'windows-runtime.json').read_text(encoding='utf-8'))
+    return {
+        'format_version': 1,
+        'runtime_spec_sha256': digest(bundle / 'windows-runtime.json'),
+        'requirements_sha256': digest(bundle / 'requirements-windows.lock'),
+        'archive': spec['archive'],
+        'archive_sha256': digest(bundle / 'downloads' / spec['archive']),
+    }
+
+
+def verify_runtime_manifest(bundle: Path, runtime_source: Path) -> None:
+    manifest_path = bundle / 'runtime-manifest.json'
+    if not manifest_path.is_file():
+        raise ValueError('Missing runtime-manifest.json; prepare a fresh runtime from locked archive and wheels')
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    bindings = runtime_bindings(bundle)
+    if {key: manifest.get(key) for key in bindings} != bindings:
+        raise ValueError('Runtime manifest differs from archive or dependency lock')
+    actual = runtime_file_hashes(runtime_source)
+    if actual != manifest.get('files'):
+        expected = manifest.get('files') or {}
+        differing = sorted(name for name in actual.keys() | expected.keys() if actual.get(name) != expected.get(name))
+        raise ValueError(f'Runtime content differs from prepared manifest: {differing[:10]}')
+
+
+def finalize_prepared_runtime(bundle: Path) -> None:
+    """Called only after prepare has freshly extracted and installed the locked inputs."""
+    target = bundle / 'runtime-manifest.json'
+    if target.exists():
+        raise ValueError('Runtime manifest already exists; refusing to rebaseline a prepared runtime')
+    runtime_source = bundle / 'runtime'
+    verify_runtime_dependencies(bundle, runtime_source)
+    manifest = {**runtime_bindings(bundle), 'files': runtime_file_hashes(runtime_source)}
+    with target.open('x', encoding='utf-8') as stream:
+        stream.write(json.dumps(manifest, indent=2) + '\n')
+    verify_runtime_manifest(bundle, runtime_source)
+
+
+def verify_runtime(bundle: Path, runtime_source: Path | None = None) -> None:
+    runtime_source = runtime_source or bundle / 'runtime'
+    verify_runtime_manifest(bundle, runtime_source)
+    verify_runtime_dependencies(bundle, runtime_source)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['source-manifest', 'stage', 'seal', 'verify', 'verify-runtime'])
+    parser.add_argument('command', choices=['source-manifest', 'stage', 'seal', 'verify', 'verify-runtime', 'finalize-runtime'])
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--source-manifest', type=Path)
+    parser.add_argument('--runtime-source', type=Path)
     args = parser.parse_args()
     if args.command == 'source-manifest':
         args.root.write_text(json.dumps(source_manifest(args.repo), indent=2) + '\n', encoding='utf-8')
@@ -182,8 +248,10 @@ def main():
         stage(args.repo, args.root, manifest)
     elif args.command == 'seal':
         seal(args.root)
+    elif args.command == 'finalize-runtime':
+        finalize_prepared_runtime(args.root)
     elif args.command == 'verify-runtime':
-        verify_runtime(args.root)
+        verify_runtime(args.root, args.runtime_source)
     else:
         verify(args.root)
 

@@ -19,7 +19,7 @@ if (-not (Test-Path -LiteralPath $python)) { throw 'RuntimeSource must contain t
 if ($destinationPath.StartsWith($runtime + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Destination must be outside RuntimeSource.' }
 if (-not $DependencyBundle) { $DependencyBundle = Split-Path -Parent $runtime }
 $bundle = (Resolve-Path -LiteralPath $DependencyBundle).Path
-foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','wheelhouse','downloads')) {
+foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','runtime-manifest.json','wheelhouse','downloads')) {
     if (-not (Test-Path -LiteralPath (Join-Path $bundle $name))) { throw "Prepared dependency bundle is missing: $name" }
 }
 foreach ($name in @('windows-runtime.json','requirements-windows.lock')) {
@@ -27,19 +27,18 @@ foreach ($name in @('windows-runtime.json','requirements-windows.lock')) {
         throw "Dependency bundle does not match the reviewed lock: $name"
     }
 }
+& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $bundle --runtime-source $runtime
+if ($LASTEXITCODE -ne 0) { throw 'Runtime or wheelhouse differs from the reviewed lock.' }
 & $python -I -B -m pip --isolated check
 if ($LASTEXITCODE -ne 0) { throw 'Runtime dependencies failed pip check.' }
-& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $bundle
-if ($LASTEXITCODE -ne 0) { throw 'Runtime or wheelhouse differs from the reviewed lock.' }
 $sourceArguments = @()
 if ($SourceManifest) { $sourceArguments = @('--source-manifest', (Resolve-Path -LiteralPath $SourceManifest).Path) }
 & $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') stage --repo $repo --root $destinationPath @sourceArguments
 if ($LASTEXITCODE -ne 0) { throw 'Allowlisted application staging failed.' }
 Copy-Item -LiteralPath $runtime -Destination (Join-Path $destinationPath 'runtime') -Recurse
-# Bytecode and user caches are not part of the sealed runtime.
-Get-ChildItem -LiteralPath (Join-Path $destinationPath 'runtime') -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
+# Copy verified content unchanged; seal rechecks it against the prepared manifest.
 New-Item -ItemType Directory -Path (Join-Path $destinationPath 'dependencies') | Out-Null
-foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','wheelhouse','downloads')) {
+foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','runtime-manifest.json','wheelhouse','downloads')) {
     Copy-Item -LiteralPath (Join-Path $bundle $name) -Destination (Join-Path $destinationPath 'dependencies') -Recurse
 }
 $caseArguments = @()

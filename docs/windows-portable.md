@@ -18,7 +18,7 @@
 ./scripts/prepare-windows-runtime.ps1 -Destination 'D:\SPARE-offline-runtime' -OfflineSource 'D:\SPARE-dependencies'
 ```
 
-离线路径只解压本地 CPython 归档，通过 `pip --isolated --no-index --no-cache-dir --require-hashes` 安装本地 wheels，不调用公网下载分支；随后运行 `pip check`、核心依赖 import 和精确 distribution/wheel/归档校验。无需预装 Python、管理员权限或全局执行策略调整。PowerShell 如限制脚本，可用 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...`，只作用于这次进程。
+离线路径只解压本地 CPython 归档，通过 `pip --isolated --no-index --no-cache-dir --require-hashes` 安装本地 wheels，不调用公网下载分支；随后运行 `pip check`、核心依赖 import 和精确 distribution/wheel/归档校验。完成锁定安装和 import 验证后清理字节码，生成 `runtime-manifest.json`，记录完整 runtime 文件 SHA-256 并绑定 CPython 归档、runtime 规格和依赖锁。旧 bundle 缺少此清单时必须通过 `-OfflineSource` 从归档和 wheels 重新准备到新目录；不要对来源未知的已有 runtime 补写清单。无需预装 Python、管理员权限或全局执行策略调整。PowerShell 如限制脚本，可用 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...`，只作用于这次进程。
 
 依赖升级须在专用 Windows 环境重新解析完整依赖、生成每个 wheel 的哈希锁、审查差异，再重做离线安装和业务验收；不要直接把开发机 `pip freeze` 当成锁。
 
@@ -39,7 +39,7 @@ python scripts/portable-package.py source-manifest --root /tmp/spare-source-mani
 ./dist/SPARE/scripts/verify-portable-package.ps1 -PackageRoot './dist/SPARE'
 ```
 
-`-DependencyBundle` 默认取 runtime 的父目录；必须具有匹配受审锁的 wheels、CPython 归档、依赖版本清单。包包含应用、完整 runtime、wheelhouse/归档、启动停止脚本、说明、源码指纹及所有不可变文件的 SHA-256。`data/` 是可变运行状态，不参与后续静态完整性核对；验证脚本在启动前核对应用和 runtime 文件。
+`-DependencyBundle` 默认取 runtime 的父目录；必须具有匹配受审锁的 wheels、CPython 归档、依赖版本清单及 `runtime-manifest.json`。构建逐文件验证实际 `-RuntimeSource`，不能用 B bundle 的校验替代 A runtime 的内容检查；新增字节码、修改或缺少文件都会阻断。runtime 清单随包保留在 `dependencies/`，封包前再次核对复制后的 runtime。包包含应用、完整 runtime、wheelhouse/归档、启动停止脚本、说明、源码指纹及所有不可变文件的 SHA-256。`data/` 是可变运行状态，不参与后续静态完整性核对；验证脚本在启动前核对应用和 runtime 文件。
 
 默认发布包只使用受审 fixtures。既有 `-ProjectFile 'D:\private\project.json' -ExperimentConfig 'D:\private\experiment.json'` 保留给明确授权的本地案例包；通过现有 BackendApi / ContractRepository 初始化独立数据库，并非把原文件放进源码。Project 应先经过 `ProjectJsonExporter` clean 边界，实验配置单独保存。这类包含案例数据的本地包不能冒充默认公开基线。
 
