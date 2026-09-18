@@ -263,6 +263,9 @@ try {
         throw "Portable package is incomplete. Missing: $FrontendModuleTest"
     }
 
+    $env:PYTHONNOUSERSITE = '1'
+    $env:PYTHONDONTWRITEBYTECODE = '1'
+    $env:NO_PROXY = '127.0.0.1,localhost'
     $env:PYTHONHOME = $RuntimeRoot
     $env:PYTHONPATH = $ApplicationRoot
     $env:PATH = "$RuntimeRoot;$RuntimeRoot\Scripts;$env:PATH"

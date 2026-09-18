@@ -23,9 +23,9 @@ function Stop-RecordedPortableProcess {
             try {
                 $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop).CommandLine
             } catch {
-                # Fall back to the package-owned PID file when WMI is unavailable.
+                # Unknown ownership must never terminate a process from another environment.
             }
-            if ([string]::IsNullOrWhiteSpace($commandLine) -or $commandLine.Contains($PackageRoot)) {
+            if (-not [string]::IsNullOrWhiteSpace($commandLine) -and $commandLine.Contains($PackageRoot)) {
                 Stop-Process -Id $pidValue -Force
                 Write-Output "Stopped $Name service."
             } else {
