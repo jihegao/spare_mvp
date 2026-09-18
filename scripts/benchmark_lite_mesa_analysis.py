@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
+import importlib.metadata
 import sqlite3
 import sys
 import tempfile
@@ -70,6 +72,10 @@ def main() -> None:
                 json.dumps(
                     {
                         "project": project_label,
+                        "project_sha256": hashlib.sha256(project_path.read_bytes()).hexdigest(),
+                        "python_version": sys.version.split()[0],
+                        "mesa_version": importlib.metadata.version("mesa"),
+                        "throughput_samples_per_second": result.get("sample_count", 0) / elapsed_seconds,
                         "project_id": project.get("project_id"),
                         "analysis_type": args.analysis_type,
                         "requested_samples": args.samples,

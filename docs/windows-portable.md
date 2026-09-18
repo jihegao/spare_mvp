@@ -49,4 +49,4 @@ python scripts/portable-package.py source-manifest --root /tmp/spare-source-mani
 
 验证脚本先校验完整性及依赖闭包，再启动服务、校验健康端点、前端模块 MIME、Solara 静态资源并停止自己启动的实例。`data/evidence/startup-smoke.json` 明确记录 **仅启动验收**，不宣称业务完成或机器已经断网。
 
-正式验收须在无科学 Python 环境的干净断网 Windows/VM 上完成：安装、启动、登录、进入项目、建模保存、可视化推演推进、Monte Carlo、XLSX 导出。记录 Windows/Python 版本、候选 commit、包 manifest 哈希、断网证据、浏览器截图、MC 样本结果和下载文件；HTTP 200、仅 import 成功或联网主机的 `--no-index` 安装均不能替代完整验收。
+本轮正式验收在 4700-4 的 `C:\Users\user\Models\spare_mvp-acceptance-<时间戳>-<提交>` 新建隔离环境完成，使用独立 runtime、数据库、端口和浏览器 profile，验证包内进程无公网依赖。已有 Windows 主机上的隔离环境验收不等同于全新操作系统验收。流程包括：安装、启动、登录、进入项目、建模保存、可视化推演推进、Monte Carlo、XLSX 导出。记录 Windows/Python 版本、候选 commit、包 manifest 哈希、断网证据、浏览器截图、MC 样本结果和下载文件；HTTP 200、仅 import 成功或联网主机的 `--no-index` 安装均不能替代完整验收。
