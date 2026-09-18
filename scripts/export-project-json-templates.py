@@ -24,6 +24,14 @@ MINIMUM_PATH = EXPORT_DIR / "project-minimum-001.json"
 MINIMUM_SOURCE_PROJECT_ID = "project-carrier-day-night"
 MINIMUM_TEMPLATE_PROJECT_ID = "project-template-minimum-001"
 MINIMUM_TEMPLATE_SCENARIO_ID = "template-minimum-001"
+# Reviewed example scenario choices. Never infer a plan from aircraft type in the compiler.
+CASE_LARGE_OPERATIONS_BINDINGS = {
+    "basic-j16-task-0061": "J16使用保障基本保障活动",
+    "basic-j16-task-0063": "J16使用保障基本保障活动",
+    "basic-j16-task-0062": "J16使用保障基本保障活动",
+    "basic-j16-task-0064": "J16使用保障基本保障活动",
+    "basic-mission-5": "J16D使用保障基本保障活动",
+}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -31,7 +39,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _load_project(database_path: Path, project_id: str) -> dict[str, Any]:
-    connection = sqlite3.connect(database_path)
+    connection = sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro", uri=True)
     try:
         return ContractRepository(connection).get_project(project_id)
     finally:
@@ -87,11 +95,15 @@ def _canonicalize_support_activity_resource_refs(project: dict[str, Any]) -> Non
         ).strip()
 
 
-def build_templates(database_path: Path) -> dict[Path, dict[str, Any]]:
+def build_templates(database_path: Path | None = None) -> dict[Path, dict[str, Any]]:
     exporter = ProjectJsonExporter(target="aircraft_support_v1", repo_root=REPO_ROOT)
-    case_large = _template_project(_load_json(CASE_LARGE_PATH), exporter=exporter)
+    case_source = _load_json(CASE_LARGE_PATH)
+    basic_by_id = {mission["id"]: mission for mission in case_source["basicMissions"]}
+    for mission_id, activity_name in CASE_LARGE_OPERATIONS_BINDINGS.items():
+        basic_by_id[mission_id]["supportActivityName"] = activity_name
+    case_large = _template_project(case_source, exporter=exporter)
     minimum = _template_project(
-        _load_project(database_path, MINIMUM_SOURCE_PROJECT_ID),
+        _load_project(database_path, MINIMUM_SOURCE_PROJECT_ID) if database_path else _load_json(MINIMUM_PATH),
         exporter=exporter,
         template_project_id=MINIMUM_TEMPLATE_PROJECT_ID,
         template_scenario_id=MINIMUM_TEMPLATE_SCENARIO_ID,
@@ -106,16 +118,16 @@ def _serialized(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
-def write_templates(database_path: Path) -> None:
+def write_templates(database_path: Path | None = None) -> None:
     for path, payload in build_templates(database_path).items():
         path.write_text(_serialized(payload), encoding="utf-8")
 
 
-def template_drift(database_path: Path) -> list[str]:
+def template_drift(database_path: Path | None = None) -> list[str]:
     return [
         str(path.relative_to(REPO_ROOT))
         for path, expected in build_templates(database_path).items()
-        if not path.exists() or path.read_text(encoding="utf-8") != _serialized(expected)
+        if not path.exists() or _load_json(path) != expected
     ]
 
 
@@ -124,16 +136,16 @@ def main() -> int:
     parser.add_argument(
         "--database",
         type=Path,
-        default=REPO_ROOT / "runs" / "system-start" / "spare_mvp.sqlite3",
-        help="backend SQLite database containing the MINIMUM-001 source Project",
+        default=None,
+        help="optional explicit local SQLite source for MINIMUM-001; default uses reviewed JSON fixtures",
     )
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--write", action="store_true")
     action.add_argument("--check", action="store_true")
     args = parser.parse_args()
 
-    database_path = args.database.expanduser().resolve()
-    if not database_path.is_file():
+    database_path = args.database.expanduser().resolve() if args.database else None
+    if database_path is not None and not database_path.is_file():
         parser.error(f"database does not exist: {database_path}")
 
     if args.write:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import base64
+import importlib.util
+from unittest import mock
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -42,6 +45,34 @@ class ImportableProjectJsonTemplateTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.connection.close()
         self.tempdir.cleanup()
+
+    def test_fixture_regeneration_is_deterministic_without_runtime_database(self) -> None:
+        spec = importlib.util.spec_from_file_location("project_template_generator", REPO_ROOT / "scripts/export-project-json-templates.py")
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        with mock.patch.object(generator, "_load_project", side_effect=AssertionError("default generation must not read a runtime database")):
+            first = generator.build_templates()
+            self.assertEqual(first, generator.build_templates())
+            self.assertEqual(generator.template_drift(), [])
+        large = first[REPO_ROOT / "exports/project-case-large.json"]
+        names = {mission["id"]: mission.get("supportActivityName") for mission in large["basicMissions"]}
+        self.assertEqual(names, generator.CASE_LARGE_OPERATIONS_BINDINGS)
+        self.assertTrue(any(activity.get("activityName") == "J16保障方案A" for activity in large["supportActivities"]))
+
+    def test_default_excel_download_and_upload_keep_explicit_case_plan_bindings(self) -> None:
+        download = self.api.project_excel_template()
+        self.assertEqual(download["filename"], "Project标准模板-v1.xlsx")
+        preview = self.api.preview_project_xlsx({"content_base64": base64.b64encode(download["body"]).decode(), "file_name": download["filename"]})
+        self.assertTrue(preview["ok"], preview["errors"])
+        self.assertEqual(preview["compile_status"], "compiled")
+        gate = self.adapter.compile_scenario_with_gate(preview["project_json"], model_family="aircraft_support_v1")
+        inputs = gate["scenario"]["simulation_inputs"]
+        expected = {"J16": "j16-service-0103", "J16D": "j16-service-0104"}
+        for composite in inputs["mission_profile"]["composite_tasks"]:
+            for item in composite["taskItems"]:
+                self.assertEqual(item["operations_plan_group_id"], expected[item["equipmentType"]])
+        input_schema = json.loads((REPO_ROOT / "contracts/aircraft_support_v1_input.schema.json").read_text())
+        jsonschema.Draft202012Validator(input_schema).validate(inputs)
 
     def test_templates_are_clean_importable_and_runnable(self) -> None:
         for path in TEMPLATE_PATHS:
@@ -111,6 +142,8 @@ class ImportableProjectJsonTemplateTest(unittest.TestCase):
                 )
                 self.assertEqual(compiled["status"], "compiled")
                 self.assertEqual(compiled.get("issues", []), [])
+                input_schema = json.loads((REPO_ROOT / "contracts/aircraft_support_v1_input.schema.json").read_text())
+                jsonschema.Draft202012Validator(input_schema).validate(compiled["scenario"]["simulation_inputs"])
 
 
 if __name__ == "__main__":

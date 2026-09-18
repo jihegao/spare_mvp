@@ -10,6 +10,7 @@ from src.spare_mvp_backend.m9_6_case_package import m9_6_golden_fixture_drift
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project
 from src.spare_mvp_backend.project_payload import ProjectJsonExporter
 from src.spare_mvp_backend.simulation_analysis_cases import simulation_analysis_case_fixture_drift
+from src.spare_mvp_contract.adapter import SimulationAdapter
 from tests.clean_project_fixture_cases import (
     add_frontend_drift_fields,
     clean_project_fixture_payloads,
@@ -56,6 +57,29 @@ class CleanProjectGoldenFixtureTest(unittest.TestCase):
             with self.subTest(name=name):
                 fixture = self._load_clean_fixture(name)
                 self.assertEqual(self._schema_errors(fixture), [])
+
+    def test_canonical_sources_and_derived_templates_compile_for_both_aircraft_types(self) -> None:
+        exporter = ProjectJsonExporter(target="aircraft_support_v1", repo_root=REPO_ROOT)
+        adapter = SimulationAdapter(REPO_ROOT)
+        input_schema = json.loads((REPO_ROOT / "contracts/aircraft_support_v1_input.schema.json").read_text())
+        for source in (
+            "tests/fixtures/case_new.json",
+            "tests/fixtures/modeling_import_project.json",
+            "public/import-templates/canonical_platform_case.json",
+        ):
+            with self.subTest(source=source):
+                package = json.loads((REPO_ROOT / source).read_text())
+                project = exporter.export(modeling_import_to_project(package))
+                gate = adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+                self.assertEqual(gate["status"], "compiled", gate)
+                inputs = gate["scenario"]["simulation_inputs"]
+                jsonschema.Draft202012Validator(input_schema).validate(inputs)
+                types = set()
+                for composite in inputs["mission_profile"]["composite_tasks"]:
+                    for item in composite["taskItems"]:
+                        types.add(item["equipmentType"])
+                        self.assertEqual(item["operations_plan_group_id"], "preflight")
+                self.assertEqual(types, {"J-15", "J-35"})
 
     def test_exporter_check_blocks_frontend_field_drift_into_model_input(self) -> None:
         exporter = ProjectJsonExporter(target="aircraft_support_v1", repo_root=REPO_ROOT)

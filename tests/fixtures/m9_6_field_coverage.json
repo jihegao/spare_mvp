@@ -1087,6 +1087,12 @@
       "target": "M9.6 platform case package"
     },
     {
+      "field_path": "objects.supportActivities[].aircraftModel",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
       "field_path": "objects.supportActivities[].durationHours",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
@@ -1399,10 +1405,10 @@
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportActivities[].aircraftModel",
-      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
-      "status": "consumed",
-      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+      "field_path": "objects.supportActivities[].jobs[].applicableAircraft",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportOrganization.tree.children[].children",
@@ -1576,8 +1582,8 @@
     "defaulted": 0,
     "derived": 9,
     "governance_only": 20,
-    "ignored": 177,
-    "total_fields": 261,
+    "ignored": 178,
+    "total_fields": 262,
     "unsupported": 0
   }
 }

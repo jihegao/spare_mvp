@@ -45,7 +45,8 @@
       "successPoint": 0.8,
       "taskArea": "1",
       "taskDurationMinutes": 120,
-      "taskNo": "ZC-01"
+      "taskNo": "ZC-01",
+      "supportActivityName": "J16使用保障基本保障活动"
     },
     {
       "advanceNoticeMinutes": 45,
@@ -88,7 +89,8 @@
       "successPoint": 0.8,
       "taskArea": "3",
       "taskDurationMinutes": 120,
-      "taskNo": "ZC-02"
+      "taskNo": "ZC-02",
+      "supportActivityName": "J16使用保障基本保障活动"
     },
     {
       "advanceNoticeMinutes": 45,
@@ -131,7 +133,8 @@
       "successPoint": 0.6,
       "taskArea": "2",
       "taskDurationMinutes": 120,
-      "taskNo": "XL-01"
+      "taskNo": "XL-01",
+      "supportActivityName": "J16使用保障基本保障活动"
     },
     {
       "advanceNoticeMinutes": 45,
@@ -174,7 +177,8 @@
       "successPoint": 0.6,
       "taskArea": "4",
       "taskDurationMinutes": 120,
-      "taskNo": "XL-02"
+      "taskNo": "XL-02",
+      "supportActivityName": "J16使用保障基本保障活动"
     },
     {
       "advanceNoticeMinutes": 45,
@@ -217,7 +221,8 @@
       "successPoint": 0.8,
       "taskArea": "未指定任务区域",
       "taskDurationMinutes": 120,
-      "taskNo": "BM-05"
+      "taskNo": "BM-05",
+      "supportActivityName": "J16D使用保障基本保障活动"
     }
   ],
   "combatUnit": {
