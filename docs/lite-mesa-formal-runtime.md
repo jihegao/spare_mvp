@@ -18,6 +18,7 @@
 - 可视化 session 只执行单轨迹，不消费 ExperimentPlan 的多样本、并行或聚合设置。随机种子和帧采样间隔属于 session 参数；最大时间/步数来自 canonical 任务时长与模型步长；播放速度只影响显示刷新。
 - 运行上下文、Project fingerprint、随机种子或帧采样间隔变化后，旧 session/结果失效；播放速度变化不改变模型结果。
 - Solara iframe sidecar 是平台管理的可视化承载，不是旧 contract provider、`independent-mesa` 旁路或 `/api/runs` 用户主流程。
+- 旧 `independent-mesa/GLM` 和 `independent-mesa/GPT` 源码树已移除，不再作为平台运行依赖或旁路服务入口。
 - 父页不提供额外“刷新推演”按钮；Solara 页面不渲染重复的默认标题，运行控制在内容区顶部且保持重置、推演/暂停和单步语义。
 - 时间线、提示、详情、图例、状态和日志等用户可见表面只显示任务名称与天/波次/要求机型等业务上下文；缺少任务名称时统一显示“未命名任务”。任务、波次实例和保障作业内部 ID 只保留在数据关联与调试字段中。
 - `aircraft_support_v1` 是当前正式模型核心。

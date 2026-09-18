@@ -676,8 +676,7 @@ test("active docs explain Project JSON non-model field cleanup boundary", async 
   const docsReadme = await readFile(new URL("../docs/README.md", import.meta.url), "utf8");
   const roadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
   const contractsReadme = await readFile(new URL("../contracts/README.md", import.meta.url), "utf8");
-  const agentGuide = await readFile(new URL("../agent.md", import.meta.url), "utf8");
-  const combinedDocs = [rootReadme, docsReadme, roadmap, contractsReadme, agentGuide].join("\n");
+  const combinedDocs = [rootReadme, docsReadme, roadmap, contractsReadme].join("\n");
 
   assert.match(combinedDocs, /missionProfile\.profileType/);
   assert.match(combinedDocs, /missionProfile\.analysisRequests/);
@@ -3352,7 +3351,6 @@ test("M9.8 docs mark platform embedding complete without making independent-mesa
   const docs = {
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
-    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
     liteMesaRuntime: await readFile(new URL("../docs/lite-mesa-formal-runtime.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");
@@ -5274,7 +5272,6 @@ test("M9.2 docs describe online state stream as current scope while preserving l
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
     roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
-    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
     contracts: await readFile(new URL("../contracts/README.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");
@@ -5293,7 +5290,6 @@ test("M9.6 docs freeze platform case fixtures before M9.7 model-family work", as
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
     roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
-    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
     contracts: await readFile(new URL("../contracts/README.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");
@@ -5314,7 +5310,6 @@ test("M9.7 docs describe single-run, Monte Carlo, and coverage closure without c
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
     roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
-    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
     contracts: await readFile(new URL("../contracts/README.md", import.meta.url), "utf8"),
     spec: await readFile(new URL("../docs/archive/deprecated/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
   };
@@ -5335,7 +5330,6 @@ test("M9.7.4 docs promote formerly payload-only fields and avoid pending coverag
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
     roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
-    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
     spec: await readFile(new URL("../docs/archive/deprecated/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");

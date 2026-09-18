@@ -57,7 +57,7 @@
 | [`../front/rms-allocation-workbench.mjs`](../front/rms-allocation-workbench.mjs) | RMS 分配页面渲染模块。 |
 | [`../src/spare_mvp_backend/http_server.py`](../src/spare_mvp_backend/http_server.py) | 本地标准库 HTTP facade，同源服务 `/api` 与 `front/` 静态文件。 |
 | [`../src/spare_mvp_backend/simulation_analysis_cases.py`](../src/spare_mvp_backend/simulation_analysis_cases.py) | 阶段 6P 仿真分析验收数据包生成器。 |
-| [`../agent.md`](../agent.md) | 后续 agent 协作、验证和 subagent 使用约定。 |
+| [`../AGENTS.md`](../AGENTS.md) | 统一的 Agent 协作、契约归属和验证规则。 |
 
 ## 运行与验证入口
 
@@ -80,6 +80,6 @@ http://127.0.0.1:4173/front/
 2. 阶段计划、一次性审计、历史规格或已被替换的方案不得继续放在活跃文档层；需要保留证据时移动到 `archive/deprecated/` 并在归档入口登记。
 3. 对外说明使用中文；保留代码标识、命令、路径、文件名和外部项目名的原文。
 4. 文档不得把静态原型、本地计算工作台或小样本仿真描述成后端持久化能力、正式仿真消费能力或工程级校准平台。
-5. 删除旧 UI、迁移入口、移除路由、改变结果来源或替换可视化承载位置时，必须用旧文案和新文案搜索 `README.md`、`docs/`、`agent.md`，同步更新当前状态文档；归档文档保留原始语境时必须位于 `archive/deprecated/`。
+5. 删除旧 UI、迁移入口、移除路由、改变结果来源或替换可视化承载位置时，必须用旧文案和新文案搜索 `README.md`、`docs/`、`AGENTS.md`，同步更新当前状态文档；归档文档保留原始语境时必须位于 `archive/deprecated/`。
 
 - [Project Excel 标准模板](project-excel-template.md)：schema 驱动四域子表、字段说明、旧格式兼容、导入编译门槛及完整往返验证。

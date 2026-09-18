@@ -22,7 +22,6 @@ test("active runtime entrypoints use the single Mesa test environment", async ()
   const files = [
     "../.gitignore",
     "../README.md",
-    "../agent.md",
     "../scripts/start-system.sh",
     "../src/spare_mvp_abm/aviation_support/README.md",
   ];
@@ -178,7 +177,6 @@ test("active runtime wording promotes lite Mesa and demotes the old run ledger",
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const docsReadme = await readFile(new URL("../docs/README.md", import.meta.url), "utf8");
   const productRoadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
-  const agentDoc = await readFile(new URL("../agent.md", import.meta.url), "utf8");
   const liteMesaRuntime = await readFile(new URL("../docs/lite-mesa-formal-runtime.md", import.meta.url), "utf8");
   const contractsReadme = await readFile(new URL("../contracts/README.md", import.meta.url), "utf8");
   const runtimeAudit = await readFile(new URL("../docs/archive/deprecated/architecture-audit/2026-07-spare-mvp-runtime-boundary-audit.md", import.meta.url), "utf8");
@@ -188,7 +186,7 @@ test("active runtime wording promotes lite Mesa and demotes the old run ledger",
 
   const liteMesaPath = /POST \/api\/mesa-analysis-runs[\s\S]{0,120}(?:AircraftSupportV1Model|CompiledAircraftSupportModel)[\s\S]{0,80}lite Mesa 会话/;
   const oldLedgerBoundary = /\/api\/runs[\s\S]{0,120}(历史实现|内部治理能力|后续持久化运行治理候选)/;
-  for (const content of [readme, docsReadme, agentDoc, liteMesaRuntime]) {
+  for (const content of [readme, docsReadme, liteMesaRuntime]) {
     assert.match(content, /\/api\/mesa-analysis-runs/);
     assert.match(content, /lite Mesa 会话/);
     assert.match(content, oldLedgerBoundary);
@@ -196,7 +194,7 @@ test("active runtime wording promotes lite Mesa and demotes the old run ledger",
     assert.doesNotMatch(content, /四个结果分析页是用户可见的 current result flow/);
     assert.doesNotMatch(content, /正式结果必须来自 `RunIntent -> \/api\/runs/);
   }
-  for (const content of [readme, docsReadme, agentDoc]) {
+  for (const content of [readme, docsReadme]) {
     assert.match(content, liteMesaPath);
   }
   assert.match(docsReadme, /CompiledSimulation \+ in-memory CompiledAircraftSupportModel/);
@@ -204,11 +202,11 @@ test("active runtime wording promotes lite Mesa and demotes the old run ledger",
   for (const content of [productRoadmap, contractsReadme]) {
     assert.doesNotMatch(content, /RunService -> artifacts/);
   }
-  for (const content of [readme, docsReadme, productRoadmap, agentDoc, contractsReadme]) {
+  for (const content of [readme, docsReadme, productRoadmap, contractsReadme]) {
     assert.doesNotMatch(content, /contract_server\.py|--with-contract-provider|127\.0\.0\.1:8521|:8521/);
   }
-  assert.doesNotMatch(agentDoc, /启动 smoke run/);
-  assert.doesNotMatch(agentDoc, /M3-1 同源后端路径用 .*http_server/);
+  assert.doesNotMatch(liteMesaRuntime, /启动 smoke run/);
+  assert.doesNotMatch(liteMesaRuntime, /M3-1 同源后端路径用 .*http_server/);
   assert.doesNotMatch(productRoadmap, /start-system\.sh` 只启动平台同源 app 和 Mesa contract provider/);
   assert.match(httpServer, /root \/ "runs" \/ "canonical-api"/);
   assert.match(httpServer, /parser\.add_argument\("--output-dir", default="runs\/canonical-api"\)/);
