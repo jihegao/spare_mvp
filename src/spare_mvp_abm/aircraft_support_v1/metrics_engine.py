@@ -120,39 +120,31 @@ class MetricsEngineMixin:
         for job in self.jobs:
             if job.state in {"waiting", "running"}:
                 active_jobs_by_tail.setdefault(job.tail_number, []).append(job)
-        observed_tails: set[str] = set()
+        current = {}
         for aircraft in self.aircraft:
-            observed_tails.add(aircraft.tail_number)
             context = self._current_downtime_context(
-                aircraft,
-                active_jobs=active_jobs_by_tail.get(aircraft.tail_number, ()),
+                aircraft, active_jobs=active_jobs_by_tail.get(aircraft.tail_number, ()),
             )
-            active = self._active_downtime_events.get(aircraft.tail_number)
-            if context is None:
-                if active is not None:
-                    self._close_downtime_event(aircraft.tail_number)
-                continue
-            factor, job = context
-            context_key = self._downtime_context_key(factor, aircraft, job)
-            if active is not None and context_key != self._downtime_event_context_key(active):
-                self._close_downtime_event(aircraft.tail_number)
-                active = None
-            if active is None:
-                active = self._downtime_event_payload(
-                    factor,
-                    aircraft,
-                    job,
-                    interval_start,
+            if context is not None:
+                factor, job = context
+                current[aircraft.tail_number] = (
+                    aircraft, factor, job, self._downtime_context_key(factor, aircraft, job)
                 )
+        # Preserve event closure order (insertion order), independently of aircraft
+        # iteration order, while only constructing payloads for new intervals.
+        for tail_number, active in tuple(self._active_downtime_events.items()):
+            candidate = current.get(tail_number)
+            if candidate is None or candidate[3] != self._downtime_event_context_key(active):
+                self._close_downtime_event(tail_number)
+        for tail_number, (aircraft, factor, job, _) in current.items():
+            active = self._active_downtime_events.get(tail_number)
+            if active is None:
+                active = self._downtime_event_payload(factor, aircraft, job, interval_start)
                 self._downtime_event_sequence += 1
                 active["event_id"] = f"downtime-{self._downtime_event_sequence:06d}"
-                self._active_downtime_events[aircraft.tail_number] = active
+                self._active_downtime_events[tail_number] = active
             active["end_minute"] = float(self.minute)
             active["duration_minutes"] = max(0.0, float(active["end_minute"]) - float(active["start_minute"]))
-
-        for tail_number in tuple(self._active_downtime_events):
-            if tail_number not in observed_tails:
-                self._close_downtime_event(tail_number)
 
         summary = self._downtime_event_summary()
         self.downtime_minutes = {factor: values["duration_minutes"] for factor, values in summary.items()}
