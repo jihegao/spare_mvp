@@ -95,7 +95,7 @@ h4 {
 }
 
 .auth-panel {
-  width: min(480px, 94vw);
+  width: min(480px, 100%);
   display: grid;
   gap: 14px;
   padding: 28px;
@@ -406,6 +406,7 @@ h4 {
 }
 
 .nav-module > summary {
+  white-space: nowrap;
   margin-bottom: 10px;
   font-size: 15px;
   font-weight: 700;
@@ -2174,6 +2175,11 @@ select[multiple].table-edit-select {
   font-size: 12px;
 }
 
+.equipment-system-table input:not([type="checkbox"]):not([type="radio"]),
+.equipment-system-table select {
+  height: 32px;
+}
+
 .equipment-product-combobox-cell {
   display: grid;
   gap: 4px;
@@ -2288,6 +2294,8 @@ select[multiple].table-edit-select {
 }
 
 .equipment-param-fields label {
+  white-space: nowrap;
+  align-content: start;
   gap: 3px;
   font-size: 11px;
 }
