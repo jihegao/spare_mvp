@@ -295,6 +295,27 @@ class SupportEngineMixin:
                     return str(product_id)
         return value
 
+    def _record_spare_request(self, job: JobState, node: dict[str, Any], requirements: list[tuple[str, int]], immediately_filled: bool) -> None:
+        """Record the first actual allocation request; retries never revise it."""
+        if not requirements or job.task_index in job.requested_spare_task_indexes:
+            return
+        job.requested_spare_task_indexes.add(job.task_index)
+        aircraft = self._aircraft_by_tail(job.tail_number)
+        for product_id, quantity in requirements:
+            filled = quantity if immediately_filled else 0
+            self.spare_demand_total += quantity
+            self.spare_immediately_filled_total += filled
+            self._event("spare_request", f"{job.job_id} requested {quantity} {product_id}", {
+                "job_id": job.job_id,
+                "task_index": job.task_index,
+                "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
+                "resource_id": node["id"],
+                "product_id": product_id,
+                "spare_type": self._product_display_name(product_id),
+                "demand_quantity": quantity,
+                "immediately_filled_quantity": filled,
+            })
+
     def _consume_task_spare(self, job: JobState, task: dict[str, Any]) -> bool:
         if job.task_index in job.consumed_spare_task_indexes:
             return True
@@ -339,6 +360,7 @@ class SupportEngineMixin:
                 f"{job.job_id} consumed {spare_quantity} {display_name}",
                 {
                     "job_id": job.job_id,
+                    "task_index": job.task_index,
                     "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                     "resource_id": node["id"],
                     "product_id": spare_type,

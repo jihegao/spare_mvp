@@ -2838,7 +2838,7 @@ def _lite_mesa_projection_event_required(event: Any) -> bool:
     if not isinstance(event, dict):
         return False
     event_name = str(event.get("event") or event.get("event_type") or "")
-    return event_name in {"spare_shortage", "spare_consumed"} or isinstance(event.get("snapshot"), dict)
+    return event_name in {"spare_request", "spare_shortage", "spare_consumed"} or isinstance(event.get("snapshot"), dict)
 
 
 def _sample_daily_mission_reliability(missions: list[Any], *, aircraft_count: int = 1) -> list[dict[str, Any]]:
@@ -3128,7 +3128,8 @@ def _lite_mesa_carry_list_result(
                 "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
                 "observedFilled": max(0, _metric_int(item.get("observed_filled_count"), default=0)),
                 "observedShortage": max(0, _metric_int(item.get("observed_shortage_count"), default=0)),
-                "observedFillRate": _clamp01(item.get("observed_fill_rate", satisfaction_rate)),
+                "observedShortageQuantity": _optional_nonnegative_metric_float(item.get("observed_shortage_quantity")),
+                "observedFillRate": _optional_nonnegative_metric_float(item.get("observed_fill_rate")),
                 "satisfactionRate": satisfaction_rate,
                 "satisfactionConstraintMet": satisfaction_constraint_met,
                 "satisfactionConstraintMargin": satisfaction_constraint_margin,
@@ -3184,7 +3185,7 @@ def _lite_mesa_carry_list_result(
             ["高优先级备件", str(sum(1 for row in rows if row["riskLevel"] == "高"))],
             ["满足下限备件", f"{satisfied_constraint_count}/{len(constrained_rows)}"],
             ["总体备件利用率", overall_utilization_display],
-            ["备件满足率下限", f"{minimum_satisfaction_rate:.2f}"],
+            ["预计满足率下限", f"{minimum_satisfaction_rate:.2f}"],
             ["样本数", str(len(samples))],
         ],
         "rows": rows,
@@ -3424,7 +3425,7 @@ def _lite_mesa_downtime_event_log_snapshot(
             "repair_backlog": sum(1 for item in active_jobs if item.get("kind") == "repair"),
             "postflight_backlog": sum(1 for item in active_jobs if item.get("kind") == "postflight"),
             "preventive_backlog": sum(1 for item in active_jobs if item.get("kind") == "preventive"),
-            "spare_fill_rate": _metric_float(metrics.get("spare_fill_rate"), default=0),
+            "spare_fill_rate": _optional_nonnegative_metric_float(metrics.get("spare_fill_rate")),
         },
         "job_node": {
             "job_id": job_id,
@@ -3508,7 +3509,7 @@ def _lite_mesa_downtime_frame_snapshot(
             "repair_backlog": _metric_float(resource_state.get("repair_backlog"), default=0),
             "postflight_backlog": _metric_float(resource_state.get("postflight_backlog"), default=0),
             "preventive_backlog": _metric_float(resource_state.get("preventive_backlog"), default=0),
-            "spare_fill_rate": _metric_float(resource_state.get("spare_fill_rate"), default=0),
+            "spare_fill_rate": _optional_nonnegative_metric_float(resource_state.get("spare_fill_rate")),
         },
         "job_node": {
             "job_id": str(job.get("job_id") or f"{event_type}-node"),

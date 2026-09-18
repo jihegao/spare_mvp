@@ -116,6 +116,7 @@ class JobState:
     maintenance_decision_roll: float | None = None
     maintenance_rng_stream: str | None = None
     maintenance_occurrence: int | None = None
+    requested_spare_task_indexes: set[int] = field(default_factory=set)
     consumed_spare_task_indexes: set[int] = field(default_factory=set)
     spare_shortage_signature: tuple[tuple[str, int, int, str], ...] | None = None
     due_dimensions: list[str] = field(default_factory=list)

@@ -123,6 +123,7 @@ test("normalizes carry list projection payload for formal KPI and table renderin
         used_quantity: 1,
         carried_quantity: 1,
         satisfaction_rate: 0.9,
+        observed_fill_rate: 0.2,
         minimum_satisfaction_rate: 0.9,
         satisfaction_constraint_met: true,
         satisfaction_constraint_margin: 0,
@@ -159,6 +160,8 @@ test("normalizes carry list projection payload for formal KPI and table renderin
   assert.equal(view.rows[0].qty, 2);
   assert.equal(view.rows[0].utilization, 1);
   assert.equal(view.rows[0].satisfactionRate, 0.9);
+  assert.equal(view.rows[0].observedFillRate, 0.2);
+  assert.equal(view.rows[1].observedFillRate, null);
   assert.equal(view.rows[0].minimumSatisfactionRate, 0.9);
   assert.equal(view.rows[0].satisfactionConstraintMet, true);
   assert.equal(view.rows[0].satisfactionConstraintMargin, 0);
@@ -473,4 +476,27 @@ test("rejects projection payloads whose traceability does not match the active r
     }, { runId: "run-active", modelFamily: "aircraft_support_v1" }),
     /projection model_family mismatch/
   );
+});
+
+
+test("legacy aviation missing request metrics is explicitly unavailable, never a zero rate", () => {
+  const view = normalizeAnalysisProjectionPayload("spare_shortfall", {
+    projection_type: "spare_shortfall",
+    applicability: {
+      status: "not_applicable", reason_code: "spare_request_metrics_unavailable",
+      message: "当前旧模型未记录首次备件请求，备件满足率不可用。"
+    },
+    data: [{ fill_rate: null }]
+  });
+  assert.equal(view.formal, false);
+  assert.deepEqual(view.rows, []);
+  assert.match(view.applicability.message, /备件满足率不可用/);
+});
+
+test("unavailable spare fill survives formal anomaly snapshot normalization", () => {
+  const view = normalizeAnalysisProjectionPayload("downtime_factors", {
+    projection_type: "downtime_factors", run_id: "old", model_family: "aviation_support", data: [],
+    anomaly_snapshots: [{ simulation_time: 0, support_activity_state: { spare_fill_rate: null }, job_node: {}, frame_ref: {} }]
+  }, { runId: "old", modelFamily: "aviation_support" });
+  assert.equal(view.snapshots[0].spareFillRate, null);
 });

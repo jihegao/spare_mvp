@@ -2566,10 +2566,10 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     assert.match(detailPanel, /总体备件利用率[\s\S]*20\.00%/);
     assert.match(detailPanel, /满足下限备件[\s\S]*2\/2/);
     assert.match(detailPanel, /<th>机型<\/th><th>产品<\/th>/);
-    assert.match(detailPanel, /<th>备件满足率<\/th><th>约束状态<\/th>/);
+    assert.match(detailPanel, /<th>预计满足率<\/th><th>即时满足率<\/th><th>约束状态<\/th>/);
     assert.match(detailPanel, /<th>备件利用率<\/th>/);
-    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>90%<\/td><td>满足（0\.00%）<\/td><td>100\.00%<\/td>/);
-    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>满足（\+10\.00%）<\/td><td>11\.11%<\/td>/);
+    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>90%<\/td><td>不可用<\/td><td>满足（0\.00%）<\/td><td>100\.00%<\/td>/);
+    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>不可用<\/td><td>满足（\+10\.00%）<\/td><td>11\.11%<\/td>/);
     assert.match(detailPanel, /隐藏需求数值为 0 的备件/);
     assert.match(detailPanel, /data-carry-hide-zero checked/);
     assert.match(detailPanel, /data-carry-aircraft-filter/);
@@ -2705,8 +2705,8 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     }),
     liteMesaAnalysisResponseOverrides: {
       rows: [
-        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, usedQuantity: 8, carriedQuantity: 4, demand: 4, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 0, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
-        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, usedQuantity: 0, carriedQuantity: 0, demand: 3, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 2, lifeLimited: false, riskLevel: "低" },
+        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, usedQuantity: 8, carriedQuantity: 4, demand: 4, shortage: 0, satisfactionRate: 1, observedFillRate: 0.5, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 0, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
+        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, usedQuantity: 0, carriedQuantity: 0, demand: 3, shortage: 0, satisfactionRate: 1, observedFillRate: 0.25, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 2, lifeLimited: false, riskLevel: "低" },
         { aircraftModel: "J-15", productId: "carry-zero", recommended: 0, usedQuantity: 0, carriedQuantity: 0, demand: 0, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, lifeLimited: false, riskLevel: "低" },
         { aircraftModel: "J-16", productId: "carry-a", recommended: 1, usedQuantity: 0, carriedQuantity: 1, demand: 1, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, lifeLimited: false, riskLevel: "低" }
       ]
@@ -2723,11 +2723,12 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     assert.equal(body.analysis_type, "carry_list");
     assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
     assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("总体备件利用率"), "160.00%");
-    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "需求次数", "短缺次数", "备件满足率", "满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
-    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[7], row[8], row[9], row[10], row[11], row[12]]), [
+    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "预计使用数量", "携行总数量", "需求数量", "预计短缺数量", "预计满足率", "即时满足率", "预计满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[7], row[9], row[10], row[11], row[12], row[13]]), [
       ["J-15", "液压泵 / B-01", 2, 0, 0, "100%", "90%", "满足", "+10.00%", "不可计算", "否"],
       ["J-15", "航电模块 / A-01", 4, 8, 4, "100%", "90%", "满足", "+10.00%", "200.00%", "是"]
     ]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[8]), ["25%", "50%"]);
     assert.doesNotMatch(JSON.stringify(body), /J-16|零需求件/);
   } finally {
     runtime.restore();
@@ -2888,7 +2889,7 @@ test("carry list analysis restores context and complete settings while preservin
   try {
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">[\s\S]*<h3>飞机转场携行清单分析<\/h3>[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">/);
-    assert.match(runtime.appNode.innerHTML, /运行状态[\s\S]*样本量[\s\S]*随机种子[\s\S]*优化方向[\s\S]*备件满足率下限/);
+    assert.match(runtime.appNode.innerHTML, /运行状态[\s\S]*样本量[\s\S]*随机种子[\s\S]*优化方向[\s\S]*预计满足率下限/);
     assert.match(runtime.appNode.innerHTML, /样本量[\s\S]*<strong>4<\/strong>/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /样本量 \/ 随机种子只读/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);

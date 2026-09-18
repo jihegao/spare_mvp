@@ -3275,8 +3275,10 @@ class SimulationAdapter:
         metrics = state["snapshot"]
         aircraft_count = max(1, int(metrics.get("aircraft_count", 1) or 1))
         planned_sorties = max(1, int(metrics.get("planned_sorties", 1) or 1))
-        spare_total = float(metrics.get("spare_stock_total", 0) or 0) + float(metrics.get("spare_consumed_total", 0) or 0)
-        spare_fill_rate = 1.0 if spare_total <= 0 else float(metrics.get("spare_stock_total", 0) or 0) / spare_total
+        spare_fill_rate = self._aviation_spare_fill_rate(metrics)
+        spare_consumed = max(0.0, float(metrics.get("spare_consumed_total", 0) or 0))
+        spare_stock = max(0.0, float(metrics.get("spare_stock_total", 0) or 0))
+        spare_utilization = metrics.get("spare_utilization", spare_consumed / max(1.0, spare_stock + spare_consumed))
         event_items = state.get("events") or [
             {
                 "time": metrics.get("time", 0),
@@ -3305,7 +3307,7 @@ class SimulationAdapter:
             },
             "resource_state": {
                 "spare_fill_rate": spare_fill_rate,
-                "spare_utilization": 1.0 - spare_fill_rate,
+                "spare_utilization": spare_utilization,
                 "repair_backlog": float(metrics.get("maintenance_backlog", 0) or 0),
             },
             "event_summary": {
@@ -3347,8 +3349,7 @@ class SimulationAdapter:
     ) -> dict[str, dict[str, Any]]:
         spare_stock_total = max(0.0, float(metrics.get("spare_stock_total", 0) or 0))
         spare_consumed_total = max(0.0, float(metrics.get("spare_consumed_total", 0) or 0))
-        spare_denominator = max(1.0, spare_stock_total + spare_consumed_total)
-        spare_fill_rate = min(1.0, spare_stock_total / spare_denominator)
+        spare_fill_rate = self._aviation_spare_fill_rate(metrics)
         shortage_probability = min(1.0, metrics.get("spare_shortage_probability", 0)) if "spare_shortage_probability" in metrics else (
             1.0 if spare_stock_total <= 0 and spare_consumed_total > 0 else 0.0
         )
@@ -3364,6 +3365,12 @@ class SimulationAdapter:
             "spare_shortfall": {
                 "projection_type": "spare_shortfall",
                 "base_artifact_id": source_artifact_id,
+                **({"applicability": {
+                    "status": "not_applicable",
+                    "reason_code": "spare_request_metrics_unavailable",
+                    "message": "当前旧模型未记录首次备件请求，备件满足率不可用。",
+                    "required_domains": [], "disabled_domains": [],
+                }} if spare_fill_rate is None else {}),
                 "data": [
                     {
                         "spare_type": "aviation_support_spares",
@@ -3463,10 +3470,11 @@ class SimulationAdapter:
             shortage_count = max(0.0, float(row_stats.get("shortage_count", 0) or 0))
             shortage_quantity = max(0.0, float(row_stats.get("shortage_quantity", 0) or 0))
             demand_quantity = max(0.0, float(row_stats.get("demand_quantity", 0) or 0))
-            demand_count = demand_quantity if demand_quantity > 0 else consumed_quantity + shortage_quantity
-            filled_count = consumed_quantity
+            demand_count = demand_quantity
+            filled_count = max(0.0, float(row_stats.get("immediately_filled_quantity", 0) or 0))
             fill_rate = filled_count / demand_count if demand_count > 0 else 1.0
-            type_shortage_probability = min(1.0, shortage_count / planned_sorties)
+            request_count = max(0.0, float(row_stats.get("request_count", 0) or 0))
+            type_shortage_probability = shortage_count / request_count if request_count else 0.0
             sample_demand_quantities = [
                 max(0.0, float(quantity or 0))
                 for quantity in (row_stats.get("sample_demand_quantities") or {}).values()
@@ -3518,6 +3526,8 @@ class SimulationAdapter:
                     "demand_count": demand_count,
                     "filled_count": filled_count,
                     "shortage_count": shortage_count,
+                    "request_count": request_count,
+                    "shortage_quantity": shortage_quantity,
                     "fill_rate": min(1.0, max(0.0, fill_rate)),
                     "projected_filled_count": projected_filled_quantity,
                     "projected_shortage_count": projected_shortage_quantity,
@@ -3761,75 +3771,46 @@ class SimulationAdapter:
         samples: list[dict[str, Any]],
         scoped_node_ids: set[str],
     ) -> dict[tuple[str, str], dict[str, Any]]:
-        demand_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
-        filled_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
-        shortage_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
+        requests: dict[tuple[str, str], dict[tuple[str, ...], tuple[float, float]]] = {}
+        consumption: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
         for sample_position, sample in enumerate(samples):
             sample_key = str(sample.get("sample_index", sample.get("seed", sample_position)))
             for event_index, event in enumerate(sample.get("events") or []):
                 if not isinstance(event, dict):
                     continue
                 event_name = str(event.get("event") or event.get("event_type") or "")
-                if event_name not in {"spare_shortage", "spare_consumed"}:
+                if event_name not in {"spare_request", "spare_consumed"}:
                     continue
                 details = event.get("details") if isinstance(event.get("details"), dict) else {}
                 product_id = str(details.get("product_id") or details.get("productId") or details.get("spare_type") or "").strip()
-                if not product_id:
+                aircraft_model = str(details.get("aircraft_model") or details.get("aircraftModel") or "").strip()
+                node_id = str(details.get("resource_id") or details.get("support_node_id") or details.get("supportNodeId") or details.get("node_id") or "").strip()
+                if not product_id or not aircraft_model or (scoped_node_ids and node_id and node_id not in scoped_node_ids):
                     continue
-                aircraft_model = str(
-                    details.get("aircraft_model")
-                    or details.get("aircraftModel")
-                    or ""
-                ).strip()
-                if not aircraft_model:
-                    continue
-                node_id = str(
-                    details.get("resource_id")
-                    or details.get("support_node_id")
-                    or details.get("supportNodeId")
-                    or details.get("node_id")
-                    or ""
-                ).strip()
-                if scoped_node_ids and node_id and node_id not in scoped_node_ids:
-                    continue
-                quantity = max(1.0, self._non_negative_number(details.get("quantity"), 1.0))
-                job_id = str(details.get("job_id") or details.get("jobId") or "").strip()
-                event_key = job_id or f"event-{event_index}"
+                job_id = str(details.get("job_id") or details.get("jobId") or f"event-{event_index}")
+                task_index = str(details.get("task_index", 0))
+                key = (sample_key, node_id, job_id, task_index)
                 spare_key = (aircraft_model, product_id)
-                demand_key = (sample_key, node_id, aircraft_model, product_id, event_key)
-                if event_name == "spare_consumed":
-                    filled_quantities.setdefault(spare_key, {})[demand_key] = max(
-                        filled_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
-                        quantity,
-                    )
-                    demand_quantities.setdefault(spare_key, {})[demand_key] = max(
-                        demand_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
-                        quantity,
-                    )
+                if event_name == "spare_request":
+                    demand = self._non_negative_number(details.get("demand_quantity"), 0.0)
+                    filled = min(demand, self._non_negative_number(details.get("immediately_filled_quantity"), 0.0))
+                    requests.setdefault(spare_key, {}).setdefault(key, (demand, filled))
                 else:
-                    required = max(
-                        quantity,
-                        self._non_negative_number(details.get("required_quantity"), quantity),
-                    )
-                    shortage_quantities.setdefault(spare_key, {})[demand_key] = max(
-                        shortage_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
-                        required,
-                    )
-                    demand_quantities.setdefault(spare_key, {})[demand_key] = max(
-                        demand_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
-                        required,
-                    )
+                    quantity = self._non_negative_number(details.get("quantity"), 0.0)
+                    consumption.setdefault(spare_key, {})[key] = max(consumption.get(spare_key, {}).get(key, 0.0), quantity)
         stats: dict[tuple[str, str], dict[str, Any]] = {}
-        for spare_key in sorted(set(demand_quantities) | set(filled_quantities) | set(shortage_quantities)):
+        for spare_key in sorted(set(requests) | set(consumption)):
             sample_demands: dict[str, float] = {}
-            for demand_key, quantity in demand_quantities.get(spare_key, {}).items():
-                sample_key = demand_key[0]
-                sample_demands[sample_key] = sample_demands.get(sample_key, 0.0) + quantity
+            request_rows = requests.get(spare_key, {})
+            for key, (demand, _filled) in request_rows.items():
+                sample_demands[key[0]] = sample_demands.get(key[0], 0.0) + demand
             stats[spare_key] = {
-                "consumed_quantity": sum(filled_quantities.get(spare_key, {}).values()),
-                "shortage_count": float(len(shortage_quantities.get(spare_key, {}))),
-                "shortage_quantity": sum(shortage_quantities.get(spare_key, {}).values()),
-                "demand_quantity": sum(demand_quantities.get(spare_key, {}).values()),
+                "consumed_quantity": sum(consumption.get(spare_key, {}).values()),
+                "immediately_filled_quantity": sum(filled for demand, filled in request_rows.values()),
+                "shortage_count": sum(1 for demand, filled in request_rows.values() if filled < demand),
+                "request_count": len(request_rows),
+                "shortage_quantity": sum(demand - filled for demand, filled in request_rows.values()),
+                "demand_quantity": sum(demand for demand, filled in request_rows.values()),
                 "sample_demand_quantities": sample_demands,
             }
         return stats
@@ -3964,12 +3945,16 @@ class SimulationAdapter:
                         "demand_count": row["demand_count"],
                         "filled_count": row["filled_count"],
                         "shortage_count": row["shortage_count"],
+                        "request_count": row["request_count"],
+                        "shortage_quantity": row["shortage_quantity"],
                         "fill_rate": row["fill_rate"],
                         "utilization": row["utilization"],
-                        "shortage_probability": row["shortage_probability"],
+                        "shortage_probability": row["observed_shortage_probability"],
                         "mean_transport_delay": row["mean_transport_delay"],
                         "in_transit_count": row["in_transit_count"],
-                        "risk_level": row["risk_level"],
+                        "risk_level": self._aircraft_support_v1_spare_risk_level(
+                            row["fill_rate"], row["observed_shortage_probability"]
+                        ),
                         "constraint_results": {
                             "fill_rate": self._spare_shortfall_constraint_result(row["fill_rate"]),
                             "utilization": self._spare_shortfall_constraint_result(row["utilization"]),
@@ -4003,6 +3988,9 @@ class SimulationAdapter:
                         "shortage_count": row["projected_shortage_count"],
                         "observed_filled_count": row["filled_count"],
                         "observed_shortage_count": row["shortage_count"],
+                        "observed_shortage_quantity": row["shortage_quantity"],
+                        "observed_request_count": row["request_count"],
+                        "observed_request_shortfall_rate": row["observed_shortage_probability"],
                         "observed_fill_rate": row["fill_rate"],
                         "satisfaction_rate": row["projected_satisfaction_rate"],
                         "satisfaction_constraint_met": row["satisfaction_constraint_met"],
@@ -4174,7 +4162,7 @@ class SimulationAdapter:
             "repair_backlog": sum(1 for item in active_jobs if item.get("kind") == "repair"),
             "postflight_backlog": sum(1 for item in active_jobs if item.get("kind") == "postflight"),
             "preventive_backlog": sum(1 for item in active_jobs if item.get("kind") == "preventive"),
-            "spare_fill_rate": float((event_snapshot.get("metrics") or {}).get("spare_fill_rate", 0) or 0),
+            "spare_fill_rate": self._aviation_spare_fill_rate(event_snapshot.get("metrics") or {}),
         }
         return sanitize_downtime_user_projection({
             "snapshot_id": f"downtime-{run_id or 'run'}-{ordinal:04d}",
@@ -4287,7 +4275,7 @@ class SimulationAdapter:
                 "repair_backlog": float(resource_state.get("repair_backlog", 0) or 0),
                 "postflight_backlog": float(resource_state.get("postflight_backlog", 0) or 0),
                 "preventive_backlog": float(resource_state.get("preventive_backlog", 0) or 0),
-                "spare_fill_rate": float(resource_state.get("spare_fill_rate", 0) or 0),
+                "spare_fill_rate": self._aviation_spare_fill_rate(resource_state),
             },
             "job_node": {
                 "job_id": str(job.get("job_id") or f"{event_type}-node"),
@@ -4553,11 +4541,14 @@ class SimulationAdapter:
         }
         return projections
 
-    def _aviation_spare_fill_rate(self, metrics: dict[str, Any]) -> float:
-        stock = max(0.0, float(metrics.get("spare_stock_total", 0) or 0))
-        consumed = max(0.0, float(metrics.get("spare_consumed_total", 0) or 0))
-        total = stock + consumed
-        return 1.0 if total <= 0 else min(1.0, stock / total)
+    def _aviation_spare_fill_rate(self, metrics: dict[str, Any]) -> float | None:
+        if self._is_number(metrics.get("spare_fill_rate")):
+            return self._clamp01(metrics["spare_fill_rate"])
+        if "spare_demand_total" not in metrics or "spare_immediately_filled_total" not in metrics:
+            return None
+        demand = self._non_negative_number(metrics["spare_demand_total"], 0.0)
+        filled = self._non_negative_number(metrics["spare_immediately_filled_total"], 0.0)
+        return self._clamp01(filled / demand) if demand else 1.0
 
     def _aviation_monte_carlo_visualization_frames(self, run_id: str, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         frames: list[dict[str, Any]] = []

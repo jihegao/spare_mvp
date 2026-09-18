@@ -196,6 +196,8 @@ class AircraftSupportV1Model(
         self.total_transport_delay = 0
         self.lru_failures = 0
         self.in_flight_failures = 0
+        self.spare_demand_total = 0
+        self.spare_immediately_filled_total = 0
         self.spare_consumed_total = 0
         self.spare_consumed_by_node_product: dict[tuple[str, str], int] = {}
         self.shortage_events = 0

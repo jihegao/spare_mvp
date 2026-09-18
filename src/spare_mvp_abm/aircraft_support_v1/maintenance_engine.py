@@ -100,11 +100,21 @@ class MaintenanceEngineMixin:
                 )
                 continue
             spare_requirements = self._task_spare_requirements(job, task)
+            # Capture availability before this request initiates any replenishment.
+            immediately_available = all(
+                self._available_spare_for_job(job, node, product_id) >= quantity
+                for product_id, quantity in spare_requirements
+            )
             canonical_failure_reasons: dict[str, str] = {}
             if self.canonical_organization_enabled:
                 canonical_failure_reasons = self._ensure_canonical_spare_dispatches(
                     job, node, spare_requirements
                 )
+                immediately_reserved = immediately_available and not canonical_failure_reasons and all(
+                    job.spare_reservations.get((job.task_index, product_id), 0) >= quantity
+                    for product_id, quantity in spare_requirements
+                )
+                self._record_spare_request(job, node, spare_requirements, immediately_reserved)
             else:
                 for spare_type, spare_qty in spare_requirements:
                     if node["inventory"].get(spare_type, 0) < spare_qty and not self._has_in_transit_spare(node["id"], spare_type):
@@ -128,6 +138,7 @@ class MaintenanceEngineMixin:
                 if self._available_spare_for_job(job, node, spare_type) < spare_qty
             ]
             if shortages:
+                self._record_spare_request(job, node, spare_requirements, False)
                 job.shortage_reason = shortages[0][3]
                 shortage_signature = tuple(shortages)
                 if job.spare_shortage_signature == shortage_signature:
@@ -142,6 +153,7 @@ class MaintenanceEngineMixin:
                         f"{job.job_id} blocked by {display_name} shortage at {node['id']}",
                         {
                             "job_id": job.job_id,
+                            "task_index": job.task_index,
                             "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                             "resource_id": node["id"],
                             "product_id": spare_type,
@@ -179,7 +191,9 @@ class MaintenanceEngineMixin:
                         },
                     )
             if not self._consume_task_spare(job, task):
+                self._record_spare_request(job, node, spare_requirements, False)
                 continue
+            self._record_spare_request(job, node, spare_requirements, immediately_available)
             if not self.canonical_organization_enabled:
                 node["personnel_in_use"] += personnel
                 node["equipment_in_use"] += equipment

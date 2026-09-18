@@ -82,6 +82,7 @@ function normalizeProjectionApplicability(applicability) {
   return {
     status: "not_applicable",
     reasonCode: stringValue(payload.reason_code, "scope_not_modeled"),
+    message: stringValue(payload.message, ""),
     required_domains: Array.isArray(payload.required_domains) ? payload.required_domains.map((domain) => stringValue(domain, "")) : [],
     disabled_domains: Array.isArray(payload.disabled_domains) ? payload.disabled_domains.map((domain) => stringValue(domain, "")) : []
   };
@@ -97,7 +98,7 @@ function normalizeSpareShortfall(payload) {
       const shortageProbability = clamp01(requireFiniteNumber(row.shortage_probability, "shortage_probability"));
       const demand = Math.max(0, Math.round(numberOrZero(row.demand_count)));
       const filled = Math.max(0, Math.round(numberOrZero(row.filled_count)));
-      const reportedShortage = numberOrZero(row.shortage_count);
+      const reportedShortage = numberOrZero(row.shortage_quantity ?? row.shortage_count);
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         productId: stringValue(row.product_id, ""),
@@ -109,7 +110,7 @@ function normalizeSpareShortfall(payload) {
         delay: Math.round(shortageProbability * 100),
         baseCount: Math.max(0, Math.round(fillRate * 10)),
         stock: Math.max(1, Math.round((1 + shortageProbability) * 10)),
-        shortage: row.shortage_count != null
+        shortage: row.shortage_quantity != null || row.shortage_count != null
           ? Math.max(0, Math.round(reportedShortage))
           : Math.max(0, Math.round((demand - filled) || (shortageProbability * 10))),
         level: riskLevelLabel(row.risk_level, shortageProbability),
@@ -199,6 +200,7 @@ function normalizeCarryList(payload) {
         name: stringValue(row.spare_type, "unknown_spare"),
         multiplier,
         satisfy: satisfactionRate,
+        observedFillRate: optionalNonnegativeFiniteNumber(row.observed_fill_rate),
         satisfactionRate,
         satisfactionConstraintMet: row.satisfaction_constraint_met === undefined
           ? satisfactionRate >= minimumSatisfactionRate
@@ -361,7 +363,7 @@ function normalizeDowntimeAnomalySnapshots(value) {
         result: downtimeSnapshotResultLabel(row.result),
         activeJobs: Math.max(0, Math.round(numberOrZero(state.active_jobs))),
         repairBacklog: Math.max(0, Math.round(numberOrZero(state.repair_backlog))),
-        spareFillRate: clamp01(numberOrZero(state.spare_fill_rate)),
+        spareFillRate: optionalNonnegativeFiniteNumber(state.spare_fill_rate),
         jobNodeId: stringValue(job.job_id || job.node_id, "unknown_job"),
         jobNodeLabel: downtimeJobLabel(job.task, job.label, job.kind),
         jobState: downtimeJobStateLabel(job.state),

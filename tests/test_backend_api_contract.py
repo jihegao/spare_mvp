@@ -4061,7 +4061,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(all(row["productId"] for row in shortfall["rows"] + carry["rows"]))
         self.assertTrue(all("aircraftModel" in row for row in carry["rows"]))
         self.assertTrue(all("lifeLimited" in row and "lifeLandings" in row and "lifeHours" in row for row in carry["rows"]))
-        self.assertIn(["备件满足率下限", "0.73"], carry["metrics"])
+        self.assertIn(["预计满足率下限", "0.73"], carry["metrics"])
         self.assertTrue(all(row["minimumSatisfactionRate"] == 0.73 for row in carry["rows"]))
         self.assertTrue(all(row["satisfactionConstraintMet"] for row in carry["rows"]))
         self.assertNotIn("aircraft_support_v1_spares", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
@@ -4170,23 +4170,25 @@ class BackendApiContractTest(unittest.TestCase):
                     "sample_index": 0,
                     "events": [
                         {
-                            "event": "spare_shortage",
+                            "event": "spare_request",
                             "details": {
                                 "job_id": "job-001",
                                 "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "航电模块",
-                                "required_quantity": 1,
+                                "immediately_filled_quantity": 0,
+                                "demand_quantity": 1,
                             },
                         },
                         {
-                            "event": "spare_shortage",
+                            "event": "spare_request",
                             "details": {
                                 "job_id": "job-001",
                                 "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "航电模块",
-                                "required_quantity": 1,
+                                "immediately_filled_quantity": 0,
+                                "demand_quantity": 1,
                             },
                         },
                         {
@@ -4222,8 +4224,11 @@ class BackendApiContractTest(unittest.TestCase):
         shortfall_row = projections["spare_shortfall"]["data"][0]
         carry_row = projections["carry_list"]["data"][0]
         self.assertEqual(shortfall_row["demand_count"], 1)
-        self.assertEqual(shortfall_row["filled_count"], 1)
+        self.assertEqual(shortfall_row["filled_count"], 0)
         self.assertEqual(shortfall_row["shortage_count"], 1)
+        self.assertEqual(shortfall_row["shortage_quantity"], 1)
+        self.assertEqual(shortfall_row["request_count"], 1)
+        self.assertEqual(shortfall_row["shortage_probability"], 1)
         self.assertEqual(carry_row["shortage_count"], 0)
         self.assertEqual(carry_row["observed_shortage_count"], 1)
         self.assertEqual(carry_row["recommended_quantity"], 1)
@@ -4319,13 +4324,14 @@ class BackendApiContractTest(unittest.TestCase):
                 "sample_index": sample_index,
                 "events": [
                     {
-                        "event": "spare_shortage",
+                        "event": "spare_request",
                         "details": {
                             "job_id": f"job-{sample_index}",
                             "aircraft_model": "J-15",
                             "resource_id": "carrier-deck",
                             "spare_type": "航电模块",
-                            "required_quantity": sample_demand,
+                            "immediately_filled_quantity": 0,
+                            "demand_quantity": sample_demand,
                         },
                     }
                 ],
@@ -4388,23 +4394,25 @@ class BackendApiContractTest(unittest.TestCase):
                     "sample_index": 0,
                     "events": [
                         {
-                            "event": "spare_shortage",
+                            "event": "spare_request",
                             "details": {
                                 "job_id": "job-j15",
                                 "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "发动机备件",
-                                "required_quantity": 1,
+                                "immediately_filled_quantity": 0,
+                                "demand_quantity": 1,
                             },
                         },
                         {
-                            "event": "spare_shortage",
+                            "event": "spare_request",
                             "details": {
                                 "job_id": "job-j35",
                                 "aircraft_model": "J-35",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "雷达备件",
-                                "required_quantity": 1,
+                                "immediately_filled_quantity": 0,
+                                "demand_quantity": 1,
                             },
                         },
                     ],
