@@ -241,6 +241,7 @@ try {
   }
   check('visualization model advanced', after > before, { before, after });
   await shot('08-visualization');
+  check('no missing local scripts or styles', !evidence.localResourceFailures.some((failure) => failure.status >= 400));
   check('no uncaught browser errors', evidence.consoleErrors.length === 0);
   check('no external web assets required', evidence.externalRequests.length === 0);
 } catch (error) {
