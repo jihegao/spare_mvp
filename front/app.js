@@ -1,4 +1,6 @@
 import "./browser-compat.mjs";
+import { createPaginationState, renderPagination } from "./pagination.mjs";
+const tablePagination = createPaginationState();
 import { ANALYSIS_SUITE_TYPES, analysisSuiteRows } from "./analysis-suite.mjs";
 
 import {
@@ -1090,6 +1092,13 @@ function bindEvents() {
   });
 
   app.addEventListener("click", (event) => {
+    const paginationButton = event.target.closest("[data-pagination-key]");
+    if (paginationButton) {
+      tablePagination.move(paginationButton.dataset.paginationKey, Number(paginationButton.dataset.paginationDelta));
+      render();
+      return;
+    }
+
     const clickedTreeToggleIcon = event.target.closest(".tree-node-toggle");
     if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CLICK_SELECTORS)) {
       event.preventDefault?.();
@@ -7516,6 +7525,8 @@ function renderEquipmentSystemTable(selectedState, productsById) {
   const aircraftRows = selectedState.kind === "aircraft-list"
     ? wholeMachineModels().map((model) => renderEquipmentAircraftTableRow(model, { editable: false }))
     : (selectedState.kind === "aircraft" ? [renderEquipmentAircraftTableRow(selectedState.aircraftModel)] : []);
+  const allRows = [...aircraftRows, ...rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById))];
+  const page = tablePagination.slice("equipment-system", allRows, JSON.stringify([currentBackendProjectId(), selectedEquipmentNodeKey, equipmentSearchQuery]));
   return `
     <div class="table-wrap equipment-system-table-wrap">
       <table class="equipment-system-table">
@@ -7534,11 +7545,11 @@ function renderEquipmentSystemTable(selectedState, productsById) {
           </tr>
         </thead>
         <tbody>
-          ${aircraftRows.join("")}
-          ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById)).join("")}
+          ${page.rows.join("")}
         </tbody>
       </table>
     </div>
+    ${renderPagination("equipment-system", page)}
   `;
 }
 

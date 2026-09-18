@@ -3337,6 +3337,42 @@ test("project list rename persists and survives creating another project from th
   }
 });
 
+test("equipment pagination renders twenty rows, retains original edit indexes and exports every row", async () => {
+  const components = Array.from({ length: 41 }, (_, index) => ({
+    id: `paged-part-${index}`, name: `分页组件${index}`, aircraftModel: "J-15",
+    parentId: "aircraft-root", productType: "LRU", quantity: 1
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-equipment-system",
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 }, components
+    })
+  });
+  const tableHtml = () => runtime.appNode.innerHTML.split('<table class="equipment-system-table">')[1].split('</table>')[0];
+  try {
+    await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页 · 共 42 条/);
+    assert.equal((tableHtml().split('<tbody>')[1].match(/<tr/g) || []).length, 20);
+    assert.match(tableHtml(), /data-path="components\.18\.name"/);
+    assert.doesNotMatch(tableHtml(), /data-path="components\.19\.name"/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "equipment-system", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 3 页/);
+    assert.match(tableHtml(), /data-path="components\.19\.name"/);
+    assert.doesNotMatch(tableHtml(), /data-path="components\.0\.name"/);
+    await runtime.change("[data-path]", { path: "components.19.name" }, { value: "改名第20组件" });
+    await runtime.click("[data-equipment-export-data]");
+    const csv = await runtime.downloads[0].blob.text();
+    assert.match(csv, /改名第20组件/);
+    for (let index = 0; index < 41; index += 1) assert.ok(csv.includes(`paged-part-${index},`));
+    await runtime.click("[data-pagination-key]", { paginationKey: "equipment-system", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 3 \/ 3 页/);
+    assert.equal((tableHtml().split('<tbody>')[1].match(/<tr/g) || []).length, 2);
+    await runtime.input("[data-equipment-search]", {}, { value: "no-match-pagination-context" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+    assert.match(tableHtml(), /data-path="components\.0\.name"/);
+  } finally { runtime.restore(); }
+});
+
 test("equipment aircraft-list selection renders whole aircraft rows and descendants", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({

@@ -5440,3 +5440,5 @@ tr.clickable-table-row.selected-table-row td {
     grid-column: auto;
   }
 }
+
+.table-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
