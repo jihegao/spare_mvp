@@ -19659,12 +19659,13 @@ function renderFormalProjectionBody(formalProjection) {
       ? sourceRows.filter((row) => row.aircraftModel === spareAircraftFilter)
       : sourceRows;
     const rows = sortSpareShortfallRows(filteredRows);
+    const page = tablePagination.slice("formal-spare-shortfall", rows, analysisPaginationContext([spareAircraftFilter, spareShortfallSort]));
     const maxShortage = rows.reduce((maxValue, row) => Math.max(maxValue, row.shortage || row.shortageProbability || 0), 1);
     return `
       <div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap">
         <table>
           <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
-          <tbody>${rows.map((row) => `
+          <tbody>${page.rows.map((row) => `
             <tr>
               <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
               <td><span class="status-badge ${row.level === "严重" ? "danger" : row.level === "短缺" ? "warn" : ""}">${htmlEscape(row.level)}</span></td>
@@ -19673,16 +19674,18 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-spare-shortfall", page)}
     `;
   }
   if (formalProjection.analysisType === "carry_list") {
     const rows = (formalProjection.rows || []).filter((row) => !carryHideZeroDemand || row.demand > 0);
+    const page = tablePagination.slice("formal-carry-list", rows, analysisPaginationContext([carryHideZeroDemand]));
     const maxCarryQuantity = rows.reduce((maxValue, row) => Math.max(maxValue, row.qty || 0), 1);
     return `
       <div class="toolbar-row"><label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求量为 0</label><span>满足率下限：${fixed(rows[0]?.minimumSatisfactionRate || 0.9, 2)}；满足约束后利用率越高越优</span></div><div class="table-wrap">
         <table>
           <thead><tr><th>机型</th><th>备件</th><th>需求</th><th>推荐携行倍率</th><th>备件满足率</th><th>数量</th><th>备件利用率</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
-          <tbody>${rows.map((row) => `
+          <tbody>${page.rows.map((row) => `
             <tr>
               <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.qty}</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
               <td><span class="status-badge ${row.priority === "高" ? "danger" : row.priority === "中" ? "warn" : "success"}">${htmlEscape(row.priority)}</span></td>
@@ -19691,16 +19694,19 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-carry-list", page)}
       <div class="decision-support-card"><strong>携行清单说明</strong><span>正式来源为 projection payload，默认目标为携行备件越少越好，按推荐携行倍率和风险等级形成转场前装箱评审清单。</span></div>
     `;
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
+    const page = tablePagination.slice("formal-mission-waves", rows, analysisPaginationContext());
     return `
       <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
         <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.probability))}</td></tr>`).join("") || '<tr><td colspan="3">当前结果没有波次成功率明细</td></tr>'}</tbody>
+        <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.probability))}</td></tr>`).join("") || '<tr><td colspan="3">当前结果没有波次成功率明细</td></tr>'}</tbody>
       </table></div>
+      ${renderPagination("formal-mission-waves", page)}
       ${renderLiteMesaMissionReliabilityWaveChart(rows.map((row) => ({
         sequence: row.sequence,
         waveLabel: row.waveLabel || row.timeLabel,
@@ -19714,6 +19720,7 @@ function renderFormalProjectionBody(formalProjection) {
     const primaryFactors = rows.slice(0, 2);
     const maxFactorCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.count || 0), 1);
     const snapshots = visibleDowntimeAnomalySnapshots(formalProjection);
+    const page = tablePagination.slice("formal-anomaly-snapshots", snapshots, analysisPaginationContext());
     return `
       <div class="factor-grid">
         <div class="factor-column"><h4>停机因素</h4><div class="factor-list">${primaryFactors.map((row) => `<div class="factor-item"><span>${htmlEscape(row.label)}</span><span>${row.contributionLabel}</span></div>`).join("")}</div></div>
@@ -19732,9 +19739,9 @@ function renderFormalProjectionBody(formalProjection) {
       <div class="table-wrap">
         <table>
           <thead><tr><th>序号</th><th>时间</th><th>事件</th><th>结果</th><th>保障活动状态</th><th>作业</th><th>状态</th><th>采样位置</th><th>快照动作</th></tr></thead>
-          <tbody>${snapshots.map((snapshot, index) => `
+          <tbody>${page.rows.map((snapshot, index) => `
             <tr>
-              <td>${index + 1}</td>
+              <td>${page.offset + index + 1}</td>
               <td>${htmlEscape(snapshot.timeLabel)}</td>
               <td>${htmlEscape(snapshot.eventLabel)}</td>
               <td>${htmlEscape(snapshot.result)}</td>
@@ -19747,6 +19754,7 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-anomaly-snapshots", page)}
     `;
   }
   return "";
@@ -20918,6 +20926,13 @@ function carrySatisfactionConstraintMarginDisplay(value) {
   return `${prefix}${(margin * 100).toFixed(2)}%`;
 }
 
+function analysisPaginationContext(filters = []) {
+  return JSON.stringify([
+    currentBackendProjectId(), selectedRunContextKey, selectedFeatureId,
+    liteMesaAnalysisRequestEpoch, backendRun?.run_id || "", ...filters
+  ]);
+}
+
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
     return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存运行中生成分析摘要。</p></div>`;
@@ -20936,16 +20951,18 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(concreteRows.map((row) => row.aircraftModel))].sort();
     const sortedRows = visibleSpareShortfallRows(result);
+    const page = tablePagination.slice("analysis-spare-shortfall", sortedRows, analysisPaginationContext([spareAircraftFilter, spareShortfallSort]));
     return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>风险</th></tr></thead>
-      <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
-    </table></div>`;
+      <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
+    </table></div>${renderPagination("analysis-spare-shortfall", page)}`;
   }
   if (definition.analysisType === "carry_list") {
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(rows.map((row) => String(row.aircraftModel || "").trim()).filter(Boolean))].sort();
     const activeAircraftFilter = aircraftModels.includes(carryAircraftFilter) ? carryAircraftFilter : "";
     const visibleRows = visibleCarryListRows(result);
+    const page = tablePagination.slice("analysis-carry-list", visibleRows, analysisPaginationContext([carryAircraftFilter, carryHideZeroDemand, carryRecommendedSort]));
     return `
       <div class="toolbar-row">
         <label>机型 <select data-carry-aircraft-filter><option value="">全部机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${activeAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label>
@@ -20953,16 +20970,19 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
       </div>
       <div class="table-wrap"><table class="lite-mesa-stat-table">
         <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th>备件满足率</th><th>约束状态</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
-        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="12">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+        <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="12">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
+      ${renderPagination("analysis-carry-list", page)}
     `;
   }
   if (definition.analysisType === "mission_reliability") {
+    const page = tablePagination.slice("analysis-mission-waves", rows, analysisPaginationContext());
     return `
       <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
         <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate))}</td></tr>`).join("") || '<tr><td colspan="3">当前会话没有波次成功率明细</td></tr>'}</tbody>
+        <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate))}</td></tr>`).join("") || '<tr><td colspan="3">当前会话没有波次成功率明细</td></tr>'}</tbody>
       </table></div>
+      ${renderPagination("analysis-mission-waves", page)}
       ${renderLiteMesaMissionReliabilityWaveChart(rows)}
     `;
   }
@@ -21049,6 +21069,9 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
     </label>
   `).join("");
   if (!selected.size) {
+    for (const key of ["analysis-downtime-events", "analysis-event-snapshots"]) {
+      tablePagination.slice(key, [], analysisPaginationContext([[]]));
+    }
     return `
       <div class="toolbar-row downtime-factor-filter" aria-label="停机因素筛选"><strong>停机因素</strong>${filterControls}</div>
       <div class="empty-state"><strong>请选择至少一种停机因素</strong><p>当前未选择停机因素，不展示历史筛选结果。</p></div>
@@ -21076,6 +21099,7 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
 }
 
 function renderLiteMesaDowntimeEventDetails(events) {
+  const page = tablePagination.slice("analysis-downtime-events", events, analysisPaginationContext([[...selectedDowntimeFactorTypes].sort()]));
   if (!events.length) {
     return `<div class="empty-state"><strong>暂无该类型停机事件</strong><p>当前筛选范围内没有可展示的停机事件明细。</p></div>`;
   }
@@ -21083,7 +21107,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
     <div class="section-head downtime-event-detail-head"><h3>停机事件明细</h3><span>${events.length} 条</span></div>
     <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table">
       <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长（小时）</th><th>事件说明</th><th>分类信息</th></tr></thead>
-      <tbody>${events.map((event) => {
+      <tbody>${page.rows.map((event) => {
         const row = downtimeEventDisplayRow(event);
         return `<tr>
           <td>${htmlEscape(row.factorLabel)}</td>
@@ -21098,6 +21122,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
         </tr>`;
       }).join("")}</tbody>
     </table></div>
+    ${renderPagination("analysis-downtime-events", page)}
   `;
 }
 
@@ -21123,6 +21148,7 @@ function renderLiteMesaMissionReliabilityWaveChart(rows) {
 }
 
 function renderLiteMesaDowntimeEventSnapshots(snapshots) {
+  const page = tablePagination.slice("analysis-event-snapshots", snapshots, analysisPaginationContext([[...selectedDowntimeFactorTypes].sort()]));
   if (!snapshots.length) {
     return `<div class="empty-state"><strong>停机事件一览</strong><p>当前停机因素运行未捕获到停机事件日志。</p></div>`;
   }
@@ -21132,8 +21158,9 @@ function renderLiteMesaDowntimeEventSnapshots(snapshots) {
         <h3>停机事件一览</h3>
         <span>${snapshots.length} 条停机事件</span>
       </div>
-      ${snapshots.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, index)).join("")}
+      ${page.rows.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, page.offset + index)).join("")}
     </div>
+    ${renderPagination("analysis-event-snapshots", page)}
   `;
 }
 

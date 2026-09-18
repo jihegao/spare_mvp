@@ -6500,6 +6500,139 @@ test("ambiguous legacy logistics endpoint names stay visibly unresolved", async 
   }
 });
 
+test("analysis tables paginate 0, 20, 21 and 41 rows without truncating exports", async () => {
+  for (const [feature, key, kind] of [
+    ["spare-planning-spare-shortfall-analysis", "analysis-spare-shortfall", "spares"],
+    ["spare-planning-carry-list-analysis", "analysis-carry-list", "carry"],
+    ["mission-reliability-task-reliability", "analysis-mission-waves", "waves"]
+  ]) {
+    for (const count of [0, 20, 21, 41]) {
+      const rows = Array.from({ length: count }, (_, index) => ({
+        aircraftModel: index < 21 ? "A" : "B", productId: `page-product-${index}`,
+        demand: index + 1, filled: 1, fillRate: 1, recommended: index + 1,
+        satisfactionRate: 1, shortage: 0, riskLevel: "低",
+        waveLabel: `page-wave-${index}`, sampleCount: 2, meanMissionSuccessRate: 1
+      }));
+      if (kind === "carry") {
+        rows.splice(0, 0, { aircraftModel: "A", productId: "hidden-zero-first", demand: 0, recommended: 0 });
+        rows.push({ aircraftModel: "A", productId: "hidden-zero-last", demand: 0, recommended: 0 });
+      }
+      const runtime = await setupRuntimeApp({
+        hash: `feature=${feature}`,
+        liteMesaAnalysisResponseOverrides: { rows, wave_rows: kind === "waves" ? rows : [] }
+      });
+      try {
+        await runtime.click("[data-lite-mesa-analysis-action='run']");
+        const body = () => runtime.appNode.innerHTML.match(/<table class="lite-mesa-stat-table(?: task-reliability-result-table)?">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)?.[1] || "";
+        if (count > 20) {
+          assert.match(runtime.appNode.innerHTML, new RegExp(`第 1 / ${Math.ceil(count / 20)} 页 · 共 ${count} 条`));
+          assert.equal((body().match(/<tr>/g) || []).length, 20);
+          assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="-1" disabled`));
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          assert.match(body(), kind === "waves" ? /page-wave-20/ : /page-product-20/);
+          assert.doesNotMatch(body(), kind === "waves" ? /page-wave-0</ : /page-product-0</);
+          await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: feature });
+          assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[0].rows.length, count);
+          if (count === 41) {
+            await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+            assert.equal((body().match(/<tr>/g) || []).length, 1);
+            assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="1" disabled`));
+            assert.match(body(), kind === "waves" ? /page-wave-40/ : /page-product-40/);
+            if (kind === "spares") {
+              await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "desc" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+              assert.match(body(), /page-product-40/);
+              await runtime.change("[data-spare-aircraft-filter]", {}, { value: "A" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+            }
+            if (kind === "carry") {
+              await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "desc" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+              await runtime.change("[data-carry-aircraft-filter]", {}, { value: "A" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+              await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+              await runtime.change("[data-carry-hide-zero]", {}, { checked: false, type: "checkbox" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 23 条/);
+            }
+          }
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          await runtime.click("[data-lite-mesa-analysis-action='run']");
+          assert.match(runtime.appNode.innerHTML, /第 1 \/ [23] 页/);
+        } else {
+          assert.doesNotMatch(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}"`));
+          assert.equal((body().match(/<tr>/g) || []).length, count || 1);
+        }
+      } finally { runtime.restore(); }
+    }
+  }
+});
+
+test("downtime pagination appears only beyond twenty details or snapshots", async () => {
+  for (const count of [0, 20, 21]) {
+    const events = Array.from({ length: count }, (_, index) => ({
+      factor: "failure", equipment_name: `small-event-${index}`, seed: index,
+      start_minute: index, end_minute: index + 1, duration_hours: 1 / 60
+    }));
+    const runtime = await setupRuntimeApp({
+      hash: "feature=mission-reliability-downtime-factor-analysis",
+      liteMesaAnalysisResponseOverrides: { event_details: events, event_snapshots: events }
+    });
+    try {
+      await runtime.click("[data-lite-mesa-analysis-action='run']");
+      assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, Math.min(count, 20));
+      for (const key of ["analysis-downtime-events", "analysis-event-snapshots"]) {
+        if (count <= 20) assert.doesNotMatch(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}"`));
+        else {
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="1" disabled`));
+        }
+      }
+      if (count === 21) {
+        assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, 1);
+        assert.match(runtime.appNode.innerHTML, /small-event-20/);
+      }
+    } finally { runtime.restore(); }
+  }
+});
+
+test("downtime details and snapshots paginate independently and export the full filtered events", async () => {
+  const events = Array.from({ length: 41 }, (_, index) => ({
+    factor: index < 21 ? "failure" : "spare_shortage", equipment_name: `event-equipment-${index}`,
+    start_minute: index, end_minute: index + 1, duration_hours: 1 / 60
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-downtime-factor-analysis",
+    liteMesaAnalysisResponseOverrides: {
+      event_details: events,
+      event_snapshots: events.map((event, index) => ({ ...event, seed: 1000 + index, simulation_time: index }))
+    }
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const details = () => runtime.appNode.innerHTML.match(/downtime-event-detail-table">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)?.[1] || "";
+    assert.equal((details().match(/<tr>/g) || []).length, 20);
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, 20);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-downtime-events", paginationDelta: "1" });
+    assert.match(details(), /event-equipment-20/);
+    assert.match(runtime.appNode.innerHTML, /随机种子 1000/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /随机种子 1020/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /随机种子 1000/);
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-downtime-factor-analysis" });
+    assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[1].rows.length, 41);
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false, type: "checkbox" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+    assert.match(details(), /event-equipment-0</);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-downtime-events", paginationDelta: "1" });
+    for (const factor of ["failure", "equipment_shortage", "preventive"]) {
+      await runtime.change("[data-downtime-factor-filter]", {}, { value: factor, checked: false, type: "checkbox" });
+    }
+    assert.match(runtime.appNode.innerHTML, /请选择至少一种停机因素/);
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "failure", checked: true, type: "checkbox" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页/);
+  } finally { runtime.restore(); }
+});
+
 test("experiment plan row selection is interactive for template-created projects at runtime", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-list" });
 
