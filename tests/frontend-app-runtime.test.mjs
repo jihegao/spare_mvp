@@ -1764,7 +1764,7 @@ test("periodic task editor uses named week month and year profiles without total
     assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 4 周已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置周剖面<\/option>/g) || []).length, 3);
     await reopenedRuntime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
-    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周 · 有效/);
+    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周 · 已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置月剖面<\/option>/g) || []).length, 11);
   } finally {
     reopenedRuntime.restore();
@@ -1793,10 +1793,28 @@ test("year profile status accepts any configured month while preserving invalid-
         assert.match(runtime.appNode.innerHTML, /年剖面引用不存在的月剖面 missing-month/);
         assert.match(runtime.appNode.innerHTML, /0 \/ 12 月 · 0 \/ 52 周 · 待完善/);
       } else {
-        assert.match(runtime.appNode.innerHTML, new RegExp(`${configured} / 12 月 · ${configured} / 52 周 · ${configured ? "有效" : "待完善"}`));
+        assert.match(runtime.appNode.innerHTML, new RegExp(`${configured} / 12 月 · ${configured} / 52 周 · ${configured ? "已配置" : "待完善"}`));
       }
     } finally { runtime.restore(); }
   }
+});
+
+test("a year with one empty month is configured without claiming the schedule is valid", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-periodic-task",
+    projectJson: createRuntimeProjectJson({ missionProfile: {
+      periodicTasks: [{ id: "week-empty", name: "empty week", compositeTasks: [] }],
+      periodicProfileLists: {
+        month: [{ id: "month-empty", name: "empty month", weekProfileIds: Array(4).fill("") }],
+        year: [{ id: "year-empty", name: "year", monthProfileIds: ["month-empty", ...Array(11).fill("")] }]
+      }
+    } })
+  });
+  try {
+    await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+    assert.match(runtime.appNode.innerHTML, /1 \/ 12 月 · 0 \/ 52 周 · 已配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /1 \/ 12 月 · 0 \/ 52 周 · 有效/);
+  } finally { runtime.restore(); }
 });
 
 test("periodic task editor preserves invalid configured references and marks the simulation source invalid", async () => {
@@ -3550,6 +3568,25 @@ test("modeling pagination keeps the entire RBD SVG while node and edge detail pa
     assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [2, 1]);
     assert.match(tableBodies()[1], /rbd-page-21/);
     assert.equal(svg(), fullSvg);
+  } finally { runtime.restore(); }
+});
+
+test("adding an aircraft opens its last page and keeps the new selection deletable", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-combat-unit",
+    projectJson: createRuntimeProjectJson({ combatUnit: {
+      members: Array.from({ length: 20 }, (_, index) => ({ aircraftNo: `AC-${index}`, model: "J-15", airport: "甲板" }))
+    } })
+  });
+  try {
+    await runtime.click("[data-combat-unit-add]");
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+    assert.match(runtime.appNode.innerHTML, /data-select-combat-unit-member="20" checked/);
+    assert.match(runtime.appNode.innerHTML, /data-combat-unit-index="20"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-combat-unit-delete disabled/);
+    await runtime.click("[data-combat-unit-delete]");
+    assert.equal((runtime.appNode.innerHTML.match(/data-select-combat-unit-member="/g) || []).length, 20);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="combat-members"/);
   } finally { runtime.restore(); }
 });
 
@@ -6834,6 +6871,11 @@ test("downtime details and snapshots paginate independently and export the full 
     await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
     assert.match(runtime.appNode.innerHTML, /随机种子 1020/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /随机种子 1000/);
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1020/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1040/);
     await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-downtime-factor-analysis" });
     assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[1].rows.length, 41);
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false, type: "checkbox" });
@@ -7812,6 +7854,65 @@ test("an in-flight Monte Carlo response cannot restore results from an updated f
   }
 });
 
+test("unfreezing the selected plan clears completed analysis and persists current-project context", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-unfreeze", name: "待取消方案", projectJson: createRuntimeProjectJson(), samples: 7, seed: 707 })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis", experimentPlans,
+    liteMesaAnalysisResponseOverrides: { sample_count: 7 }
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-unfreeze" });
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    assert.match(runtime.appNode.innerHTML, /分析结果已生成：7 个样本/);
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    await runtime.click("[data-lite-mesa-action='run']");
+    assert.match(runtime.appNode.innerHTML, /总样本/);
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-unfreeze]", { experimentPlanUnfreeze: "plan-unfreeze" });
+    assert.equal(experimentPlans[0].status, "draft");
+    assert.equal(JSON.parse(runtime.storage.get("spare-mvp:selectedRunContextByProject"))["project-runtime"], "current-project:project-runtime");
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /冻结方案参数只读/);
+    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /分析结果已生成：7 个样本/);
+  } finally { runtime.restore(); }
+});
+
+test("late frozen analysis responses cannot reappear after unfreeze", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-unfreeze-flight", name: "并发取消方案", projectJson: createRuntimeProjectJson(), samples: 7 })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail", experimentPlans, liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-unfreeze-flight" });
+    await runtime.click("[data-lite-mesa-action='run']");
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-unfreeze]", { experimentPlanUnfreeze: "plan-unfreeze-flight" });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    await runtime.flush();
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本/);
+  } finally { runtime.restore(); }
+});
+
+test("refreshing a selected plan that became draft resets its runnable context", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-remote-unfreeze", name: "远程取消方案", projectJson: createRuntimeProjectJson(), samples: 7 })];
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-monte-carlo-experiment-detail", experimentPlans });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-remote-unfreeze" });
+    experimentPlans[0].status = "draft";
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", {});
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.equal(JSON.parse(runtime.storage.get("spare-mvp:selectedRunContextByProject"))["project-runtime"], "current-project:project-runtime");
+  } finally { runtime.restore(); }
+});
+
 test("frozen run context survives a cold workbench restore", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
@@ -8575,6 +8676,17 @@ async function setupRuntimeApp({
         experiment_plan_id: "plan-runtime-created",
         config: body.config || {}
       });
+    }
+    const unfreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/unfreeze$/);
+    if (unfreezeMatch && method === "POST") {
+      const id = decodeURIComponent(unfreezeMatch[2]);
+      const plan = experimentPlans.find((item) => item.experiment_plan_id === id);
+      if (plan) {
+        plan.status = "draft";
+        delete plan.canonical_fingerprint;
+        delete plan.frozen_at;
+      }
+      return jsonResponse(plan || { experiment_plan_id: id, status: "draft" });
     }
     const experimentPlanFreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/freeze$/);
     if (experimentPlanFreezeMatch && method === "POST") {

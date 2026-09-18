@@ -48,6 +48,17 @@ class ExperimentPermissionsTest(unittest.TestCase):
             self.assertEqual(caught.exception.code, 'forbidden')
         self.api.delete_experiment_plan(self.project['project_id'], legacy['experiment_plan_id'], actor_user_id='user-admin')
 
+    def test_unknown_plan_delete_returns_structured_not_found(self):
+        for actor in ['user-basic', 'user-admin']:
+            with self.subTest(actor=actor):
+                with self.assertRaises(BackendApiError) as caught:
+                    self.api.delete_experiment_plan(
+                        self.project['project_id'], 'missing-plan', actor_user_id=actor,
+                    )
+                self.assertEqual(caught.exception.code, 'experiment_plan_not_found')
+                self.assertEqual(caught.exception.details['experiment_plan_id'], 'missing-plan')
+                self.assertEqual(caught.exception.details['project_id'], self.project['project_id'])
+
     def test_all_roles_unfreeze_and_clear_fingerprint_but_preserve_owner(self):
         for actor in ['user-basic', 'user-admin', 'user-data']:
             plan = self.create()
