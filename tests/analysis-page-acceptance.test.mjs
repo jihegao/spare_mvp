@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ANALYSIS_PAGES, validatePageEvidence, validateIndependentRunSet, validateAvailableResponse} from '../scripts/analysis-page-acceptance.mjs';
 const expected = {...ANALYSIS_PAGES[0], project_hash:'project', plan_hash:'plan'};
-const entry = () => ({http_status:200,status:'session_complete',analysis_type:'mission_reliability',response_analysis_type:'mission_reliability',completed:50,failed:0,response_workers:8,kind:'frozen_plan',response_context_type:'frozen_plan',request_settings_present:false,project_hash:'project',response_project_hash:'project',plan_hash:'plan',response_plan_hash:'plan',plan_fingerprint_hash:'fingerprint',response_plan_fingerprint_hash:'fingerprint',session_id:'analysis-session-abcd'});
+const entry = () => ({http_status:200,status:'session_complete',analysis_type:'mission_reliability',response_analysis_type:'mission_reliability',completed:50,failed:0,response_workers:8,kind:'frozen_plan',response_context_type:'frozen_plan',request_settings_present:false,project_hash:'project',response_project_hash:'project',plan_hash:'plan',response_plan_hash:'plan',plan_fingerprint_hash:'fingerprint',response_plan_fingerprint_hash:'fingerprint',scenario_hash:'scenario',scenario_version_hash:'revision',session_id:'analysis-session-abcd'});
 const page = () => ({configured_samples:50,configured_workers:8,context_matches:true,data_rows:20,display_seconds:60,ui_sample_counts:{total:50,successful:50,failed:0}});
 test('five original pages have distinct routes and their original buttons', () => {
   assert.equal(new Set(ANALYSIS_PAGES.map(p=>p.route)).size,5);
@@ -31,6 +31,7 @@ test('five real sessions required; cached response or changed frozen input rejec
   const api=ANALYSIS_PAGES.map((_,i)=>({...entry(),session_id:`analysis-session-${i}`}));
   const pages=ANALYSIS_PAGES.map(page);
   assert.doesNotThrow(()=>validateIndependentRunSet(api,pages));
+  assert.throws(()=>validateIndependentRunSet(api.map((a,i)=>({...a,scenario_hash:i?'other':a.scenario_hash})),pages),{safeCode:'COMPILED_SCENARIO_CHANGED'});
   assert.throws(()=>validateIndependentRunSet(api.slice(1),pages));
   assert.throws(()=>validateIndependentRunSet(api.map(a=>({...a,session_id:api[0].session_id})),pages));
   assert.throws(()=>validateIndependentRunSet(api.map((a,i)=>({...a,plan_fingerprint_hash:i?'different':a.plan_fingerprint_hash})),pages));

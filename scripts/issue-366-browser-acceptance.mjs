@@ -113,6 +113,8 @@ try {
         entry.failed = number(payload?.failed_sample_count ?? payload?.failed_samples?.length ?? 0);
         entry.session_id = /^analysis-session-[a-f0-9]+$/.test(payload?.analysis_session_id || '') ? payload.analysis_session_id : null;
         entry.response_project_hash = digest(payload?.project_id);
+        entry.scenario_hash = typeof payload?.scenario_id === 'string' ? digest(payload.scenario_id) : null;
+        entry.scenario_version_hash = typeof payload?.scenario_version === 'string' ? digest(payload.scenario_version) : null;
         entry.response_plan_hash = payload?.context?.experiment_plan_id ? digest(payload.context.experiment_plan_id) : null;
         entry.response_plan_fingerprint_hash = payload?.context?.planFingerprint ? digest(payload.context.planFingerprint) : null;
         entry.response_context_type = ['current_project', 'frozen_plan'].includes(payload?.context?.type) ? payload.context.type : null;
@@ -144,14 +146,22 @@ try {
     : projects.filter(item => /F[\s_-]?35/i.test(item.name));
   assert(candidates.length === 1, 'PROJECT_SELECTION_AMBIGUOUS');
   stage = 'select-current-project';
+  // V2 intentionally hides successful autosave/hydration banners. Observe the
+  // real Project response and its next paint instead of waiting for hidden text.
+  const hydratedResponse = page.waitForResponse(response => response.request().method() === 'GET' && /^\/api\/projects\/[^/]+$/.test(new URL(response.url()).pathname));
   await page.locator('.project-card').nth(candidates[0].index).locator('[data-enter-workbench]').click();
+  const loadedProjectResponse = await hydratedResponse;
+  assert(loadedProjectResponse.status() === 200, 'PROJECT_HYDRATION_FAILED');
+  const loadedProject = await loadedProjectResponse.json();
+  report.hydrated_project_hash = digest(loadedProject.project_id);
   await page.waitForFunction(() => document.querySelector('.workspace-shell'));
-  await page.getByText('已从 Project draft 恢复', { exact: true }).waitFor();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.evaluate(() => { location.hash = 'feature=spare-planning-monte-carlo-experiment-detail'; });
   await page.locator('[data-current-experiment-plan]').waitFor();
   const currentKey = await page.locator('[data-current-experiment-plan] option').evaluateAll(options => options.find(option => option.value.startsWith('current-project:'))?.value);
   assert(currentKey && currentKey !== 'current-project:none', 'CURRENT_PROJECT_CONTEXT_MISSING');
   report.project_hash = digest(currentKey.slice('current-project:'.length));
+  assert(report.project_hash === report.hydrated_project_hash, 'HYDRATED_PROJECT_IDENTITY_MISMATCH');
   await page.locator('[data-current-experiment-plan]').selectOption(currentKey);
   stage = 'prepare-frozen-plan';
   const planName = process.env.PLAN_NAME || `Acceptance 50x8 ${Date.now()}`;
@@ -186,6 +196,17 @@ try {
   const configuredWorkers = Number(await page.locator('[data-lite-mesa-field="parallelCores"]').inputValue());
   assert(configuredSamples === 50 && configuredWorkers === 8, 'FROZEN_PLAN_MUST_BE_50_SAMPLES_8_WORKERS');
   captureEnabled = true;
+  stage = 'original-page-readiness';
+  report.readiness = [];
+  for (const definition of ANALYSIS_PAGES) {
+    await page.evaluate(route => { location.hash = `feature=${route}`; }, definition.route);
+    await page.locator(definition.button).waitFor();
+    await page.locator('[data-current-experiment-plan]').selectOption(planKey);
+    assert(await page.locator(definition.button).isEnabled(), 'ORIGINAL_RUN_BUTTON_NOT_READY');
+    assert(await page.locator('[data-analysis-suite-run], [data-analysis-suite-result]').count() === 0, 'PRODUCT_BATCH_CONTROL_MUST_BE_ABSENT');
+    assert(report.api.length === 0, 'READINESS_TRIGGERED_ANALYSIS');
+    report.readiness.push({analysis_type:definition.type, original_button_ready:true, frozen_context_selected:await page.locator('[data-current-experiment-plan]').inputValue() === planKey});
+  }
   const allStarted = performance.now();
   for (const [index, definition] of ANALYSIS_PAGES.entries()) {
     stage = `independent-page-${definition.type}`;
@@ -243,6 +264,7 @@ try {
       await page.waitForTimeout(50);
     }
     assert(report.api.length === index + 1, 'ONE_REQUEST_PER_PAGE_REQUIRED');
+    console.log(JSON.stringify({event:'original-page-result', analysis_type:definition.type, display_seconds:record.display_seconds, completed:report.api[index].completed, failed:report.api[index].failed, workers:report.api[index].response_workers}));
     validatePageEvidence(report.api[index], record, {...definition, project_hash:report.project_hash, plan_hash:report.plan_hash});
     if (definition.type !== 'monte_carlo') assert(await page.locator('[data-analysis-xlsx-export]').isEnabled(), 'RESULT_NOT_EXPORTABLE');
     if (screenshotDir) await page.screenshot({path:path.join(screenshotDir, `${definition.type}.png`), fullPage:true});

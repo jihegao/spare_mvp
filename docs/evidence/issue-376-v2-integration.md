@@ -24,4 +24,22 @@ V2 应用基线为 `e0f7824ecc6d9d2d00543aafd978e70b35bedfc4`，验收文档提�
 
 新隔离目录为 `C:\Users\user\Models\spare_mvp-v2-release-20260918-issue376`。原代码、manifest及SQLite只读backup已保留，数据库quick_check为ok；旧服务4173/8767仍运行。候选使用独立端口验证后才合并main并按main SHA构建发布；原包及其运行库保留作回滚，不修改4700-3。
 
-当前目标机五原页面正式验收尚待执行；不得提前称为通过。
+## 4700-4 候选五原页面验收
+
+候选源码 `ea1b704d5d19ecc7977c9ee84b27131d13ee06d0`，包内 source manifest 绑定该提交；18,824 个不可变文件校验通过，555 个前端离线资源和90个离线wheel通过构建校验。原生 Windows Edge153.0.4234.32、Python3.13.15，在2026-09-18 23:54:54至23:59:47（Asia/Shanghai，UTC15:54:54至15:59:47）执行。后续发布跨至9月19日，目录日期表示本次流程启动日。
+
+| 原有入口 | 点击至完整显示（秒） | 完成/失败 | workers |
+|---|---:|---:|---:|
+| Monte Carlo | 54.688 | 50/0 | 8 |
+| 备件短板 | 55.472 | 50/0 | 8 |
+| 转场携行 | 55.840 | 50/0 | 8 |
+| 任务可靠度 | 55.613 | 50/0 | 8 |
+| 停机因素 | 57.037 | 50/0 | 8 |
+
+五个原按钮分别发起新请求、五个独立session，响应HTTP200/session_complete；未复用一组样本、未改请求设置。计时源为浏览器performance.now，从真实click到当前方案结果非占位DOM渲染后双requestAnimationFrame；完整API采集与身份核验另行等待，不用后端秒数冒充前端时间。CDP配置256MiB总缓冲/128MiB单资源以完整采集最大13.5MB响应，不保存原始payload或trace。预检零分析请求、五页原入口可用且无产品批量按钮。首次工具等待已隐藏autosave成功文案失败时没有启动分析，修为权威Project GET完整响应和身份校验后正式重跑，不能把预检失败当业务失败或省略正式结果。
+
+冻结方案由当前权威Project通过UI新建并冻结，50样本、8workers、seed20260621。只读后验重新通过唯一SimulationAdapter编译，确认与当前Project相同input hash `ad13e1afd88f3f90fb430e2aa3f1da33c0ab0d0e0c692baee1d89950eb61d532`；实际9架飞机、423行为组件、43天、104波次。此前“8架飞机”的描述不正确，本次9飞机与8workers分别记录；未缩减案例或场景。所有响应的project、冻结指纹、scenario/version与该输入一致。
+
+资源观测覆盖准备和正式串行运行：CPU峰值100%，候选Python进程合计峰值RSS1,180,692,480 bytes，最低系统可用内存1,181,650,944 bytes。进程数峰值11含后端、Solara、worker和监控，不等同worker数；正常分析仍8workers。旧4173/8767服务保持空闲运行，未为了计时停用户服务。没有并发其他仿真或全量测试。
+
+聚合证据见 `issue-376-v2-target-candidate.json`。工具hydration/readiness和身份校验修改经独立终审、5项工具测试通过；这些后续修改不改变已测试候选生产应用。最终main包仍需绑定实际merge SHA并验证生产文件等价及4173/8767实际切换。

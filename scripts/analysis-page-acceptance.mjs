@@ -38,4 +38,5 @@ export function validateIndependentRunSet(api, pages) {
   acceptanceAssert(api.length === 5 && pages.length === 5, 'FIVE_INDEPENDENT_RESULTS_REQUIRED');
   acceptanceAssert(new Set(api.map(item => item.session_id)).size === 5, 'ANALYSIS_SESSIONS_NOT_DISTINCT');
   acceptanceAssert(new Set(api.map(item => item.plan_fingerprint_hash)).size === 1, 'FROZEN_INPUT_CHANGED');
+  acceptanceAssert(api.every(item => item.scenario_hash && item.scenario_version_hash) && new Set(api.map(item => item.scenario_hash + ':' + item.scenario_version_hash)).size === 1, 'COMPILED_SCENARIO_CHANGED');
 }
