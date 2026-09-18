@@ -117,7 +117,12 @@ try {
   await frame.locator('body').waitFor();
   await frame.getByRole('button', { name: '单步推进', exact: true }).waitFor();
   const minute = async () => Number((await frame.locator('body').innerText()).match(/仿真分钟\s+(\d+(?:\.\d+)?)/)?.[1] ?? NaN);
-  const before = await minute();
+  let before = await minute();
+  for (let attempt = 0; attempt < 30 && !Number.isFinite(before); attempt++) {
+    await page.waitForTimeout(500);
+    before = await minute();
+  }
+  check('visualization initial frame ready', Number.isFinite(before));
   await frame.getByRole('button', { name: '单步推进', exact: true }).click();
   let after = before;
   for (let attempt = 0; attempt < 15 && !(after > before); attempt++) {
