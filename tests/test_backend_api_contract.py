@@ -3736,7 +3736,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["metrics"], [
             *[[field["label"], field["display_value"]] for field in payload["result_fields"]],
             ["仿真总次数", "2"],
-            ["成功次数", "0"],
+            ["成功次数", "2"],
         ])
         self.assertNotIn("任务剖面可靠性", json.dumps(payload["metrics"], ensure_ascii=False))
         self.assertEqual(payload["visualization_state_series"]["run_id"], payload["run_id"])
