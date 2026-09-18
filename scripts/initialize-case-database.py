@@ -6,6 +6,8 @@ import sqlite3
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+if (ROOT / "app" / "src").is_dir():
+    ROOT = ROOT / "app"
 sys.path.insert(0, str(ROOT))
 from src.spare_mvp_backend.api import BackendApi
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database

@@ -16,9 +16,10 @@ import subprocess
 APP_FILES = {
     'exports/project-minimum-001.json', 'exports/project-case-large.json',
     'public/import-templates/canonical_platform_case.json',
+    'src/spare_mvp_backend/schema.sql',
 }
 SCRIPT_FILES = {
-    'start-portable.ps1', 'stop-portable.ps1', 'test-frontend-modules.ps1',
+    'start-portable.ps1', 'stop-portable.ps1', 'test-frontend-modules.ps1', 'initialize-case-database.py',
     'test-port-selection.ps1', 'verify-portable-package.ps1', 'portable-package.py', 'portable-process.ps1',
 }
 ENTRYPOINTS = {'Start-Platform.cmd', 'Start-Platform.vbs', 'Stop-Platform.cmd'}

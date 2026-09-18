@@ -1,6 +1,8 @@
 import importlib.util
 import json
 import subprocess
+import sys
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -76,6 +78,24 @@ class PortablePackageTest(unittest.TestCase):
             cache.write_bytes(b'extra bytecode')
             with self.assertRaisesRegex(ValueError, 'Package integrity mismatch'):
                 package.verify(root)
+
+    def test_staged_application_initializes_database_without_source_checkout(self):
+        tracked = subprocess.check_output(['git', '-C', str(ROOT), 'ls-files', '-z']).decode().split('\0')
+        names = {name for name in tracked if name and (package.app_file(name) or name in package.PACKAGE_SUPPORT_FILES)}
+        manifest = {'format_version': 2, 'source_commit': 'a' * 40,
+                    'files': {name: package.digest(ROOT / name) for name in names},
+                    'build_inputs': {name: package.digest(ROOT / name) for name in package.BUILD_INPUTS}}
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / 'package'
+            package.stage(ROOT, destination, manifest)
+            database = destination / 'data' / 'fixture.sqlite3'
+            result = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8',
+                str(destination / 'scripts' / 'initialize-case-database.py'), '--database', str(database)],
+                cwd=tmp, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((destination / 'app' / 'src' / 'spare_mvp_backend' / 'schema.sql').is_file())
+            with sqlite3.connect(database) as connection:
+                self.assertEqual(connection.execute('select count(*) from projects').fetchone()[0], 2)
 
     def test_allowlist_excludes_runtime_state_and_private_cases(self):
         for path in ('exports/private-case.json', 'runs/project.sqlite3', 'src/.env',

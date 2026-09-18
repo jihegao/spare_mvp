@@ -44,7 +44,7 @@ foreach ($name in @('windows-runtime.json','requirements-windows.lock','installe
 $caseArguments = @()
 if ($ProjectFile) { $caseArguments += @('--project', (Resolve-Path -LiteralPath $ProjectFile).Path) }
 if ($ExperimentConfig) { $caseArguments += @('--experiment-config', (Resolve-Path -LiteralPath $ExperimentConfig).Path) }
-& (Join-Path $destinationPath 'runtime\python.exe') -I -B -X utf8 (Join-Path $PSScriptRoot 'initialize-case-database.py') --database (Join-Path $destinationPath 'data/spare_mvp.sqlite3') @caseArguments
+& (Join-Path $destinationPath 'runtime\python.exe') -I -B -X utf8 (Join-Path $destinationPath 'scripts\initialize-case-database.py') --database (Join-Path $destinationPath 'data/spare_mvp.sqlite3') @caseArguments
 if ($LASTEXITCODE -ne 0) { throw 'Fixture database initialization failed.' }
 & $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') seal --root $destinationPath
 if ($LASTEXITCODE -ne 0) { throw 'Package sealing failed.' }
