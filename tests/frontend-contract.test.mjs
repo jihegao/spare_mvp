@@ -2384,7 +2384,7 @@ test("equipment import and export actions stay inside the equipment tree panel",
     appSource.indexOf("function buildEquipmentTreeNodes")
   );
   const treePanelSource = equipmentSource.slice(
-    equipmentSource.indexOf('<aside class="tree-container">'),
+    equipmentSource.indexOf('<aside class="tree-container equipment-modeling-tree"'),
     equipmentSource.indexOf('<section class="detail-panel equipment-system-table-panel">')
   );
   const detailPanelSource = equipmentSource.slice(

@@ -848,6 +848,7 @@ let periodicProfileRenameState = null;
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let equipmentSearchQuery = "";
+let equipmentTreeWidth = 300;
 let equipmentProductEditorComponentId = "";
 let equipmentProductQuery = "";
 let equipmentProductActiveOptionIndex = -1;
@@ -1068,7 +1069,48 @@ render();
 bindEvents();
 restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi());
 
+function bindEquipmentTreeResize() {
+  let drag = null;
+  const applyWidth = (handle, width) => {
+    const layout = handle.closest(".equipment-modeling-layout");
+    if (!layout) return;
+    // CSS owns the responsive bounds. Read the rendered width so keyboard and
+    // pointer updates cannot accumulate invisible width beyond the current cap.
+    layout.style.setProperty("--equipment-tree-width", "900px");
+    const maximum = handle.parentElement.getBoundingClientRect().width;
+    layout.style.setProperty("--equipment-tree-width", `${width}px`);
+    equipmentTreeWidth = Math.round(handle.parentElement.getBoundingClientRect().width);
+    layout.style.setProperty("--equipment-tree-width", `${equipmentTreeWidth}px`);
+    handle.setAttribute("aria-valuenow", String(equipmentTreeWidth));
+    handle.setAttribute("aria-valuemax", String(maximum));
+  };
+  app.addEventListener("pointerdown", (event) => {
+    const handle = event.target.closest("[data-equipment-tree-resize]");
+    if (!handle || event.button !== 0) return;
+    event.preventDefault();
+    drag = { handle, pointerId: event.pointerId, startX: event.clientX, width: handle.parentElement.getBoundingClientRect().width };
+    handle.setPointerCapture(event.pointerId);
+  });
+  app.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    applyWidth(drag.handle, drag.width + event.clientX - drag.startX);
+  });
+  const stopDrag = () => { drag = null; };
+  app.addEventListener("pointerup", stopDrag);
+  app.addEventListener("pointercancel", stopDrag);
+  app.addEventListener("lostpointercapture", stopDrag);
+  app.addEventListener("keydown", (event) => {
+    const handle = event.target.closest("[data-equipment-tree-resize]");
+    if (!handle || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const width = event.key === "Home" ? 300 : event.key === "End" ? 900
+      : handle.parentElement.getBoundingClientRect().width + (event.key === "ArrowRight" ? 20 : -20);
+    applyWidth(handle, width);
+  });
+}
+
 function bindEvents() {
+  bindEquipmentTreeResize();
   window.addEventListener("hashchange", () => {
     const previousPage = getFeaturePageById(selectedFeatureId);
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
@@ -6283,13 +6325,13 @@ function renderPeriodicTaskModeling(page) {
   `;
   const yearMonths = selectedProfile?.monthProfileIds || [];
   const selectedYearIndex = Math.max(0, profiles.year.findIndex((item) => item.id === selectedProfile?.id));
-  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => Boolean(monthProfileId)).length;
+  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => profiles.month.some((month) => month.id === monthProfileId)).length;
   const yearTotalWeeks = yearMonths.reduce((sum, monthProfileId) => {
     const monthProfile = profiles.month.find((item) => item.id === monthProfileId);
     return sum + (monthProfile?.weekProfileIds?.filter((weekProfileId) => Boolean(weekProfileId)).length || 0);
   }, 0);
   const yearEditor = `
-    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "有效" : "待完善"}</span>` : ""}</div>
+    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount > 0 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount > 0 ? "有效" : "待完善"}</span>` : ""}</div>
     ${selectedProfile ? `<div class="toolbar-row periodic-year-actions"><button type="button" data-periodic-year-action="duplicate" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">复制为下一年</button><button type="button" data-periodic-year-action="up" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">上移一年</button><button type="button" data-periodic-year-action="down" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">下移一年</button></div>` : ""}
     ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}"><option value="" ${yearMonths[index] ? "" : "selected"}>未配置月剖面</option>${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
   `;
@@ -6803,8 +6845,8 @@ function renderEquipmentModeling(page) {
     <div class="section-head section-context">
       <span>装备结构树 / 装备系统建模表</span>
     </div>
-    <div class="organization-layout equipment-layout">
-      <aside class="tree-container">
+    <div class="organization-layout equipment-layout equipment-modeling-layout" style="--equipment-tree-width: ${equipmentTreeWidth}px">
+      <aside class="tree-container equipment-modeling-tree" id="equipment-modeling-tree">
         <div class="tree-toolbar equipment-tree-toolbar">
           <h4>装备结构树</h4>
           <div class="equipment-tree-actions">
@@ -6823,6 +6865,7 @@ function renderEquipmentModeling(page) {
         </section>
         <label class="equipment-tree-search">搜索名称<input data-equipment-search value="${htmlEscape(equipmentSearchQuery)}" placeholder="输入系统或组件名称"></label>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
+        <div class="equipment-tree-resize" data-equipment-tree-resize role="separator" tabindex="0" aria-label="调整装备树宽度" aria-orientation="vertical" aria-controls="equipment-modeling-tree" aria-valuemin="300" aria-valuemax="900" aria-valuenow="${equipmentTreeWidth}"></div>
       </aside>
       <section class="detail-panel equipment-system-table-panel">
         <div class="detail-card">
