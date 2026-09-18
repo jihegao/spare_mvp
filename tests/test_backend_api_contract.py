@@ -3181,19 +3181,44 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_backend_api_lifecycle_audit_failure_rolls_back_state(self) -> None:
         cases = [
-            ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="missing-user")),
-            ("delete", lambda run_id: self.api.soft_delete_run(run_id, actor_user_id="missing-user")),
+            ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="user-admin")),
+            ("delete", lambda run_id: self.api.soft_delete_run(run_id, actor_user_id="user-admin")),
         ]
         for label, mutate in cases:
             with self.subTest(label):
                 run = self._submit_successful_run()
 
-                with self.assertRaises(sqlite3.IntegrityError):
-                    mutate(run["run_id"])
+                with mock.patch.object(
+                    self.repository,
+                    "_insert_audit_event_no_commit",
+                    side_effect=sqlite3.IntegrityError("injected audit write failure"),
+                ) as insert_audit:
+                    with self.assertRaises(sqlite3.IntegrityError):
+                        mutate(run["run_id"])
+                    insert_audit.assert_called_once()
+                    self.assertEqual(insert_audit.call_args.kwargs["actor_user_id"], "user-admin")
 
                 stored = self.api.get_run(run["run_id"])
                 self.assertEqual(stored["lifecycle_status"], "active")
                 self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_unknown_lifecycle_actor_is_denied_and_audited_without_foreign_key_failure(self) -> None:
+        for action, mutate in [
+            ("runs.archive", self.api.archive_run),
+            ("runs.delete", self.api.soft_delete_run),
+        ]:
+            with self.subTest(action):
+                run = self._submit_successful_run()
+                with self.assertRaises(BackendApiError) as error:
+                    mutate(run["run_id"], actor_user_id="missing-user")
+                self.assertEqual(error.exception.code, "forbidden")
+                self.assertEqual(self.api.get_run(run["run_id"])["lifecycle_status"], "active")
+                events = self.repository.list_audit_events(resource_id=run["run_id"])
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0]["action"], action)
+                self.assertEqual(events[0]["outcome"], "denied")
+                self.assertIsNone(events[0]["actor_user_id"])
+                self.assertEqual(events[0]["details"], {"reason": "unknown_user"})
 
     def test_backend_api_rejects_artifact_path_escape(self) -> None:
         run = self._submit_successful_run()
