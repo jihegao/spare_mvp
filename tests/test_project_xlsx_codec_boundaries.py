@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import json
 from pathlib import Path
@@ -8,7 +9,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from src.spare_mvp_backend.api import BackendApi
 from src.spare_mvp_backend.project_payload import ProjectJsonExporter
 from src.spare_mvp_backend.project_xlsx import parse_project_xlsx
@@ -21,6 +22,28 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProjectExcelCodecBoundaryTest(unittest.TestCase):
+    def test_binary_writer_preserves_every_newline_sequence_in_concurrent_exports(self):
+        values = ['LF\nline', 'CR\rline', 'CRLF\r\nline', 'TAB\tline',
+                  'CRCR\r\rline', 'mixed\r\r\n\n\r\t中文']
+
+        def roundtrip(index):
+            workbook = Workbook()
+            sheet = workbook.active
+            for value in values:
+                sheet.append([f'{index}:{value}'])
+            sheet.merge_cells('B1:C1')
+            sheet['B1'] = 'merged'
+            result = load_workbook(BytesIO(workbook_bytes(workbook)))
+            try:
+                self.assertEqual([result.active.cell(row, 1).value for row in range(1, len(values) + 1)],
+                                 [f'{index}:{value}' for value in values])
+                self.assertEqual(str(result.active.merged_cells), 'B1:C1')
+            finally:
+                result.close()
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(roundtrip, range(8)))
+
     def test_cell_limit_is_checked_after_escaping_instead_of_losing_last_character(self):
         for prefix in ('@', '~', '='):
             with self.subTest(prefix=prefix):

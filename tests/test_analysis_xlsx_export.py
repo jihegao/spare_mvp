@@ -166,7 +166,7 @@ class AnalysisXlsxExportTest(unittest.TestCase):
 
     def test_openpyxl_write_failure_becomes_a_chinese_analysis_error(self) -> None:
         with mock.patch(
-            "src.spare_mvp_backend.analysis_xlsx.Workbook.save",
+            "src.spare_mvp_backend.xlsx_text.WorksheetWriter.write",
             side_effect=ValueError("openpyxl write failed"),
         ):
             with self.assertRaisesRegex(AnalysisXlsxError, "包含无法写入 Excel 的字符或数值"):
