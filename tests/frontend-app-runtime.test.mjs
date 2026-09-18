@@ -6484,6 +6484,31 @@ test("experiment plan row selection is interactive for template-created projects
   }
 });
 
+test("opening an experiment branch copies configuration without running simulations", () => {
+  const appSource = fs.readFileSync(new URL("../front/app.js", import.meta.url), "utf8");
+  const branchSource = appSource.slice(
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject()"),
+    appSource.indexOf("function renderCollapsibleTree(")
+  );
+  const source = { components: [{ id: "component-one", quantity: 2 }] };
+  const openBranch = new Function("scenario", "updatePreviewResultsThroughApiClient", `
+    let experimentPlanDraft, experimentPlanBranchActive = false;
+    const selectedFeatureId = "plan-management", experimentPlanManagementMode = "editor";
+    const getFeaturePageById = () => ({ component: "experiment-plan-management" });
+    const cloneScenario = structuredClone;
+    const ensureMonteCarloSweepDefaults = () => {};
+    const ensureExperimentPlanDraftDefaults = () => {};
+    ${branchSource}
+    createExperimentPlanBranchFromCurrentProject();
+    return { draft: experimentPlanDraft, active: experimentPlanBranchActive };
+  `);
+  const result = openBranch(source, () => assert.fail("opening a plan must not run preview simulations"));
+  assert.equal(result.active, true);
+  assert.deepEqual(result.draft, source);
+  result.draft.components[0].quantity = 99;
+  assert.equal(source.components[0].quantity, 2);
+});
+
 test("experiment plan add opens an editable plan branch", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-management" });
 

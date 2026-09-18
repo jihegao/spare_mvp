@@ -3848,7 +3848,7 @@ function createExperimentPlanBranchFromCurrentProject() {
   ensureMonteCarloSweepDefaults(experimentPlanDraft);
   ensureExperimentPlanDraftDefaults(experimentPlanDraft);
   experimentPlanBranchActive = true;
-  updatePreviewResultsThroughApiClient(experimentPlanDraft);
+  // Opening this configuration editor does not consume preview simulation results.
 }
 
 function renderCollapsibleTree(nodes, options = {}) {
