@@ -19,9 +19,25 @@ APP_FILES = {
 }
 SCRIPT_FILES = {
     'start-portable.ps1', 'stop-portable.ps1', 'test-frontend-modules.ps1',
-    'test-port-selection.ps1', 'verify-portable-package.ps1', 'portable-package.py',
+    'test-port-selection.ps1', 'verify-portable-package.ps1', 'portable-package.py', 'portable-process.ps1',
 }
 ENTRYPOINTS = {'Start-Platform.cmd', 'Start-Platform.vbs', 'Stop-Platform.cmd'}
+PACKAGE_SUPPORT_FILES = {f'scripts/{name}' for name in SCRIPT_FILES} | ENTRYPOINTS | {'docs/windows-portable.md'}
+BUILD_INPUTS = {
+    'scripts/build-portable.ps1', 'scripts/prepare-windows-runtime.ps1',
+    'scripts/initialize-case-database.py', 'packaging/windows-runtime.json',
+    'packaging/requirements-windows.lock',
+}
+
+
+def package_destination(name: str) -> str:
+    if name == 'docs/windows-portable.md':
+        return 'README-Windows.md'
+    if name in PACKAGE_SUPPORT_FILES:
+        return name
+    if app_file(name):
+        return 'app/' + name
+    raise ValueError(f'Unapproved package source: {name}')
 
 
 def digest(path: Path) -> str:
@@ -47,40 +63,41 @@ def app_file(name: str) -> bool:
 
 def source_manifest(repo: Path) -> dict:
     tracked = subprocess.check_output(['git', '-C', str(repo), 'ls-files', '-z']).decode().split('\0')
-    files = sorted(name for name in tracked if name and app_file(name))
-    if subprocess.run(['git', '-C', str(repo), 'diff', '--quiet', 'HEAD', '--', *files]).returncode:
-        raise ValueError('Application source differs from the recorded commit; commit the candidate before packaging')
-    missing = APP_FILES - set(files)
+    files = sorted(name for name in tracked if name and (app_file(name) or name in PACKAGE_SUPPORT_FILES))
+    bound = set(files) | BUILD_INPUTS
+    if subprocess.run(['git', '-C', str(repo), 'diff', '--quiet', 'HEAD', '--', *sorted(bound)]).returncode:
+        raise ValueError('Package source differs from the recorded commit; commit the candidate before packaging')
+    missing = (APP_FILES | PACKAGE_SUPPORT_FILES | BUILD_INPUTS) - set(tracked)
     if missing:
         raise ValueError(f'Missing reviewed fixtures: {sorted(missing)}')
     return {
+        'format_version': 2,
         'source_commit': subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD']).decode().strip(),
         'files': {name: digest(repo / name) for name in files},
+        'build_inputs': {name: digest(repo / name) for name in sorted(BUILD_INPUTS)},
     }
 
 
 def stage(repo: Path, destination: Path, manifest: dict) -> None:
     if destination.exists():
         raise ValueError('Destination already exists; refusing to overwrite')
+    if manifest.get('format_version') != 2:
+        raise ValueError('Regenerate source manifest with package source format 2')
     files = manifest['files']
-    if not APP_FILES.issubset(files):
-        raise ValueError('Source manifest omits canonical fixtures')
-    for name, expected in files.items():
+    build_inputs = manifest.get('build_inputs', {})
+    if not (APP_FILES | PACKAGE_SUPPORT_FILES).issubset(files) or set(build_inputs) != BUILD_INPUTS:
+        raise ValueError('Source manifest omits bound package or build files')
+    for name in files:
+        package_destination(name)
+    for name, expected in (files | build_inputs).items():
         source = repo / name
-        if not app_file(name) or source.is_symlink() or digest(source) != expected:
+        if source.is_symlink() or not source.resolve().is_relative_to(repo.resolve()) or digest(source) != expected:
             raise ValueError(f'Unapproved or changed source: {name}')
     destination.mkdir(parents=True)
     for name in files:
-        target = destination / 'app' / name
+        target = destination / package_destination(name)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(repo / name, target)
-    for name in SCRIPT_FILES:
-        target = destination / 'scripts' / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(repo / 'scripts' / name, target)
-    for name in ENTRYPOINTS:
-        shutil.copyfile(repo / name, destination / name)
-    shutil.copyfile(repo / 'docs' / 'windows-portable.md', destination / 'README-Windows.md')
     (destination / 'source-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
 
 
@@ -91,13 +108,14 @@ def immutable_files(root: Path):
             raise ValueError(f'Symlink not allowed: {relative}')
         if not path.is_file() or relative.parts[0] == 'data' or relative.as_posix() == 'manifest.json':
             continue
-        if '__pycache__' in relative.parts or path.suffix == '.pyc':
-            continue
         yield relative.as_posix(), path
 
 
 def seal(root: Path) -> None:
     source = json.loads((root / 'source-manifest.json').read_text(encoding='utf-8'))
+    for name, expected in source.get('files', {}).items():
+        if digest(root / package_destination(name)) != expected:
+            raise ValueError(f'Staged source differs from candidate: {name}')
     manifest = {'format_version': 1, 'source_commit': source['source_commit'],
                 'files': {name: digest(path) for name, path in immutable_files(root)}}
     (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')

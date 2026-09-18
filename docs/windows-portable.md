@@ -45,7 +45,9 @@ python scripts/portable-package.py source-manifest --root /tmp/spare-source-mani
 
 ## 启动、验证与验收边界
 
-双击 `Start-Platform.vbs` / `Start-Platform.cmd`，停止运行 `Stop-Platform.cmd`。日志在 `data/logs`，实际地址在 `data/active-ports.json`。使用包自己的 Python，禁用用户 site-packages 和字节码写入；只用包内 PID 文件且确认进程命令行归属后才停止服务。
+源清单采用 v2，覆盖应用、所有实际复制的启动脚本、入口、说明文件，并绑定构建脚本、数据库初始化器与依赖锁。修改这些文件后必须提交候选并重新生成清单；旧清单不能继续用于构建。暂存后的源码也在封包前再次核对，字节码文件纳入包完整性检查。
+
+双击 `Start-Platform.vbs` / `Start-Platform.cmd`，停止运行 `Stop-Platform.cmd`。日志在 `data/logs`，实际地址在 `data/active-ports.json`。使用包自己的 Python，禁用用户 site-packages 和字节码写入。PID 旁的 `.pid.json` 保存创建时间、服务模块、解释器路径和本次启动标识；全部匹配后才停止该进程。身份未知时保留记录并报告，不终止进程。旧版只有 PID 的记录不能作为终止凭据。
 
 验证脚本先校验完整性及依赖闭包，再启动服务、校验健康端点、前端模块 MIME、Solara 静态资源并停止自己启动的实例。`data/evidence/startup-smoke.json` 明确记录 **仅启动验收**，不宣称业务完成或机器已经断网。
 

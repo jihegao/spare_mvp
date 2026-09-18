@@ -27,13 +27,13 @@ foreach ($name in @('windows-runtime.json','requirements-windows.lock')) {
         throw "Dependency bundle does not match the reviewed lock: $name"
     }
 }
-& $python -I -m pip --isolated check
+& $python -I -B -m pip --isolated check
 if ($LASTEXITCODE -ne 0) { throw 'Runtime dependencies failed pip check.' }
-& $python -I (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $bundle
+& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $bundle
 if ($LASTEXITCODE -ne 0) { throw 'Runtime or wheelhouse differs from the reviewed lock.' }
 $sourceArguments = @()
 if ($SourceManifest) { $sourceArguments = @('--source-manifest', (Resolve-Path -LiteralPath $SourceManifest).Path) }
-& $python -I (Join-Path $PSScriptRoot 'portable-package.py') stage --repo $repo --root $destinationPath @sourceArguments
+& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') stage --repo $repo --root $destinationPath @sourceArguments
 if ($LASTEXITCODE -ne 0) { throw 'Allowlisted application staging failed.' }
 Copy-Item -LiteralPath $runtime -Destination (Join-Path $destinationPath 'runtime') -Recurse
 # Bytecode and user caches are not part of the sealed runtime.
@@ -47,8 +47,8 @@ if ($ProjectFile) { $caseArguments += @('--project', (Resolve-Path -LiteralPath 
 if ($ExperimentConfig) { $caseArguments += @('--experiment-config', (Resolve-Path -LiteralPath $ExperimentConfig).Path) }
 & (Join-Path $destinationPath 'runtime\python.exe') -I -B -X utf8 (Join-Path $PSScriptRoot 'initialize-case-database.py') --database (Join-Path $destinationPath 'data/spare_mvp.sqlite3') @caseArguments
 if ($LASTEXITCODE -ne 0) { throw 'Fixture database initialization failed.' }
-& $python -I (Join-Path $PSScriptRoot 'portable-package.py') seal --root $destinationPath
+& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') seal --root $destinationPath
 if ($LASTEXITCODE -ne 0) { throw 'Package sealing failed.' }
-& $python -I (Join-Path $PSScriptRoot 'portable-package.py') verify --root $destinationPath
+& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify --root $destinationPath
 if ($LASTEXITCODE -ne 0) { throw 'Package integrity verification failed.' }
 Write-Output "Built portable package: $destinationPath"

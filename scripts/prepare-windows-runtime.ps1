@@ -42,23 +42,23 @@ try {
     }
 } finally { $zip.Dispose() }
 $python = Join-Path $root 'runtime\python.exe'
-& $python -I -c 'import sys; assert sys.version_info[:3] == (3,13,15); assert sys.maxsize > 2**32'
+& $python -I -B -c 'import sys; assert sys.version_info[:3] == (3,13,15); assert sys.maxsize > 2**32'
 if ($LASTEXITCODE -ne 0) { throw 'CPython version or architecture mismatch.' }
 if (-not $OfflineSource) {
-    & $python -I -m pip --isolated download --disable-pip-version-check --no-cache-dir --only-binary=:all: --require-hashes --index-url https://pypi.org/simple --dest $wheels -r $lockFile
+    & $python -I -B -m pip --isolated download --disable-pip-version-check --no-cache-dir --only-binary=:all: --require-hashes --index-url https://pypi.org/simple --dest $wheels -r $lockFile
     if ($LASTEXITCODE -ne 0) { throw 'Locked wheel download failed.' }
 }
 # Installing from this point never consults an index or developer cache.
-& $python -I -m pip --isolated install --no-warn-script-location --disable-pip-version-check --no-cache-dir --no-index --only-binary=:all: --require-hashes --find-links $wheels -r $lockFile
+& $python -I -B -m pip --isolated install --no-warn-script-location --disable-pip-version-check --no-cache-dir --no-index --only-binary=:all: --require-hashes --find-links $wheels -r $lockFile
 if ($LASTEXITCODE -ne 0) { throw 'Offline dependency installation failed.' }
-& $python -I -m pip --isolated check
+& $python -I -B -m pip --isolated check
 if ($LASTEXITCODE -ne 0) { throw 'Installed dependency closure is inconsistent.' }
-& $python -I -c 'import mesa,solara,numpy,pandas,scipy,matplotlib,openpyxl; print(mesa.__version__)'
+& $python -I -B -c 'import mesa,solara,numpy,pandas,scipy,matplotlib,openpyxl; print(mesa.__version__)'
 if ($LASTEXITCODE -ne 0) { throw 'Scientific dependency import failed.' }
 Copy-Item -LiteralPath $specFile -Destination (Join-Path $root 'windows-runtime.json')
 Copy-Item -LiteralPath $lockFile -Destination (Join-Path $root 'requirements-windows.lock')
-& $python -I -m pip --isolated list --format=json --disable-pip-version-check | Set-Content -LiteralPath (Join-Path $root 'installed-distributions.json') -Encoding UTF8
+& $python -I -B -m pip --isolated list --format=json --disable-pip-version-check | Set-Content -LiteralPath (Join-Path $root 'installed-distributions.json') -Encoding UTF8
 if ($LASTEXITCODE -ne 0) { throw 'Dependency inventory failed.' }
-& $python -I (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $root
+& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $root
 if ($LASTEXITCODE -ne 0) { throw 'Prepared bundle verification failed.' }
 Write-Output "Prepared isolated Windows runtime and offline wheelhouse: $root"

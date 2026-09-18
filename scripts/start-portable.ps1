@@ -11,6 +11,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'portable-process.ps1')
 
 $PackageRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $RuntimeRoot = Join-Path $PackageRoot 'runtime'
@@ -35,37 +36,6 @@ foreach ($directory in @($LogRoot, $PidRoot, $OutputRoot, (Join-Path $DataRoot '
 }
 Remove-Item -LiteralPath $StartupErrorLog -Force -ErrorAction SilentlyContinue
 
-function Get-PortableProcess {
-    param([string]$PidPath)
-
-    if (-not (Test-Path -LiteralPath $PidPath)) {
-        return $null
-    }
-    $pidText = (Get-Content -LiteralPath $PidPath -Raw).Trim()
-    $pidValue = 0
-    if (-not [int]::TryParse($pidText, [ref]$pidValue)) {
-        Remove-Item -LiteralPath $PidPath -Force
-        return $null
-    }
-    $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-    if ($null -eq $process) {
-        Remove-Item -LiteralPath $PidPath -Force
-        return $null
-    }
-    try {
-        $details = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop
-        $commandLine = $details.CommandLine
-        if ($details.ExecutablePath -ine $Python -or (-not [string]::IsNullOrWhiteSpace($commandLine) -and -not $commandLine.Contains($PackageRoot))) {
-            # Windows may reuse a PID recorded by an earlier, crashed launch.
-            Remove-Item -LiteralPath $PidPath -Force
-            return $null
-        }
-    } catch {
-        # If process inspection is restricted, retain the PID record and fail safely.
-    }
-    return $process
-}
-
 function Join-ProcessArguments {
     param([string[]]$Values)
 
@@ -81,14 +51,22 @@ function Start-PortableProcess {
 
     $outLog = Join-Path $LogRoot "$Name.stdout.log"
     $errLog = Join-Path $LogRoot "$Name.stderr.log"
+    $instanceToken = [Guid]::NewGuid().ToString('N')
+    $ownedArguments = @('-B', '-X', "spare_mvp_instance=$instanceToken") + $Arguments
     $process = Start-Process -FilePath $Python `
-        -ArgumentList (Join-ProcessArguments $Arguments) `
+        -ArgumentList (Join-ProcessArguments $ownedArguments) `
         -WorkingDirectory $ApplicationRoot `
         -WindowStyle Hidden `
         -RedirectStandardOutput $outLog `
         -RedirectStandardError $errLog `
         -PassThru
-    Set-Content -LiteralPath $PidPath -Value $process.Id -NoNewline -Encoding ascii
+    try {
+        Write-PortableProcessRecord -Process $process -Name $Name -Python $Python -PidPath $PidPath -InstanceToken $instanceToken
+    } catch {
+        if (-not $process.HasExited) { Stop-Process -InputObject $process -Force }
+        Remove-PortableProcessRecord -PidPath $PidPath
+        throw
+    }
     return $process
 }
 
@@ -240,7 +218,7 @@ $backendProcess = $null
 $solaraProcess = $null
 $activePortsWritten = $false
 try {
-    if ($null -ne (Get-PortableProcess $backendPidPath) -or $null -ne (Get-PortableProcess $solaraPidPath)) {
+    if ($null -ne (Get-OwnedPortableProcess -Name 'backend' -Python $Python -PidPath $backendPidPath) -or $null -ne (Get-OwnedPortableProcess -Name 'solara' -Python $Python -PidPath $solaraPidPath)) {
         throw 'The portable platform is already running. Run Stop-Platform.cmd before starting it again.'
     }
     if ($AutoSelectPorts) {
@@ -316,16 +294,16 @@ try {
     $startupFailure = $_
     Write-StartupFailureLog -Failure $startupFailure
     if ($null -ne $solaraProcess -and -not $solaraProcess.HasExited) {
-        Stop-Process -Id $solaraProcess.Id -Force
+        Stop-Process -InputObject $solaraProcess -Force
     }
     if ($null -ne $backendProcess -and -not $backendProcess.HasExited) {
-        Stop-Process -Id $backendProcess.Id -Force
+        Stop-Process -InputObject $backendProcess -Force
     }
     if ($null -ne $backendProcess) {
-        Remove-Item -LiteralPath $backendPidPath -Force -ErrorAction SilentlyContinue
+        Remove-PortableProcessRecord -PidPath $backendPidPath
     }
     if ($null -ne $solaraProcess) {
-        Remove-Item -LiteralPath $solaraPidPath -Force -ErrorAction SilentlyContinue
+        Remove-PortableProcessRecord -PidPath $solaraPidPath
     }
     if ($activePortsWritten) {
         Remove-Item -LiteralPath $ActivePortsFile -Force -ErrorAction SilentlyContinue

@@ -25,9 +25,9 @@ if (
 
 $python = Join-Path $PackageRoot 'runtime\python.exe'
 $verifier = Join-Path $PackageRoot 'scripts\portable-package.py'
-& $python -I $verifier verify --root $PackageRoot
+& $python -I -B $verifier verify --root $PackageRoot
 if ($LASTEXITCODE -ne 0) { throw 'Package integrity verification failed before startup.' }
-& $python -I -m pip --isolated check
+& $python -I -B -m pip --isolated check
 if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency closure failed.' }
 $env:NO_PROXY = '127.0.0.1,localhost'
 $evidenceRoot = Join-Path $PackageRoot 'data\evidence'
