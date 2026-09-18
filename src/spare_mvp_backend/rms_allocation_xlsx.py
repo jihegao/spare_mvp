@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.spare_mvp_backend.xlsx_text import workbook_bytes
+
 from io import BytesIO
 import math
 import re
@@ -90,7 +92,7 @@ def export_rms_allocation_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
 
     output = BytesIO()
     try:
-        workbook.save(output)
+        output.write(workbook_bytes(workbook))
     except Exception as exc:
         raise RmsAllocationXlsxError(f"无法写入 RMS Excel: {exc}") from exc
     finally:

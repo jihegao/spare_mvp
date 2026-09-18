@@ -1511,6 +1511,35 @@ test("project data replacement preserves the opaque backend version token", asyn
   }
 });
 
+test("project Excel template downloads a named workbook without project writes", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-project-data-management" });
+  try {
+    assert.match(runtime.appNode.innerHTML, /data-project-xlsx-template/);
+    await runtime.click("[data-project-xlsx-template]");
+    assert.equal(runtime.downloads.at(-1)?.download, "Project标准模板-v1.xlsx");
+    assert.match(runtime.appNode.innerHTML, /已下载 Excel 标准模板/);
+    assert.equal(runtime.requests.filter((r) => r.options.method === "POST" && /\/projects(?:$|\/import-xlsx\/create)/.test(r.url)).length, 0);
+  } finally { runtime.restore(); }
+});
+
+test("project Excel template permission denial never triggers a file download", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-project-data-management", sessionUser: { username: "user", role: "普通用户" } });
+  try {
+    await runtime.click("[data-project-xlsx-template]");
+    assert.equal(runtime.downloads.length, 0);
+  } finally { runtime.restore(); }
+});
+
+test("project Excel drop previews data without confirming a write", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-project-data-management" });
+  try {
+    await runtime.drop("[data-project-xlsx-drop]", { name: "valid-project.xlsx", async arrayBuffer() { return new Uint8Array([80,75]).buffer; } });
+    assert.match(runtime.appNode.innerHTML, /导入预览/);
+    assert.ok(runtime.requests.find((r) => r.url === "/api/projects/import-xlsx/preview"));
+    assert.equal(runtime.requests.filter((r) => r.url === "/api/projects/import-xlsx/create").length, 0);
+  } finally { runtime.restore(); }
+});
+
 test("project XLSX preview shows located errors and blocks both write actions", async () => {
   const file = {
     name: "invalid-project.xlsx",
@@ -1528,7 +1557,7 @@ test("project XLSX preview shows located errors and blocks both write actions", 
     const request = runtime.requests.find((item) => item.url === "/api/projects/import-xlsx/preview");
     assert.ok(request, "expected XLSX preview request");
     assert.equal(JSON.parse(request.options.body).content_base64, "UEsDBA==");
-    assert.match(runtime.appNode.innerHTML, /components 第 3 行 \/ components\[0\]\.productId/);
+    assert.match(runtime.appNode.innerHTML, /components 第 3 行 第 4 列 \/ components\[0\]\.productId/);
     assert.match(runtime.appNode.innerHTML, /引用值：missing-product/);
     assert.match(runtime.appNode.innerHTML, /data-project-replacement-confirm disabled/);
     assert.match(runtime.appNode.innerHTML, /data-project-xlsx-create disabled/);
@@ -8100,6 +8129,13 @@ async function setupRuntimeApp({
         projects: backendProjectCatalog
       });
     }
+    if (url === "/api/projects/excel-template" && method === "GET") {
+      if (!["系统管理员", "数据管理员"].includes(sessionUser.role)) return jsonResponse({ code: "forbidden", message: "无权下载模板" }, { ok: false, status: 403 });
+      return { ok: true, status: 200,
+        headers: { get(name) { return name.toLowerCase() === "content-disposition" ? `attachment; filename*=UTF-8''${encodeURIComponent("Project标准模板-v1.xlsx")}` : ""; } },
+        async blob() { return new Blob(["PK-template"], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }); }
+      };
+    }
     const projectMatch = url.match(/^\/api\/projects\/([^/]+)$/);
     if (projectMatch && method === "GET") {
       const projectId = decodeURIComponent(projectMatch[1]);
@@ -8573,6 +8609,10 @@ async function setupRuntimeApp({
     storage,
     async click(selector, dataset = {}, props = {}) {
       await appListeners.click?.({ target: eventTarget(selector, dataset, props) });
+      await flushRuntimeTasks();
+    },
+    async drop(selector, file) {
+      await appListeners.drop?.({ target: eventTarget(selector), dataTransfer: { files: [file] }, preventDefault() {} });
       await flushRuntimeTasks();
     },
     async change(selector, dataset = {}, props = {}) {

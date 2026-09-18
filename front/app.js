@@ -1679,6 +1679,10 @@ function bindEvents() {
       return;
     }
 
+    if (event.target.closest("[data-project-xlsx-template]")) {
+      downloadProjectExcelTemplate().finally(() => render());
+      return;
+    }
     const projectDataProjectButton = event.target.closest("[data-project-data-project-option]");
     if (projectDataProjectButton) {
       selectProjectDataProject(projectDataProjectButton.dataset.projectDataProjectOption);
@@ -2368,6 +2372,15 @@ function bindEvents() {
     }
   });
 
+  app.addEventListener("dragover", (event) => {
+    if (event.target.closest("[data-project-xlsx-drop]")) event.preventDefault();
+  });
+  app.addEventListener("drop", async (event) => {
+    if (!event.target.closest("[data-project-xlsx-drop]")) return;
+    event.preventDefault();
+    await previewProjectReplacement(event.dataTransfer?.files?.[0]);
+    render();
+  });
   app.addEventListener("change", async (event) => {
     const projectReplacementFile = event.target.closest("[data-project-replacement-file]");
     if (projectReplacementFile) {
@@ -4291,7 +4304,7 @@ function renderProjectTemplateManagement(project) {
   const projectId = projectDataProjectId(project);
   const isTemplate = isProjectDataTemplate(project);
   return `
-    <section class="system-config-section" data-project-template-management>
+    <section class="system-config-section" data-project-template-management data-project-xlsx-drop>
       <div class="section-head">
         <div>
           <h4>模板管理</h4>
@@ -4302,6 +4315,7 @@ function renderProjectTemplateManagement(project) {
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-project-template-action="set" data-project-id="${htmlEscape(projectId)}" ${project && !isTemplate ? "" : "disabled"}>设为模板</button>
         <button type="button" data-project-template-action="unset" data-project-id="${htmlEscape(projectId)}" ${project && isTemplate ? "" : "disabled"}>取消设为模板</button>
+        <button type="button" data-project-xlsx-template>下载 Excel 模板</button>
         <label class="btn-primary project-replacement-file-button">导入项目数据<input type="file" hidden data-project-replacement-file accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ${project ? "" : "disabled"}></label>
       </div>
       ${renderProjectReplacementPreview()}
@@ -4393,15 +4407,32 @@ function renderProjectReplacementPreview() {
     <div class="project-replacement-preview">
       <div class="section-head"><h4>导入预览</h4><span>${validation?.ok ? "校验通过" : `发现 ${errors.length} 个错误`}</span></div>
       <p><strong>${htmlEscape(projectJson?.projectInfo?.name || projectJson?.name || fileName)}</strong></p>
-      ${isXlsx ? `<p class="inline-status">已解析 sheet：${htmlEscape((projectReplacementPreview.sheets || []).join("、") || "无")}</p>` : ""}
+      ${isXlsx ? `<p class="inline-status">格式版本：${htmlEscape(projectReplacementPreview.formatVersion || "legacy-project-xlsx")}；编译状态：${htmlEscape(projectReplacementPreview.compileStatus || "未通过")}；已解析 sheet：${htmlEscape((projectReplacementPreview.sheets || []).join("、") || "无")}</p>` : ""}
       <div class="project-data-overview-grid">${overview.map((row) => `<div class="modeling-config-card"><span>${htmlEscape(row.label)}</span><strong>${row.value}</strong></div>`).join("")}</div>
-      ${errors.length ? `<div class="alert warn project-import-errors">${errors.map((item) => `<p><strong>${htmlEscape(item.sheet || "Project")}${item.row ? ` 第 ${htmlEscape(item.row)} 行` : ""}${item.path || item.field_path || item.field ? ` / ${htmlEscape(item.path || item.field_path || item.field)}` : ""}</strong>：${htmlEscape(item.message || item.code || String(item))}${item.reference_value !== undefined && item.reference_value !== "" ? `（引用值：${htmlEscape(String(item.reference_value))}）` : ""}</p>`).join("")}</div>` : ""}
+      ${errors.length ? `<div class="alert warn project-import-errors">${errors.map((item) => `<p><strong>${htmlEscape(item.sheet || "Project")}${item.row ? ` 第 ${htmlEscape(item.row)} 行` : ""}${item.column ? ` 第 ${htmlEscape(item.column)} 列` : ""}${item.path || item.field_path || item.field ? ` / ${htmlEscape(item.path || item.field_path || item.field)}` : ""}</strong>：${htmlEscape(item.message || item.code || String(item))}${item.reference_value !== undefined && item.reference_value !== "" ? `（引用值：${htmlEscape(String(item.reference_value))}）` : ""}</p>`).join("")}</div>` : ""}
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-project-replacement-confirm ${validation?.ok ? "" : "disabled"}>确认覆盖当前项目</button>
         <button type="button" class="btn-secondary" data-project-xlsx-create ${validation?.ok ? "" : "disabled"}>导入为新项目</button>
         <button type="button" data-project-replacement-cancel>取消</button>
       </div>
     </div>`;
+}
+
+async function downloadProjectExcelTemplate() {
+  projectDataManagementStatus = "正在生成 Excel 标准模板";
+  try {
+    const download = await backendApi.downloadProjectExcelTemplate();
+    const url = URL.createObjectURL(download.blob);
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = download.filename || "Project标准模板-v1.xlsx";
+      anchor.click();
+      projectDataManagementStatus = "已下载 Excel 标准模板，请按填写说明准备四域数据";
+    } finally { URL.revokeObjectURL(url); }
+  } catch (err) {
+    projectDataManagementStatus = `模板下载失败：${formatBackendError(err)}`;
+  }
 }
 
 async function previewProjectReplacement(file) {
@@ -4416,6 +4447,8 @@ async function previewProjectReplacement(file) {
         fileType: "xlsx",
         projectJson: result.project_json,
         sheets: result.sheets,
+        formatVersion: result.format_version,
+        compileStatus: result.compile_status,
         validation: { ok: result.ok, errors: result.errors || [] }
       };
     } else {

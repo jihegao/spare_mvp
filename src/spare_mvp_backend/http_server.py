@@ -183,6 +183,9 @@ def create_backend_server(
             parts = [unquote(part) for part in route.split("/") if part]
             if decoded_route == "/simulation-runs" or decoded_route.startswith("/simulation-runs/"):
                 raise RetiredRouteError("/api/simulation-runs", "/api/runs")
+            if self.command == "GET" and route == "/projects/excel-template":
+                self._require_user({"系统管理员", "数据管理员"})
+                return {"__file_download__": api.project_excel_template()}
             if self.command == "POST" and route in {
                 "/projects/import-xlsx/preview",
                 "/projects/import-xlsx/create",

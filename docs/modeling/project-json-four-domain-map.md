@@ -91,3 +91,7 @@ Interpretation:
 - `supportActivities[].predecessors` encodes DAG ordering and must be preserved when compiling or explaining.
 - Corrective and preventive activities own the canonical pair `maintenanceMethods` (`non_replacement`, `replacement`) and `replacementRatio` (0-1, at most four decimal places). Corrective `non_replacement` is `原位维修`; preventive `non_replacement` is `检查/保养`. A historical activity missing both fields means non-replacement only with ratio 0; legacy `repairType` is accepted only on corrective activities for exact `原位维修` / `换件维修` migration and must not coexist with conflicting canonical values.
 - `repairTypes` remains non-model UI residue and `components[].specialRepairProfile` ratios are not a fallback for this decision. Runtime compilation preserves `aircraftModel` and `equipmentId` scope, emits snake_case maintenance fields, and uses the selected activity's full structured spare requirements only when replacement is chosen.
+
+## Excel 交换边界
+
+[Project Excel 标准模板](../project-excel-template.md) 沿用本页的任务、装备、保障组织、保障活动顺序。子表字段由 clean Project schema 生成，嵌套集合通过父记录 ID 与顺序关联，开放字典逐字段展开；Excel 只编解码 Project，不编译模型输入。导入预览依次使用 Project 合同、`ProjectJsonExporter` 和公开 `SimulationAdapter.compile_scenario_with_gate`；既有字段归属和兼容镜像规则不变。

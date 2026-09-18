@@ -158,3 +158,7 @@ python3 scripts/export-simulation-analysis-cases.py --check
 ## 边界
 
 该原型是可交互、可运行的第一版，不是校准后的工程级仿真平台。小样本结果只能解释“在当前规则和参数下的模型行为”，不能直接声称真实最优方案。
+
+### 完整 Project Excel 模板
+
+项目数据管理可下载标准 `.xlsx`，按任务、装备、保障组织、保障活动填写完整建模数据，并经上传预览、Project clean 导出及公开编译门槛校验后覆盖或新建。保留旧 Excel/JSON 导入，复杂集合使用子表而非 JSON 单元格。详见 [Project Excel 标准模板](docs/project-excel-template.md)。

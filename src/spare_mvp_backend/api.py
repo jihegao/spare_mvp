@@ -31,6 +31,7 @@ from src.spare_mvp_backend.execution_context import (
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_parallel_cores
 from src.spare_mvp_backend.project_payload import (
+    ProjectJsonExporter,
     materialize_scenario_composition,
     normalize_project_basic_mission_support_activity_names,
     project_basic_mission_support_activity_name_errors,
@@ -41,6 +42,9 @@ from src.spare_mvp_backend.project_payload import (
 )
 from src.spare_mvp_backend.project_xlsx import (
     MAX_XLSX_BYTES, ProjectXlsxError, locate_issues, parse_project_xlsx, preview_counts, validate_import_relations,
+)
+from src.spare_mvp_backend.project_xlsx_template import (
+    ROOT as PROJECT_XLSX_ROOT, VERSION as PROJECT_XLSX_VERSION, export_project_xlsx, schema as project_excel_schema,
 )
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.rms_allocation_xlsx import (
@@ -192,15 +196,53 @@ class BackendApi:
         project = normalize_project_basic_mission_support_activity_names(project)
         validation = self.validate_project(project)
         relation_errors = validate_import_relations(project)
-        compile_errors = self.adapter._aircraft_support_v1_compile_issues(project)
+        compile_errors = []
+        standard = locations.get("", {}).get("sheet") == "项目信息"
+        if standard:
+            from jsonschema import Draft202012Validator
+            for error in Draft202012Validator(project_excel_schema()).iter_errors(project):
+                path = ".".join(str(part) for part in error.absolute_path)
+                keys = []
+                if error.validator == "additionalProperties" and isinstance(error.instance, dict):
+                    keys = [key for key in error.instance if key not in error.schema.get("properties", {})]
+                elif error.validator == "required" and isinstance(error.instance, dict):
+                    keys = [key for key in error.validator_value if key not in error.instance]
+                for field in keys or [None]:
+                    field_path = ".".join(part for part in (path, field) if part is not None and part != "")
+                    compile_errors.append({"code": "project_schema_error", "field_path": field_path, "message": error.message})
+        gate_status = "blocked"
+        if not parse_errors and not compile_errors:
+            try:
+                project = ProjectJsonExporter(target="aircraft_support_v1", repo_root=PROJECT_XLSX_ROOT).export(project)
+                gate = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+                gate_status = gate["status"]
+                compile_errors.extend(gate.get("issues", []))
+                if gate_status != "compiled" and not compile_errors:
+                    compile_errors.append({"code": "project_compile_blocked", "message": "Project无法编译"})
+            except (ValueError, AdapterError) as exc:
+                import re
+                match = re.search(r" schema at ([^:]+):", str(exc))
+                error_path = getattr(exc, "path", "") or (match.group(1) if match else "")
+                compile_errors.extend(getattr(exc, "issues", None) or [{"code": getattr(exc, "code", "invalid_clean_project"), "field_path": error_path, "message": str(exc)}])
         errors = locate_issues([*parse_errors, *validation.get("errors", []), *relation_errors, *compile_errors], locations)
         return {
-            "ok": not errors,
+            "ok": not errors and gate_status == "compiled",
             "project_json": project,
             "errors": errors,
             "counts": preview_counts(project),
             "sheets": sorted({location["sheet"] for location in locations.values()}),
+            "format_version": PROJECT_XLSX_VERSION if standard else "legacy-project-xlsx",
+            "compile_status": gate_status,
         }
+
+    def project_excel_template(self) -> dict[str, Any]:
+        project = json.loads((PROJECT_XLSX_ROOT / "exports/project-case-large.json").read_text(encoding="utf-8"))
+        project = ProjectJsonExporter(target="aircraft_support_v1", repo_root=PROJECT_XLSX_ROOT).export(project)
+        gate = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+        if gate["status"] != "compiled":
+            raise BackendApiError("template_compile_blocked", "标准模板示例未通过编译校验", issues=gate.get("issues", []))
+        return {"body": export_project_xlsx(project), "filename": "Project标准模板-v1.xlsx",
+                "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         try:

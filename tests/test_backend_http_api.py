@@ -2769,6 +2769,41 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_project_excel_template_download_preview_and_create_keep_auth_and_conflicts(self) -> None:
+        import base64
+        from io import BytesIO
+        from zipfile import ZipFile
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(("127.0.0.1", 0), repo_root=REPO_ROOT, database_path=":memory:", output_dir=Path(tmp)/"artifacts")
+            thread = Thread(target=server.serve_forever, daemon=True); thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                data_token = self._login_token(base_url, "data", "data")
+                user_token = self._login_token(base_url, "user", "user")
+                for token, expected in [(None,401),(user_token,403)]:
+                    req = request.Request(base_url + "/projects/excel-template", headers={"Authorization": f"Bearer {token}"} if token else {})
+                    with self.assertRaises(HTTPError) as error: request.urlopen(req, timeout=HTTP_TEST_TIMEOUT_SECONDS)
+                    self.assertEqual(error.exception.code, expected)
+                before = self._json(base_url,"GET","/projects",auth_token=data_token)
+                req = request.Request(base_url + "/projects/excel-template", headers={"Authorization": f"Bearer {data_token}"})
+                with request.urlopen(req,timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
+                    content = response.read()
+                    self.assertIn("spreadsheetml",response.headers["Content-Type"])
+                    self.assertIn("filename*=",response.headers["Content-Disposition"])
+                with ZipFile(BytesIO(content)) as archive: self.assertIn("xl/workbook.xml",archive.namelist())
+                preview = self._json(base_url,"POST","/projects/import-xlsx/preview",{"content_base64":base64.b64encode(content).decode(),"file_name":"Project标准模板-v1.xlsx"},auth_token=data_token)
+                self.assertTrue(preview["ok"],preview["errors"])
+                self.assertEqual(preview["compile_status"],"compiled")
+                self.assertEqual(before,self._json(base_url,"GET","/projects",auth_token=data_token))
+                project = preview["project_json"]
+                project["project_id"] = "project-http-standard-excel"
+                created = self._json(base_url,"POST","/projects/import-xlsx/create",{"project_json":project},auth_token=data_token)
+                self.assertEqual(created["status"],"created")
+                status, conflict = self._json_error_with_status(base_url,"POST","/projects/import-xlsx/create",{"project_json":project},auth_token=data_token)
+                self.assertEqual((status,conflict["code"]),(409,"project_already_exists"))
+            finally:
+                server.shutdown();server.server_close();thread.join(timeout=5)
+
     def test_http_project_xlsx_preview_parses_real_workbook_and_returns_located_errors(self) -> None:
         import base64
         from io import BytesIO

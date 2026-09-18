@@ -3353,3 +3353,11 @@ test("modeling import backfill projects the live project draft instead of rehydr
   assert.doesNotMatch(livePathInputSource, /setPath\(scenario, livePathInput\.dataset\.path, parseInput\(livePathInput\)\)/);
   assert.match(changeHandlerSource, /setPath\(scenario, input\.dataset\.path, parseInput\(input\)\)/);
 });
+
+
+test("Project Excel template uses authenticated download transport", async () => {
+  const calls = [];
+  const client = createBackendApiClient({ transport: async (request) => { calls.push(request); return { filename: "Project标准模板-v1.xlsx" }; } });
+  assert.equal((await client.downloadProjectExcelTemplate()).filename, "Project标准模板-v1.xlsx");
+  assert.deepEqual(calls, [{ method: "GET", path: "/projects/excel-template", responseType: "download" }]);
+});
