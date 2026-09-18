@@ -24,6 +24,16 @@
 
 ## 候选源码和打包
 
+Solara 浏览器资源也必须离线准备：Python wheels 不包含运行时 CDN 的全部 JS、动态 chunks、CSS 和字体。`packaging/solara-assets.lock.json` 锁定官方 npm 归档及每个输出文件 SHA-256；准备脚本只读取归档中的受审文件，不执行 npm 安装脚本。完整 dist 保留动态资源（不含调试 sourcemap），并包括 Font Awesome、RequireJS、KaTeX 和 Mermaid。新版 runtime 准备脚本同时生成 `solara-cdn/`；已有已验证 runtime 可独立准备资源而无需重建：
+
+```bash
+python scripts/prepare-solara-assets.py --destination /tmp/spare-solara-cdn
+# 断网复制：追加 --offline-source /path/to/reviewed-solara-cdn
+python scripts/prepare-solara-assets.py --destination /tmp/spare-solara-cdn --verify
+```
+
+独立资源目录在构建时用 `-FrontendAssets 'D:\SPARE-solara-cdn'` 指定，默认使用 `DependencyBundle/solara-cdn`。缺失、额外或哈希不同的文件均阻断构建。资源和锁复制到包内不可变 `assets/`，随 manifest 校验；启动再次检查缓存，并设置 `SOLARA_ASSETS_PROXY_CACHE_DIR` 指向包内目录，`SOLARA_ASSETS_PROXY=true`。CDN 缓存 miss 的回源地址固定为本机不可用端口，不向公网回源；因此遗漏资源会明确失败，不会借用开发机缓存或网络。
+
 在 Git checkout 中直接构建；无 Git 的源码归档须在来源 checkout 生成清单，并与相同版本源码一起传输：
 
 ```bash

@@ -23,6 +23,7 @@ $LogRoot = Join-Path $DataRoot 'logs'
 $PidRoot = Join-Path $DataRoot 'pids'
 $OutputRoot = Join-Path $DataRoot 'outputs'
 $FrontendModuleTest = Join-Path $PSScriptRoot 'test-frontend-modules.ps1'
+$SolaraAssetCache = Join-Path $PackageRoot 'assets\solara-cdn'
 $StartupErrorLog = Join-Path $LogRoot 'startup-error.log'
 $ActivePortsFile = Join-Path $DataRoot 'active-ports.json'
 
@@ -249,6 +250,12 @@ try {
     $env:PYTHONPATH = $ApplicationRoot
     $env:PATH = "$RuntimeRoot;$RuntimeRoot\Scripts;$env:PATH"
     $env:MPLCONFIGDIR = Join-Path $DataRoot 'matplotlib'
+    & $Python -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --lock (Join-Path $PackageRoot 'assets\solara-assets.lock.json') --destination $SolaraAssetCache --verify
+    if ($LASTEXITCODE -ne 0) { throw 'Solara offline frontend cache is missing or changed.' }
+    $env:SOLARA_ASSETS_PROXY = 'true'
+    $env:SOLARA_ASSETS_PROXY_CACHE_DIR = $SolaraAssetCache
+    # Cache misses must fail locally instead of contacting a public CDN.
+    $env:SOLARA_ASSETS_CDN = 'http://127.0.0.1:1/'
     $env:SPARE_MVP_SOLARA_BACKEND_API_BASE = "http://127.0.0.1:$BackendPort/api"
 
     $backendProcess = Start-PortableProcess -Name 'backend' -PidPath $backendPidPath -Arguments @(

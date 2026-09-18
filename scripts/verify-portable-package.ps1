@@ -44,7 +44,15 @@ try {
         "http://127.0.0.1:$BackendPort/api/projects",
         "http://127.0.0.1:$SolaraPort/",
         "http://127.0.0.1:$SolaraPort/jupyter/nbextensions/jupyter-vue/nodeps.js",
-        "http://127.0.0.1:$SolaraPort/jupyter/nbextensions/jupyter-vuetify/nodeps.js"
+        "http://127.0.0.1:$SolaraPort/jupyter/nbextensions/jupyter-vuetify/nodeps.js",
+        "http://127.0.0.1:$SolaraPort/_solara/cdn/@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app8.min.js",
+        "http://127.0.0.1:$SolaraPort/_solara/cdn/@widgetti/solara-vuetify3-app@5.0.2/dist/692.solara-vuetify-app8.min.js",
+        "http://127.0.0.1:$SolaraPort/_solara/cdn/@widgetti/solara-vuetify3-app@5.0.2/dist/fonts.css",
+        "http://127.0.0.1:$SolaraPort/_solara/cdn/@widgetti/solara-vuetify3-app@5.0.2/dist/1ab7bbddcdbde1b6f274.woff2",
+        "http://127.0.0.1:$SolaraPort/_solara/cdn/font-awesome@4.5.0/css/font-awesome.min.css",
+        "http://127.0.0.1:$SolaraPort/_solara/cdn/requirejs@2.3.6/require.js",
+        "http://127.0.0.1:$SolaraPort/_solara/cdn/katex@0.16.9/dist/katex.min.js",
+        "http://127.0.0.1:$SolaraPort/_solara/cdn/mermaid@10.8.0/dist/mermaid.min.js"
     )) {
         $response = Invoke-WebRequest -UseBasicParsing -Uri $uri -TimeoutSec 10
         if ($response.StatusCode -ne 200) {

@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory=$true)][string]$RuntimeSource,
     [Parameter(Mandatory=$true)][string]$Destination,
     [string]$DependencyBundle,
+    [string]$FrontendAssets,
     [string]$SourceManifest,
     [string]$ProjectFile,
     [string]$ExperimentConfig
@@ -19,6 +20,10 @@ if (-not (Test-Path -LiteralPath $python)) { throw 'RuntimeSource must contain t
 if ($destinationPath.StartsWith($runtime + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Destination must be outside RuntimeSource.' }
 if (-not $DependencyBundle) { $DependencyBundle = Split-Path -Parent $runtime }
 $bundle = (Resolve-Path -LiteralPath $DependencyBundle).Path
+if (-not $FrontendAssets) { $FrontendAssets = Join-Path $bundle 'solara-cdn' }
+$frontend = (Resolve-Path -LiteralPath $FrontendAssets).Path
+& $python -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --destination $frontend --verify
+if ($LASTEXITCODE -ne 0) { throw 'Solara frontend assets differ from the reviewed lock.' }
 foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','runtime-manifest.json','wheelhouse','downloads')) {
     if (-not (Test-Path -LiteralPath (Join-Path $bundle $name))) { throw "Prepared dependency bundle is missing: $name" }
 }
@@ -36,6 +41,10 @@ if ($SourceManifest) { $sourceArguments = @('--source-manifest', (Resolve-Path -
 & $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') stage --repo $repo --root $destinationPath @sourceArguments
 if ($LASTEXITCODE -ne 0) { throw 'Allowlisted application staging failed.' }
 Copy-Item -LiteralPath $runtime -Destination (Join-Path $destinationPath 'runtime') -Recurse
+New-Item -ItemType Directory -Path (Join-Path $destinationPath 'assets') | Out-Null
+Copy-Item -LiteralPath (Join-Path $repo 'packaging\solara-assets.lock.json') -Destination (Join-Path $destinationPath 'assets\solara-assets.lock.json')
+& $python -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --destination (Join-Path $destinationPath 'assets\solara-cdn') --offline-source $frontend
+if ($LASTEXITCODE -ne 0) { throw 'Offline Solara asset copying failed.' }
 # Copy verified content unchanged; seal rechecks it against the prepared manifest.
 New-Item -ItemType Directory -Path (Join-Path $destinationPath 'dependencies') | Out-Null
 foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','runtime-manifest.json','wheelhouse','downloads')) {

@@ -21,6 +21,7 @@ APP_FILES = {
 SCRIPT_FILES = {
     'start-portable.ps1', 'stop-portable.ps1', 'test-frontend-modules.ps1', 'initialize-case-database.py',
     'test-port-selection.ps1', 'verify-portable-package.ps1', 'portable-package.py', 'portable-process.ps1',
+    'prepare-solara-assets.py',
 }
 ENTRYPOINTS = {'Start-Platform.cmd', 'Start-Platform.vbs', 'Stop-Platform.cmd'}
 PACKAGE_SUPPORT_FILES = {f'scripts/{name}' for name in SCRIPT_FILES} | ENTRYPOINTS | {'docs/windows-portable.md'}
@@ -28,6 +29,7 @@ BUILD_INPUTS = {
     'scripts/build-portable.ps1', 'scripts/prepare-windows-runtime.ps1',
     'scripts/initialize-case-database.py', 'packaging/windows-runtime.json',
     'packaging/requirements-windows.lock',
+    'packaging/solara-assets.lock.json',
 }
 
 
@@ -119,9 +121,21 @@ def seal(root: Path) -> None:
             raise ValueError(f'Staged source differs from candidate: {name}')
     if (root / 'runtime').exists():
         verify_runtime_manifest(root / 'dependencies', root / 'runtime')
+        verify_frontend_assets(root, source)
     manifest = {'format_version': 1, 'source_commit': source['source_commit'],
                 'files': {name: digest(path) for name, path in immutable_files(root)}}
     (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+
+
+def verify_frontend_assets(root: Path, source: dict) -> None:
+    lock_path = root / 'assets' / 'solara-assets.lock.json'
+    if digest(lock_path) != source['build_inputs']['packaging/solara-assets.lock.json']:
+        raise ValueError('Solara frontend lock differs from the reviewed source')
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('solara_asset_verifier', root / 'scripts' / 'prepare-solara-assets.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.verify(root / 'assets' / 'solara-cdn', module.read_lock(lock_path))
 
 
 def verify(root: Path) -> None:

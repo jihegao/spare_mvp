@@ -66,4 +66,8 @@ Get-ChildItem -LiteralPath $runtime -Recurse -File | Where-Object { $_.Extension
 if ($LASTEXITCODE -ne 0) { throw 'Prepared runtime manifest creation failed.' }
 & $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $root --runtime-source $runtime
 if ($LASTEXITCODE -ne 0) { throw 'Prepared bundle verification failed.' }
+$assetArguments = @()
+if ($OfflineSource) { $assetArguments = @('--offline-source', (Join-Path $offline 'solara-cdn')) }
+& $python -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --destination (Join-Path $root 'solara-cdn') @assetArguments
+if ($LASTEXITCODE -ne 0) { throw 'Locked Solara frontend asset preparation failed.' }
 Write-Output "Prepared isolated Windows runtime and offline wheelhouse: $root"

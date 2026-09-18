@@ -1,0 +1,3393 @@
+{
+  "format_version": 1,
+  "description": "Solara 1.57.5 Windows frontend: Vuetify 3 / ipywidgets 8, CSS fonts, RequireJS and Markdown dynamic assets. Official npm archives; no install scripts.",
+  "packages": [
+    {
+      "name": "@widgetti/solara-vuetify3-app",
+      "version": "5.0.2",
+      "url": "https://registry.npmjs.org/@widgetti/solara-vuetify3-app/-/solara-vuetify3-app-5.0.2.tgz",
+      "sha256": "de93c0d9e18ab3d7d249bd9678587d72381f1b520435ebecb64a51b45f41d9fe",
+      "integrity": "sha512-Y+5DIEiHWjt31jWRIhfRqfhkK7JieJqBeW22CRbFm+/QbbE0npAKHUVEfELmEGYj0+IUQC1+iB9WFVJYNrfF0w==",
+      "files": [
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/README.md",
+          "member": "package/README.md",
+          "sha256": "b3a072ce287a3ae3dcd567f6e45436434feff89de4c67cd9531bf8417e7616b7",
+          "size": 259
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/00b1fb69fb78ff50fd55.ttf",
+          "member": "package/dist/00b1fb69fb78ff50fd55.ttf",
+          "sha256": "42d4cdf860fe35b70930ac54e8b468b3b93124798ce252441f33134855a452d4",
+          "size": 174048
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/02271ec5cb9f5b4588ac.woff",
+          "member": "package/dist/02271ec5cb9f5b4588ac.woff",
+          "sha256": "11e4dc8a6471ff6d6ee561d53d10fde8f7489e798257ff449c5d37c197435605",
+          "size": 12316
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/03074b16509774c0aa6d.woff2",
+          "member": "package/dist/03074b16509774c0aa6d.woff2",
+          "sha256": "c912a9ce0c3122d4b2b29ad26bfe06b0390d1a5bdaa5d6128692c0befd1dfbbd",
+          "size": 15340
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/06db94b5fad70e44175d.woff2",
+          "member": "package/dist/06db94b5fad70e44175d.woff2",
+          "sha256": "aa4650a411dfe1c9beb794ffaf08c7909cdfbb05672d79b3a9976672cbba75ec",
+          "size": 16944
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/073b3402d036714b4370.woff",
+          "member": "package/dist/073b3402d036714b4370.woff",
+          "sha256": "d96cdf2b3bdd4d64a8fd5f74a4c467f123a8a73931cd435889f08ffaf9bf947a",
+          "size": 10588
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/0c1f88355a2ec847fc41.woff",
+          "member": "package/dist/0c1f88355a2ec847fc41.woff",
+          "sha256": "136939ae23ff6c6b2c746bac1e689475022fd4a71a9925de792a149a55295231",
+          "size": 19936
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/0c3b8929d377c0e9b2f3.woff",
+          "member": "package/dist/0c3b8929d377c0e9b2f3.woff",
+          "sha256": "c76c5d696297d51b9cb1639c7da4334f0e7dec81b42b11213b5e25ef671bb822",
+          "size": 29912
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/12a47ed5fd5585f0f422.woff2",
+          "member": "package/dist/12a47ed5fd5585f0f422.woff2",
+          "sha256": "0c9a3f7fdc13a3ff04b74e9b982c28fa738fa9373bd43bd24dbca5f2dc360f24",
+          "size": 60840
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/155.solara-vuetify-app7.min.js",
+          "member": "package/dist/155.solara-vuetify-app7.min.js",
+          "sha256": "c35e1827a35f35d878839aa266dbde3355d9ebc94cfdee231ba56e14921d13df",
+          "size": 432947
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/172d3529b26f8cedef6b.woff2",
+          "member": "package/dist/172d3529b26f8cedef6b.woff2",
+          "sha256": "51814d270d06ff0255dba0799994fa4d8c84d11f09951d47595f4abb1f3602dc",
+          "size": 11316
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/1ab7bbddcdbde1b6f274.woff2",
+          "member": "package/dist/1ab7bbddcdbde1b6f274.woff2",
+          "sha256": "1d5b7c64458f4af91dcfee0354be47adde1f739b5aded03a7ab6068a1bb6ca97",
+          "size": 15436
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/1d19ca2fdcd9bd75a7dd.woff",
+          "member": "package/dist/1d19ca2fdcd9bd75a7dd.woff",
+          "sha256": "3bfe46bb1ca35b205306c5ec664e99e4a816f48a417b6b42e77a1f43f0bc4e7a",
+          "size": 20012
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/20f389c4120be058d80a.woff2",
+          "member": "package/dist/20f389c4120be058d80a.woff2",
+          "sha256": "99cd42a3c072d918f2f44984a807cf7aa16e13545fd0875fc07c6c65f99e715b",
+          "size": 16780
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/2b389797cf8bdbea58fb.woff",
+          "member": "package/dist/2b389797cf8bdbea58fb.woff",
+          "sha256": "468e579fe1210fa55525b1c470ed2d1958404512a2dd4fb972cac5ce0ff00b1f",
+          "size": 19888
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/2d241905f5d9b81989af.woff2",
+          "member": "package/dist/2d241905f5d9b81989af.woff2",
+          "sha256": "5a8c1e7681318caa29e9f44e8a6e271f6a4067a2703e9916dfd4fe9099241db7",
+          "size": 15552
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/2f7bc363fc5424ebda59.ttf",
+          "member": "package/dist/2f7bc363fc5424ebda59.ttf",
+          "sha256": "f36ea897e19f4a2e571d1e900e4e3710e438deb05a842486045ba0a3e616a4ad",
+          "size": 19436
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/306.solara-vuetify-app7.min.js",
+          "member": "package/dist/306.solara-vuetify-app7.min.js",
+          "sha256": "4084fda643a7862956074618717d11e764b927ae9a3014c84fabf59c95ca4513",
+          "size": 3539
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/354501bac435c3264834.woff",
+          "member": "package/dist/354501bac435c3264834.woff",
+          "sha256": "9be7ceb88004ab8ad124082246fbfcca4091e36385d4ec6ed1df67375dad50fb",
+          "size": 13296
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/39890742bc957b368704.woff2",
+          "member": "package/dist/39890742bc957b368704.woff2",
+          "sha256": "0f60d1b897938ec918c8ce073092411baf9438f6739465693ff18b0f9d20b021",
+          "size": 25324
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/399c3cc75ca92df8083c.woff",
+          "member": "package/dist/399c3cc75ca92df8083c.woff",
+          "sha256": "ff0ce937f3d297f5f253b78df5eb2a03f5513be18292f2d9041439c6d9d62207",
+          "size": 21132
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/3f07ed67f06c720120ce.woff",
+          "member": "package/dist/3f07ed67f06c720120ce.woff",
+          "sha256": "850c0af5c2238497febaf5e461d880bf458c341f42f4f330f1b1ab5698b1998e",
+          "size": 18668
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/428978dc7837d46de091.woff",
+          "member": "package/dist/428978dc7837d46de091.woff",
+          "sha256": "a6f7ec0d846ac7ad975adb8959c37ed49b94acbc4ae436db9ce9e20287e4a64c",
+          "size": 19412
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/479700ea91d964d295d7.eot",
+          "member": "package/dist/479700ea91d964d295d7.eot",
+          "sha256": "bc51f6335abbf55955ffc85a84cf3e20d86261b54f5aea9f5e2b4022c53c893c",
+          "size": 69177
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/4ad7c7e8bb8d10a34bb7.ttf",
+          "member": "package/dist/4ad7c7e8bb8d10a34bb7.ttf",
+          "sha256": "c647367d1dd4e162468717d020e1fc0f1dc5c26ebfdffbe55261713bf88c5877",
+          "size": 10364
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/4c6b94fd1d07f8beff7c.woff",
+          "member": "package/dist/4c6b94fd1d07f8beff7c.woff",
+          "sha256": "e14fed02b1aba7ce9f5afd5844b5d0321b22351febc720e0de8b8723527609f7",
+          "size": 16028
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/4c761b3711973ab04edf.ttf",
+          "member": "package/dist/4c761b3711973ab04edf.ttf",
+          "sha256": "9163df9c7122432e6495b4229fa9071cf9ae86a758ae5efc4924ec2e1a6dbce1",
+          "size": 19584
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/4f35fbcc9ee8614c2bcc.woff",
+          "member": "package/dist/4f35fbcc9ee8614c2bcc.woff",
+          "sha256": "c6368d87e8a1a3a5d337623d83d8dc4b868f242a9ad476237d6f8d1e0f168cdc",
+          "size": 30772
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/55cf6665278898f1149c.woff",
+          "member": "package/dist/55cf6665278898f1149c.woff",
+          "sha256": "2cfe69657c55133dac6ea017b4452efff2131422abd9e90500a072df7ca5a9c8",
+          "size": 21528
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/57f5c1837853986ea1db.ttf",
+          "member": "package/dist/57f5c1837853986ea1db.ttf",
+          "sha256": "a6b2099fb555c60e3a0db3a08842ebf1d732c6eb4e4bf44913613bed4fc4e39b",
+          "size": 11508
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/5908ecb9ed942e5e61fa.eot",
+          "member": "package/dist/5908ecb9ed942e5e61fa.eot",
+          "sha256": "5fb8df34a3b78887e8619cae09ffd26cb1933f3d3f47789caa360667f16ad3c2",
+          "size": 844600
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/5b49f4993ae22d7975b4.ttf",
+          "member": "package/dist/5b49f4993ae22d7975b4.ttf",
+          "sha256": "1ece03f79f95277d57dc7f6b435a74e1379b0d46104a8530286b60ff49369ea0",
+          "size": 24504
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/692.solara-vuetify-app8.min.js",
+          "member": "package/dist/692.solara-vuetify-app8.min.js",
+          "sha256": "2d63864238ebcc06d1dd440ca45604a4d055c0c42ae03bec5a1fd8ca391b5389",
+          "size": 432995
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/6d3d25f4820d0da8f01f.woff2",
+          "member": "package/dist/6d3d25f4820d0da8f01f.woff2",
+          "sha256": "7af58c5ec8f132a2ddde9027c6d7814decce4d3b822a11192a42a20e2e973264",
+          "size": 16440
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/6de7d4b539221a49e9e2.ttf",
+          "member": "package/dist/6de7d4b539221a49e9e2.ttf",
+          "sha256": "95b6d2f1a50173bfedb8c63e1d1c99b10427d0a4df4201cb44513b226951a22b",
+          "size": 12228
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/6fdf0ac577be0ba82a4c.woff",
+          "member": "package/dist/6fdf0ac577be0ba82a4c.woff",
+          "sha256": "5e28753be717dac97f559f49bc10be9cf3c124ddcabda6659d11cb68febc6463",
+          "size": 13208
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/73ea273a72f4aca30ca5.woff2",
+          "member": "package/dist/73ea273a72f4aca30ca5.woff2",
+          "sha256": "0cdd387c9590a1a9f9794560022dbb59654a7d86f187aa0c81495ad42d3a7308",
+          "size": 28076
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/7489a2fbfb9bfe704420.ttf",
+          "member": "package/dist/7489a2fbfb9bfe704420.ttf",
+          "sha256": "07d8e303ce4fc12b4bb54f1004170dd190a1f3db45d400fe68060df3e0897268",
+          "size": 12368
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/7d393d382f3e7fb1c637.woff2",
+          "member": "package/dist/7d393d382f3e7fb1c637.woff2",
+          "sha256": "00b26ac825e2095056396e0553b8ac26d3f8ad158c3826e28b4c45b385c4714a",
+          "size": 12028
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/7e873d3833eb108a0758.ttf",
+          "member": "package/dist/7e873d3833eb108a0758.ttf",
+          "sha256": "ed0b74372feefcbb9c0666b2e210da37b7e49fa7fbbf3eeb11db5f693dacfbb7",
+          "size": 12344
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/815babffe97b00a1f30b.woff2",
+          "member": "package/dist/815babffe97b00a1f30b.woff2",
+          "sha256": "eca8ffa764a66cd084800e2e71c4176ef089ebd805515664a6cb8d4fb3b598bf",
+          "size": 15440
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/8169508bf58f8bd92ad8.ttf",
+          "member": "package/dist/8169508bf58f8bd92ad8.ttf",
+          "sha256": "138ac28d1663b3037e9c5f52371fa5c63d8324f4a38d22cd573e6ea3a3fd0cf8",
+          "size": 51336
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/828abcb200061cffbaae.ttf",
+          "member": "package/dist/828abcb200061cffbaae.ttf",
+          "sha256": "70ee1f64a20f2048c21940ef46d0144fd215baa953ca69afd1e31e98544f708f",
+          "size": 32968
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/853be92419a6c3766b9a.ttf",
+          "member": "package/dist/853be92419a6c3766b9a.ttf",
+          "sha256": "68534840bcfdd2bffb6f0e8deb48684dd01e7f04ea2813267577afb906de1d13",
+          "size": 63632
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/872.solara-vuetify-app8.min.js",
+          "member": "package/dist/872.solara-vuetify-app8.min.js",
+          "sha256": "daeba39b80150d33b9eded009da40529758503581db76c4313e055b1935db67c",
+          "size": 3590
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/89323fb7fad1b22f5923.woff2",
+          "member": "package/dist/89323fb7fad1b22f5923.woff2",
+          "sha256": "f35f6616aa2148b09cbdefd3aec6d3d3e94b83327346ef0d5cdac2e3b6537526",
+          "size": 17124
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/8a5f936332e8028c7278.ttf",
+          "member": "package/dist/8a5f936332e8028c7278.ttf",
+          "sha256": "08ce98e51b04d58945a301e639e02b6998af29fdfd61a7b8afdd07bbfc479d4a",
+          "size": 31308
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/8d593cfaa96238d5e2f8.woff",
+          "member": "package/dist/8d593cfaa96238d5e2f8.woff",
+          "sha256": "91ee67500cc0129aa0ace3ac5c61ff1692102f0f31d02b69347fba35dcb75bf2",
+          "size": 14112
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/931d67ea207ab37ee693.woff2",
+          "member": "package/dist/931d67ea207ab37ee693.woff2",
+          "sha256": "74444efd593c005e3f4573b44524704c0af0a937fe911cca9e94068d0d140d3f",
+          "size": 11348
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/941530f23d86c39ba672.woff2",
+          "member": "package/dist/941530f23d86c39ba672.woff2",
+          "sha256": "6309b0265edb8a409b1a120036a651230824b326e26a5f24eca1b9f544e2a42f",
+          "size": 15316
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/95591a929f0d32aa282a.woff2",
+          "member": "package/dist/95591a929f0d32aa282a.woff2",
+          "sha256": "e99ae51144bf1232efcc1bfe5add36262c6866b0faab24fa75740e1b98577a62",
+          "size": 12216
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/96759856b4e70f3a8338.woff",
+          "member": "package/dist/96759856b4e70f3a8338.woff",
+          "sha256": "8a8d244581371912b8f3f5a23e2437cb2a59cd9bcaebb0346e722c05737a2571",
+          "size": 18748
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/9d267b4b73e6ea5bb396.woff2",
+          "member": "package/dist/9d267b4b73e6ea5bb396.woff2",
+          "sha256": "6fe8b4e5a73712c3fd3b99d6f61cc39c0546a9b93291e6c80beb5f399eb25424",
+          "size": 16644
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/9d37d7cdb0c45a07e980.woff",
+          "member": "package/dist/9d37d7cdb0c45a07e980.woff",
+          "sha256": "cfcb9a5ffdd06bd66618756360ba3dadda497d92b687304ca942bed02b72ab70",
+          "size": 21268
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/9eba1d77abcf2aa6e94e.ttf",
+          "member": "package/dist/9eba1d77abcf2aa6e94e.ttf",
+          "sha256": "d0332f52868370fd83ae7fa46470f90c8f2eab2fcf12bc4f88080b340c95a830",
+          "size": 53580
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/a4fa71c6483584debf08.woff",
+          "member": "package/dist/a4fa71c6483584debf08.woff",
+          "sha256": "ecac75bfaf3df79cc8b13f735c7f08cb006d47f039a68524284b34deba2c997c",
+          "size": 21856
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/ae5f802c41ddc61a6c12.woff2",
+          "member": "package/dist/ae5f802c41ddc61a6c12.woff2",
+          "sha256": "3876391b89d4721d89ebcedd0798bf7705ea1ad285fa6cad487fb88c1d6042a8",
+          "size": 17156
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/b257a18c016f37ee4543.ttf",
+          "member": "package/dist/b257a18c016f37ee4543.ttf",
+          "sha256": "3931dd81faed86ba021bb2bbdc36f5bed9a38d6b4f4077aca59b265aa1b02083",
+          "size": 22364
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/b9cd458ac6d5889ff9c3.woff",
+          "member": "package/dist/b9cd458ac6d5889ff9c3.woff",
+          "sha256": "ece03cfd83e22c212cdef66feb8442d25a083beb988db3f1883f3f9738d750ba",
+          "size": 14408
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/bbe05489cd38a31d1694.ttf",
+          "member": "package/dist/bbe05489cd38a31d1694.ttf",
+          "sha256": "ed23537da2cc192dbbcd49c7440ae7918453b411ddc7e5b3ca67d4228bbbb06f",
+          "size": 844380
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/bf2d440b3a42ea78a998.ttf",
+          "member": "package/dist/bf2d440b3a42ea78a998.ttf",
+          "sha256": "f9377ab0271cda59af24bcffbd46a4d0c8a3572ffafdbb38de2ad5ea7b0d5ee5",
+          "size": 31196
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/c295e7f71970f03c0549.woff2",
+          "member": "package/dist/c295e7f71970f03c0549.woff2",
+          "sha256": "71d517d67827787cfabdf186914cc3358eda539e37931941f2b2fd4a21f68c0b",
+          "size": 13568
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/c5c02d763c89380dcb4e.ttf",
+          "member": "package/dist/c5c02d763c89380dcb4e.ttf",
+          "sha256": "f01f3e87d9c6a61c0c081ceb577abd864eb00a612f7ac1620dd6915fad2ef5aa",
+          "size": 27556
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/c81d1b2a4b75d3eded60.woff2",
+          "member": "package/dist/c81d1b2a4b75d3eded60.woff2",
+          "sha256": "036d4e95149b69ff9bcc0cd55771efeb25ffa3947293e69acd78d5ac328c684b",
+          "size": 9644
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/cb41c1e71debe927815c.woff2",
+          "member": "package/dist/cb41c1e71debe927815c.woff2",
+          "sha256": "3e253b66056519aa065b00a453bac37ac5ed8f3e6fe7b542e93a9dcdcc11d0bc",
+          "size": 15344
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/cd5e231e0cc53b2cb2c0.woff2",
+          "member": "package/dist/cd5e231e0cc53b2cb2c0.woff2",
+          "sha256": "68e8c73ef42afd3ccec58bf0fba302cce448938e7fc020a5e31f8a952eee1342",
+          "size": 10344
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/d4c409dfe110747b1763.woff",
+          "member": "package/dist/d4c409dfe110747b1763.woff",
+          "sha256": "3ab30e780c8b0bcc4998b838a5b30c3bfe28edead312906dc3c12271fae0699a",
+          "size": 19916
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/d562e886c52f12660a41.woff",
+          "member": "package/dist/d562e886c52f12660a41.woff",
+          "sha256": "30da91e84c893f875e252689faebdc590b2871145e8adc7f9a9d4dbd8ce0b251",
+          "size": 33516
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/d8ba12774e48a5a73c24.woff2",
+          "member": "package/dist/d8ba12774e48a5a73c24.woff2",
+          "sha256": "756f65bc72ad18ac281e8ef320de3347f26d402701aeb8f659f33ffb8f036ccb",
+          "size": 16572
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/d9f39587ab2751b33bcf.woff2",
+          "member": "package/dist/d9f39587ab2751b33bcf.woff2",
+          "sha256": "3248c66efa5ff60a1088aa4ab9d39b395fcc2e77e03ae454621885aa1017f3a8",
+          "size": 283040
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/da9606b68b5c8ac55cfb.woff",
+          "member": "package/dist/da9606b68b5c8ac55cfb.woff",
+          "sha256": "58aab5f73138d701a07088a9d4fd015505d1ed58a19804954e155322f5e794de",
+          "size": 404384
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/dcbcbd93bac0470b462d.woff2",
+          "member": "package/dist/dcbcbd93bac0470b462d.woff2",
+          "sha256": "dc47344dbb6cb5b655c8460d561f4df5f501b90c804ad3c6cec65fe322351ab1",
+          "size": 16400
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/eab8651ccfe511d144fd.woff",
+          "member": "package/dist/eab8651ccfe511d144fd.woff",
+          "sha256": "48433679240732ed1a9b98e195a75785607795037757e3571ff91878a20a93b2",
+          "size": 19936
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/ed305b5434865e06ffde.ttf",
+          "member": "package/dist/ed305b5434865e06ffde.ttf",
+          "sha256": "1e6f9579e90e2cac37f8f60a597c436e075c114385652b7cbeb0dec0421291b3",
+          "size": 19572
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/f27d09b1ffc7796288d3.woff",
+          "member": "package/dist/f27d09b1ffc7796288d3.woff",
+          "sha256": "c8912ebd82b4df2eb87e37b1f66432fa2186182e08bb8a533ba4c2df6ce67fba",
+          "size": 21564
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/f2a0933406f783065152.woff",
+          "member": "package/dist/f2a0933406f783065152.woff",
+          "sha256": "4c463e02509bd9ab8787f6e37f2e926d405e5e22be38643264746c4ddc6755cb",
+          "size": 79612
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/f650f111a3b890d116f1.woff2",
+          "member": "package/dist/f650f111a3b890d116f1.woff2",
+          "sha256": "c2342cd8b869e01752a9321dc17213fc40d4d04c79688c1d43f2cf316abd7866",
+          "size": 26272
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/f9ca3454c3a66edb5a81.woff2",
+          "member": "package/dist/f9ca3454c3a66edb5a81.woff2",
+          "sha256": "a44484ecc8b7aa5da1603d6a7256d3eea3c5c8e5c6f50bcdb220b303e4b2010a",
+          "size": 16940
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/fa675e5e4bec9eb250b6.ttf",
+          "member": "package/dist/fa675e5e4bec9eb250b6.ttf",
+          "sha256": "0d85ae7cc30f23790a7f1a58c4a112fdca8aae769b6ba11429af1d98b1b6cb3a",
+          "size": 33580
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/fbebe70817c0f48eb4ee.woff",
+          "member": "package/dist/fbebe70817c0f48eb4ee.woff",
+          "sha256": "1570f866bf6eae82041e407280894a86ad2b8b275e01908ae156914dc693a4ed",
+          "size": 19824
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/fbf369016a137c8f7460.woff",
+          "member": "package/dist/fbf369016a137c8f7460.woff",
+          "sha256": "96e0bf768fc3c6fdb04c5d11aa1a63080b27bd48754444ac10d449886720af78",
+          "size": 21776
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/fc9ba5249878cd8f8d88.ttf",
+          "member": "package/dist/fc9ba5249878cd8f8d88.ttf",
+          "sha256": "1c67f068fea8bb09bf099c088b1cf64bd27516a6e07f4684344873564bb66a67",
+          "size": 16648
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/fd947498bc16392e76c2.woff",
+          "member": "package/dist/fd947498bc16392e76c2.woff",
+          "sha256": "f1d6ef86f3b11a528bd5185199bd2443ecb2b0dead96d88674b5a2c12be24bdf",
+          "size": 19676
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/fe2176f79edaa716e621.woff2",
+          "member": "package/dist/fe2176f79edaa716e621.woff2",
+          "sha256": "97479ca6cce906abc961ecac96faa5f9ca2e61b8e7670d475826bcdee9a7c267",
+          "size": 16988
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/fonts.css",
+          "member": "package/dist/fonts.css",
+          "sha256": "a2a7e767994b322d030a4b7a6f7b622948b4bbcef9b33be64a044d526a0b157a",
+          "size": 358991
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/fonts.js",
+          "member": "package/dist/fonts.js",
+          "sha256": "55c872845267eb4409df5ef23f0245ad3a9aba2fd04cb851b73444daa22c0b42",
+          "size": 443
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/main7.css",
+          "member": "package/dist/main7.css",
+          "sha256": "1cb56d4de97915cd77334816df20432feac8fbc9714dde580892787bbc5840df",
+          "size": 782526
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/main8.css",
+          "member": "package/dist/main8.css",
+          "sha256": "92909400f816757299a44500760bdb1b8ebaa3d94109bf32e6e67e7b23c9117b",
+          "size": 810695
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app7.js",
+          "member": "package/dist/solara-vuetify-app7.js",
+          "sha256": "985052aefe47245beaacad646f18b427f92bbee6882576b7b478a1129eb3db9f",
+          "size": 12725449
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app7.min.js",
+          "member": "package/dist/solara-vuetify-app7.min.js",
+          "sha256": "9895356e7863c9895f01e2f16416d5f3f69cb7f9d8bcb73eaa548a4b5d0ec363",
+          "size": 3368546
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app7.min.js.LICENSE.txt",
+          "member": "package/dist/solara-vuetify-app7.min.js.LICENSE.txt",
+          "sha256": "6da1618224f4ba5c9af37720c2b41aac8f9aefe5f94017ed57e8f3bce4bee3ef",
+          "size": 4369
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app8.js",
+          "member": "package/dist/solara-vuetify-app8.js",
+          "sha256": "2b111c6f2c5404f20cc5d215293ec7ac011a5a953240237f14f6a3fa5b0d46b4",
+          "size": 12944167
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app8.min.js",
+          "member": "package/dist/solara-vuetify-app8.min.js",
+          "sha256": "0c25b4e5b72cfc192af6b33d6552bdef2f7b78b350ce0cab9f6fd17cea305ee6",
+          "size": 3565143
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app8.min.js.LICENSE.txt",
+          "member": "package/dist/solara-vuetify-app8.min.js.LICENSE.txt",
+          "sha256": "58c5f5644797316bad364dd9b14ca0bec2ae047e138ac04aed1529b728d34402",
+          "size": 3649
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-widget-manager8_node_modules_codemirror_mode_sync_recursive_js_.solara-vuetify-app8.js",
+          "member": "package/dist/solara-widget-manager8_node_modules_codemirror_mode_sync_recursive_js_.solara-vuetify-app8.js",
+          "sha256": "f663bb475caee1baa05fc3cecd3e52820f99d640122a1e390407f4351fd2956a",
+          "size": 13041
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-widget-manager_node_modules_codemirror_mode_sync_recursive_js_.solara-vuetify-app7.js",
+          "member": "package/dist/solara-widget-manager_node_modules_codemirror_mode_sync_recursive_js_.solara-vuetify-app7.js",
+          "sha256": "77791965d92096bffad951c885c32a3921f0a84800ba864b0d4856211d80b09a",
+          "size": 14197
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/vendors-solara-widget-manager8_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager8-d5d6d2.solara-vuetify-app8.js",
+          "member": "package/dist/vendors-solara-widget-manager8_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager8-d5d6d2.solara-vuetify-app8.js",
+          "sha256": "c7f0721e08f847106e226fbcd8b02466c2acea6ff3d3b2db3e102493fe2329ad",
+          "size": 948921
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/vendors-solara-widget-manager_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager_n-7d48b1.solara-vuetify-app7.js",
+          "member": "package/dist/vendors-solara-widget-manager_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager_n-7d48b1.solara-vuetify-app7.js",
+          "sha256": "a686b7340cb0ed675c6b0f16cf4aee3b7c4ba7611c598557bb8f4052f6bf9f3c",
+          "size": 1008470
+        },
+        {
+          "path": "@widgetti/solara-vuetify3-app@5.0.2/package.json",
+          "member": "package/package.json",
+          "sha256": "571de12784554da0fd82724b18a9f33f5b7ef1722e9fb860d50bfebe1b4930dc",
+          "size": 1087
+        }
+      ]
+    },
+    {
+      "name": "font-awesome",
+      "version": "4.5.0",
+      "url": "https://registry.npmjs.org/font-awesome/-/font-awesome-4.5.0.tgz",
+      "sha256": "77a876e6b63e8043a658b8dd559bafe5aa1f7acd3fa7e9ad66e75f80e523be23",
+      "integrity": "sha512-XGGY8CN/NT8e5fKOC/K7CESNQ3+2oYOfZqwZcKgEMtcmTiHtFIH+XZWRoU0HtcdwhtSkpWXLfTIUlTdJ4PhX8A==",
+      "files": [
+        {
+          "path": "font-awesome@4.5.0/README.md",
+          "member": "package/README.md",
+          "sha256": "53b3771cde61286dd04f76f1c8357a6575a01bb3cf481ebf2364a60197f23601",
+          "size": 4734
+        },
+        {
+          "path": "font-awesome@4.5.0/css/font-awesome.css",
+          "member": "package/css/font-awesome.css",
+          "sha256": "082b0736a3408950e50fd65a090921003fe83d89ec6e3084549a01d5dfa9e854",
+          "size": 33233
+        },
+        {
+          "path": "font-awesome@4.5.0/css/font-awesome.min.css",
+          "member": "package/css/font-awesome.min.css",
+          "sha256": "ddd92f10ad162c7449eff0acaf40598c05b1111739587edb75e5326b6697c5d5",
+          "size": 27466
+        },
+        {
+          "path": "font-awesome@4.5.0/fonts/FontAwesome.otf",
+          "member": "package/fonts/FontAwesome.otf",
+          "sha256": "7ed24c05432403117372891543f0cb6a7922100919e7ae077c1f3faf67658dc2",
+          "size": 109688
+        },
+        {
+          "path": "font-awesome@4.5.0/fonts/fontawesome-webfont.eot",
+          "member": "package/fonts/fontawesome-webfont.eot",
+          "sha256": "e219ece8f4d3e4ac455ef31cd3a7c7b5057ea68a109937fc26b03c6e99ee9322",
+          "size": 70807
+        },
+        {
+          "path": "font-awesome@4.5.0/fonts/fontawesome-webfont.svg",
+          "member": "package/fonts/fontawesome-webfont.svg",
+          "sha256": "d67041fe5d50eef9ef671643968f7ce6b130eaaaaa2ce4d496b18d0a33aeb87b",
+          "size": 365616
+        },
+        {
+          "path": "font-awesome@4.5.0/fonts/fontawesome-webfont.ttf",
+          "member": "package/fonts/fontawesome-webfont.ttf",
+          "sha256": "7b5a4320fba0d4c8f79327645b4b9cc875a2ec617a557e849b813918eb733499",
+          "size": 142072
+        },
+        {
+          "path": "font-awesome@4.5.0/fonts/fontawesome-webfont.woff",
+          "member": "package/fonts/fontawesome-webfont.woff",
+          "sha256": "c812ddc9e475d3e65d68a6b3b589ce598a2a5babb7afc55477d59215c4a38a40",
+          "size": 83588
+        },
+        {
+          "path": "font-awesome@4.5.0/fonts/fontawesome-webfont.woff2",
+          "member": "package/fonts/fontawesome-webfont.woff2",
+          "sha256": "ff82aeed6b9bb6701696c84d1b223d2e682eb78c89117a438ce6cfea8c498995",
+          "size": 66624
+        },
+        {
+          "path": "font-awesome@4.5.0/package.json",
+          "member": "package/package.json",
+          "sha256": "b3038b76c42d12b05d3392a142a4055e76bc85535099a9bef90221ef16ff901a",
+          "size": 965
+        }
+      ]
+    },
+    {
+      "name": "katex",
+      "version": "0.16.9",
+      "url": "https://registry.npmjs.org/katex/-/katex-0.16.9.tgz",
+      "sha256": "a0ccc017a6bff9e9dbc014b324e5203c52df16aeff105d971e916ce65b552733",
+      "integrity": "sha512-fsSYjWS0EEOwvy81j3vRA8TEAhQhKiqO+FQaKWp0m39qwOzHVBgAUBIXWj1pB+O2W3fIpNa6Y9KSKCVbfPhyAQ==",
+      "files": [
+        {
+          "path": "katex@0.16.9/LICENSE",
+          "member": "package/LICENSE",
+          "sha256": "766ccc1f306c885aa45542a9846bbd0a505b27a0374f146778171c2254ce18e3",
+          "size": 1107
+        },
+        {
+          "path": "katex@0.16.9/README.md",
+          "member": "package/README.md",
+          "sha256": "5692e378e1c2b2dbaa229a58e118c534c707c1a03d7d1c443d2d4bbc92ad1184",
+          "size": 7265
+        },
+        {
+          "path": "katex@0.16.9/dist/README.md",
+          "member": "package/dist/README.md",
+          "sha256": "5692e378e1c2b2dbaa229a58e118c534c707c1a03d7d1c443d2d4bbc92ad1184",
+          "size": 7265
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/auto-render.js",
+          "member": "package/dist/contrib/auto-render.js",
+          "sha256": "a1316ded7951625841ba9f81890315465ef798ce6864079670c6c6e2f774677f",
+          "size": 10826
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/auto-render.min.js",
+          "member": "package/dist/contrib/auto-render.min.js",
+          "sha256": "9cb8dacfc086c2966c9ec4ba54f4a2dc43b7cbe2b33cec1a2743d886c7fb47a7",
+          "size": 3478
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/auto-render.mjs",
+          "member": "package/dist/contrib/auto-render.mjs",
+          "sha256": "42d3240990d45436d6dd4dfb36e7792448cdc2b602c47ac424fd09b1e93dbdfe",
+          "size": 6840
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/copy-tex.js",
+          "member": "package/dist/contrib/copy-tex.js",
+          "sha256": "d703bacc9513feec4396989859526cbc085f4f1b5e7e081e95825d1304afd3b0",
+          "size": 4529
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/copy-tex.min.js",
+          "member": "package/dist/contrib/copy-tex.min.js",
+          "sha256": "52ce78fab4860d24ef22128a52ce24ca01368a9034457a565a1d3fccbab0ddbb",
+          "size": 1637
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/copy-tex.mjs",
+          "member": "package/dist/contrib/copy-tex.mjs",
+          "sha256": "d037b7c4cdc73420285a580e5b8f9cb441ad67e661fd1ad31dd45aadcf047bf5",
+          "size": 3640
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/mathtex-script-type.js",
+          "member": "package/dist/contrib/mathtex-script-type.js",
+          "sha256": "9f364cd6428f6cca276352efa8a99b0e9c756bf94db59b4471d6c368a3bac2ae",
+          "size": 4333
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/mathtex-script-type.min.js",
+          "member": "package/dist/contrib/mathtex-script-type.min.js",
+          "sha256": "77e47ddc5b3af990445375441fbbbfab3f9bd368823ca10f98b2448117f6f8c5",
+          "size": 1290
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/mathtex-script-type.mjs",
+          "member": "package/dist/contrib/mathtex-script-type.mjs",
+          "sha256": "57f519b2230307c74d08020f52c859c969f5527eb40d24bb8ab3e2167808d5c6",
+          "size": 751
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/mhchem.js",
+          "member": "package/dist/contrib/mhchem.js",
+          "sha256": "a07d59a01435ac2ab1350f7bacc21b8f5bab6219fba8f5e751a0e360610b96f0",
+          "size": 79571
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/mhchem.min.js",
+          "member": "package/dist/contrib/mhchem.min.js",
+          "sha256": "f0ca03df194b8c3d6017ff455db6a0ef98857905663fa311a6cded788b15340b",
+          "size": 33730
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/mhchem.mjs",
+          "member": "package/dist/contrib/mhchem.mjs",
+          "sha256": "c5d4b68a7921c218ffdcf4d7c17900d783af7b48430513810cb14e791a54abb4",
+          "size": 75577
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/render-a11y-string.js",
+          "member": "package/dist/contrib/render-a11y-string.js",
+          "sha256": "5d3ceefd3ccc270f0ca43b092d506df76df71fe57e236aacabd61a58227dac28",
+          "size": 24145
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/render-a11y-string.min.js",
+          "member": "package/dist/contrib/render-a11y-string.min.js",
+          "sha256": "040e0667057be5fd844c522e655ac4f5db5be322821362727d338e741836e693",
+          "size": 8513
+        },
+        {
+          "path": "katex@0.16.9/dist/contrib/render-a11y-string.mjs",
+          "member": "package/dist/contrib/render-a11y-string.mjs",
+          "sha256": "5df820dd9376bd23ef424e5cfc45505d57ae646fb0c5533758e7ad51e048893b",
+          "size": 20283
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_AMS-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_AMS-Regular.ttf",
+          "sha256": "68534840bcfdd2bffb6f0e8deb48684dd01e7f04ea2813267577afb906de1d13",
+          "size": 63632
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_AMS-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_AMS-Regular.woff",
+          "sha256": "30da91e84c893f875e252689faebdc590b2871145e8adc7f9a9d4dbd8ce0b251",
+          "size": 33516
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_AMS-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_AMS-Regular.woff2",
+          "sha256": "0cdd387c9590a1a9f9794560022dbb59654a7d86f187aa0c81495ad42d3a7308",
+          "size": 28076
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Caligraphic-Bold.ttf",
+          "member": "package/dist/fonts/KaTeX_Caligraphic-Bold.ttf",
+          "sha256": "07d8e303ce4fc12b4bb54f1004170dd190a1f3db45d400fe68060df3e0897268",
+          "size": 12368
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Caligraphic-Bold.woff",
+          "member": "package/dist/fonts/KaTeX_Caligraphic-Bold.woff",
+          "sha256": "1ae6bd7475590e97e7f145a89e09ccde322f7a6bc0b91607b1c8b8ee28290fed",
+          "size": 7716
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Caligraphic-Bold.woff2",
+          "member": "package/dist/fonts/KaTeX_Caligraphic-Bold.woff2",
+          "sha256": "de7701e42cf1f4cf0b766c03fb27977207eee2f4fd5d76fa82188406da43ea4c",
+          "size": 6912
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Caligraphic-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Caligraphic-Regular.ttf",
+          "sha256": "ed0b74372feefcbb9c0666b2e210da37b7e49fa7fbbf3eeb11db5f693dacfbb7",
+          "size": 12344
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Caligraphic-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Caligraphic-Regular.woff",
+          "sha256": "3398dd02302557a793f2863f88e02d96ce10df2abffa07c8e9fa90775116e65c",
+          "size": 7656
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Caligraphic-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Caligraphic-Regular.woff2",
+          "sha256": "5d53e70ad607c2352162dec9e0923fb54ecdafaccbf604cd8dcf7d00facb989b",
+          "size": 6908
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Fraktur-Bold.ttf",
+          "member": "package/dist/fonts/KaTeX_Fraktur-Bold.ttf",
+          "sha256": "9163df9c7122432e6495b4229fa9071cf9ae86a758ae5efc4924ec2e1a6dbce1",
+          "size": 19584
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Fraktur-Bold.woff",
+          "member": "package/dist/fonts/KaTeX_Fraktur-Bold.woff",
+          "sha256": "9be7ceb88004ab8ad124082246fbfcca4091e36385d4ec6ed1df67375dad50fb",
+          "size": 13296
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Fraktur-Bold.woff2",
+          "member": "package/dist/fonts/KaTeX_Fraktur-Bold.woff2",
+          "sha256": "74444efd593c005e3f4573b44524704c0af0a937fe911cca9e94068d0d140d3f",
+          "size": 11348
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Fraktur-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Fraktur-Regular.ttf",
+          "sha256": "1e6f9579e90e2cac37f8f60a597c436e075c114385652b7cbeb0dec0421291b3",
+          "size": 19572
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Fraktur-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Fraktur-Regular.woff",
+          "sha256": "5e28753be717dac97f559f49bc10be9cf3c124ddcabda6659d11cb68febc6463",
+          "size": 13208
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Fraktur-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Fraktur-Regular.woff2",
+          "sha256": "51814d270d06ff0255dba0799994fa4d8c84d11f09951d47595f4abb1f3602dc",
+          "size": 11316
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Bold.ttf",
+          "member": "package/dist/fonts/KaTeX_Main-Bold.ttf",
+          "sha256": "138ac28d1663b3037e9c5f52371fa5c63d8324f4a38d22cd573e6ea3a3fd0cf8",
+          "size": 51336
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Bold.woff",
+          "member": "package/dist/fonts/KaTeX_Main-Bold.woff",
+          "sha256": "c76c5d696297d51b9cb1639c7da4334f0e7dec81b42b11213b5e25ef671bb822",
+          "size": 29912
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Bold.woff2",
+          "member": "package/dist/fonts/KaTeX_Main-Bold.woff2",
+          "sha256": "0f60d1b897938ec918c8ce073092411baf9438f6739465693ff18b0f9d20b021",
+          "size": 25324
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-BoldItalic.ttf",
+          "member": "package/dist/fonts/KaTeX_Main-BoldItalic.ttf",
+          "sha256": "70ee1f64a20f2048c21940ef46d0144fd215baa953ca69afd1e31e98544f708f",
+          "size": 32968
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-BoldItalic.woff",
+          "member": "package/dist/fonts/KaTeX_Main-BoldItalic.woff",
+          "sha256": "a6f7ec0d846ac7ad975adb8959c37ed49b94acbc4ae436db9ce9e20287e4a64c",
+          "size": 19412
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-BoldItalic.woff2",
+          "member": "package/dist/fonts/KaTeX_Main-BoldItalic.woff2",
+          "sha256": "99cd42a3c072d918f2f44984a807cf7aa16e13545fd0875fc07c6c65f99e715b",
+          "size": 16780
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Italic.ttf",
+          "member": "package/dist/fonts/KaTeX_Main-Italic.ttf",
+          "sha256": "0d85ae7cc30f23790a7f1a58c4a112fdca8aae769b6ba11429af1d98b1b6cb3a",
+          "size": 33580
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Italic.woff",
+          "member": "package/dist/fonts/KaTeX_Main-Italic.woff",
+          "sha256": "f1d6ef86f3b11a528bd5185199bd2443ecb2b0dead96d88674b5a2c12be24bdf",
+          "size": 19676
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Italic.woff2",
+          "member": "package/dist/fonts/KaTeX_Main-Italic.woff2",
+          "sha256": "97479ca6cce906abc961ecac96faa5f9ca2e61b8e7670d475826bcdee9a7c267",
+          "size": 16988
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Main-Regular.ttf",
+          "sha256": "d0332f52868370fd83ae7fa46470f90c8f2eab2fcf12bc4f88080b340c95a830",
+          "size": 53580
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Main-Regular.woff",
+          "sha256": "c6368d87e8a1a3a5d337623d83d8dc4b868f242a9ad476237d6f8d1e0f168cdc",
+          "size": 30772
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Main-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Main-Regular.woff2",
+          "sha256": "c2342cd8b869e01752a9321dc17213fc40d4d04c79688c1d43f2cf316abd7866",
+          "size": 26272
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Math-BoldItalic.ttf",
+          "member": "package/dist/fonts/KaTeX_Math-BoldItalic.ttf",
+          "sha256": "f9377ab0271cda59af24bcffbd46a4d0c8a3572ffafdbb38de2ad5ea7b0d5ee5",
+          "size": 31196
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Math-BoldItalic.woff",
+          "member": "package/dist/fonts/KaTeX_Math-BoldItalic.woff",
+          "sha256": "850c0af5c2238497febaf5e461d880bf458c341f42f4f330f1b1ab5698b1998e",
+          "size": 18668
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Math-BoldItalic.woff2",
+          "member": "package/dist/fonts/KaTeX_Math-BoldItalic.woff2",
+          "sha256": "dc47344dbb6cb5b655c8460d561f4df5f501b90c804ad3c6cec65fe322351ab1",
+          "size": 16400
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Math-Italic.ttf",
+          "member": "package/dist/fonts/KaTeX_Math-Italic.ttf",
+          "sha256": "08ce98e51b04d58945a301e639e02b6998af29fdfd61a7b8afdd07bbfc479d4a",
+          "size": 31308
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Math-Italic.woff",
+          "member": "package/dist/fonts/KaTeX_Math-Italic.woff",
+          "sha256": "8a8d244581371912b8f3f5a23e2437cb2a59cd9bcaebb0346e722c05737a2571",
+          "size": 18748
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Math-Italic.woff2",
+          "member": "package/dist/fonts/KaTeX_Math-Italic.woff2",
+          "sha256": "7af58c5ec8f132a2ddde9027c6d7814decce4d3b822a11192a42a20e2e973264",
+          "size": 16440
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Bold.ttf",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Bold.ttf",
+          "sha256": "1ece03f79f95277d57dc7f6b435a74e1379b0d46104a8530286b60ff49369ea0",
+          "size": 24504
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Bold.woff",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Bold.woff",
+          "sha256": "ece03cfd83e22c212cdef66feb8442d25a083beb988db3f1883f3f9738d750ba",
+          "size": 14408
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Bold.woff2",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Bold.woff2",
+          "sha256": "e99ae51144bf1232efcc1bfe5add36262c6866b0faab24fa75740e1b98577a62",
+          "size": 12216
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Italic.ttf",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Italic.ttf",
+          "sha256": "3931dd81faed86ba021bb2bbdc36f5bed9a38d6b4f4077aca59b265aa1b02083",
+          "size": 22364
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Italic.woff",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Italic.woff",
+          "sha256": "91ee67500cc0129aa0ace3ac5c61ff1692102f0f31d02b69347fba35dcb75bf2",
+          "size": 14112
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Italic.woff2",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Italic.woff2",
+          "sha256": "00b26ac825e2095056396e0553b8ac26d3f8ad158c3826e28b4c45b385c4714a",
+          "size": 12028
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Regular.ttf",
+          "sha256": "f36ea897e19f4a2e571d1e900e4e3710e438deb05a842486045ba0a3e616a4ad",
+          "size": 19436
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Regular.woff",
+          "sha256": "11e4dc8a6471ff6d6ee561d53d10fde8f7489e798257ff449c5d37c197435605",
+          "size": 12316
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_SansSerif-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_SansSerif-Regular.woff2",
+          "sha256": "68e8c73ef42afd3ccec58bf0fba302cce448938e7fc020a5e31f8a952eee1342",
+          "size": 10344
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Script-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Script-Regular.ttf",
+          "sha256": "1c67f068fea8bb09bf099c088b1cf64bd27516a6e07f4684344873564bb66a67",
+          "size": 16648
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Script-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Script-Regular.woff",
+          "sha256": "d96cdf2b3bdd4d64a8fd5f74a4c467f123a8a73931cd435889f08ffaf9bf947a",
+          "size": 10588
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Script-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Script-Regular.woff2",
+          "sha256": "036d4e95149b69ff9bcc0cd55771efeb25ffa3947293e69acd78d5ac328c684b",
+          "size": 9644
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size1-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Size1-Regular.ttf",
+          "sha256": "95b6d2f1a50173bfedb8c63e1d1c99b10427d0a4df4201cb44513b226951a22b",
+          "size": 12228
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size1-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Size1-Regular.woff",
+          "sha256": "c943cc986384f59e86bea5fd7dc50a9c4dfe567a7c05eb40d6790720dead97c9",
+          "size": 6496
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size1-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Size1-Regular.woff2",
+          "sha256": "6b47c40166b6dbe21a5dfca7718413f2147fd2399be1ba605d8ad39cedf25dfe",
+          "size": 5468
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size2-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Size2-Regular.ttf",
+          "sha256": "a6b2099fb555c60e3a0db3a08842ebf1d732c6eb4e4bf44913613bed4fc4e39b",
+          "size": 11508
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size2-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Size2-Regular.woff",
+          "sha256": "2014c523c3210bcc166648c4d4cc57f05b747df07a24277bf71c51e67dc79e3d",
+          "size": 6188
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size2-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Size2-Regular.woff2",
+          "sha256": "d04c54219f9eaec6d4d4fd42dfb28785975a4794d6b2fc71e566b9cd6db842dd",
+          "size": 5208
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size3-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Size3-Regular.ttf",
+          "sha256": "500e04d54f0d51666332c9d2089aa803be22aa878eca539e59fa53c6e522b082",
+          "size": 7588
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size3-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Size3-Regular.woff",
+          "sha256": "6ab6b62e9b62dae2c00dd90f791bd10950be0ecc3490d7d6045f51c2e8fe0949",
+          "size": 4420
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size3-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Size3-Regular.woff2",
+          "sha256": "73d591271b1604960cb10bb90fee021670af7297017e0e98480b332d11f51995",
+          "size": 3624
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size4-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Size4-Regular.ttf",
+          "sha256": "c647367d1dd4e162468717d020e1fc0f1dc5c26ebfdffbe55261713bf88c5877",
+          "size": 10364
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size4-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Size4-Regular.woff",
+          "sha256": "99f9c6750b489c9462bf04900bd3f939df9b829339daaaaa99ef5495cdddea58",
+          "size": 5980
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Size4-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Size4-Regular.woff2",
+          "sha256": "a4af7d414440a1c1790825cfb700cf9cf43b0f2c4b04f0ebc523011ad9853ec0",
+          "size": 4928
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Typewriter-Regular.ttf",
+          "member": "package/dist/fonts/KaTeX_Typewriter-Regular.ttf",
+          "sha256": "f01f3e87d9c6a61c0c081ceb577abd864eb00a612f7ac1620dd6915fad2ef5aa",
+          "size": 27556
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Typewriter-Regular.woff",
+          "member": "package/dist/fonts/KaTeX_Typewriter-Regular.woff",
+          "sha256": "e14fed02b1aba7ce9f5afd5844b5d0321b22351febc720e0de8b8723527609f7",
+          "size": 16028
+        },
+        {
+          "path": "katex@0.16.9/dist/fonts/KaTeX_Typewriter-Regular.woff2",
+          "member": "package/dist/fonts/KaTeX_Typewriter-Regular.woff2",
+          "sha256": "71d517d67827787cfabdf186914cc3358eda539e37931941f2b2fd4a21f68c0b",
+          "size": 13568
+        },
+        {
+          "path": "katex@0.16.9/dist/katex.css",
+          "member": "package/dist/katex.css",
+          "sha256": "84dcf03c829c4cde15316db65f2431a5f903e7eb3c19b6ab555afac33e86d363",
+          "size": 26829
+        },
+        {
+          "path": "katex@0.16.9/dist/katex.js",
+          "member": "package/dist/katex.js",
+          "sha256": "1842719ac47348bff78e0c57cb4dd373e2adf8e9bbc6720882d08e6d629b66d7",
+          "size": 630116
+        },
+        {
+          "path": "katex@0.16.9/dist/katex.min.css",
+          "member": "package/dist/katex.min.css",
+          "sha256": "505d5f829022bb7b4f24dfee0aa1141cd7bba67afe411d1240335f820960b5c3",
+          "size": 23196
+        },
+        {
+          "path": "katex@0.16.9/dist/katex.min.js",
+          "member": "package/dist/katex.min.js",
+          "sha256": "dc84b296ec3e884de093158f760fd9d45b6c7abe58b5381557f4e138f46a58ae",
+          "size": 277038
+        },
+        {
+          "path": "katex@0.16.9/dist/katex.mjs",
+          "member": "package/dist/katex.mjs",
+          "sha256": "a435a52a5956e424a2e2f9cb269ed0ef188009eb4c90bc14b87a2b9bc8cd6907",
+          "size": 604861
+        },
+        {
+          "path": "katex@0.16.9/package.json",
+          "member": "package/package.json",
+          "sha256": "8099f0d95ffb41f70833f3faad5639760403d580ebbcd7e7f073ded05481ee69",
+          "size": 6019
+        }
+      ]
+    },
+    {
+      "name": "mermaid",
+      "version": "10.8.0",
+      "url": "https://registry.npmjs.org/mermaid/-/mermaid-10.8.0.tgz",
+      "sha256": "0c47f4ddcce4ce39fc6d58bef9fa3ccd9246900051e2a1a5191b470e3550de3d",
+      "integrity": "sha512-9CzfSreRjdDJxX796+jW4zjEq0DVw5xVF0nWsqff8OTbrt+ml0TZ5PyYUjjUZJa2NYxYJZZXewEquxGiM8qZEA==",
+      "files": [
+        {
+          "path": "mermaid@10.8.0/LICENSE",
+          "member": "package/LICENSE",
+          "sha256": "ec9fb67dcb25eccc416ed56e1aab819222c805a2a4bfe4cb19e7556bf2ffde80",
+          "size": 1089
+        },
+        {
+          "path": "mermaid@10.8.0/README.md",
+          "member": "package/README.md",
+          "sha256": "1c8d0257b1ab767f57187af1547846be1356ad0e0452e1b7fd629f01b9f066f5",
+          "size": 23161
+        },
+        {
+          "path": "mermaid@10.8.0/dist/Diagram.d.ts",
+          "member": "package/dist/Diagram.d.ts",
+          "sha256": "77163c844051852d3c18b263261bbdbf7b1670194fbb7ff37530ee27978edf01",
+          "size": 1461
+        },
+        {
+          "path": "mermaid@10.8.0/dist/Tableau10-31042135.js",
+          "member": "package/dist/Tableau10-31042135.js",
+          "sha256": "0a4e8fd78e79a311d0e298febe190a1c696335433e08c47b17eae4593193d97c",
+          "size": 323
+        },
+        {
+          "path": "mermaid@10.8.0/dist/Tableau10-558cc280.js",
+          "member": "package/dist/Tableau10-558cc280.js",
+          "sha256": "493ffeec0bd10c9bb07430ed7a5f33da1dc186e110678b23c271258a18490148",
+          "size": 237
+        },
+        {
+          "path": "mermaid@10.8.0/dist/__mocks__/mermaidAPI.d.ts",
+          "member": "package/dist/__mocks__/mermaidAPI.d.ts",
+          "sha256": "e36443a47cc40e8b17923cc13693e4f0af0c2beda6951bc80c8d9f5fb3080dfc",
+          "size": 759
+        },
+        {
+          "path": "mermaid@10.8.0/dist/accessibility.d.ts",
+          "member": "package/dist/accessibility.d.ts",
+          "sha256": "af7869210e59049611df1b723c37d5b00d8139d0185e1e1a3ad52e11d8b617b9",
+          "size": 1215
+        },
+        {
+          "path": "mermaid@10.8.0/dist/accessibility.spec.d.ts",
+          "member": "package/dist/accessibility.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/arc-29b3dd79.js",
+          "member": "package/dist/arc-29b3dd79.js",
+          "sha256": "da48b90fd9fae5e6c7249aa6c3931908a6f86acb15d3dea91cac57eb60e11d63",
+          "size": 7104
+        },
+        {
+          "path": "mermaid@10.8.0/dist/arc-d4b18033.js",
+          "member": "package/dist/arc-d4b18033.js",
+          "sha256": "fae2148e2860a91556882442c209072865382b42c2d0cd4a88c7973a4163b3b4",
+          "size": 4938
+        },
+        {
+          "path": "mermaid@10.8.0/dist/array-2ff2c7a6.js",
+          "member": "package/dist/array-2ff2c7a6.js",
+          "sha256": "2072c1f1306ef7752cf2ab375374942e1f18dad6a83a625a0e31c9a4d1cbe160",
+          "size": 107
+        },
+        {
+          "path": "mermaid@10.8.0/dist/array-b7dcf730.js",
+          "member": "package/dist/array-b7dcf730.js",
+          "sha256": "aee0ddc19501baa3754482eb43c825955d16821361652dfcb79d61de133d54f8",
+          "size": 116
+        },
+        {
+          "path": "mermaid@10.8.0/dist/assignWithDepth.d.ts",
+          "member": "package/dist/assignWithDepth.d.ts",
+          "sha256": "32663f6446ce8a6c583a7c0cd8c2929ad1b838c4685790e62ac6c711aff64679",
+          "size": 1436
+        },
+        {
+          "path": "mermaid@10.8.0/dist/blockDiagram-6873e2af.js",
+          "member": "package/dist/blockDiagram-6873e2af.js",
+          "sha256": "22002ef30a6251680d857b48d7b9fecf99bc8b4f408dd6eb66da27d403b3dd3b",
+          "size": 66718
+        },
+        {
+          "path": "mermaid@10.8.0/dist/blockDiagram-6b2b5046.js",
+          "member": "package/dist/blockDiagram-6b2b5046.js",
+          "sha256": "89b84fd86dda09c1614b8cf7892fe8a8515e5cbbb07cdef8d5d26ba1406ae20e",
+          "size": 66741
+        },
+        {
+          "path": "mermaid@10.8.0/dist/blockDiagram-b2d3fc5e.js",
+          "member": "package/dist/blockDiagram-b2d3fc5e.js",
+          "sha256": "212e0e3225b87a08ffb522d4f5ce1d9c276fe38694e5f9c8806ceac324883c4b",
+          "size": 52613
+        },
+        {
+          "path": "mermaid@10.8.0/dist/c4Diagram-825c73cb.js",
+          "member": "package/dist/c4Diagram-825c73cb.js",
+          "sha256": "8f4eb6ca5c771cac6754b9ac9e898f022af0735e1bd71077fab735131be8e309",
+          "size": 88685
+        },
+        {
+          "path": "mermaid@10.8.0/dist/c4Diagram-b947cdbb.js",
+          "member": "package/dist/c4Diagram-b947cdbb.js",
+          "sha256": "bcb41a9478368453c02d0edf80e39a06a535abf9a216bcf4ca9da656c1db244c",
+          "size": 114832
+        },
+        {
+          "path": "mermaid@10.8.0/dist/c4Diagram-db6491aa.js",
+          "member": "package/dist/c4Diagram-db6491aa.js",
+          "sha256": "61297c614432294d33271da33332a8666a6b7a8f245028fe616650e6ae28be4b",
+          "size": 114612
+        },
+        {
+          "path": "mermaid@10.8.0/dist/channel-649fb47b.js",
+          "member": "package/dist/channel-649fb47b.js",
+          "sha256": "27ea151bd1a2174b0d39cb1a1efd2c7e0abfe5ea8c7e51c955e608058ef9dc26",
+          "size": 213
+        },
+        {
+          "path": "mermaid@10.8.0/dist/channel-b111d153.js",
+          "member": "package/dist/channel-b111d153.js",
+          "sha256": "88f92c6db7f629f49e2cd4aeb76fea32c005c80b1a1c79f3df30cea0019e34fe",
+          "size": 135
+        },
+        {
+          "path": "mermaid@10.8.0/dist/classDiagram-35230388.js",
+          "member": "package/dist/classDiagram-35230388.js",
+          "sha256": "ab50be2cd399fd9d92b0a0d80e32ddd9898b3579de394b1b44c40b0413e6b80d",
+          "size": 14856
+        },
+        {
+          "path": "mermaid@10.8.0/dist/classDiagram-7047cd55.js",
+          "member": "package/dist/classDiagram-7047cd55.js",
+          "sha256": "dbfe380655da16170b5c0759d2dc83cce0b8655406c91887731edc9547ff181f",
+          "size": 14712
+        },
+        {
+          "path": "mermaid@10.8.0/dist/classDiagram-85f17d76.js",
+          "member": "package/dist/classDiagram-85f17d76.js",
+          "sha256": "c2b11327d5b65c0213211aa57d29c14bbe3b103cb5d57a8134c5a0c414297a7b",
+          "size": 11102
+        },
+        {
+          "path": "mermaid@10.8.0/dist/classDiagram-v2-3a4b7d75.js",
+          "member": "package/dist/classDiagram-v2-3a4b7d75.js",
+          "sha256": "ef54a9ea16719a95ce3980a5d9ac074e5a1ee140c24d5fc1ff1166a2804a1411",
+          "size": 7163
+        },
+        {
+          "path": "mermaid@10.8.0/dist/classDiagram-v2-412acd34.js",
+          "member": "package/dist/classDiagram-v2-412acd34.js",
+          "sha256": "abc459cd124ebf74caa5b6ea4c2f9974a3577a8fd3bc232c80f41ead39a89208",
+          "size": 9840
+        },
+        {
+          "path": "mermaid@10.8.0/dist/classDiagram-v2-a723b61c.js",
+          "member": "package/dist/classDiagram-v2-a723b61c.js",
+          "sha256": "6004db351725cdcc4477ccb8977034297cb2fb1a26c8433e467dd10fc944043a",
+          "size": 9630
+        },
+        {
+          "path": "mermaid@10.8.0/dist/clone-0d7cbc00.js",
+          "member": "package/dist/clone-0d7cbc00.js",
+          "sha256": "4f9d9f511503820d70623cdf006a2afa5315b610ff12367c05b066e6e4e2c8c0",
+          "size": 180
+        },
+        {
+          "path": "mermaid@10.8.0/dist/clone-e2cbe4d9.js",
+          "member": "package/dist/clone-e2cbe4d9.js",
+          "sha256": "1296cab07d9711eea92906ad0b635582f9338873b95b1f5a1f8eafd1a49739a5",
+          "size": 114
+        },
+        {
+          "path": "mermaid@10.8.0/dist/config.d.ts",
+          "member": "package/dist/config.d.ts",
+          "sha256": "0d61c0aa2525dedbd3638152f30140faa217ad1de96c291fe33731c4e839a752",
+          "size": 4803
+        },
+        {
+          "path": "mermaid@10.8.0/dist/config.spec.d.ts",
+          "member": "package/dist/config.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/config.type.d.ts",
+          "member": "package/dist/config.type.d.ts",
+          "sha256": "ee25ac4810f690e10474380d410a25d2ebacd72597af8455f069f1b5a52e3074",
+          "size": 42517
+        },
+        {
+          "path": "mermaid@10.8.0/dist/createText-423428c9.js",
+          "member": "package/dist/createText-423428c9.js",
+          "sha256": "e455d3ba43ff3874063dd0df5b33eb3b9a46e077287a9174b9d0c4708b98d4a8",
+          "size": 8751
+        },
+        {
+          "path": "mermaid@10.8.0/dist/createText-ac1cb2fc.js",
+          "member": "package/dist/createText-ac1cb2fc.js",
+          "sha256": "4a6c66ec42adb34c175050c02b51ff3fcc0dc806cca3b8ec34f1f14008e44f81",
+          "size": 140169
+        },
+        {
+          "path": "mermaid@10.8.0/dist/createText-e916aecc.js",
+          "member": "package/dist/createText-e916aecc.js",
+          "sha256": "1f5a6b3e33716c1e9e1eeb737f1c49f50fe435b1c614bd25fd1e360dc541befb",
+          "size": 84381
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/blockArrowHelper.d.ts",
+          "member": "package/dist/dagre-wrapper/blockArrowHelper.d.ts",
+          "sha256": "4560b1ecf38f4a0356ff4de8ff5e934c786b916f88a1724690a0a2ae6bda7e1b",
+          "size": 244
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/clusters.d.ts",
+          "member": "package/dist/dagre-wrapper/clusters.d.ts",
+          "sha256": "57729dcb53efddb86ff5b5046f13366eda13f1987d7efc9327f5534ebb1275cf",
+          "size": 208
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/createLabel.d.ts",
+          "member": "package/dist/dagre-wrapper/createLabel.d.ts",
+          "sha256": "1e1df94b89a9c9f8c6d44a3c99417c8fc29eea6aff5d9570ce23cc586af7de40",
+          "size": 281
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/edgeMarker.d.ts",
+          "member": "package/dist/dagre-wrapper/edgeMarker.d.ts",
+          "sha256": "aecce527f19ba2c947200807fd857df5133fb260b47a2715f82c703d37430003",
+          "size": 660
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/edgeMarker.spec.d.ts",
+          "member": "package/dist/dagre-wrapper/edgeMarker.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/edges.d.ts",
+          "member": "package/dist/dagre-wrapper/edges.d.ts",
+          "sha256": "51050512cd64fd74645e5c3d1a1c8fb38164867c42edba184b76a227808000cf",
+          "size": 461
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/index.d.ts",
+          "member": "package/dist/dagre-wrapper/index.d.ts",
+          "sha256": "1b5dc8be7da4c97ed6b1a22231a8faa7edfe07754fe715973599eaeaf8a3af5d",
+          "size": 103
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/intersect/index.d.ts",
+          "member": "package/dist/dagre-wrapper/intersect/index.d.ts",
+          "sha256": "aa1d17ec797080fa587759bb23901acdb11db59df40ccefc2bf4f827a8e03ba1",
+          "size": 385
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/intersect/intersect-circle.d.ts",
+          "member": "package/dist/dagre-wrapper/intersect/intersect-circle.d.ts",
+          "sha256": "e8ada4fab78ad92021b7d5d7f51ae71b1a7daae166ce216a50d720c55d13c6c9",
+          "size": 179
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/intersect/intersect-ellipse.d.ts",
+          "member": "package/dist/dagre-wrapper/intersect/intersect-ellipse.d.ts",
+          "sha256": "4745065d3418029dd57dfdd2bc78148ad1432cf6bde65d2777387d6ce4d46ea2",
+          "size": 203
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/intersect/intersect-line.d.ts",
+          "member": "package/dist/dagre-wrapper/intersect/intersect-line.d.ts",
+          "sha256": "04e32438dcfc28b36028ab4ea1793a8de654fa559c5b6b659775f5aa2dae5244",
+          "size": 315
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/intersect/intersect-node.d.ts",
+          "member": "package/dist/dagre-wrapper/intersect/intersect-node.d.ts",
+          "sha256": "efb215457484b7943d727149e188c0cd03bce22e3f021270673f15ec89ec6190",
+          "size": 129
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/intersect/intersect-polygon.d.ts",
+          "member": "package/dist/dagre-wrapper/intersect/intersect-polygon.d.ts",
+          "sha256": "3324c5f9badaee70889c68487daec3c365559a109df375ada7592064e8e2b0c1",
+          "size": 324
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/intersect/intersect-rect.d.ts",
+          "member": "package/dist/dagre-wrapper/intersect/intersect-rect.d.ts",
+          "sha256": "a0087cb9a377ec060a6f21d02a69998a00f38b9c6e8449b74e565bf176c1003f",
+          "size": 114
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/markers.d.ts",
+          "member": "package/dist/dagre-wrapper/markers.d.ts",
+          "sha256": "0f857e4b8d877493548336dbb3d443b846a3bb1c25e1f6238c4b0e6a675dcc36",
+          "size": 117
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/mermaid-graphlib.d.ts",
+          "member": "package/dist/dagre-wrapper/mermaid-graphlib.d.ts",
+          "sha256": "2c1d8dc1681af9c6c2a82975b448296465bd811ced39ee04db5d66f60b58bee4",
+          "size": 413
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/nodes.d.ts",
+          "member": "package/dist/dagre-wrapper/nodes.d.ts",
+          "sha256": "6b682ce2fc4feabe1c107f4b96af5e0bd3a7e6f5322ffb1c8c8e8365dc57ff50",
+          "size": 208
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/shapes/note.d.ts",
+          "member": "package/dist/dagre-wrapper/shapes/note.d.ts",
+          "sha256": "fd96625cea28c27bb0ba6e9a5142bc74a4ebeee59ae7ba1665e4769d04df060e",
+          "size": 82
+        },
+        {
+          "path": "mermaid@10.8.0/dist/dagre-wrapper/shapes/util.d.ts",
+          "member": "package/dist/dagre-wrapper/shapes/util.d.ts",
+          "sha256": "69fd6f9535a2bb6f38b7cd6bcea5a7638db795f34472116951815e228f6f8f21",
+          "size": 384
+        },
+        {
+          "path": "mermaid@10.8.0/dist/defaultConfig.d.ts",
+          "member": "package/dist/defaultConfig.d.ts",
+          "sha256": "ca5e74839ff920098b539fee63283dafd5d33ec09eab6e7a1e73f932fa88c30c",
+          "size": 488
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/comments.d.ts",
+          "member": "package/dist/diagram-api/comments.d.ts",
+          "sha256": "1274ce908867823a454eb20b6e201307ed60311bea5121349bb5d0264feecca2",
+          "size": 227
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/comments.spec.d.ts",
+          "member": "package/dist/diagram-api/comments.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/detectType.d.ts",
+          "member": "package/dist/diagram-api/detectType.d.ts",
+          "sha256": "25c1448dafc60e4ee55022d86c9deb322b669b93743a01f415c7f3974e5eb265",
+          "size": 1535
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/diagram-orchestration.d.ts",
+          "member": "package/dist/diagram-api/diagram-orchestration.d.ts",
+          "sha256": "02685861fb21b472d11f88fd9f86accb199a5d90aed8f2107f1e8bf46db811af",
+          "size": 46
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/diagram-orchestration.spec.d.ts",
+          "member": "package/dist/diagram-api/diagram-orchestration.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/diagramAPI.d.ts",
+          "member": "package/dist/diagram-api/diagramAPI.d.ts",
+          "sha256": "925e422f1c025c54466549d41ebf808f246e8f2350ee77b1a1e4b96839ec4432",
+          "size": 1647
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/diagramAPI.spec.d.ts",
+          "member": "package/dist/diagram-api/diagramAPI.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/frontmatter.d.ts",
+          "member": "package/dist/diagram-api/frontmatter.d.ts",
+          "sha256": "573756fdbae96cdfb8a8033a8e9336163d671769c33a1cbe09a95af76925e3e1",
+          "size": 570
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/frontmatter.spec.d.ts",
+          "member": "package/dist/diagram-api/frontmatter.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/loadDiagram.d.ts",
+          "member": "package/dist/diagram-api/loadDiagram.d.ts",
+          "sha256": "8dcd8840453d628b15c50e8fdfd31f711d5c8331300c420d99a270c69b73fa1a",
+          "size": 66
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/regexes.d.ts",
+          "member": "package/dist/diagram-api/regexes.d.ts",
+          "sha256": "212fdcec7ecc2cfd35c91ac71cac6626fd635252868cb6b1a0a3061449336a02",
+          "size": 138
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram-api/types.d.ts",
+          "member": "package/dist/diagram-api/types.d.ts",
+          "sha256": "bba1e366dba1d7b8980a505b1adf995fc8c15c439f6655c3682e04ed162e5b21",
+          "size": 3299
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagram.spec.d.ts",
+          "member": "package/dist/diagram.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/blockDB.d.ts",
+          "member": "package/dist/diagrams/block/blockDB.d.ts",
+          "sha256": "e8cdce7403b92ab40fed971fa49e7403a130cc493b62b8e3d07209748dc2131f",
+          "size": 2574
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/blockDetector.d.ts",
+          "member": "package/dist/diagrams/block/blockDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/blockDiagram.d.ts",
+          "member": "package/dist/diagrams/block/blockDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/blockRenderer.d.ts",
+          "member": "package/dist/diagrams/block/blockRenderer.d.ts",
+          "sha256": "ec219eae913fe91dd304ff9513eb7ab5749ceb0996cd36db22342dae4f707054",
+          "size": 626
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/blockTypes.d.ts",
+          "member": "package/dist/diagrams/block/blockTypes.d.ts",
+          "sha256": "6a3ed36bc3e1375ed70c0c7249ef30ad102495f27e7340db658301cd8b174fea",
+          "size": 1203
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/blockUtils.d.ts",
+          "member": "package/dist/diagrams/block/blockUtils.d.ts",
+          "sha256": "d3503026ba4f3d775875d0d5ba4a9686a1f798ad43158043bbb0a025adfa6de4",
+          "size": 70
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/layout.d.ts",
+          "member": "package/dist/diagrams/block/layout.d.ts",
+          "sha256": "1970f48f1aba569f68f42b02241f23079684b5306212da0d21042bd6f327245b",
+          "size": 345
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/layout.spec.d.ts",
+          "member": "package/dist/diagrams/block/layout.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/parser/block.spec.d.ts",
+          "member": "package/dist/diagrams/block/parser/block.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/renderHelpers.d.ts",
+          "member": "package/dist/diagrams/block/renderHelpers.d.ts",
+          "sha256": "c0b68fe7cc629458f4ac2a4b9af2a6d4bb47323153bd59332d9ab34d244a0629",
+          "size": 910
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/block/styles.d.ts",
+          "member": "package/dist/diagrams/block/styles.d.ts",
+          "sha256": "2d8678d1cbcd1c2034eca2b32330daa400e43ced25d732ec59d3fce794e7d435",
+          "size": 506
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/c4/c4Db.d.ts",
+          "member": "package/dist/diagrams/c4/c4Db.d.ts",
+          "sha256": "0f4b11cc36e9f2fdf68140c9f2f1e1769c22cc58dcad7ed71aa8a7fbb7688348",
+          "size": 4502
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/c4/c4Detector.d.ts",
+          "member": "package/dist/diagrams/c4/c4Detector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/c4/c4Diagram.d.ts",
+          "member": "package/dist/diagrams/c4/c4Diagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/c4/c4Renderer.d.ts",
+          "member": "package/dist/diagrams/c4/c4Renderer.d.ts",
+          "sha256": "7200e817b65da5a2a16c238c1f834ab700fa9a2f0f4c55f0215e6e6ee83911ba",
+          "size": 589
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/c4/styles.d.ts",
+          "member": "package/dist/diagrams/c4/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/c4/svgDraw.d.ts",
+          "member": "package/dist/diagrams/c4/svgDraw.d.ts",
+          "sha256": "20e853a3a9bfdad916ffc8405cdb7f0ca11cb1bf5daed2bcdaf5c59d9bea8fde",
+          "size": 1506
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classDb.d.ts",
+          "member": "package/dist/diagrams/class/classDb.d.ts",
+          "sha256": "69b9d7aea27107d4887fcad46661f12adb03169f97683a8d1f0a38ba3de5ad43",
+          "size": 5770
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classDetector-V2.d.ts",
+          "member": "package/dist/diagrams/class/classDetector-V2.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classDetector.d.ts",
+          "member": "package/dist/diagrams/class/classDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classDiagram-v2.d.ts",
+          "member": "package/dist/diagrams/class/classDiagram-v2.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classDiagram.d.ts",
+          "member": "package/dist/diagrams/class/classDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classDiagram.spec.d.ts",
+          "member": "package/dist/diagrams/class/classDiagram.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classRenderer-v2.d.ts",
+          "member": "package/dist/diagrams/class/classRenderer-v2.d.ts",
+          "sha256": "1308715a1ba2294f29109e196d8bb52ca2e0a49fddaaa786f252fabdc57752ae",
+          "size": 2215
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classRenderer.d.ts",
+          "member": "package/dist/diagrams/class/classRenderer.d.ts",
+          "sha256": "d6860be8e422d2c706de3dcc3d2c3649db0882cf08afb91ee505a57d9d92eac6",
+          "size": 160
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classTypes.d.ts",
+          "member": "package/dist/diagrams/class/classTypes.d.ts",
+          "sha256": "8638c128484052fb90b624d25e5334c51d166c826df7bc2126cce7803ec63175",
+          "size": 1877
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/classTypes.spec.d.ts",
+          "member": "package/dist/diagrams/class/classTypes.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/styles.d.ts",
+          "member": "package/dist/diagrams/class/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/class/svgDraw.d.ts",
+          "member": "package/dist/diagrams/class/svgDraw.d.ts",
+          "sha256": "e916692039c4cda4ae264f416a222f3acbdba242a34f048adc3b4022c8e479d1",
+          "size": 694
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/common/common.d.ts",
+          "member": "package/dist/diagrams/common/common.d.ts",
+          "sha256": "c79ebd44d2206a4cb41d786d18e6720e75768fcd4720ab978dffffcb44546c6b",
+          "size": 2866
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/common/common.spec.d.ts",
+          "member": "package/dist/diagrams/common/common.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/common/commonDb.d.ts",
+          "member": "package/dist/diagrams/common/commonDb.d.ts",
+          "sha256": "452a446a6fff25aac130828aa6911870c3e4547c037ceb470e81563a13324816",
+          "size": 375
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/common/commonTypes.d.ts",
+          "member": "package/dist/diagrams/common/commonTypes.d.ts",
+          "sha256": "9141c5be106d858c51234af3bbaeb59ac83550c48f2d28e7daaa865106cd9efe",
+          "size": 1308
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/common/svgDrawCommon.d.ts",
+          "member": "package/dist/diagrams/common/svgDrawCommon.d.ts",
+          "sha256": "4a777890fbff440a5fc3d8fd9a7cecac356f26ac363a63bf156fe0820212c32a",
+          "size": 885
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/er/erDb.d.ts",
+          "member": "package/dist/diagrams/er/erDb.d.ts",
+          "sha256": "a1f6bf43431a98f0239bd1841582a70e969043a32b3b17a52d1aa0e58638a44b",
+          "size": 1796
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/er/erDetector.d.ts",
+          "member": "package/dist/diagrams/er/erDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/er/erDiagram.d.ts",
+          "member": "package/dist/diagrams/er/erDiagram.d.ts",
+          "sha256": "ef997575329a2915df2e4e82139f170f7fde16a7239bfd507a910dbee516051a",
+          "size": 1183
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/er/erMarkers.d.ts",
+          "member": "package/dist/diagrams/er/erMarkers.d.ts",
+          "sha256": "daf04eb6f6f59158cc5d4e7152ea50841aab2855968cb39dffee90954e3a65e2",
+          "size": 643
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/er/erRenderer.d.ts",
+          "member": "package/dist/diagrams/er/erRenderer.d.ts",
+          "sha256": "56333109d4cb51d9063ab8388e04c42d89a44f4325ae800a9c05bb4f5ff7229b",
+          "size": 893
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/er/erRenderer.spec.d.ts",
+          "member": "package/dist/diagrams/er/erRenderer.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/er/styles.d.ts",
+          "member": "package/dist/diagrams/er/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/error/errorDiagram.d.ts",
+          "member": "package/dist/diagrams/error/errorDiagram.d.ts",
+          "sha256": "4c22827cc6f789221fdef4567cdaf147d9ca463443ee5d714ed35c6e360ab4b6",
+          "size": 135
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/error/errorRenderer.d.ts",
+          "member": "package/dist/diagrams/error/errorRenderer.d.ts",
+          "sha256": "4e78a53236366a46f9828a477379c72bf94a9cdc1b4e52813668fa0261bfdbb2",
+          "size": 420
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/elk/detector.d.ts",
+          "member": "package/dist/diagrams/flowchart/elk/detector.d.ts",
+          "sha256": "ab08353dbd8aaf488fa2b03c657941a74e6ba33fd22af40a8d62aa0d87ea2705",
+          "size": 152
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/elk/detector.spec.d.ts",
+          "member": "package/dist/diagrams/flowchart/elk/detector.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/elk/flowRenderer-elk.d.ts",
+          "member": "package/dist/diagrams/flowchart/elk/flowRenderer-elk.d.ts",
+          "sha256": "b1bde6ffbedf39fe8580ffea2209f5cbdd122c6d5f0cfc0427434f4e155c47c9",
+          "size": 578
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/elk/flowchart-elk-definition.d.ts",
+          "member": "package/dist/diagrams/flowchart/elk/flowchart-elk-definition.d.ts",
+          "sha256": "c95075d0632a541809943f30ceee4add65c7caca8e968a66f1fd7f2b235cf17f",
+          "size": 417
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/elk/render-utils.d.ts",
+          "member": "package/dist/diagrams/flowchart/elk/render-utils.d.ts",
+          "sha256": "0ea09638c3af8e6ebcb3da406eeb93280823bd38ce4693588c5469205ff48cfd",
+          "size": 213
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/elk/render-utils.spec.d.ts",
+          "member": "package/dist/diagrams/flowchart/elk/render-utils.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/elk/styles.d.ts",
+          "member": "package/dist/diagrams/flowchart/elk/styles.d.ts",
+          "sha256": "3366f15f5438d5c7ce12fccc19b146894ac2010c51b4e91e41535d54b8b787e9",
+          "size": 531
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/flowChartShapes.d.ts",
+          "member": "package/dist/diagrams/flowchart/flowChartShapes.d.ts",
+          "sha256": "7ee93653e919ea6d9751179e7f964d460583ad4e3818c792bcdcd7fd5fbfbd7e",
+          "size": 258
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/flowDb.d.ts",
+          "member": "package/dist/diagrams/flowchart/flowDb.d.ts",
+          "sha256": "d3ec606bc964835b275d65281cdeae9eed541bebff4be27ed83c9a8e90d79ff0",
+          "size": 3239
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/flowDetector-v2.d.ts",
+          "member": "package/dist/diagrams/flowchart/flowDetector-v2.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/flowDetector.d.ts",
+          "member": "package/dist/diagrams/flowchart/flowDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/flowDiagram-v2.d.ts",
+          "member": "package/dist/diagrams/flowchart/flowDiagram-v2.d.ts",
+          "sha256": "38d70fed0560185a6e89263318b319812968a9cbc86604a4c9da1a198ce40220",
+          "size": 2539
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/flowDiagram.d.ts",
+          "member": "package/dist/diagrams/flowchart/flowDiagram.d.ts",
+          "sha256": "38d70fed0560185a6e89263318b319812968a9cbc86604a4c9da1a198ce40220",
+          "size": 2539
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/flowRenderer-v2.d.ts",
+          "member": "package/dist/diagrams/flowchart/flowRenderer-v2.d.ts",
+          "sha256": "6e4efd7ed70c7b79f12399131d6e7cdf77752b7a691841c89b04c5b4141db95f",
+          "size": 609
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/flowRenderer.d.ts",
+          "member": "package/dist/diagrams/flowchart/flowRenderer.d.ts",
+          "sha256": "02cb4b9b4a32e68af53db959f20b9aa8b562fe3d6123bb3a5e7d40e428933048",
+          "size": 601
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/flowchart/styles.d.ts",
+          "member": "package/dist/diagrams/flowchart/styles.d.ts",
+          "sha256": "dfc176a0a669d7e3189a59ec4ec10e9842c11bb58a60e9e4d72a919779600f3d",
+          "size": 504
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/gantt/ganttDb.d.ts",
+          "member": "package/dist/diagrams/gantt/ganttDb.d.ts",
+          "sha256": "b09c76686f34fcc4d057bc5bb13a7689079fcfe54ca6cbefe150eb996337970b",
+          "size": 3992
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/gantt/ganttDb.spec.d.ts",
+          "member": "package/dist/diagrams/gantt/ganttDb.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/gantt/ganttDetector.d.ts",
+          "member": "package/dist/diagrams/gantt/ganttDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/gantt/ganttDiagram.d.ts",
+          "member": "package/dist/diagrams/gantt/ganttDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/gantt/ganttRenderer.d.ts",
+          "member": "package/dist/diagrams/gantt/ganttRenderer.d.ts",
+          "sha256": "a7e7260025ea479a33d08efe74078be6e1532cd2041ec5e8ef1f019f83c52933",
+          "size": 210
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/gantt/styles.d.ts",
+          "member": "package/dist/diagrams/gantt/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/git/gitGraphAst.d.ts",
+          "member": "package/dist/diagrams/git/gitGraphAst.d.ts",
+          "sha256": "6766363e1a5f10da1f56d6547853d85089b4ff4dbf5a9fc2a45ecdc779f0e3d5",
+          "size": 2250
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/git/gitGraphDetector.d.ts",
+          "member": "package/dist/diagrams/git/gitGraphDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/git/gitGraphDiagram.d.ts",
+          "member": "package/dist/diagrams/git/gitGraphDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/git/gitGraphRenderer.d.ts",
+          "member": "package/dist/diagrams/git/gitGraphRenderer.d.ts",
+          "sha256": "e08d6e548be5abbee658baf1374e82e1dd55745f9e542682a106caeee3b95a1d",
+          "size": 148
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/git/styles.d.ts",
+          "member": "package/dist/diagrams/git/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/info/info.spec.d.ts",
+          "member": "package/dist/diagrams/info/info.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/info/infoDb.d.ts",
+          "member": "package/dist/diagrams/info/infoDb.d.ts",
+          "sha256": "e956b3dd00ca29a8182058568d771408422ac410c53026a064a6340fe1a0203c",
+          "size": 243
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/info/infoDetector.d.ts",
+          "member": "package/dist/diagrams/info/infoDetector.d.ts",
+          "sha256": "7d73f4ebf81855489b4375c23d01a1a99eb35eab12128700a3ea917e2f934f19",
+          "size": 131
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/info/infoDiagram.d.ts",
+          "member": "package/dist/diagrams/info/infoDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/info/infoRenderer.d.ts",
+          "member": "package/dist/diagrams/info/infoRenderer.d.ts",
+          "sha256": "cbee9743824274e9950146bb73944bb6c0e08915395240689c9b22a8d34ed33c",
+          "size": 128
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/info/infoTypes.d.ts",
+          "member": "package/dist/diagrams/info/infoTypes.d.ts",
+          "sha256": "627cf36f77632083e959a65cc9958dbf2b1203f409e6e618b0afc8355df70b66",
+          "size": 247
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/mindmap/detector.d.ts",
+          "member": "package/dist/diagrams/mindmap/detector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/mindmap/mindmap-definition.d.ts",
+          "member": "package/dist/diagrams/mindmap/mindmap-definition.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/mindmap/mindmap.spec.d.ts",
+          "member": "package/dist/diagrams/mindmap/mindmap.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/mindmap/mindmapDb.d.ts",
+          "member": "package/dist/diagrams/mindmap/mindmapDb.d.ts",
+          "sha256": "76d04810b5c8bee95d548aaf8c8b530c648f1815d26219170908ecb76acdb8dd",
+          "size": 1140
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/mindmap/mindmapRenderer.d.ts",
+          "member": "package/dist/diagrams/mindmap/mindmapRenderer.d.ts",
+          "sha256": "e4e05dc9bc70d46c623c86b1939efefcf3ae685c05d6c738c4cc1f3844ebe928",
+          "size": 542
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/mindmap/mindmapTypes.d.ts",
+          "member": "package/dist/diagrams/mindmap/mindmapTypes.d.ts",
+          "sha256": "94b0054883a19818fabe9afdb01a6226942ec01e837b6e2abcb0ac318a850dd6",
+          "size": 501
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/mindmap/styles.d.ts",
+          "member": "package/dist/diagrams/mindmap/styles.d.ts",
+          "sha256": "015df48dde862974f6809ec1fca8af30a4f48046a0364143f5adf0fac82582fc",
+          "size": 147
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/mindmap/svgDraw.d.ts",
+          "member": "package/dist/diagrams/mindmap/svgDraw.d.ts",
+          "sha256": "d9b60f6353d45291605785e2082e57159670f419dff810e72712eb4142ef6da5",
+          "size": 663
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/pie/pie.spec.d.ts",
+          "member": "package/dist/diagrams/pie/pie.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/pie/pieDb.d.ts",
+          "member": "package/dist/diagrams/pie/pieDb.d.ts",
+          "sha256": "4ff7ce33693cb319ab79ff0759f5e526b007e29703c5a635b4ceae930f22ef15",
+          "size": 327
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/pie/pieDetector.d.ts",
+          "member": "package/dist/diagrams/pie/pieDetector.d.ts",
+          "sha256": "9f10d09d881b72d929be2d07e0657270dc68bbae380bbb7daa2184e4cbdd9a42",
+          "size": 130
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/pie/pieDiagram.d.ts",
+          "member": "package/dist/diagrams/pie/pieDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/pie/pieRenderer.d.ts",
+          "member": "package/dist/diagrams/pie/pieRenderer.d.ts",
+          "sha256": "f43f98ac3a68b6a247664d3ff1ed0ac0fac7da871669b936ae8d4be0feebec15",
+          "size": 447
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/pie/pieStyles.d.ts",
+          "member": "package/dist/diagrams/pie/pieStyles.d.ts",
+          "sha256": "015df48dde862974f6809ec1fca8af30a4f48046a0364143f5adf0fac82582fc",
+          "size": 147
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/pie/pieTypes.d.ts",
+          "member": "package/dist/diagrams/pie/pieTypes.d.ts",
+          "sha256": "61fea9cb97e4271c335fd3a661d7bd2e1a03cb1f3879e952898ad6e839a7b4f2",
+          "size": 1536
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/quadrant-chart/parser/quadrant.jison.spec.d.ts",
+          "member": "package/dist/diagrams/quadrant-chart/parser/quadrant.jison.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/quadrant-chart/quadrantBuilder.d.ts",
+          "member": "package/dist/diagrams/quadrant-chart/quadrantBuilder.d.ts",
+          "sha256": "915ac753e5f921c4fce2558c6e26bbd750edfb395320b5b1099add9fda073f8d",
+          "size": 3807
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/quadrant-chart/quadrantDb.d.ts",
+          "member": "package/dist/diagrams/quadrant-chart/quadrantDb.d.ts",
+          "sha256": "4f431892cd7be050ac0f9214d3d137390529c160b52086f9887fdb0768e5fd3a",
+          "size": 1660
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/quadrant-chart/quadrantDetector.d.ts",
+          "member": "package/dist/diagrams/quadrant-chart/quadrantDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/quadrant-chart/quadrantDiagram.d.ts",
+          "member": "package/dist/diagrams/quadrant-chart/quadrantDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/quadrant-chart/quadrantRenderer.d.ts",
+          "member": "package/dist/diagrams/quadrant-chart/quadrantRenderer.d.ts",
+          "sha256": "7f2149e7e4814d41582a21f5aadb34e91ea648e7cfb254e31521abef9ec7287d",
+          "size": 282
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/requirement/requirementDb.d.ts",
+          "member": "package/dist/diagrams/requirement/requirementDb.d.ts",
+          "sha256": "45408eaa534db06db3563a677c55566ea01aa4f739c3e6029d4f3a938b5b45f7",
+          "size": 2356
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/requirement/requirementDetector.d.ts",
+          "member": "package/dist/diagrams/requirement/requirementDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/requirement/requirementDiagram.d.ts",
+          "member": "package/dist/diagrams/requirement/requirementDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/requirement/requirementMarkers.d.ts",
+          "member": "package/dist/diagrams/requirement/requirementMarkers.d.ts",
+          "sha256": "4f5e1a7dda11517c1e4fa5eb5c7a6a4fb0d9b469a724eaef5d28866dd07a342a",
+          "size": 269
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/requirement/requirementRenderer.d.ts",
+          "member": "package/dist/diagrams/requirement/requirementRenderer.d.ts",
+          "sha256": "17ea9f54978a33fb48b9997f3acf062838d809a73b1e16cdbffa310710f0b417",
+          "size": 295
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/requirement/styles.d.ts",
+          "member": "package/dist/diagrams/requirement/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sankey/parser/sankey.spec.d.ts",
+          "member": "package/dist/diagrams/sankey/parser/sankey.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sankey/sankeyDB.d.ts",
+          "member": "package/dist/diagrams/sankey/sankeyDB.d.ts",
+          "sha256": "2b51888e3d5925adc317ca7a76858e155f7950299946dee6c19a79939bad917a",
+          "size": 1072
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sankey/sankeyDetector.d.ts",
+          "member": "package/dist/diagrams/sankey/sankeyDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sankey/sankeyDiagram.d.ts",
+          "member": "package/dist/diagrams/sankey/sankeyDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sankey/sankeyRenderer.d.ts",
+          "member": "package/dist/diagrams/sankey/sankeyRenderer.d.ts",
+          "sha256": "f1e21a7f35bb0b8e970d9ff43e3d9efa84873e6b722b2ded779006606ce2a77f",
+          "size": 592
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sankey/sankeyUtils.d.ts",
+          "member": "package/dist/diagrams/sankey/sankeyUtils.d.ts",
+          "sha256": "d3503026ba4f3d775875d0d5ba4a9686a1f798ad43158043bbb0a025adfa6de4",
+          "size": 70
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sequence/sequenceDb.d.ts",
+          "member": "package/dist/diagrams/sequence/sequenceDb.d.ts",
+          "sha256": "4922794a07ba1f70c784cca42906ec687e4ac80cf1c030626e14cdb4ac676e7d",
+          "size": 4818
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sequence/sequenceDetector.d.ts",
+          "member": "package/dist/diagrams/sequence/sequenceDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sequence/sequenceDiagram.d.ts",
+          "member": "package/dist/diagrams/sequence/sequenceDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sequence/sequenceRenderer.d.ts",
+          "member": "package/dist/diagrams/sequence/sequenceRenderer.d.ts",
+          "sha256": "701ded0fe26e1ab5422272c0a000454510cbc7957e00e0344e9aed8578223b14",
+          "size": 6923
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sequence/styles.d.ts",
+          "member": "package/dist/diagrams/sequence/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/sequence/svgDraw.d.ts",
+          "member": "package/dist/diagrams/sequence/svgDraw.d.ts",
+          "sha256": "8a7dfb4dc6af25fe9b0568012eb24aafa294776924cf4180a28dc6b27e152aae",
+          "size": 2538
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/id-cache.d.ts",
+          "member": "package/dist/diagrams/state/id-cache.d.ts",
+          "sha256": "6006b10d616f6e97e1028206f57489b3f99686c273991db7ec3968ae4a987747",
+          "size": 285
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/shapes.d.ts",
+          "member": "package/dist/diagrams/state/shapes.d.ts",
+          "sha256": "7d784a73b25373807ee4b7a54e33da3109695c8e7dab526b59fcc4a0f94f0d18",
+          "size": 583
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/stateCommon.d.ts",
+          "member": "package/dist/diagrams/state/stateCommon.d.ts",
+          "sha256": "6204448fb1a098f0cfeb0f2cf6cf948558ad3700da3c4feb9a6b0e2ebe8ca7c2",
+          "size": 749
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/stateDb.d.ts",
+          "member": "package/dist/diagrams/state/stateDb.d.ts",
+          "sha256": "c27f407bb100402873c5b51e4a139d1cd4cb5c62409d65f288b5bffbb7da0d89",
+          "size": 3629
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/stateDetector-V2.d.ts",
+          "member": "package/dist/diagrams/state/stateDetector-V2.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/stateDetector.d.ts",
+          "member": "package/dist/diagrams/state/stateDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/stateDiagram-v2.d.ts",
+          "member": "package/dist/diagrams/state/stateDiagram-v2.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/stateDiagram.d.ts",
+          "member": "package/dist/diagrams/state/stateDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/stateRenderer-v2.d.ts",
+          "member": "package/dist/diagrams/state/stateRenderer-v2.d.ts",
+          "sha256": "088ae87070cb1662312b14eabbfa2c5958efd90eee056520e58d1093b69631ed",
+          "size": 757
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/stateRenderer.d.ts",
+          "member": "package/dist/diagrams/state/stateRenderer.d.ts",
+          "sha256": "78bd8508b8df9e778992ffba0407e12586a279a4c7ccb5075ef9e2aa5abb5b93",
+          "size": 211
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/state/styles.d.ts",
+          "member": "package/dist/diagrams/state/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/timeline/detector.d.ts",
+          "member": "package/dist/diagrams/timeline/detector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/timeline/styles.d.ts",
+          "member": "package/dist/diagrams/timeline/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/timeline/svgDraw.d.ts",
+          "member": "package/dist/diagrams/timeline/svgDraw.d.ts",
+          "sha256": "399dd535b7f7d306b0aefddd8c9323898623e4f3c66409ae8adec9f4d63b153a",
+          "size": 1468
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/timeline/timeline-definition.d.ts",
+          "member": "package/dist/diagrams/timeline/timeline-definition.d.ts",
+          "sha256": "50a54f9f9a9c5dc424c076ae4de40db46c4eafb907b165bb2e57e2d3f7c632b1",
+          "size": 312
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/timeline/timelineDb.d.ts",
+          "member": "package/dist/diagrams/timeline/timelineDb.d.ts",
+          "sha256": "ddeb3186ffbdf83b249c00ef24d55dfcdc579a25061a7f18552c2bffd520e3a2",
+          "size": 668
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/timeline/timelineRenderer.d.ts",
+          "member": "package/dist/diagrams/timeline/timelineRenderer.d.ts",
+          "sha256": "66f6f7eb05378c5a8ccd0b7aa97b70cfd7a5187d813e8b67ea671bede286c05e",
+          "size": 1070
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/user-journey/journeyDb.d.ts",
+          "member": "package/dist/diagrams/user-journey/journeyDb.d.ts",
+          "sha256": "89de8ba6ea37e598611d031c39adc870bfaab68fbdaa260584a0f6721b654d63",
+          "size": 1148
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/user-journey/journeyDetector.d.ts",
+          "member": "package/dist/diagrams/user-journey/journeyDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/user-journey/journeyDiagram.d.ts",
+          "member": "package/dist/diagrams/user-journey/journeyDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/user-journey/journeyRenderer.d.ts",
+          "member": "package/dist/diagrams/user-journey/journeyRenderer.d.ts",
+          "sha256": "ee8a496ac4bc70aed0472044853b80aeb8bb9ab59e1b649967661e6711959ca7",
+          "size": 1037
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/user-journey/styles.d.ts",
+          "member": "package/dist/diagrams/user-journey/styles.d.ts",
+          "sha256": "398d8c8e1604f7f5967fa3afe643721fb84f46f8a02ce0473ccd241456ed728c",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/user-journey/svgDraw.d.ts",
+          "member": "package/dist/diagrams/user-journey/svgDraw.d.ts",
+          "sha256": "763a1c89989623313462fb3b9d4ca78418aa76f1be1864395ff373de3776d8ce",
+          "size": 918
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/components/axis/bandAxis.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/components/axis/bandAxis.d.ts",
+          "sha256": "e96e185d3135f9fa0f654c5f2a224abbe7bcf4958eee7bb4cde8ca8d18557a6e",
+          "size": 638
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/components/axis/baseAxis.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/components/axis/baseAxis.d.ts",
+          "sha256": "b895cf42d4b7ca9c9d421c84a53833f689627ae4b2ad03b391e437f6d6fb42fb",
+          "size": 1824
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/components/axis/index.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/components/axis/index.d.ts",
+          "sha256": "52f3db18743831eba48849f69acd35921bd3fc6aee9e2d252a4e78af65919cab",
+          "size": 709
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/components/axis/linearAxis.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/components/axis/linearAxis.d.ts",
+          "sha256": "bee7df597da95d2ed7fce8aa6cb7cb7e5d7a75283a60a16ff4840ad19b67a531",
+          "size": 595
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/components/chartTitle.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/components/chartTitle.d.ts",
+          "sha256": "0c59596cefd6e4fdfca8d445260f425c8d7d46c35dae9350f6d0820d695c0faa",
+          "size": 982
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/components/plot/barPlot.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/components/plot/barPlot.d.ts",
+          "sha256": "5367862fdd9daac64a8299567a125833c9128cf15ff442f03ee79aa29347a04f",
+          "size": 513
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/components/plot/index.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/components/plot/index.d.ts",
+          "sha256": "49020c0dfd8c9063377c79cbc927ad5e42bfd37a8b1efb050375b1c66710469e",
+          "size": 949
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/components/plot/linePlot.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/components/plot/linePlot.d.ts",
+          "sha256": "9cb1a494d260ffb617b9a433ef8caad88fdff3e522beb54447b9887fb8463d84",
+          "size": 450
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/index.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/index.d.ts",
+          "sha256": "57369ef088cb563502ca435674e207e43860e4ac3fe6477e8a21e345429e899f",
+          "size": 340
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/interfaces.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/interfaces.d.ts",
+          "sha256": "57f32d9b5bc964c3ed0dd7812bfc5e160d83cb345a9d9312b5b303330155e75c",
+          "size": 3498
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/orchestrator.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/orchestrator.d.ts",
+          "sha256": "37da10ba273c1afbce28662e8ed82fd01ac0ac6a88e84186c87df3af1293c9c6",
+          "size": 547
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/chartBuilder/textDimensionCalculator.d.ts",
+          "member": "package/dist/diagrams/xychart/chartBuilder/textDimensionCalculator.d.ts",
+          "sha256": "d1fd2a8b57bb4650f6f9f22b3ff4ef1d0e2db51ac18850555b95b3e41b5b58e2",
+          "size": 443
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/parser/xychart.jison.spec.d.ts",
+          "member": "package/dist/diagrams/xychart/parser/xychart.jison.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/xychartDb.d.ts",
+          "member": "package/dist/diagrams/xychart/xychartDb.d.ts",
+          "sha256": "c775b5c26ab99c38f7a9ec0697f3d9793feb430c436787688a47e37cd953f6e1",
+          "size": 1787
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/xychartDetector.d.ts",
+          "member": "package/dist/diagrams/xychart/xychartDetector.d.ts",
+          "sha256": "cef0da0a13cfb1c8afed82a60a7c98c244cf374a6a1778f47414ac91fdb0d92d",
+          "size": 149
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/xychartDiagram.d.ts",
+          "member": "package/dist/diagrams/xychart/xychartDiagram.d.ts",
+          "sha256": "ddd18782e5cd5055928fae86390066184d5d06aab09ad1bb3921afc79d544d06",
+          "size": 118
+        },
+        {
+          "path": "mermaid@10.8.0/dist/diagrams/xychart/xychartRenderer.d.ts",
+          "member": "package/dist/diagrams/xychart/xychartRenderer.d.ts",
+          "sha256": "7f2149e7e4814d41582a21f5aadb34e91ea648e7cfb254e31521abef9ec7287d",
+          "size": 282
+        },
+        {
+          "path": "mermaid@10.8.0/dist/docs/vite.config.d.ts",
+          "member": "package/dist/docs/vite.config.d.ts",
+          "sha256": "4b96dd19fd2949d28ce80e913412b0026dc421e5bf6c31d87c7b5eb11b5753b4",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/edges-77d431ff.js",
+          "member": "package/dist/edges-77d431ff.js",
+          "sha256": "ae1c2f974086295e5fa9df41a25ce9b02bc01ebe6cbeac48a479c155ca17f077",
+          "size": 66463
+        },
+        {
+          "path": "mermaid@10.8.0/dist/edges-a720f28b.js",
+          "member": "package/dist/edges-a720f28b.js",
+          "sha256": "3c6a2e5d956670a361b8d2ca267bc8908270cad235ca8f0e9fa179a50a60674b",
+          "size": 45768
+        },
+        {
+          "path": "mermaid@10.8.0/dist/edges-d417c7a0.js",
+          "member": "package/dist/edges-d417c7a0.js",
+          "sha256": "05387ac04543debbf8566a1f021de9582544b8cab298b91576149f961eb93b28",
+          "size": 66397
+        },
+        {
+          "path": "mermaid@10.8.0/dist/erDiagram-0ea73325.js",
+          "member": "package/dist/erDiagram-0ea73325.js",
+          "sha256": "b26d0eebefac03bba4efd042fe57f3d09c38f17000457330d1d1b16f05f299ff",
+          "size": 48922
+        },
+        {
+          "path": "mermaid@10.8.0/dist/erDiagram-25d2422d.js",
+          "member": "package/dist/erDiagram-25d2422d.js",
+          "sha256": "2aa98005eea81055cc6c4a1eec12987cd8fb7544f6de2a8567090fd8fb4ae388",
+          "size": 54003
+        },
+        {
+          "path": "mermaid@10.8.0/dist/erDiagram-9cf06d6f.js",
+          "member": "package/dist/erDiagram-9cf06d6f.js",
+          "sha256": "d709f5d0ac53e4aa9e4c0dc79bbe14b78ee64d407184f0e4bd16dca9026cb937",
+          "size": 42724
+        },
+        {
+          "path": "mermaid@10.8.0/dist/errors.d.ts",
+          "member": "package/dist/errors.d.ts",
+          "sha256": "43ac78f8e0c5defecc2e501f77d1e61d078c79975af401702c16b9828ab12ca8",
+          "size": 93
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDb-116e16bb.js",
+          "member": "package/dist/flowDb-116e16bb.js",
+          "sha256": "55f916459527845283953527a5687fb89fa1240cb126b9a9fb34ee58cf6ac484",
+          "size": 65323
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDb-abd5d876.js",
+          "member": "package/dist/flowDb-abd5d876.js",
+          "sha256": "516320cd5ccc0b66456c73135627600e87c84fa0d848fe41d03bbca8b4dce742",
+          "size": 78187
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDb-d35e309a.js",
+          "member": "package/dist/flowDb-d35e309a.js",
+          "sha256": "b2a88b4233f1b581cda335e7968d89a8861ce51cf1d2eb5d5ff0a58bccac208e",
+          "size": 78190
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDiagram-bf5deece.js",
+          "member": "package/dist/flowDiagram-bf5deece.js",
+          "sha256": "86796dedbd57b00203248e53526f31cbfe85e2084830503c612f566e90a66e1a",
+          "size": 28286
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDiagram-c654a153.js",
+          "member": "package/dist/flowDiagram-c654a153.js",
+          "sha256": "b6053dcf42e4a3e8ce7920de4065a757a06da411a082b6ab92e4a30cbfe5e8d5",
+          "size": 40392
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDiagram-d949d7c1.js",
+          "member": "package/dist/flowDiagram-d949d7c1.js",
+          "sha256": "6778356c7c7e3f64989c61c7f1137567c726ddc21536676be48c88479b211d3d",
+          "size": 19937
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDiagram-v2-49332944.js",
+          "member": "package/dist/flowDiagram-v2-49332944.js",
+          "sha256": "b7176af8e44ce2e476f2af35338412f5e1c5df2867069012db51a678f9007740",
+          "size": 1177
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDiagram-v2-91627433.js",
+          "member": "package/dist/flowDiagram-v2-91627433.js",
+          "sha256": "ba497a85343f20b697a7651ab38c1ec1762876006354bece411134dbae28de1b",
+          "size": 793
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowDiagram-v2-ee81395c.js",
+          "member": "package/dist/flowDiagram-v2-ee81395c.js",
+          "sha256": "fca814bb647db108671de43d45806619e8b1f87bcc0c693e709b95269ceb0209",
+          "size": 938
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowchart-elk-definition-2031ba71.js",
+          "member": "package/dist/flowchart-elk-definition-2031ba71.js",
+          "sha256": "be55b59f36af462b286ad8cb82811c665d14eddac5aa523ed1c9583657b46eaf",
+          "size": 3121923
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowchart-elk-definition-27cc417a.js",
+          "member": "package/dist/flowchart-elk-definition-27cc417a.js",
+          "sha256": "10e0bac9ed96b9007f61254a0c1b22a7f1a4af0704627883fc64b386dc4d3707",
+          "size": 24256
+        },
+        {
+          "path": "mermaid@10.8.0/dist/flowchart-elk-definition-4f6522f0.js",
+          "member": "package/dist/flowchart-elk-definition-4f6522f0.js",
+          "sha256": "af2a1a19ec9582f7e05d91b36f3d5d64dd5d7be5812f2a994870fe45205003c6",
+          "size": 2376279
+        },
+        {
+          "path": "mermaid@10.8.0/dist/ganttDiagram-5c869e3b.js",
+          "member": "package/dist/ganttDiagram-5c869e3b.js",
+          "sha256": "06e066ae7dd88c7429a3ae8f85ca3a6e88028984ee51099f91f8831df738210a",
+          "size": 65783
+        },
+        {
+          "path": "mermaid@10.8.0/dist/ganttDiagram-944692f8.js",
+          "member": "package/dist/ganttDiagram-944692f8.js",
+          "sha256": "f0221fb6b1335c665774d2056c7542aea1616c5c1ade2389b2eef389d2e7dae1",
+          "size": 84024
+        },
+        {
+          "path": "mermaid@10.8.0/dist/ganttDiagram-cbc51761.js",
+          "member": "package/dist/ganttDiagram-cbc51761.js",
+          "sha256": "5f4fabc76d234cff426ffaaff3abaa352569bbd890dfc4e274c9de3de5416ca8",
+          "size": 115234
+        },
+        {
+          "path": "mermaid@10.8.0/dist/gitGraphDiagram-19bde4f7.js",
+          "member": "package/dist/gitGraphDiagram-19bde4f7.js",
+          "sha256": "169ed3b783d5e04a025ff2a58482da871e3d0c25bb44d75e1c8f77294c58877a",
+          "size": 71163
+        },
+        {
+          "path": "mermaid@10.8.0/dist/gitGraphDiagram-b9d81de9.js",
+          "member": "package/dist/gitGraphDiagram-b9d81de9.js",
+          "sha256": "08ac44f7a18e4407ffdf9ebece0e0a32eef4756e34552855ccfbdb9a565698f9",
+          "size": 71390
+        },
+        {
+          "path": "mermaid@10.8.0/dist/gitGraphDiagram-fd350e75.js",
+          "member": "package/dist/gitGraphDiagram-fd350e75.js",
+          "sha256": "690be170dc07f303432c68d1aac57bd9ec198184c6094616f620d1547a0e05ba",
+          "size": 55642
+        },
+        {
+          "path": "mermaid@10.8.0/dist/graph-03626afa.js",
+          "member": "package/dist/graph-03626afa.js",
+          "sha256": "998a1a7f5e855a79eaaa73e7e72fa7c821b427e8c38836f4896267793543d7f0",
+          "size": 41673
+        },
+        {
+          "path": "mermaid@10.8.0/dist/graph-940f1512.js",
+          "member": "package/dist/graph-940f1512.js",
+          "sha256": "6589e9c4486a6bfcdcce936df947eaea79f2fe388fe90c578f7d56bd9900ca91",
+          "size": 24615
+        },
+        {
+          "path": "mermaid@10.8.0/dist/index-4400e55d.js",
+          "member": "package/dist/index-4400e55d.js",
+          "sha256": "7e5f73c1b865a1880f4fd93c1c107fcce9680388c984d1a5ddec3b8106b3c5ec",
+          "size": 15789
+        },
+        {
+          "path": "mermaid@10.8.0/dist/index-8fae9850.js",
+          "member": "package/dist/index-8fae9850.js",
+          "sha256": "66f855d7cf0759331c132f2998b6aeedc1474728527fbe65ca0f1879bc4dbc45",
+          "size": 22584
+        },
+        {
+          "path": "mermaid@10.8.0/dist/index-b5c99bd1.js",
+          "member": "package/dist/index-b5c99bd1.js",
+          "sha256": "413dd8e008e54d1f67bb04ffd384b5404a05060d61fea5b6d5e637a8254c6d2f",
+          "size": 23340
+        },
+        {
+          "path": "mermaid@10.8.0/dist/infoDiagram-451625c8.js",
+          "member": "package/dist/infoDiagram-451625c8.js",
+          "sha256": "1b4a90d8361e2fe62a3f970ccdd436d6de7c49f7449eab822cb8eb84006ecdda",
+          "size": 17911
+        },
+        {
+          "path": "mermaid@10.8.0/dist/infoDiagram-db7b18fc.js",
+          "member": "package/dist/infoDiagram-db7b18fc.js",
+          "sha256": "f23ac1c8526c88be84c1b53e514fff26dc455674dadd9cc7d27af6a917d0a384",
+          "size": 18139
+        },
+        {
+          "path": "mermaid@10.8.0/dist/infoDiagram-f32f1cf5.js",
+          "member": "package/dist/infoDiagram-f32f1cf5.js",
+          "sha256": "49e67cd4d9e7ee8a318bcd162a05269184e83d773bea3a366d85cef420623d31",
+          "size": 13718
+        },
+        {
+          "path": "mermaid@10.8.0/dist/init-cc95ec8e.js",
+          "member": "package/dist/init-cc95ec8e.js",
+          "sha256": "40ba05c6fb10047a3fc311dfc9da86a80d7d0681a6a33c80cd53b77bbe44c604",
+          "size": 258
+        },
+        {
+          "path": "mermaid@10.8.0/dist/init-f9637058.js",
+          "member": "package/dist/init-f9637058.js",
+          "sha256": "0cc5a9c3dd4a6309b5ad959143c3e8c5144590a98523a08b8ab08933235803a4",
+          "size": 219
+        },
+        {
+          "path": "mermaid@10.8.0/dist/interactionDb.d.ts",
+          "member": "package/dist/interactionDb.d.ts",
+          "sha256": "28c44dbc95a187de689d6d15d3c0570167f8262628b76d89ec80ce1ef3ecb143",
+          "size": 112
+        },
+        {
+          "path": "mermaid@10.8.0/dist/journeyDiagram-8ac881e0.js",
+          "member": "package/dist/journeyDiagram-8ac881e0.js",
+          "sha256": "764b704e1bf136733ec0ccd94f59a6c77833014a80d43fdf130516d1cd5b39ac",
+          "size": 30250
+        },
+        {
+          "path": "mermaid@10.8.0/dist/journeyDiagram-d5636530.js",
+          "member": "package/dist/journeyDiagram-d5636530.js",
+          "sha256": "9fe204e07e5dfac38c690a939cbc5e707a3f99bf71b070b6503257887d10f151",
+          "size": 40285
+        },
+        {
+          "path": "mermaid@10.8.0/dist/journeyDiagram-f604e98d.js",
+          "member": "package/dist/journeyDiagram-f604e98d.js",
+          "sha256": "4b3a132997167ecc420c49c411224a675bbec2233de12555c6b30f958198c617",
+          "size": 40130
+        },
+        {
+          "path": "mermaid@10.8.0/dist/layout-23a94ccc.js",
+          "member": "package/dist/layout-23a94ccc.js",
+          "sha256": "51c9cbdb90700053164e35ca65da56265ce29e4a273eac8464788537094179c7",
+          "size": 64623
+        },
+        {
+          "path": "mermaid@10.8.0/dist/layout-5e46170e.js",
+          "member": "package/dist/layout-5e46170e.js",
+          "sha256": "7dda823ec9698def8c11d5660441fc5c2e213959c1d7ff16f7de0d25b3a5bfbf",
+          "size": 40760
+        },
+        {
+          "path": "mermaid@10.8.0/dist/line-0f31738a.js",
+          "member": "package/dist/line-0f31738a.js",
+          "sha256": "67ef70c766fb687bd5a44cfd7462659f8e4abf2e4121a4391e040767f9ddc54d",
+          "size": 1276
+        },
+        {
+          "path": "mermaid@10.8.0/dist/line-379dbf1c.js",
+          "member": "package/dist/line-379dbf1c.js",
+          "sha256": "37c10ef00072bbe382919e0c53771b1ba07c3afdbddfeaab9be1ea9006aa85ed",
+          "size": 1785
+        },
+        {
+          "path": "mermaid@10.8.0/dist/linear-2bc2cc47.js",
+          "member": "package/dist/linear-2bc2cc47.js",
+          "sha256": "f6756b78a126f661263098a48e6b6a167382961a9d71c747402a604f4c618010",
+          "size": 20605
+        },
+        {
+          "path": "mermaid@10.8.0/dist/linear-2bc336bd.js",
+          "member": "package/dist/linear-2bc336bd.js",
+          "sha256": "d6669d8fd6549f9580cf4c58dc4e8b9a57fea0558048af653bcad35020369bf8",
+          "size": 14457
+        },
+        {
+          "path": "mermaid@10.8.0/dist/logger.d.ts",
+          "member": "package/dist/logger.d.ts",
+          "sha256": "774aa0f86f459d761eaa691eed9cc866a422f4adab7ad0916f00887f034c038b",
+          "size": 404
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid-0603ccf8.js",
+          "member": "package/dist/mermaid-0603ccf8.js",
+          "sha256": "e303102302056781b23181de2375d256c7798a1d580380b202c8fe0fcbc34a08",
+          "size": 236299
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid-4f066ae1.js",
+          "member": "package/dist/mermaid-4f066ae1.js",
+          "sha256": "60c569022b8fe48c7c22212687fc8f7965395adac3f5463a0845312c45e3d668",
+          "size": 442865
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid-a09fe7cd.js",
+          "member": "package/dist/mermaid-a09fe7cd.js",
+          "sha256": "7b2489dbcf6b48819c9e7833a7dafddd00c6c606f93ab445b78203daa3963310",
+          "size": 324228
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid.core.mjs",
+          "member": "package/dist/mermaid.core.mjs",
+          "sha256": "4270382ad48252fe8dfb51603c43a25d980155ce3d4f873346bb688926d0a4db",
+          "size": 298
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid.d.ts",
+          "member": "package/dist/mermaid.d.ts",
+          "sha256": "9741cd581c0b32eb09fb20bb5d425eb33697f64ec4efc40afaaf6df07116eb23",
+          "size": 5890
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid.esm.min.mjs",
+          "member": "package/dist/mermaid.esm.min.mjs",
+          "sha256": "a5f21d9dd447985824068fdf69902da7878df8f2955c064d8a06c71111f76b90",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid.esm.mjs",
+          "member": "package/dist/mermaid.esm.mjs",
+          "sha256": "02e33d550e378bbed83821f37f94120ff21d448a66cfeb56662f2a1ae52ee373",
+          "size": 72
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid.js",
+          "member": "package/dist/mermaid.js",
+          "sha256": "bd7d3a5f9ce403891a905e67b203e64406f0b552b96e93a8306c53404145ebde",
+          "size": 6700520
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid.min.js",
+          "member": "package/dist/mermaid.min.js",
+          "sha256": "e17518dbdcf0370d75ddf8ff8700eda380ec03a8318c2d8f689f01451b709407",
+          "size": 3062057
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaid.spec.d.ts",
+          "member": "package/dist/mermaid.spec.d.ts",
+          "sha256": "44afbcd6f6a1f5f916f8395edcbd02e43c45d5bab7cc1315548cc51c6867a79e",
+          "size": 49
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaidAPI.d.ts",
+          "member": "package/dist/mermaidAPI.d.ts",
+          "sha256": "888202e193368b0aa3324289c8b05132f9bc3a994a0a60188d73471f05f69d21",
+          "size": 6576
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mermaidAPI.spec.d.ts",
+          "member": "package/dist/mermaidAPI.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mindmap-definition-2bdb15f9.js",
+          "member": "package/dist/mindmap-definition-2bdb15f9.js",
+          "sha256": "520c4554798c0dc62fcbec12ecb08f3dd27347338c097837ee60c67447c71fe3",
+          "size": 1162506
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mindmap-definition-377f8f1f.js",
+          "member": "package/dist/mindmap-definition-377f8f1f.js",
+          "sha256": "08c162071df9e5bb3063698f238c21f07f9cbeb836d2203732a36e29745625f7",
+          "size": 40884
+        },
+        {
+          "path": "mermaid@10.8.0/dist/mindmap-definition-6e182e82.js",
+          "member": "package/dist/mindmap-definition-6e182e82.js",
+          "sha256": "e59224dec7cd1b232790d00a271b776f58fd077170ed022a9c24aede406b5eda",
+          "size": 764192
+        },
+        {
+          "path": "mermaid@10.8.0/dist/ordinal-475e0c0c.js",
+          "member": "package/dist/ordinal-475e0c0c.js",
+          "sha256": "13e215ac05a49283a31dc40a941f2856947e8d89c60a4c3b1f0ef0c1443df71a",
+          "size": 2221
+        },
+        {
+          "path": "mermaid@10.8.0/dist/ordinal-5695958c.js",
+          "member": "package/dist/ordinal-5695958c.js",
+          "sha256": "6f514c47af293fd0b16da906d0d9a7b9203b9058be7a5efdfbde697727240283",
+          "size": 1626
+        },
+        {
+          "path": "mermaid@10.8.0/dist/path-39bad7e2.js",
+          "member": "package/dist/path-39bad7e2.js",
+          "sha256": "e9b59608d98ded01f65a6323857bc0eda8d3574a5f9000494d0c8618d6296aa9",
+          "size": 3857
+        },
+        {
+          "path": "mermaid@10.8.0/dist/path-428ebac9.js",
+          "member": "package/dist/path-428ebac9.js",
+          "sha256": "c9c700a6dc2bc15eb7cc8fe9e719de44a8c6c7c555c798baf221a11f87d7ff56",
+          "size": 3171
+        },
+        {
+          "path": "mermaid@10.8.0/dist/pieDiagram-b0208e96.js",
+          "member": "package/dist/pieDiagram-b0208e96.js",
+          "sha256": "22dd3727424f56440d91aa631e7be14da5de5e89135feb6368f04ef6d5f15e1e",
+          "size": 26996
+        },
+        {
+          "path": "mermaid@10.8.0/dist/pieDiagram-c3c24d7f.js",
+          "member": "package/dist/pieDiagram-c3c24d7f.js",
+          "sha256": "abee6473844f36622480ecc38f6739e51e3ce1786dfab22b9de54b109676b0be",
+          "size": 29065
+        },
+        {
+          "path": "mermaid@10.8.0/dist/pieDiagram-f3b270fb.js",
+          "member": "package/dist/pieDiagram-f3b270fb.js",
+          "sha256": "617cd59bf5e8fc5ae5891ca2eee7c50b9466b07ac0f159d7234ac099db508ff4",
+          "size": 22119
+        },
+        {
+          "path": "mermaid@10.8.0/dist/preprocess.d.ts",
+          "member": "package/dist/preprocess.d.ts",
+          "sha256": "c6c111bfc1c0e607928bd37977b7a9dbb64189d3aa64da8001e4dde108c7ff71",
+          "size": 443
+        },
+        {
+          "path": "mermaid@10.8.0/dist/quadrantDiagram-0332be45.js",
+          "member": "package/dist/quadrantDiagram-0332be45.js",
+          "sha256": "5b897ca955c9bd8f0e591ffa27501790dfe2184f8cf85fc7cf0451035a36b95b",
+          "size": 53392
+        },
+        {
+          "path": "mermaid@10.8.0/dist/quadrantDiagram-103ea223.js",
+          "member": "package/dist/quadrantDiagram-103ea223.js",
+          "sha256": "0cffd55e2989886698a90ca6ca5aa97f6239986f717e859bd3e2b60c063613b6",
+          "size": 53227
+        },
+        {
+          "path": "mermaid@10.8.0/dist/quadrantDiagram-b4812ca4.js",
+          "member": "package/dist/quadrantDiagram-b4812ca4.js",
+          "sha256": "50ae3be2599a63dcbae0d16fbf3483424b3964d83e264c1a1382bf512ef42d7e",
+          "size": 42021
+        },
+        {
+          "path": "mermaid@10.8.0/dist/rendering-util/createText.d.ts",
+          "member": "package/dist/rendering-util/createText.d.ts",
+          "sha256": "c3522c1f4a05e976fc81591af03c0108ce6eef02dfe6047377ebd32842589ac7",
+          "size": 578
+        },
+        {
+          "path": "mermaid@10.8.0/dist/rendering-util/handle-markdown-text.d.ts",
+          "member": "package/dist/rendering-util/handle-markdown-text.d.ts",
+          "sha256": "9e1ac91312735f30a6427ed0f5b78c09f51925355ab8b0d41c24a021005f03df",
+          "size": 247
+        },
+        {
+          "path": "mermaid@10.8.0/dist/rendering-util/handle-markdown-text.spec.d.ts",
+          "member": "package/dist/rendering-util/handle-markdown-text.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/rendering-util/selectSvgElement.d.ts",
+          "member": "package/dist/rendering-util/selectSvgElement.d.ts",
+          "sha256": "a7eefa2b25a63ca1e6d27d574288f2e9615ef2f6bda888a44bd8862d010fa642",
+          "size": 262
+        },
+        {
+          "path": "mermaid@10.8.0/dist/rendering-util/splitText.d.ts",
+          "member": "package/dist/rendering-util/splitText.d.ts",
+          "sha256": "f3008af3bc87e1127749ab4e4c63fe1e783614f649d5ed505a1d0d653e012b3f",
+          "size": 1143
+        },
+        {
+          "path": "mermaid@10.8.0/dist/rendering-util/splitText.spec.d.ts",
+          "member": "package/dist/rendering-util/splitText.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/rendering-util/uid.d.ts",
+          "member": "package/dist/rendering-util/uid.d.ts",
+          "sha256": "b610cdd997c39fd6953dd041ee03656357b929ae65002260390db2519c3c23ae",
+          "size": 178
+        },
+        {
+          "path": "mermaid@10.8.0/dist/requirementDiagram-166c1939.js",
+          "member": "package/dist/requirementDiagram-166c1939.js",
+          "sha256": "c5551c7baaa8aaff031f0a70bb73a82e42f2ad407bfb79bfd16fafa2da0305f0",
+          "size": 35161
+        },
+        {
+          "path": "mermaid@10.8.0/dist/requirementDiagram-bf7890df.js",
+          "member": "package/dist/requirementDiagram-bf7890df.js",
+          "sha256": "c6929a02ed8765c444e73b204c9f0573eedcf75cfed6ab6e08a94c69057b284d",
+          "size": 43860
+        },
+        {
+          "path": "mermaid@10.8.0/dist/requirementDiagram-d543386e.js",
+          "member": "package/dist/requirementDiagram-d543386e.js",
+          "sha256": "9992fb9d9a49da504c883338025d387d3d9037e0aea4e545490a07b92646566b",
+          "size": 43711
+        },
+        {
+          "path": "mermaid@10.8.0/dist/sankeyDiagram-0acdec17.js",
+          "member": "package/dist/sankeyDiagram-0acdec17.js",
+          "sha256": "7b6fba8a88807548c4b580e8a8013cff6fa5d814d5a5fc03bc456f8270409c8e",
+          "size": 24979
+        },
+        {
+          "path": "mermaid@10.8.0/dist/sankeyDiagram-8ec007dc.js",
+          "member": "package/dist/sankeyDiagram-8ec007dc.js",
+          "sha256": "0aa0e98eb4309644d2bb03aabcd8afb2213225486b7ea2f883a1341348865382",
+          "size": 31323
+        },
+        {
+          "path": "mermaid@10.8.0/dist/sankeyDiagram-f88a3b47.js",
+          "member": "package/dist/sankeyDiagram-f88a3b47.js",
+          "sha256": "683c6596be5922fc13328bcee42106dc79d3ca854387fb19b037405c8bb04046",
+          "size": 41955
+        },
+        {
+          "path": "mermaid@10.8.0/dist/sequenceDiagram-2d00f654.js",
+          "member": "package/dist/sequenceDiagram-2d00f654.js",
+          "sha256": "e637e45e1136811fa48e300691b1639098014f66c4729fbcc73fe992a87106a7",
+          "size": 139027
+        },
+        {
+          "path": "mermaid@10.8.0/dist/sequenceDiagram-8d90fc27.js",
+          "member": "package/dist/sequenceDiagram-8d90fc27.js",
+          "sha256": "f86d3158e70979ca6ae626af07d5bce4bbe26925c68883b69b0530d137c77966",
+          "size": 107334
+        },
+        {
+          "path": "mermaid@10.8.0/dist/sequenceDiagram-c18d009d.js",
+          "member": "package/dist/sequenceDiagram-c18d009d.js",
+          "sha256": "9e64dee9ecffb865d8c6da5def0ba8355d7fa8e3cff5b701eaffa18902df256d",
+          "size": 139231
+        },
+        {
+          "path": "mermaid@10.8.0/dist/setupGraphViewbox.d.ts",
+          "member": "package/dist/setupGraphViewbox.d.ts",
+          "sha256": "70ef5a2d0a124562c20556af093e930bf0e0728bc902c8abe30dab230586b1ed",
+          "size": 374
+        },
+        {
+          "path": "mermaid@10.8.0/dist/stateDiagram-43596fc0.js",
+          "member": "package/dist/stateDiagram-43596fc0.js",
+          "sha256": "d36ab5f09be8091e18185bf33d59f33356a15ba206dc20e07bd291d65c46fed2",
+          "size": 18533
+        },
+        {
+          "path": "mermaid@10.8.0/dist/stateDiagram-494e9227.js",
+          "member": "package/dist/stateDiagram-494e9227.js",
+          "sha256": "102ea0e3a048f567c9bd5ba0fa292ddf459ff8bee2defc59c6a690b80f4d94fd",
+          "size": 18389
+        },
+        {
+          "path": "mermaid@10.8.0/dist/stateDiagram-bf176e09.js",
+          "member": "package/dist/stateDiagram-bf176e09.js",
+          "sha256": "68f06aebbfbcfe49097c9ce6acfd748e5291c215e96580734bdba6618ef66072",
+          "size": 12926
+        },
+        {
+          "path": "mermaid@10.8.0/dist/stateDiagram-v2-205e8e15.js",
+          "member": "package/dist/stateDiagram-v2-205e8e15.js",
+          "sha256": "7765da5ee05ad9f76a4b30ca76bf27bd6d0014f8a35af2412fac49f9f86c7ef5",
+          "size": 11066
+        },
+        {
+          "path": "mermaid@10.8.0/dist/stateDiagram-v2-2ead4f9c.js",
+          "member": "package/dist/stateDiagram-v2-2ead4f9c.js",
+          "sha256": "0b26b44253388938217609edf2b419f3f21f3dbf2ab2fbf165bfe30aabdfa6bb",
+          "size": 11281
+        },
+        {
+          "path": "mermaid@10.8.0/dist/stateDiagram-v2-f377d621.js",
+          "member": "package/dist/stateDiagram-v2-f377d621.js",
+          "sha256": "a4d8458dea44fe1d48219ffd5fabd0f7e2214742948fcf8b0b0b5b940bc2b925",
+          "size": 6866
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-24532e8e.js",
+          "member": "package/dist/styles-24532e8e.js",
+          "sha256": "495c6019a576c9a8f9ca191d432d3c201521abf3f68e752429a2a2b89257236a",
+          "size": 52378
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-4551667c.js",
+          "member": "package/dist/styles-4551667c.js",
+          "sha256": "6a569c93d1f306d33e7b7951b3ead960efcf38042f2975b13de364773c17c11b",
+          "size": 47413
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-6860f46c.js",
+          "member": "package/dist/styles-6860f46c.js",
+          "sha256": "3d78c3657140c855a22be5e94681a258f03a114694b4234b781a0d5106df03b6",
+          "size": 62473
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-7383a064.js",
+          "member": "package/dist/styles-7383a064.js",
+          "sha256": "01b3965c9b8f3b0f899f35d3ae48e30e8529788d215c138599644df13b062da2",
+          "size": 15288
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-7e0c8b80.js",
+          "member": "package/dist/styles-7e0c8b80.js",
+          "sha256": "812637735ae9ebc89b57f86172ede2cd4a752a1d9a65d504ec4626bebf1c89b6",
+          "size": 12724
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-87300129.js",
+          "member": "package/dist/styles-87300129.js",
+          "sha256": "a66c6f07ea9aa68947c863849092ff46485cacdbb0addbe92470d20e3776f13f",
+          "size": 37450
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-a7e8c8ab.js",
+          "member": "package/dist/styles-a7e8c8ab.js",
+          "sha256": "944f68ed07a7d47f993212e6a5b10207a6a5656352f989949af6e95983652f0c",
+          "size": 62469
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-b2c874b6.js",
+          "member": "package/dist/styles-b2c874b6.js",
+          "sha256": "9dbbc7d8b318922b0c1ac746f92ad15f94fb78dcb3f11dd2b2a92d4bed213429",
+          "size": 47412
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles-bd906223.js",
+          "member": "package/dist/styles-bd906223.js",
+          "sha256": "1aafbae231318ec9b667a8861df6ca8b880b00861032c6c3c8a9f35a17b8bebd",
+          "size": 17046
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles.d.ts",
+          "member": "package/dist/styles.d.ts",
+          "sha256": "4641d77b6bb5df36ce8ea8f0c6d9955b56ad6ce867be916701dc9c4730214c72",
+          "size": 532
+        },
+        {
+          "path": "mermaid@10.8.0/dist/styles.spec.d.ts",
+          "member": "package/dist/styles.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/svgDrawCommon-0ee1b4e9.js",
+          "member": "package/dist/svgDrawCommon-0ee1b4e9.js",
+          "sha256": "d073a1355bbb1ce48253b4dd5f5813f799184ef81f9344c672b3cff8b3128e70",
+          "size": 2807
+        },
+        {
+          "path": "mermaid@10.8.0/dist/svgDrawCommon-2bff0811.js",
+          "member": "package/dist/svgDrawCommon-2bff0811.js",
+          "sha256": "92b8e650df1c42b11fbf61e9e27129cf270c71dec6f549a5e6fc811120f7490e",
+          "size": 1640
+        },
+        {
+          "path": "mermaid@10.8.0/dist/svgDrawCommon-b0528f6a.js",
+          "member": "package/dist/svgDrawCommon-b0528f6a.js",
+          "sha256": "092f3e82f7a199ec665070f57ff48f9707eed878d46d65c8486e096c3ec02ee5",
+          "size": 2777
+        },
+        {
+          "path": "mermaid@10.8.0/dist/tests/MockedD3.d.ts",
+          "member": "package/dist/tests/MockedD3.d.ts",
+          "sha256": "388ec919954d3bc4bdcf17ee70791d7d663a6f5949dc274a6252410db4048956",
+          "size": 2089
+        },
+        {
+          "path": "mermaid@10.8.0/dist/tests/setup.d.ts",
+          "member": "package/dist/tests/setup.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/tests/util.d.ts",
+          "member": "package/dist/tests/util.d.ts",
+          "sha256": "b3b49b1388b378b1c027af0aca734a58280b41e9bdc42adad5b2a093b001eae7",
+          "size": 121
+        },
+        {
+          "path": "mermaid@10.8.0/dist/themes/erDiagram-oldHardcodedValues.d.ts",
+          "member": "package/dist/themes/erDiagram-oldHardcodedValues.d.ts",
+          "sha256": "6a0249a2d17ea9c02e2e7ed2ba8570d0a6684fc62900657223a17f0cd029ae21",
+          "size": 337
+        },
+        {
+          "path": "mermaid@10.8.0/dist/themes/index.d.ts",
+          "member": "package/dist/themes/index.d.ts",
+          "sha256": "64c3dffad925a6cd95d9877985a5cfb8f4d49a077f5a189d2b8ea75af2197f42",
+          "size": 963
+        },
+        {
+          "path": "mermaid@10.8.0/dist/themes/theme-base.d.ts",
+          "member": "package/dist/themes/theme-base.d.ts",
+          "sha256": "b0ed5e9dcab5904cb3a41c06128b8af75f34e93147ebe40801ee1dd053587803",
+          "size": 4698
+        },
+        {
+          "path": "mermaid@10.8.0/dist/themes/theme-dark.d.ts",
+          "member": "package/dist/themes/theme-dark.d.ts",
+          "sha256": "b4e0530e6d88c4deac7d857e9825c2195ecab826b17b948275a2cb97e53e7cc2",
+          "size": 4577
+        },
+        {
+          "path": "mermaid@10.8.0/dist/themes/theme-default.d.ts",
+          "member": "package/dist/themes/theme-default.d.ts",
+          "sha256": "baa38d21987495b92c3ed349fb836f8c0e427526fb04f7681a059902d0a4c2ea",
+          "size": 4777
+        },
+        {
+          "path": "mermaid@10.8.0/dist/themes/theme-forest.d.ts",
+          "member": "package/dist/themes/theme-forest.d.ts",
+          "sha256": "5efa0f22ffbd79db90151b0d165fc4ba0368f8410ae91146b7769e903b2f137c",
+          "size": 4669
+        },
+        {
+          "path": "mermaid@10.8.0/dist/themes/theme-helpers.d.ts",
+          "member": "package/dist/themes/theme-helpers.d.ts",
+          "sha256": "9373f1db76675b5d8ee4e7cb5fd7c9567552dc81144f96ee30eb734738b23035",
+          "size": 56
+        },
+        {
+          "path": "mermaid@10.8.0/dist/themes/theme-neutral.d.ts",
+          "member": "package/dist/themes/theme-neutral.d.ts",
+          "sha256": "2d21a09f8636f7d17a9e2abec54d101985de747d7dc0572c265e24a1bf00ed7d",
+          "size": 4699
+        },
+        {
+          "path": "mermaid@10.8.0/dist/timeline-definition-12b53671.js",
+          "member": "package/dist/timeline-definition-12b53671.js",
+          "sha256": "06eb424a3160f83d809c69ecc14e39aa40aa86bf339f06d04cdbceaa80c8f1b8",
+          "size": 31859
+        },
+        {
+          "path": "mermaid@10.8.0/dist/timeline-definition-1718f0db.js",
+          "member": "package/dist/timeline-definition-1718f0db.js",
+          "sha256": "338db653331b41709286ebbf41dee0d63757387d2a9fd829ab2384548000139c",
+          "size": 43253
+        },
+        {
+          "path": "mermaid@10.8.0/dist/timeline-definition-d977decf.js",
+          "member": "package/dist/timeline-definition-d977decf.js",
+          "sha256": "66eec95a37eca073cca0d032478332ac760c0f0c6978c71d0c7e4d043c319f35",
+          "size": 43395
+        },
+        {
+          "path": "mermaid@10.8.0/dist/types.d.ts",
+          "member": "package/dist/types.d.ts",
+          "sha256": "584a4859342e8e73cce0f5100f5e1c8e42fc67ccb0038f59a0db003d9eb79c75",
+          "size": 646
+        },
+        {
+          "path": "mermaid@10.8.0/dist/utils.d.ts",
+          "member": "package/dist/utils.d.ts",
+          "sha256": "358408e39e0c9accdf025b48613a57c345afe13985340af2bd52572597fa804e",
+          "size": 10241
+        },
+        {
+          "path": "mermaid@10.8.0/dist/utils.spec.d.ts",
+          "member": "package/dist/utils.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/utils/imperativeState.d.ts",
+          "member": "package/dist/utils/imperativeState.d.ts",
+          "sha256": "ab42c3d8a4abcbbf6611202b2c1499213b196cf9e2dee866e96f2df15ce40ff5",
+          "size": 809
+        },
+        {
+          "path": "mermaid@10.8.0/dist/utils/imperativeState.spec.d.ts",
+          "member": "package/dist/utils/imperativeState.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/utils/lineWithOffset.d.ts",
+          "member": "package/dist/utils/lineWithOffset.d.ts",
+          "sha256": "829f9980b812af9a4a4190a6fc4d3de1cb065f5d52e9161a65c975656b25e571",
+          "size": 357
+        },
+        {
+          "path": "mermaid@10.8.0/dist/utils/sanitizeDirective.d.ts",
+          "member": "package/dist/utils/sanitizeDirective.d.ts",
+          "sha256": "f7c96e67c2fcf278273451bac2a22c492560e7778b72fbb5daaa1002499f97b6",
+          "size": 196
+        },
+        {
+          "path": "mermaid@10.8.0/dist/utils/subGraphTitleMargins.d.ts",
+          "member": "package/dist/utils/subGraphTitleMargins.d.ts",
+          "sha256": "2096fe06e9c2b05e716382e45509aa36a84c74b737169f4fd4d36d7f92c5cf45",
+          "size": 293
+        },
+        {
+          "path": "mermaid@10.8.0/dist/utils/subGraphTitleMargins.spec.d.ts",
+          "member": "package/dist/utils/subGraphTitleMargins.spec.d.ts",
+          "sha256": "8e609bb71c20b858c77f0e9f90bb1319db8477b13f9f965f1a1e18524bf50881",
+          "size": 11
+        },
+        {
+          "path": "mermaid@10.8.0/dist/vitepress/vite.config.d.ts",
+          "member": "package/dist/vitepress/vite.config.d.ts",
+          "sha256": "4b96dd19fd2949d28ce80e913412b0026dc421e5bf6c31d87c7b5eb11b5753b4",
+          "size": 76
+        },
+        {
+          "path": "mermaid@10.8.0/dist/xychartDiagram-5082d90f.js",
+          "member": "package/dist/xychartDiagram-5082d90f.js",
+          "sha256": "bcb18321179785ee8e6816af438ca609f5386b7fa171c1f9caabd263fc650230",
+          "size": 52635
+        },
+        {
+          "path": "mermaid@10.8.0/dist/xychartDiagram-a4c7adb3.js",
+          "member": "package/dist/xychartDiagram-a4c7adb3.js",
+          "sha256": "b465bbda0bb87939dbb301ff12b6aa812cfa9a6afbc048c4b18488c2259e6122",
+          "size": 67960
+        },
+        {
+          "path": "mermaid@10.8.0/dist/xychartDiagram-e50adddc.js",
+          "member": "package/dist/xychartDiagram-e50adddc.js",
+          "sha256": "0179ea65ca7147cd7f00a5e90117c61634ea99469fcf718e0c8db5b14c47d36e",
+          "size": 65604
+        },
+        {
+          "path": "mermaid@10.8.0/package.json",
+          "member": "package/package.json",
+          "sha256": "0963e84aef877e33ba551e7b0398fb5e1366c2714a6526cb529d42c00ed6c258",
+          "size": 4667
+        }
+      ]
+    },
+    {
+      "name": "requirejs",
+      "version": "2.3.6",
+      "url": "https://registry.npmjs.org/requirejs/-/requirejs-2.3.6.tgz",
+      "sha256": "1d1a8a5ea21b941f5c80f7caf3ac7f3e1cb8cf2903a706d5c0d15434eaedd326",
+      "integrity": "sha512-ipEzlWQe6RK3jkzikgCupiTbTvm4S0/CAU5GlgptkN5SO6F3u0UD0K18wy6ErDqiCyP4J4YYe1HuAShvsxePLg==",
+      "files": [
+        {
+          "path": "requirejs@2.3.6/README.md",
+          "member": "package/README.md",
+          "sha256": "1c56c0503186fd6d4a6632c1946dd770d0a4984dd5f9f3400ffe897f51822173",
+          "size": 204
+        },
+        {
+          "path": "requirejs@2.3.6/package.json",
+          "member": "package/package.json",
+          "sha256": "c14cb3544f5ef3a36f06036569595e7fb943a1b5ae831a2236150bfa4d5718e2",
+          "size": 563
+        },
+        {
+          "path": "requirejs@2.3.6/require.js",
+          "member": "package/require.js",
+          "sha256": "9485f0917f97fcf4f63a5ea365200ffd57f123f451382a2f9a1ad2e2fd51ac9b",
+          "size": 86483
+        }
+      ]
+    }
+  ]
+}

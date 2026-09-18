@@ -109,7 +109,10 @@ class PortableRuntimeManifestTest(unittest.TestCase):
             shutil.rmtree(output / 'dependencies/runtime')
             shutil.copytree(runtime, output / 'runtime')
             (output / 'source-manifest.json').write_text(json.dumps({'source_commit': 'a' * 40}))
-            package.seal(output)
+            # This fixture isolates runtime provenance; frontend cache has its own tests.
+            with patch.object(package, 'verify_frontend_assets') as verify_assets:
+                package.seal(output)
+                verify_assets.assert_called_once()
             package.verify(output)
             (output / 'runtime/Lib/site-packages/example.py').write_text('changed after copy')
             with self.assertRaisesRegex(ValueError, 'Runtime content differs'):
