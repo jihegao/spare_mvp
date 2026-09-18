@@ -115,7 +115,9 @@ def encode(value):
     if value is None: return '@null'
     if isinstance(value, (dict, list)): return '@' + kind(value)
     if value == '': return '@empty'
-    if isinstance(value, str) and value.startswith(('@', '~', '=')): return '~' + value
+    if isinstance(value, str) and value.startswith(('@', '~', '=')):
+        if len(value) >= 32767: raise ValueError('转义后文本超过 Excel 单元格 32767 字符上限')
+        return '~' + value
     return value
 
 
@@ -150,6 +152,8 @@ def export_project_xlsx(project):
         return f'row-{serial}'
 
     def extra(value, parent, field):
+        if isinstance(field, str) and len(field) > 32767:
+            raise ValueError('字段名超过 Excel 单元格 32767 字符上限')
         row_id = identifier()
         extras.append([row_id, parent, field, kind(value), None if isinstance(value, (dict, list)) else encode(value)])
         children = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else []
@@ -265,6 +269,12 @@ def parse_standard_workbook(workbook):
     if workbook[GUIDE]['B2'].value != schema_hash():
         issue('unsupported_template_schema', GUIDE, 2, 2, '模板字段版本已变化，请下载当前模板后迁移数据')
     if errors: return {}, locations, errors
+    for name in (GUIDE, FIELDS):
+        for cells in workbook[name]:
+            for cell in cells:
+                if cell.data_type == 'f':
+                    issue('formula_not_supported', name, cell.row, cell.column, '禁止公式')
+    if errors: return {}, locations, errors
 
     def read_rows(name, headers):
         sheet = workbook[name]
@@ -275,7 +285,7 @@ def parse_standard_workbook(workbook):
         for number, cells in enumerate(sheet.iter_rows(min_row=2), 2):
             if all(cell.value is None for cell in cells): continue
             for index, cell in enumerate(cells, 1):
-                if cell.data_type == 'f' or (isinstance(cell.value, str) and cell.value.startswith('=')):
+                if cell.data_type == 'f':
                     issue('formula_not_supported', name, number, index, '禁止公式；原文以=开头时加~前缀')
                 if isinstance(cell.value, str) and len(cell.value.encode()) > 100000:
                     issue('cell_too_large', name, number, index, '单元格文本超限')
@@ -293,6 +303,8 @@ def parse_standard_workbook(workbook):
         for number, row in read_rows(table['sheet'], table['headers']):
             row_id, parent, index, node_type, scalar = row[:5]
             try:
+                if node_type in ('object', 'array') and scalar is not None:
+                    raise ValueError('容器节点的值列必须留空；子项通过关联行填写')
                 value = {} if node_type == 'object' else [] if node_type == 'array' else decode(scalar)
                 if node_type == 'number' and isinstance(value, int) and not isinstance(value, bool): value = float(value)
                 if kind(value) != node_type:
@@ -310,6 +322,8 @@ def parse_standard_workbook(workbook):
     for number, row in read_rows(EXTRAS, EXTRA_HEADERS):
         row_id, parent, key, node_type, raw = row
         try:
+            if node_type in ('object', 'array') and raw is not None:
+                raise ValueError('容器节点的值列必须留空；子项通过关联行填写')
             value = {} if node_type == 'object' else [] if node_type == 'array' else decode(raw)
             if node_type == 'number' and isinstance(value, int) and not isinstance(value, bool): value = float(value)
             if kind(value) != node_type: raise ValueError('节点类型与值不一致')
@@ -378,7 +392,9 @@ def parse_standard_workbook(workbook):
                 continue
             progress=True
             owner = nodes[parent]
-            if isinstance(owner, dict) and isinstance(key,str) and key and key not in owner:
+            if isinstance(owner, dict) and key is None:
+                key = ''  # OOXML empty text cells are read as None; empty JSON keys are valid.
+            if isinstance(owner, dict) and isinstance(key,str) and key not in owner:
                 owner[key]=nodes[row_id]; paths[row_id]=(paths[parent]+'.'+key).lstrip('.')
             elif isinstance(owner,list) and isinstance(key,int) and not isinstance(key,bool) and key>=0:
                 slots=extra_arrays.setdefault(parent,{})
