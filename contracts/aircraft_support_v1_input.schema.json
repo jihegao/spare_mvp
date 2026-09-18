@@ -18,6 +18,7 @@
     "stop_policy"
   ],
   "properties": {
+    "operations_support_policy": { "const": "daily-v1", "description": "Per-aircraft daily preparation, relaunch and final-return inspection. Empty stages consume no time or resources." },
     "schema_version": { "type": "string", "const": "aircraft-support-v1-input-v1" },
     "project_identity": {
       "type": "object",
@@ -48,8 +49,8 @@
         "profile_id": { "type": "string" },
         "name": { "type": "string" },
         "duration_minutes": { "type": "integer", "minimum": 1 },
-        "basic_missions": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-        "composite_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "basic_missions": { "type": "array", "items": { "type": "object", "additionalProperties": true, "properties": { "operations_plan_group_id": { "type": "string" } } } },
+        "composite_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true, "properties": { "taskItems": { "type": "array", "items": { "type": "object", "additionalProperties": true, "properties": { "operations_plan_group_id": { "type": "string" } } } } } } },
         "mission_calendar": {
           "type": "array",
           "items": {
@@ -258,6 +259,8 @@
               "id": { "type": "string", "minLength": 1 },
               "name": { "type": "string", "minLength": 1 },
               "activity_type": { "type": "string", "minLength": 1 },
+              "operations_phase": { "enum": ["preflight", "relaunch", "postflight"] },
+              "plan_group_id": { "type": "string", "minLength": 1 },
               "aircraft_model": { "type": "string" },
               "equipment_id": { "type": "string" },
               "resource_id": { "type": "string" },
@@ -275,6 +278,8 @@
               "jobs": { "type": "array", "items": { "type": "object" } }
             },
             "dependentRequired": {
+              "operations_phase": ["plan_group_id"],
+              "plan_group_id": ["operations_phase"],
               "maintenance_methods": ["replacement_ratio"],
               "replacement_ratio": ["maintenance_methods"]
             },

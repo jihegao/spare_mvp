@@ -1,5 +1,7 @@
 import "./browser-compat.mjs";
-import { ANALYSIS_SUITE_TYPES, analysisSuiteRows } from "./analysis-suite.mjs";
+import { createPaginationState, renderPagination } from "./pagination.mjs";
+const tablePagination = createPaginationState();
+const modelingPageViews = new Map();
 
 import {
   FEATURE_PAGES,
@@ -30,6 +32,8 @@ import {
   normalizeMonteCarloMetricMoments
 } from "./monte-carlo-moments.mjs";
 import {
+  aggregateTaskReliabilityWaves,
+  normalizeTaskReliabilityWaveRows,
   formatReliabilityPercent,
   normalizeTaskReliabilityResultFields,
   taskReliabilityMetricPairs
@@ -182,7 +186,7 @@ let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-equipment-system";
-const PLATFORM_DISPLAY_NAME = "备件规划及任务可靠度验证评估平台 V1.0";
+const PLATFORM_DISPLAY_NAME = "备件规划及任务可靠度验证评估平台 V2.0";
 const DEMO_USERS = [
   { username: "admin", role: "系统管理员" },
   { username: "data", role: "数据管理员" },
@@ -717,7 +721,6 @@ let liteMesaMonteCarloRequestEpoch = 0;
 const DEFAULT_LITE_MESA_ANALYSIS_SAMPLES = 4;
 const DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES = 4;
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
-let liteMesaAnalysisSuiteState = null;
 let liteMesaAnalysisResults = {};
 let liteMesaAnalysisRequestEpoch = 0;
 let analysisXlsxExportState = {};
@@ -848,6 +851,7 @@ let periodicProfileRenameState = null;
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let equipmentSearchQuery = "";
+let equipmentTreeWidth = 300;
 let equipmentProductEditorComponentId = "";
 let equipmentProductQuery = "";
 let equipmentProductActiveOptionIndex = -1;
@@ -1068,7 +1072,81 @@ render();
 bindEvents();
 restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi());
 
+function bindEquipmentTreeResize() {
+  let drag = null;
+  const syncAria = (layout) => {
+    const handle = layout?.querySelector("[data-equipment-tree-resize]");
+    if (!handle || !handle.getClientRects().length) return;
+    handle.setAttribute("aria-valuenow", String(Math.round(handle.parentElement.getBoundingClientRect().width)));
+    handle.setAttribute("aria-valuemax", String(Math.round(Math.max(300, Math.min(900, layout.clientWidth - 332)))));
+  };
+  // A single observer follows the current rendered layout. Replaced trees are
+  // disconnected; the app observer watches child changes, not our ARIA writes.
+  if (typeof ResizeObserver !== "undefined" && typeof MutationObserver !== "undefined") {
+    let observedLayout = null;
+    const resizeObserver = new ResizeObserver(() => syncAria(observedLayout));
+    const observeCurrentLayout = () => {
+      const layout = app.querySelector(".equipment-modeling-layout");
+      if (layout !== observedLayout) {
+        resizeObserver.disconnect();
+        observedLayout = layout;
+        if (layout) resizeObserver.observe(layout);
+      }
+      syncAria(layout);
+    };
+    const appObserver = new MutationObserver(observeCurrentLayout);
+    appObserver.observe(app, { childList: true, subtree: true });
+    observeCurrentLayout();
+    const onViewportResize = () => syncAria(observedLayout);
+    window.addEventListener("resize", onViewportResize);
+    window.addEventListener("pagehide", (event) => {
+      if (event?.persisted) return;
+      resizeObserver.disconnect();
+      appObserver.disconnect();
+      window.removeEventListener("resize", onViewportResize);
+      observedLayout = null;
+    });
+  }
+  const applyWidth = (handle, width) => {
+    const layout = handle.closest(".equipment-modeling-layout");
+    if (!layout) return;
+    // CSS owns the responsive bounds. Read the rendered width so keyboard and
+    // pointer updates cannot accumulate invisible width beyond the current cap.
+    layout.style.setProperty("--equipment-tree-width", "900px");
+    const maximum = handle.parentElement.getBoundingClientRect().width;
+    layout.style.setProperty("--equipment-tree-width", `${width}px`);
+    equipmentTreeWidth = Math.round(handle.parentElement.getBoundingClientRect().width);
+    layout.style.setProperty("--equipment-tree-width", `${equipmentTreeWidth}px`);
+    handle.setAttribute("aria-valuenow", String(equipmentTreeWidth));
+    handle.setAttribute("aria-valuemax", String(maximum));
+  };
+  app.addEventListener("pointerdown", (event) => {
+    const handle = event.target.closest("[data-equipment-tree-resize]");
+    if (!handle || event.button !== 0) return;
+    event.preventDefault();
+    drag = { handle, pointerId: event.pointerId, startX: event.clientX, width: handle.parentElement.getBoundingClientRect().width };
+    handle.setPointerCapture(event.pointerId);
+  });
+  app.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    applyWidth(drag.handle, drag.width + event.clientX - drag.startX);
+  });
+  const stopDrag = () => { drag = null; };
+  app.addEventListener("pointerup", stopDrag);
+  app.addEventListener("pointercancel", stopDrag);
+  app.addEventListener("lostpointercapture", stopDrag);
+  app.addEventListener("keydown", (event) => {
+    const handle = event.target.closest("[data-equipment-tree-resize]");
+    if (!handle || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const width = event.key === "Home" ? 300 : event.key === "End" ? 900
+      : handle.parentElement.getBoundingClientRect().width + (event.key === "ArrowRight" ? 20 : -20);
+    applyWidth(handle, width);
+  });
+}
+
 function bindEvents() {
+  bindEquipmentTreeResize();
   window.addEventListener("hashchange", () => {
     const previousPage = getFeaturePageById(selectedFeatureId);
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
@@ -1090,6 +1168,14 @@ function bindEvents() {
   });
 
   app.addEventListener("click", (event) => {
+    const paginationButton = event.target.closest("[data-pagination-key]");
+    if (paginationButton) {
+      clearModelingPageSelection(paginationButton.dataset.paginationKey);
+      tablePagination.move(paginationButton.dataset.paginationKey, Number(paginationButton.dataset.paginationDelta));
+      render();
+      return;
+    }
+
     const clickedTreeToggleIcon = event.target.closest(".tree-node-toggle");
     if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CLICK_SELECTORS)) {
       event.preventDefault?.();
@@ -1677,6 +1763,10 @@ function bindEvents() {
       return;
     }
 
+    if (event.target.closest("[data-project-xlsx-template]")) {
+      downloadProjectExcelTemplate().finally(() => render());
+      return;
+    }
     const projectDataProjectButton = event.target.closest("[data-project-data-project-option]");
     if (projectDataProjectButton) {
       selectProjectDataProject(projectDataProjectButton.dataset.projectDataProjectOption);
@@ -1807,13 +1897,6 @@ function bindEvents() {
       return;
     }
 
-    const suiteButton = event.target.closest("[data-analysis-suite-run]");
-    if (suiteButton) {
-      runLiteMesaAnalysisSuite().finally(() => render());
-      render();
-      return;
-    }
-
     const liteMesaMonteCarloButton = event.target.closest("[data-lite-mesa-action='run']");
     if (liteMesaMonteCarloButton) {
       runLiteMesaMonteCarloAnalysis().finally(() => render());
@@ -1865,7 +1948,7 @@ function bindEvents() {
       return;
     }
 
-    const projectDraftSaveButton = event.target.closest("[data-project-draft-save]");
+    const projectDraftSaveButton = (event.target.closest("[data-project-draft-retry]") || event.target.closest("[data-project-draft-save]"));
     if (projectDraftSaveButton) {
       saveProjectDraftNow().finally(() => render());
       return;
@@ -2265,6 +2348,12 @@ function bindEvents() {
       return;
     }
 
+    const experimentPlanUnfreezeButton = event.target.closest("[data-experiment-plan-unfreeze]");
+    if (experimentPlanUnfreezeButton) {
+      unfreezeExperimentPlanFromList(experimentPlanUnfreezeButton.dataset.experimentPlanUnfreeze || "").finally(() => render());
+      return;
+    }
+
     const experimentPlanFreezeButton = event.target.closest("[data-experiment-plan-freeze]");
     if (experimentPlanFreezeButton) {
       freezeExperimentPlanFromList(experimentPlanFreezeButton.dataset.experimentPlanFreeze || "").finally(() => render());
@@ -2373,6 +2462,15 @@ function bindEvents() {
     }
   });
 
+  app.addEventListener("dragover", (event) => {
+    if (event.target.closest("[data-project-xlsx-drop]")) event.preventDefault();
+  });
+  app.addEventListener("drop", async (event) => {
+    if (!event.target.closest("[data-project-xlsx-drop]")) return;
+    event.preventDefault();
+    await previewProjectReplacement(event.dataTransfer?.files?.[0]);
+    render();
+  });
   app.addEventListener("change", async (event) => {
     const projectReplacementFile = event.target.closest("[data-project-replacement-file]");
     if (projectReplacementFile) {
@@ -2579,10 +2677,12 @@ function bindEvents() {
 
     const basicMissionPhaseSelectAll = event.target.closest("[data-basic-mission-phase-select-all]");
     if (basicMissionPhaseSelectAll) {
-      const phases = selectedBasicMissionPhases();
-      selectedBasicMissionPhaseIndexes = basicMissionPhaseSelectAll.checked
-        ? new Set(phases.map((_, index) => String(index)))
-        : new Set();
+      const next = new Set(selectedBasicMissionPhaseIndexes);
+      for (const { index } of modelingPageEntries("mission-phases")) {
+        if (basicMissionPhaseSelectAll.checked) next.add(String(index));
+        else next.delete(String(index));
+      }
+      selectedBasicMissionPhaseIndexes = next;
       render();
       return;
     }
@@ -3380,6 +3480,7 @@ function render() {
     app.innerHTML = nextHtml;
   }
   renderedVisualizationSessionId = activeVisualizationSessionId;
+
 }
 
 function renderAppHtmlPreservingVisualizationIframe(html, visualizationSessionId) {
@@ -3514,7 +3615,7 @@ function renderProjectListPage() {
       <div class="left">
         <div class="brand-mark">BJGH</div>
       <div>
-          <h1>项目列表</h1>
+          <h1>${PLATFORM_DISPLAY_NAME}</h1>
           <p>${currentUser.role} / 选择项目后进入功能导航页</p>
         </div>
       </div>
@@ -3592,7 +3693,7 @@ function projectSourceBadge(project) {
 
 function projectSourceHelpText(project) {
   if (project.sourceKind === PROJECT_SOURCE.imported_sample) {
-    return "来自后端 Project 数据，可用于正式后端测试。";
+    return "";
   }
   return "项目来源待确认。";
 }
@@ -3618,12 +3719,30 @@ function canAccessSystemManagementModule() {
     .some((page) => page.module === SYSTEM_SUPPORT_MODULE_NAME);
 }
 
+function unifiedNavigationGroups() {
+  const groups = {};
+  const seen = new Set();
+  for (const page of getVisibleFeaturePagesForRole(FEATURE_PAGES, currentUser?.role)) {
+    const module = page.module === SYSTEM_SUPPORT_MODULE_NAME
+      ? page.module : "备件规划及任务可靠度验证评估模块";
+    const tertiary = page.tertiary === "仿真实验方案管理" ? "仿真实验管理" : page.tertiary;
+    const key = `${module}/${page.secondary}/${tertiary}/${page.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    groups[module] ||= {};
+    groups[module][page.secondary] ||= {};
+    groups[module][page.secondary][tertiary] ||= [];
+    groups[module][page.secondary][tertiary].push(page);
+  }
+  return groups;
+}
+
 function renderNavigation(activePage) {
-  const groups = currentFeatureGroups();
+  const groups = unifiedNavigationGroups();
   return `
     <aside class="feature-nav" aria-label="功能导航">
       ${Object.entries(groups).map(([moduleName, secondaryGroups]) => `
-        <details class="nav-module" ${moduleName === activePage.module ? "open" : ""}>
+        <details class="nav-module" ${moduleName !== SYSTEM_SUPPORT_MODULE_NAME || moduleName === activePage.module ? "open" : ""}>
           <summary>${moduleName}</summary>
           ${moduleName === SYSTEM_SUPPORT_MODULE_NAME
             ? renderSystemManagementNavigation(activePage, secondaryGroups)
@@ -3631,7 +3750,7 @@ function renderNavigation(activePage) {
               <details class="nav-secondary" ${secondaryName === activePage.secondary ? "open" : ""}>
                 <summary>${secondaryName}</summary>
                 ${Object.entries(tertiaryGroups).map(([tertiaryName, pages]) => `
-                  <button type="button" class="nav-tertiary-link ${isActiveTertiary(activePage, pages) ? "active" : ""}" data-feature-id="${pages[0].id}">
+                  <button type="button" class="nav-tertiary-link ${pages.some((item) => item.name === activePage.name) ? "active" : ""}" data-feature-id="${pages[0].id}">
                     ${tertiaryName}
                   </button>
                 `).join("")}
@@ -3657,7 +3776,9 @@ function renderSystemManagementNavigation(activePage, secondaryGroups) {
 }
 
 function renderFeaturePage(page) {
-  const siblingPages = currentFeatureGroups()[page.module]?.[page.secondary]?.[page.tertiary] || [page];
+  const navigationModule = page.module === SYSTEM_SUPPORT_MODULE_NAME ? page.module : "备件规划及任务可靠度验证评估模块";
+  const navigationGroup = page.tertiary === "仿真实验方案管理" ? "仿真实验管理" : page.tertiary;
+  const siblingPages = unifiedNavigationGroups()[navigationModule]?.[page.secondary]?.[navigationGroup] || [page];
   const currentContext = shouldEmbedExperimentPlanContextInComponent(page) ? "" : renderCurrentContext(page);
   return `
     <section class="deck-modeling-content feature-page">
@@ -3675,15 +3796,12 @@ function renderFeaturePage(page) {
 
 function renderProjectDraftToolbar(page) {
   if (page.secondary !== "仿真建模") return "";
-  const savedAtText = projectDraftLastSavedAt ? ` / ${htmlEscape(projectDraftLastSavedAt)}` : "";
-  const hydrateText = projectDraftHydrateStatus ? `<span>${htmlEscape(projectDraftHydrateStatus)}</span>` : "";
-  return `
-    <div class="toolbar-row project-draft-toolbar">
-      <button type="button" class="btn-primary" data-project-draft-save>保存 Project draft</button>
-      <span class="badge">${htmlEscape(projectDraftSaveStatus)}${savedAtText}</span>
-      ${hydrateText}
-    </div>
-  `;
+  if (projectDraftSaveStatus === "已保存" && !projectDraftHydrateStatus.startsWith("未读取")) return "";
+  const failed = projectDraftSaveStatus === "保存失败" || projectDraftHydrateStatus.startsWith("未读取");
+  return `<div class="project-save-notice" role="${failed ? "alert" : "status"}">
+    ${htmlEscape(failed ? projectDraftHydrateStatus : "修改尚未保存，正在自动保存…")}
+    ${failed ? `<button type="button" data-project-draft-retry>重试保存</button>` : ""}
+  </div>`;
 }
 
 function renderCurrentContext(page) {
@@ -3848,7 +3966,7 @@ function createExperimentPlanBranchFromCurrentProject() {
   ensureMonteCarloSweepDefaults(experimentPlanDraft);
   ensureExperimentPlanDraftDefaults(experimentPlanDraft);
   experimentPlanBranchActive = true;
-  updatePreviewResultsThroughApiClient(experimentPlanDraft);
+  // Opening this configuration editor does not consume preview simulation results.
 }
 
 function renderCollapsibleTree(nodes, options = {}) {
@@ -4272,7 +4390,7 @@ function renderProjectTemplateManagement(project) {
   const projectId = projectDataProjectId(project);
   const isTemplate = isProjectDataTemplate(project);
   return `
-    <section class="system-config-section" data-project-template-management>
+    <section class="system-config-section" data-project-template-management data-project-xlsx-drop>
       <div class="section-head">
         <div>
           <h4>模板管理</h4>
@@ -4283,6 +4401,7 @@ function renderProjectTemplateManagement(project) {
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-project-template-action="set" data-project-id="${htmlEscape(projectId)}" ${project && !isTemplate ? "" : "disabled"}>设为模板</button>
         <button type="button" data-project-template-action="unset" data-project-id="${htmlEscape(projectId)}" ${project && isTemplate ? "" : "disabled"}>取消设为模板</button>
+        <button type="button" data-project-xlsx-template>下载 Excel 模板</button>
         <label class="btn-primary project-replacement-file-button">导入项目数据<input type="file" hidden data-project-replacement-file accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ${project ? "" : "disabled"}></label>
       </div>
       ${renderProjectReplacementPreview()}
@@ -4374,15 +4493,32 @@ function renderProjectReplacementPreview() {
     <div class="project-replacement-preview">
       <div class="section-head"><h4>导入预览</h4><span>${validation?.ok ? "校验通过" : `发现 ${errors.length} 个错误`}</span></div>
       <p><strong>${htmlEscape(projectJson?.projectInfo?.name || projectJson?.name || fileName)}</strong></p>
-      ${isXlsx ? `<p class="inline-status">已解析 sheet：${htmlEscape((projectReplacementPreview.sheets || []).join("、") || "无")}</p>` : ""}
+      ${isXlsx ? `<p class="inline-status">格式版本：${htmlEscape(projectReplacementPreview.formatVersion || "legacy-project-xlsx")}；编译状态：${htmlEscape(projectReplacementPreview.compileStatus || "未通过")}；已解析 sheet：${htmlEscape((projectReplacementPreview.sheets || []).join("、") || "无")}</p>` : ""}
       <div class="project-data-overview-grid">${overview.map((row) => `<div class="modeling-config-card"><span>${htmlEscape(row.label)}</span><strong>${row.value}</strong></div>`).join("")}</div>
-      ${errors.length ? `<div class="alert warn project-import-errors">${errors.map((item) => `<p><strong>${htmlEscape(item.sheet || "Project")}${item.row ? ` 第 ${htmlEscape(item.row)} 行` : ""}${item.path || item.field_path || item.field ? ` / ${htmlEscape(item.path || item.field_path || item.field)}` : ""}</strong>：${htmlEscape(item.message || item.code || String(item))}${item.reference_value !== undefined && item.reference_value !== "" ? `（引用值：${htmlEscape(String(item.reference_value))}）` : ""}</p>`).join("")}</div>` : ""}
+      ${errors.length ? `<div class="alert warn project-import-errors">${errors.map((item) => `<p><strong>${htmlEscape(item.sheet || "Project")}${item.row ? ` 第 ${htmlEscape(item.row)} 行` : ""}${item.column ? ` 第 ${htmlEscape(item.column)} 列` : ""}${item.path || item.field_path || item.field ? ` / ${htmlEscape(item.path || item.field_path || item.field)}` : ""}</strong>：${htmlEscape(item.message || item.code || String(item))}${item.reference_value !== undefined && item.reference_value !== "" ? `（引用值：${htmlEscape(String(item.reference_value))}）` : ""}</p>`).join("")}</div>` : ""}
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-project-replacement-confirm ${validation?.ok ? "" : "disabled"}>确认覆盖当前项目</button>
         <button type="button" class="btn-secondary" data-project-xlsx-create ${validation?.ok ? "" : "disabled"}>导入为新项目</button>
         <button type="button" data-project-replacement-cancel>取消</button>
       </div>
     </div>`;
+}
+
+async function downloadProjectExcelTemplate() {
+  projectDataManagementStatus = "正在生成 Excel 标准模板";
+  try {
+    const download = await backendApi.downloadProjectExcelTemplate();
+    const url = URL.createObjectURL(download.blob);
+    try {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = download.filename || "Project标准模板-v1.xlsx";
+      anchor.click();
+      projectDataManagementStatus = "已下载 Excel 标准模板，请按填写说明准备四域数据";
+    } finally { URL.revokeObjectURL(url); }
+  } catch (err) {
+    projectDataManagementStatus = `模板下载失败：${formatBackendError(err)}`;
+  }
 }
 
 async function previewProjectReplacement(file) {
@@ -4397,6 +4533,8 @@ async function previewProjectReplacement(file) {
         fileType: "xlsx",
         projectJson: result.project_json,
         sheets: result.sheets,
+        formatVersion: result.format_version,
+        compileStatus: result.compile_status,
         validation: { ok: result.ok, errors: result.errors || [] }
       };
     } else {
@@ -5836,8 +5974,32 @@ function renderBuiltInScenario(page) {
   `;
 }
 
+function clearModelingPageSelection(key) {
+  if (key === "mission-phases") selectedBasicMissionPhaseIndexes = new Set();
+  if (key === "basic-activity-library") selectedBasicActivityKeys = new Set();
+  if (key.startsWith("support-resources:")) selectedSupportResourceKeys = new Set();
+  if (key === "transport-policies") selectedLogisticsTransportStrategyIndexes = new Set();
+  if (key.startsWith("support-jobs:")) {
+    const tabKey = key.slice("support-jobs:".length);
+    selectedSupportActivityJobKeys = new Set([...selectedSupportActivityJobKeys].filter((item) => !item.startsWith(`${tabKey}:`)));
+  }
+}
+
+function modelingPage(key, rows, context = "") {
+  const contextKey = JSON.stringify([currentBackendProjectId(), context]);
+  if (modelingPageViews.get(key)?.context !== contextKey) clearModelingPageSelection(key);
+  const view = tablePagination.slice(key, rows.map((value, index) => ({ value, index })), contextKey);
+  modelingPageViews.set(key, view);
+  return view;
+}
+
+function modelingPageEntries(key) {
+  return modelingPageViews.get(key)?.rows || [];
+}
+
 function renderCombatUnitModeling(page) {
   const members = scenario.combatUnit.members || [];
+  const memberPage = modelingPage("combat-members", members);
   const boundedSelectedIndex = clamp(selectedCombatUnitMemberIndex, 0, Math.max(members.length - 1, 0));
   selectedCombatUnitMemberIndex = boundedSelectedIndex;
   return `
@@ -5846,7 +6008,7 @@ function renderCombatUnitModeling(page) {
           <h4>飞机列表</h4>
         <div class="toolbar-row" style="margin-bottom:0;">
           <button type="button" class="btn-primary" data-combat-unit-add>新增</button>
-          <button type="button" class="btn-danger" data-combat-unit-delete>删除</button>
+          <button type="button" class="btn-danger" data-combat-unit-delete ${memberPage.rows.some(({ index }) => index === boundedSelectedIndex) ? "" : "disabled"}>删除</button>
         </div>
       </div>
       <div class="table-wrap unframed-table">
@@ -5856,7 +6018,7 @@ function renderCombatUnitModeling(page) {
             <tr><th class="combat-unit-prelife-column">已用日历天数</th><th class="combat-unit-prelife-column">累计飞行小时</th><th class="combat-unit-prelife-column">累计起落次数</th></tr>
           </thead>
           <tbody>
-            ${members.map((member, index) => `
+            ${memberPage.rows.map(({ value: member, index }) => `
               <tr class="${index === boundedSelectedIndex ? "selected-table-row" : ""}">
                 <td class="combat-unit-select-col"><input type="checkbox" data-select-combat-unit-member="${index}" ${index === boundedSelectedIndex ? "checked" : ""} aria-label="选择${htmlEscape(member.aircraftNo || `第${index + 1}架飞机`)}"></td>
                 <td>${combatUnitMemberInput(index, "aircraftNo", member.aircraftNo)}</td>
@@ -5870,6 +6032,7 @@ function renderCombatUnitModeling(page) {
           </tbody>
         </table>
       </div>
+      ${renderPagination("combat-members", memberPage)}
     </div>
   `;
 }
@@ -5959,6 +6122,8 @@ function addCombatUnitMember() {
   });
   scenario.combatUnit.quantity = members.length;
   selectedCombatUnitMemberIndex = members.length - 1;
+  const memberPage = modelingPage("combat-members", members);
+  tablePagination.move("combat-members", memberPage.pageCount - 1 - memberPage.page);
   updatePreviewResultsThroughApiClient();
 }
 
@@ -5976,8 +6141,9 @@ function renderBasicMissionModeling(page) {
   const selectedMission = resolveSelectedBasicMission();
   const missionPath = selectedMission.path || "basicMissions.0";
   const phases = selectedBasicMissionPhases();
+  const phasePage = modelingPage("mission-phases", phases, missionPath);
   selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(phases);
-  const allPhasesSelected = phases.length > 0 && phases.every((_, index) => selectedBasicMissionPhaseIndexes.has(String(index)));
+  const allPhasesSelected = phasePage.rows.length > 0 && phasePage.rows.every(({ index }) => selectedBasicMissionPhaseIndexes.has(String(index)));
   const phaseRatioTotal = missionPhaseRatioTotal(phases);
   const phaseRatioValid = phases.length === 0 || Math.abs(phaseRatioTotal - 1) < 0.001;
   return `
@@ -6024,7 +6190,7 @@ function renderBasicMissionModeling(page) {
             <table>
               <thead><tr><th><input type="checkbox" data-basic-mission-phase-select-all aria-label="全选任务阶段" ${allPhasesSelected ? "checked" : ""}></th><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>删除</th></tr></thead>
               <tbody>
-                ${phases.map((phase, index) => `
+                ${phasePage.rows.map(({ value: phase, index }) => `
                   <tr class="${selectedBasicMissionPhaseIndexes.has(String(index)) ? "selected-table-row" : ""}">
                     <td><input type="checkbox" data-basic-mission-phase-select="${index}" aria-label="选择任务阶段${index + 1}" ${selectedBasicMissionPhaseIndexes.has(String(index)) ? "checked" : ""}></td>
                     <td>${index + 1}</td>
@@ -6036,6 +6202,7 @@ function renderBasicMissionModeling(page) {
               </tbody>
             </table>
           </div>
+          ${renderPagination("mission-phases", phasePage)}
           <div class="table-wrap">
             <table>
               <tbody>
@@ -6107,6 +6274,9 @@ function renderCompositeTaskModeling(page) {
   const composite = selected.task || { name: "", taskItems: [] };
   const compositePath = selected.path;
   const timelineRows = buildCompositeTimelineRows(composite);
+  const listPage = modelingPage("composite-list", compositeTasks);
+  const itemPage = modelingPage("composite-items", composite.taskItems || [], compositePath);
+  const timelinePage = modelingPage("composite-timeline", timelineRows, compositePath);
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
@@ -6124,7 +6294,7 @@ function renderCompositeTaskModeling(page) {
           <table>
             <thead><tr><th>复合任务名称</th></tr></thead>
             <tbody>
-              ${compositeTasks.map((task, index) => `
+              ${listPage.rows.map(({ value: task, index }) => `
                 <tr class="clickable-table-row ${index === selected.index ? "selected-table-row" : ""}" data-select-composite-task="${htmlEscape(task.id || index)}" tabindex="0" aria-selected="${index === selected.index ? "true" : "false"}">
                   <td>${htmlEscape(task.name)}</td>
                 </tr>
@@ -6132,6 +6302,7 @@ function renderCompositeTaskModeling(page) {
             </tbody>
           </table>
         </div>
+        ${renderPagination("composite-list", listPage)}
       </div>
       <div class="detail-panel">
         <div class="detail-card">
@@ -6150,7 +6321,7 @@ function renderCompositeTaskModeling(page) {
               <table>
                 <thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量（继承）</th><th>删除</th></tr></thead>
                 <tbody>
-                  ${(composite.taskItems || []).map((item, index) => {
+                  ${itemPage.rows.map(({ value: item, index }) => {
                     const basicTask = findBasicMissionForTaskItem(item);
                     const inherited = compositeTaskInheritedBasicFields(item, basicTask);
                     return `
@@ -6170,6 +6341,7 @@ function renderCompositeTaskModeling(page) {
                 </tbody>
               </table>
             </div>
+          ${renderPagination("composite-items", itemPage)}
           ` : `<div class="alert warn">请先新增复合任务。</div>`}
         </div>
         <div class="detail-card network-card">
@@ -6178,7 +6350,7 @@ function renderCompositeTaskModeling(page) {
             <table>
               <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>出动时刻</th></tr></thead>
               <tbody>
-                ${timelineRows.map((row) => `
+                ${timelinePage.rows.map(({ value: row }) => `
                   <tr>
                     <td>${row.sequence}</td>
                     <td>${htmlEscape(row.basicTaskName)}</td>
@@ -6189,6 +6361,7 @@ function renderCompositeTaskModeling(page) {
               </tbody>
             </table>
           </div>
+          ${renderPagination("composite-timeline", timelinePage)}
           <h4>典型组合任务时序图</h4>
           ${renderCompositeTimelineChart(timelineRows)}
         </div>
@@ -6220,6 +6393,8 @@ function renderPeriodicTaskModeling(page) {
     ...compositeTasks.map((task) => ({ value: task.id, label: task.name }))
   ];
   const activeProfiles = profiles[periodicActiveProfile];
+  const profilePageKey = `periodic-profiles:${periodicActiveProfile}`;
+  const profilePage = modelingPage(profilePageKey, activeProfiles);
   const selectedProfileId = selectedPeriodicProfileIds[periodicActiveProfile];
   const selectedProfile = activeProfiles.find((item) => item.id === selectedProfileId) || activeProfiles[0];
   const profileLabels = { week: "周", month: "月", year: "年" };
@@ -6227,7 +6402,7 @@ function renderPeriodicTaskModeling(page) {
   const activeProfileList = `
     <div class="periodic-profile-list" aria-label="${activeLabel}剖面列表">
       <div class="periodic-list-head"><strong>${activeLabel}剖面列表</strong><button type="button" data-periodic-profile-add="${periodicActiveProfile}" title="新增${activeLabel}剖面">＋ 新增</button></div>
-      ${activeProfiles.length ? activeProfiles.map((item, itemIndex) => {
+      ${activeProfiles.length ? profilePage.rows.map(({ value: item, index: itemIndex }) => {
         const isSelected = item.id === selectedProfile?.id;
         const isRenaming = periodicProfileRenameState?.id === String(item.id) && periodicProfileRenameState?.type === periodicActiveProfile;
         const renameErrorId = `periodic-profile-rename-error-${periodicActiveProfile}-${itemIndex}`;
@@ -6254,6 +6429,7 @@ function renderPeriodicTaskModeling(page) {
           </div>
         `;
       }).join("") : `<div class="muted periodic-list-empty">暂无${activeLabel}剖面，请新增。</div>`}
+      ${renderPagination(profilePageKey, profilePage)}
     </div>
   `;
   const profileTabs = ["week", "month", "year"].map((type) => {
@@ -6283,13 +6459,13 @@ function renderPeriodicTaskModeling(page) {
   `;
   const yearMonths = selectedProfile?.monthProfileIds || [];
   const selectedYearIndex = Math.max(0, profiles.year.findIndex((item) => item.id === selectedProfile?.id));
-  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => Boolean(monthProfileId)).length;
+  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => profiles.month.some((month) => month.id === monthProfileId)).length;
   const yearTotalWeeks = yearMonths.reduce((sum, monthProfileId) => {
     const monthProfile = profiles.month.find((item) => item.id === monthProfileId);
     return sum + (monthProfile?.weekProfileIds?.filter((weekProfileId) => Boolean(weekProfileId)).length || 0);
   }, 0);
   const yearEditor = `
-    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "有效" : "待完善"}</span>` : ""}</div>
+    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount > 0 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount > 0 ? "已配置" : "待完善"}</span>` : ""}</div>
     ${selectedProfile ? `<div class="toolbar-row periodic-year-actions"><button type="button" data-periodic-year-action="duplicate" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">复制为下一年</button><button type="button" data-periodic-year-action="up" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">上移一年</button><button type="button" data-periodic-year-action="down" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">下移一年</button></div>` : ""}
     ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}"><option value="" ${yearMonths[index] ? "" : "selected"}>未配置月剖面</option>${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
   `;
@@ -6803,8 +6979,8 @@ function renderEquipmentModeling(page) {
     <div class="section-head section-context">
       <span>装备结构树 / 装备系统建模表</span>
     </div>
-    <div class="organization-layout equipment-layout">
-      <aside class="tree-container">
+    <div class="organization-layout equipment-layout equipment-modeling-layout" style="--equipment-tree-width: ${equipmentTreeWidth}px">
+      <aside class="tree-container equipment-modeling-tree" id="equipment-modeling-tree">
         <div class="tree-toolbar equipment-tree-toolbar">
           <h4>装备结构树</h4>
           <div class="equipment-tree-actions">
@@ -6823,6 +6999,7 @@ function renderEquipmentModeling(page) {
         </section>
         <label class="equipment-tree-search">搜索名称<input data-equipment-search value="${htmlEscape(equipmentSearchQuery)}" placeholder="输入系统或组件名称"></label>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
+        <div class="equipment-tree-resize" data-equipment-tree-resize role="separator" tabindex="0" aria-label="调整装备树宽度" aria-orientation="vertical" aria-controls="equipment-modeling-tree" aria-valuemin="300" aria-valuemax="900" aria-valuenow="${equipmentTreeWidth}"></div>
       </aside>
       <section class="detail-panel equipment-system-table-panel">
         <div class="detail-card">
@@ -7516,6 +7693,8 @@ function renderEquipmentSystemTable(selectedState, productsById) {
   const aircraftRows = selectedState.kind === "aircraft-list"
     ? wholeMachineModels().map((model) => renderEquipmentAircraftTableRow(model, { editable: false }))
     : (selectedState.kind === "aircraft" ? [renderEquipmentAircraftTableRow(selectedState.aircraftModel)] : []);
+  const allRows = [...aircraftRows, ...rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById))];
+  const page = tablePagination.slice("equipment-system", allRows, JSON.stringify([currentBackendProjectId(), selectedEquipmentNodeKey, equipmentSearchQuery]));
   return `
     <div class="table-wrap equipment-system-table-wrap">
       <table class="equipment-system-table">
@@ -7534,11 +7713,11 @@ function renderEquipmentSystemTable(selectedState, productsById) {
           </tr>
         </thead>
         <tbody>
-          ${aircraftRows.join("")}
-          ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById)).join("")}
+          ${page.rows.join("")}
         </tbody>
       </table>
     </div>
+    ${renderPagination("equipment-system", page)}
   `;
 }
 
@@ -7836,6 +8015,8 @@ function renderReliabilityBlockDiagram() {
   const nodes = layout.nodes;
   const tableNodes = Array.isArray(layout.logicalNodes) ? layout.logicalNodes : nodes;
   const diagramEdges = Array.isArray(rbdProject.reliabilityBlockDiagram?.edges) ? rbdProject.reliabilityBlockDiagram.edges : [];
+  const nodePage = modelingPage("rbd-nodes", tableNodes, selectedEquipmentNodeKey);
+  const edgePage = modelingPage("rbd-edges", diagramEdges, selectedEquipmentNodeKey);
   const detailContent = nodes.length ? `
           <div class="section-head">
             <h3>装备可靠性框图</h3>
@@ -7845,15 +8026,17 @@ function renderReliabilityBlockDiagram() {
           <div class="table-wrap compact-table">
             <table>
               <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>n中取k / k-out-of-n</th></tr></thead>
-              <tbody>${tableNodes.map((node) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(reliabilityNodeTypeLabel(node))}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
+              <tbody>${nodePage.rows.map(({ value: node }) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(reliabilityNodeTypeLabel(node))}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
             </table>
           </div>
+          ${renderPagination("rbd-nodes", nodePage)}
           <div class="table-wrap compact-table">
             <table>
               <thead><tr><th>起点</th><th>终点</th><th>串联/并联/备用/k-out-of-n</th><th>权重</th></tr></thead>
-              <tbody>${diagramEdges.map((edge) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
+              <tbody>${edgePage.rows.map(({ value: edge }) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
             </table>
           </div>
+          ${renderPagination("rbd-edges", edgePage)}
   ` : importedDataEmptyState("装备可靠性框图");
   return `
     <div class="organization-layout equipment-layout rbd-layout">
@@ -8015,10 +8198,12 @@ function renderSupportOrganizationWorkbench(page) {
     selectedSupportOrgNode,
     resourceSelection ? { orgNodes: resourceSelection.resourceOrgNodes } : undefined
   ).filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const resourcePageKey = `support-resources:${activeResourceType}`;
+  const resourcePage = modelingPage(resourcePageKey, visibleResourceRows, selectedSupportOrgNode?.id);
   const supportResourceConflictMessage = visibleResourceRows.some((row) => row.conflict)
     ? "检测到同一组织和产品的多条备件记录；为防止覆盖，冲突行已禁用，请先清理重复记录。"
     : "";
-  const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
+  const allResourceRowsSelected = resourcePage.rows.length > 0 && resourcePage.rows.every(({ value: row }) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
   const resourceColumns = supportResourceDataColumns(activeResourceType);
   const resourceControlsDisabled = locked || !selectedIsEditableNode;
@@ -8063,11 +8248,12 @@ function renderSupportOrganizationWorkbench(page) {
               <div class="table-wrap">
                 <table>
                   <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${resourceControlsDisabledAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
-                  <tbody>${visibleResourceRows.map((row, index) => `
+                  <tbody>${resourcePage.rows.map(({ value: row, index }) => `
                     <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${resourceControlsDisabledAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, resourceControlsDisabled)}</td>`).join("")}</tr>
                   `).join("") || `<tr><td colspan="${resourceColumns.length + 3}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
+              ${renderPagination(resourcePageKey, resourcePage)}
             `}
           </div>
         </section>
@@ -8618,11 +8804,7 @@ function activateSupportResourceEdit(key) {
 }
 
 function toggleAllSupportResourceSelection(activeResourceType, checked) {
-  const orgTree = supportOrganizationTree();
-  const selectedOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
-  const keys = buildSupportResourceRows(activeResourceType, selectedOrgNode)
-    .filter((row) => !supportResourceDeletedKeySet().has(row.key))
-    .map((row) => row.key);
+  const keys = modelingPageEntries(`support-resources:${activeResourceType}`).map(({ value }) => value.key);
   const next = new Set(selectedSupportResourceKeys);
   for (const key of keys) {
     if (checked) next.add(key);
@@ -9466,8 +9648,7 @@ function remapSupportActivityJobPredecessors(jobs, oldCode, newCode) {
 }
 
 function toggleAllSupportActivityJobSelection(tabKey, checked) {
-  const activity = findSupportActivityByJobTabKey(tabKey);
-  const keys = supportActivityJobs(activity || {}).map((_, index) => supportActivityJobKey(tabKey, index));
+  const keys = modelingPageEntries(`support-jobs:${tabKey}`).map(({ index }) => supportActivityJobKey(tabKey, index));
   const next = new Set(selectedSupportActivityJobKeys);
   for (const key of keys) {
     if (checked) next.add(key);
@@ -9611,10 +9792,10 @@ function describeDurationProfile(profile, fallbackMinutes) {
   return `${profile.distributionType || "固定值"} ${profile.value ?? fallbackMinutes ?? ""}min`.trim();
 }
 
-function renderSupportActivityJobRows(activity, tabKey) {
+function renderSupportActivityJobRows(activity, tabKey, jobPage) {
   const jobs = supportActivityJobs(activity);
   const lockedAttr = modelingLockDisabledAttr();
-  return jobs.map((job, index) => {
+  return jobPage.rows.map(({ value: job, index }) => {
     const key = supportActivityJobKey(tabKey, index);
     return `
       <tr class="${selectedSupportActivityJobKeys.has(key) ? "selected-table-row" : ""}">
@@ -9659,13 +9840,15 @@ function supportActivityPredecessorValue(job, index) {
 
 function renderSupportActivityJobTable(activity, tabKey) {
   const jobs = supportActivityJobs(activity);
-  const selectedCount = jobs.filter((_, index) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
-  const allSelected = jobs.length > 0 && selectedCount === jobs.length;
+  const jobPageKey = `support-jobs:${tabKey}`;
+  const jobPage = modelingPage(jobPageKey, jobs, activity.id || (scenario.supportActivities || []).indexOf(activity));
+  const selectedCount = jobPage.rows.filter(({ index }) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
+  const allSelected = jobPage.rows.length > 0 && selectedCount === jobPage.rows.length;
   const dialogJob = supportActivityJobByKey(supportActivityJobDialogKey);
   const predecessorDialogJob = supportActivityJobByKey(supportActivityPredecessorDialogKey);
   const lockedAttr = modelingLockDisabledAttr();
   const body = jobs.length
-    ? renderSupportActivityJobRows(activity, tabKey)
+    ? renderSupportActivityJobRows(activity, tabKey, jobPage)
     : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
@@ -9677,6 +9860,7 @@ function renderSupportActivityJobTable(activity, tabKey) {
         <tbody>${body}</tbody>
       </table>
     </div>
+    ${renderPagination(jobPageKey, jobPage)}
     ${dialogJob?.tabKey === tabKey ? renderSupportActivityJobDialog(dialogJob) : ""}
     ${predecessorDialogJob?.tabKey === tabKey ? renderSupportActivityPredecessorDialog(predecessorDialogJob) : ""}
     ${renderSupportActivityGanttChart(activity, tabKey)}
@@ -9956,7 +10140,8 @@ function supportActivityJobBasicActivitySelect(selectedJob) {
 
 function renderBasicActivityLibrary() {
   const rows = filteredBasicActivityLibraryRows();
-  const allSelected = rows.length > 0 && rows.every((row) => selectedBasicActivityKeys.has(row.key));
+  const libraryPage = modelingPage("basic-activity-library", rows, [basicActivityQuery, selectedBasicActivityImportType]);
+  const allSelected = libraryPage.rows.length > 0 && libraryPage.rows.every(({ value: row }) => selectedBasicActivityKeys.has(row.key));
   const dialogRow = basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY
     ? basicActivityDraft
     : basicActivityLibraryRows().find((row) => row.key === basicActivityDialogKey);
@@ -9989,7 +10174,7 @@ function renderBasicActivityLibrary() {
               <th>编辑</th>
             </tr>
           </thead>
-          <tbody>${rows.map((row, index) => `
+          <tbody>${libraryPage.rows.map(({ value: row, index }) => `
             <tr>
               <td><input type="checkbox" data-basic-activity-select="${htmlEscape(row.key)}" ${selectedBasicActivityKeys.has(row.key) ? "checked" : ""} aria-label="选择${htmlEscape(row.workName || `基本保障活动${index + 1}`)}"${lockedAttr}></td>
               <td>${index + 1}</td>
@@ -10003,6 +10188,7 @@ function renderBasicActivityLibrary() {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("basic-activity-library", libraryPage)}
       ${dialogRow ? renderBasicActivityEditor(dialogRow, basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY) : ""}
     </div>
   `;
@@ -10115,12 +10301,14 @@ function renderBasicActivityResourceSectionHead(row, resourceKind, label) {
 }
 
 function renderBasicActivityResourceSummaryTable(requirements, resourceKind) {
+  const summaryKey = `basic-activity-summary:${resourceKind}`;
+  const summaryPage = modelingPage(summaryKey, requirements, basicActivityDialogKey);
   if (!requirements.length) return `<div class="muted">暂无配置，点击新增配置多条${basicActivityResourceKindLabel(resourceKind)}需求</div>`;
   return `
     <div class="basic-activity-resource-summary">
       <table>
         <thead><tr><th>${resourceKind === "personnel" ? "专业" : "名称"}</th><th>数量</th></tr></thead>
-        <tbody>${requirements.map((item) => `
+        <tbody>${summaryPage.rows.map(({ value: item }) => `
           <tr>
             <td>${htmlEscape(basicActivityRequirementDisplayName(item, resourceKind))}</td>
             <td>${htmlEscape(item.quantity ?? 1)}</td>
@@ -10128,6 +10316,7 @@ function renderBasicActivityResourceSummaryTable(requirements, resourceKind) {
         `).join("")}</tbody>
       </table>
     </div>
+    ${renderPagination(summaryKey, summaryPage)}
   `;
 }
 
@@ -10143,6 +10332,8 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
   const kind = ["personnel", "equipment", "spare"].includes(resourceKind) ? resourceKind : "personnel";
   const label = basicActivityResourceKindLabel(kind);
   const requirements = normalizeBasicActivityResourceRequirements(row, kind);
+  const requirementPageKey = `basic-activity-requirements:${kind}`;
+  const requirementPage = modelingPage(requirementPageKey, requirements, row.key);
   const lockedAttr = modelingLockDisabledAttr();
   return `
     <div class="activity-job-dialog-backdrop nested-dialog-backdrop">
@@ -10162,10 +10353,11 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
           <table class="basic-activity-resource-config-table">
             <thead>${renderBasicActivityResourceDialogHeader(kind)}</thead>
             <tbody>
-              ${requirements.map((item, index) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="3">暂无配置</td></tr>`}
+              ${requirementPage.rows.map(({ value: item, index }) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="3">暂无配置</td></tr>`}
             </tbody>
           </table>
         </div>
+        ${renderPagination(requirementPageKey, requirementPage)}
         <div class="plan-editor-actions">
           <button type="button" class="btn-primary" data-basic-activity-resource-dialog-close>完成</button>
         </div>
@@ -11157,7 +11349,12 @@ function deleteSelectedBasicActivityJobs() {
 }
 
 function toggleAllBasicActivitySelection(checked) {
-  selectedBasicActivityKeys = checked ? new Set(filteredBasicActivityLibraryRows().map((row) => row.key)) : new Set();
+  const next = new Set(selectedBasicActivityKeys);
+  for (const { value: row } of modelingPageEntries("basic-activity-library")) {
+    if (checked) next.add(row.key);
+    else next.delete(row.key);
+  }
+  selectedBasicActivityKeys = next;
 }
 
 function downloadBasicSupportActivityCsvTemplate() {
@@ -11967,6 +12164,7 @@ function nextTransportPolicyId() {
 
 function renderLogisticsSupportActivity(activePlan, activity) {
   const transportPolicies = ensureTransportPolicies();
+  const transportPage = modelingPage("transport-policies", transportPolicies);
   selectedLogisticsTransportStrategyIndexes = new Set(
     Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportPolicies.length)
   );
@@ -11997,7 +12195,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
       <div class="table-wrap">
         <table>
           <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
-          <tbody>${transportPolicies.map((row, index) => {
+          <tbody>${transportPage.rows.map(({ value: row, index }) => {
             const basePath = `transportPolicies.${index}`;
             const fromSupportNodeOptions = logisticsSupportNodeOptionsWithCurrent(supportNodeOptions, row.fromOrganizationNodeId);
             const toSupportNodeOptions = logisticsSupportNodeOptionsWithCurrent(supportNodeOptions, row.toOrganizationNodeId);
@@ -12019,6 +12217,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
           }).join("") || `<tr><td colspan="8" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
         </table>
       </div>
+      ${renderPagination("transport-policies", transportPage)}
     </div>
   `;
 }
@@ -12180,30 +12379,37 @@ function renderExperimentPlanList(page) {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>选择</th><th>方案名称</th><th>所属模块</th><th>步数</th><th>样本</th><th>关联运行</th><th>状态</th><th>方案动作</th></tr></thead>
+        <thead><tr><th>选择</th><th>方案名称</th><th>步数</th><th>样本</th><th>关联运行</th><th>状态</th><th>方案动作</th></tr></thead>
         <tbody>
           ${plans.length ? plans.map((plan) => `
             <tr class="${selectedExperimentPlanKeys.has(plan.selectionKey) ? "selected-table-row" : ""}">
               <td><input type="checkbox" data-experiment-plan-select="${htmlEscape(plan.selectionKey)}" ${selectedExperimentPlanKeys.has(plan.selectionKey) ? "checked" : ""} aria-label="选择方案 ${htmlEscape(plan.name)}"></td>
               <td>${htmlEscape(plan.name)}</td>
-              <td>${htmlEscape(plan.module)}</td>
               <td>${htmlEscape(plan.steps)}</td>
               <td>${htmlEscape(plan.samples)}</td>
               <td>${htmlEscape(plan.run_count ?? 0)}</td>
-              <td><span class="badge">${htmlEscape(plan.status)}</span></td>
+              <td><span class="badge">${htmlEscape(experimentStatusLabel(plan.status))}</span></td>
               <td class="table-action-cell">
-                ${String(plan.status || "").toLowerCase() === "frozen"
-                  ? `<span class="badge">已冻结，不可编辑</span>`
+                ${String(plan.plan_status || plan.status || "").toLowerCase() === "frozen"
+                  ? `<span class="badge">已冻结，不可编辑</span><button type="button" class="btn-secondary" data-experiment-plan-unfreeze="${htmlEscape(plan.experiment_plan_id)}">取消冻结实验</button>`
                   : `<button type="button" class="inline-action" data-experiment-plan-edit="${htmlEscape(plan.experiment_plan_id)}" data-experiment-plan-name="${htmlEscape(plan.name)}">编辑</button>
                     <button type="button" class="btn-secondary" data-experiment-plan-freeze="${htmlEscape(plan.experiment_plan_id)}">冻结</button>`}
-                <button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>
+                ${canDeleteExperimentPlan(plan) ? `<button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>` : ""}
               </td>
             </tr>
-          `).join("") : `<tr><td colspan="8">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
+          `).join("") : `<tr><td colspan="7">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
         </tbody>
       </table>
     </div>
   `;
+}
+
+function experimentStatusLabel(status) {
+  const labels = { draft: "草稿", frozen: "已冻结", pending: "等待中", queued: "排队中",
+    created: "已创建", submitted: "已提交", running: "运行中", completed: "已完成",
+    succeeded: "已完成", success: "已完成", failed: "失败", cancelled: "已取消",
+    canceled: "已取消", timeout: "已超时", timed_out: "已超时", deleted: "已清理", "已清理": "已清理" };
+  return labels[String(status || "").toLowerCase()] || `未知状态（${String(status || "空")}）`;
 }
 
 function experimentPlanRowFromBackend(plan, page) {
@@ -12212,6 +12418,8 @@ function experimentPlanRowFromBackend(plan, page) {
   const latestRun = Array.isArray(plan.runs) && plan.runs.length ? plan.runs[0] : null;
   return {
     experiment_plan_id: plan.experiment_plan_id || "",
+    created_by: plan.created_by || null,
+    plan_status: plan.status || "draft",
     selectionKey: experimentPlanSelectionKey(plan),
     name: config.name || projectJson.experiment?.name || plan.experiment_plan_id || "未命名方案",
     module: page.module,
@@ -12434,7 +12642,6 @@ function invalidateSelectedRunContextResults(message) {
   liteMesaAnalysisRequestEpoch += 1;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
-  liteMesaAnalysisSuiteState = null;
   analysisXlsxExportState = {};
   aircraftMissionReliabilityState.result = null;
   aircraftMissionReliabilityState.status = message;
@@ -12473,10 +12680,10 @@ function syncSelectedRunContextAfterPlanRefresh() {
 
 function resetMissingRunContextAfterPlanRefresh() {
   if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) return;
-  const selectedPlanStillExists = backendExperimentPlans.some((plan) => (
-    String(plan?.experiment_plan_id || "").trim() === selectedRunContextKey
+  const selectedPlanStillRunnable = experimentPlanContextOptions().some((option) => (
+    option.kind === "experiment-plan" && option.key === selectedRunContextKey
   ));
-  if (!selectedPlanStillExists) resetRunContextToCurrentProject();
+  if (!selectedPlanStillRunnable) resetRunContextToCurrentProject();
 }
 
 function selectCurrentExperimentPlan(planKey) {
@@ -12496,7 +12703,6 @@ function selectCurrentExperimentPlan(planKey) {
     ? `已绑定实验方案：${selected.name}`
     : `已切换运行来源：${selected.name}`;
   liteMesaAnalysisResults = {};
-  liteMesaAnalysisSuiteState = null;
   aircraftMissionReliabilityState.result = null;
   aircraftMissionReliabilityState.status = "运行上下文已更新，请重新运行。";
   if (selected.kind === "current-project") {
@@ -13037,6 +13243,7 @@ async function handleLogin() {
     backendAuthToken = session.session.token;
     localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
     currentUser = {
+      user_id: session.user.user_id,
       username: session.user.username,
       role: session.user.role
     };
@@ -13063,6 +13270,7 @@ async function restoreStoredBackendSessionOnBoot() {
     const session = await backendApi.getSession();
     const user = session?.user || {};
     currentUser = {
+      user_id: user.user_id,
       username: user.username || currentUser.username,
       role: user.role || currentUser.role
     };
@@ -13124,7 +13332,6 @@ function resetWorkbenchStateForCurrentProject() {
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
-  liteMesaAnalysisSuiteState = null;
   resetSupportOrganizationWorkbenchSelection();
   analysisXlsxExportState = {};
   aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
@@ -13661,7 +13868,7 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     experimentPlanListStatus = "当前方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
     return;
   }
-  if (!canManageM7Lifecycle()) {
+  if (!canDeleteExperimentPlan(backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId))) {
     experimentPlanListStatus = `当前角色 ${currentUser.role || "未知"} 无权删除仿真实验方案`;
     return;
   }
@@ -13685,6 +13892,27 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     await refreshM7RunArtifactPanel();
   } catch (err) {
     experimentPlanListStatus = `删除方案失败：${formatBackendError(err)}`;
+  }
+}
+
+function canDeleteExperimentPlan(plan) {
+  return canManageM7Lifecycle() || Boolean(plan?.created_by && plan.created_by === currentUser?.user_id);
+}
+
+async function unfreezeExperimentPlanFromList(experimentPlanId) {
+  if (!experimentPlanId) return;
+  const projectId = currentBackendProjectId();
+  try {
+    await backendApi.unfreezeExperimentPlan(projectId, experimentPlanId);
+    if (currentBackendProjectId() !== projectId) return;
+    if (selectedRunContextKey === experimentPlanId) resetRunContextToCurrentProject();
+    experimentPlanListStatus = `方案 ${experimentPlanId} 已取消冻结。`;
+    await refreshExperimentPlanList(projectId, { force: true });
+    if (experimentPlan?.experiment_plan_id === experimentPlanId) {
+      experimentPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId) || null;
+    }
+  } catch (err) {
+    experimentPlanListStatus = `取消冻结失败：${formatBackendError(err)}`;
   }
 }
 
@@ -18723,7 +18951,6 @@ function renderLiteMesaMonteCarloAnalysis(page) {
           ${renderExperimentPlanContextDropdown(page)}
         </div>
       </section>
-      ${renderLiteMesaAnalysisSuite()}
       <div class="lite-mesa-layout">
         <section class="lite-mesa-settings">
           <div class="section-head">
@@ -18736,8 +18963,6 @@ function renderLiteMesaMonteCarloAnalysis(page) {
           ${settingsError ? `<p class="inline-status error">${htmlEscape(settingsError)}</p>` : ""}
           <button type="button" class="btn-primary" data-lite-mesa-action="run" ${settingsError ? "disabled" : ""}>运行分析</button>
           <p class="inline-status">${htmlEscape(liteMesaMonteCarloStatus)}</p>
-          <button type="button" class="btn-primary" data-analysis-suite-run ${!canRunLiteMesaAnalysisSuite() || settingsError || liteMesaAnalysisSuiteState?.running || (frozenPlan && Number(displayedSettings.samples) !== 50) ? "disabled" : ""}>运行五项分析（各 50 样本）</button>
-          <p class="inline-status">每项独立运行 50 个样本；${frozenPlan && Number(displayedSettings.samples) !== 50 ? "请先选择样本数为 50 的冻结方案，或切换当前项目。" : "完成后可在各分析页查看结果。"}</p>
         </section>
         <section class="lite-mesa-results">
           <div class="section-head">
@@ -18821,103 +19046,7 @@ function updateLiteMesaMonteCarloSetting(field, value) {
   liteMesaMonteCarloStatus = "设置已更新，等待重新运行 Mesa 分析。";
 }
 
-function canRunLiteMesaAnalysisSuite() {
-  const visibleTypes = new Set(getVisibleFeaturePagesForRole(FEATURE_PAGES, currentUser?.role)
-    .filter((page) => page.component === "lite-mesa-analysis")
-    .map(analysisTypeForPage));
-  return Object.keys(LITE_MESA_ANALYSIS_DEFINITIONS).every((type) => visibleTypes.has(type));
-}
-
-function renderLiteMesaAnalysisSuite() {
-  const state = liteMesaAnalysisSuiteState;
-  if (!state) return "";
-  return `<section class="lite-mesa-stat-section" aria-live="polite" data-analysis-suite-result>
-    <h3>五项分析结果</h3>
-    <p>${htmlEscape(state.message)}</p>
-    ${state.response ? `<div class="table-wrap"><table class="lite-mesa-stat-table"><thead><tr><th>功能</th><th>完成样本</th><th>失败样本</th><th>关键结果</th><th>启动至显示</th><th>状态</th></tr></thead><tbody>${analysisSuiteRows(state.response).map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${row.completed}/50</td><td>${row.failed}</td><td>${htmlEscape(row.metrics.slice(0, 3).map(([label, value]) => `${label}：${value}`).join("；") || "请查看对应分析页")}</td><td>${row.elapsed === null ? "—" : `${row.elapsed.toFixed(2)} 秒`}</td><td>${htmlEscape(row.complete ? row.elapsed === null ? "结果已显示，正在计时" : row.withinTarget ? "完成，≤60秒" : "完成，超过60秒" : row.status === "pending" ? "等待启动" : row.status === "running" ? "运行中" : row.message || "未完整完成，请重试")}</td></tr>`).join("")}</tbody></table></div>` : ""}
-  </section>`;
-}
-
-async function runLiteMesaAnalysisSuite() {
-  if (liteMesaAnalysisSuiteState?.running) return;
-  const requestEpoch = ++liteMesaMonteCarloRequestEpoch;
-  const analysisEpoch = ++liteMesaAnalysisRequestEpoch;
-  const requestContextKey = selectedExperimentPlanContextKey();
-  const requestContextFingerprint = selectedRunContextRequestFingerprint();
-  const context = selectedExperimentPlanContext();
-  const analysisSource = captureAnalysisSourceIdentity();
-  const settings = selectedExperimentPlanRunSettings();
-  const started = performance.now();
-  const stillCurrent = () => requestEpoch === liteMesaMonteCarloRequestEpoch
-    && analysisEpoch === liteMesaAnalysisRequestEpoch
-    && runContextRequestStillCurrent(requestContextKey, requestContextFingerprint);
-  liteMesaAnalysisSuiteState = { running: true, message: "正在运行五项分析，每项独立 50 个样本……" };
-  try {
-    if (!canRunLiteMesaAnalysisSuite()) throw new Error("当前角色没有全部五项分析权限");
-    if (settings.validationError) throw new Error(settings.validationError);
-    if (context?.kind === "experiment-plan" && Number(settings.samples) !== 50) {
-      throw new Error("请选择样本数为 50 的冻结方案，或切换当前项目。");
-    }
-    const normalizedSettings = { ...settings, samples: 50, parallelCores: normalizeMonteCarloParallelCores(settings.parallelCores) };
-    const response = { analyses: {} };
-    liteMesaAnalysisSuiteState.response = response;
-    const backendContext = buildBackendRunContext(context);
-    for (const [index, [analysisType, label]] of ANALYSIS_SUITE_TYPES.entries()) {
-      if (!stillCurrent()) return;
-      const itemStarted = performance.now();
-      const itemSettings = {
-        ...normalizedSettings,
-        seed: Math.trunc(Number(normalizedSettings.seed) || 0) + index * 50,
-        ...(analysisType === "downtime_factors" ? { write_event_snapshots: true } : {})
-      };
-      response.analyses[analysisType] = { status: "running" };
-      liteMesaAnalysisSuiteState.message = `正在运行${label}（${index + 1}/5），各项启动至显示分别计时，目标各 ≤60 秒。`;
-      render();
-      let payload;
-      try {
-        payload = await backendApi.runLiteMesaAnalysis(
-          backendContext, analysisType === "monte_carlo" ? "mission_reliability" : analysisType,
-          context?.kind === "current-project" ? itemSettings : {}, undefined, itemSettings
-        );
-      } catch (error) {
-        payload = { status: "blocked", sample_count: 0, message: `请求失败：${error?.message || "运行错误"}，请检查后重试。` };
-      }
-      if (!stillCurrent()) return;
-      response.analyses[analysisType] = payload;
-      if (analysisType === "monte_carlo") {
-        liteMesaMonteCarloSettings = normalizedSettings;
-        liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(payload);
-        liteMesaMonteCarloStatus = liteMesaMonteCarloResult.status === "blocked"
-          ? `分析未完成：${liteMesaMonteCarloResult.message}`
-          : liteMesaMonteCarloCompletionStatus(liteMesaMonteCarloResult, { samples: 50, runCount: liteMesaMonteCarloResult.sampleCount });
-      } else {
-        const definition = LITE_MESA_ANALYSIS_DEFINITIONS[analysisType];
-        liteMesaAnalysisSettings[analysisType] = { ...liteMesaAnalysisSettings[analysisType], ...itemSettings };
-        liteMesaAnalysisResults[analysisType] = {
-          ...normalizeLiteMesaAnalysisResult({ ...definition, analysisType }, payload),
-          completedAt: new Date().toISOString(), analysisSource
-        };
-      }
-      analysisXlsxExportState = {};
-      render();
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      if (!stillCurrent()) return;
-      payload.display_elapsed_seconds = (performance.now() - itemStarted) / 1000;
-      render();
-    }
-    const rows = analysisSuiteRows(response);
-    const complete = rows.every((row) => row.complete);
-    const elapsed = (performance.now() - started) / 1000;
-    liteMesaAnalysisSuiteState.running = false;
-    liteMesaAnalysisSuiteState.message = `${complete ? "五项各 50 样本全部完成" : "五项分析未完整完成"}；${rows.filter((row) => row.withinTarget).length}/5 项在启动至显示 ≤60 秒内完成。五项累计耗时 ${elapsed.toFixed(2)} 秒（仅供参考，不作为单项验收条件）。${complete ? "" : "请检查各项状态后重试。"}`;
-  } catch (error) {
-    if (!stillCurrent()) return;
-    liteMesaAnalysisSuiteState = { running: false, message: `五项分析失败：${error?.message || "运行错误"}。请检查运行设置或后端状态后重试。` };
-  }
-}
-
 async function runLiteMesaMonteCarloAnalysis() {
-  liteMesaAnalysisSuiteState = null;
   const requestEpoch = ++liteMesaMonteCarloRequestEpoch;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();
@@ -19620,6 +19749,7 @@ function renderFormalAnalysisBoundaryNote(boundary) {
 
 function notApplicableProjectionReason(formalProjection) {
   const applicability = formalProjection?.applicability || {};
+  if (applicability.message) return applicability.message;
   const requiredDomains = (applicability.required_domains || []).join(" / ") || "保障资源 / 保障活动";
   const disabledDomains = (applicability.disabled_domains || []).join(" / ") || "未建模域";
   return `该分析所需保障域未建模；required_domains=${requiredDomains}，disabled_domains=${disabledDomains}。`;
@@ -19634,7 +19764,7 @@ function renderFormalProjectionBody(formalProjection) {
     return `
       <div class="empty-state analysis-not-applicable">
         <strong>不适用 / 未建模</strong>
-        <p>${htmlEscape(`该分析所需保障域未建模；required_domains=${required_domains}; disabled_domains=${disabled_domains}。`)}</p>
+        <p>${htmlEscape(applicability.message || `该分析所需保障域未建模；required_domains=${required_domains}; disabled_domains=${disabled_domains}。`)}</p>
       </div>
     `;
   }
@@ -19648,12 +19778,13 @@ function renderFormalProjectionBody(formalProjection) {
       ? sourceRows.filter((row) => row.aircraftModel === spareAircraftFilter)
       : sourceRows;
     const rows = sortSpareShortfallRows(filteredRows);
+    const page = tablePagination.slice("formal-spare-shortfall", rows, analysisPaginationContext([spareAircraftFilter, spareShortfallSort]));
     const maxShortage = rows.reduce((maxValue, row) => Math.max(maxValue, row.shortage || row.shortageProbability || 0), 1);
     return `
       <div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap">
         <table>
           <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
-          <tbody>${rows.map((row) => `
+          <tbody>${page.rows.map((row) => `
             <tr>
               <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
               <td><span class="status-badge ${row.level === "严重" ? "danger" : row.level === "短缺" ? "warn" : ""}">${htmlEscape(row.level)}</span></td>
@@ -19662,47 +19793,40 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-spare-shortfall", page)}
     `;
   }
   if (formalProjection.analysisType === "carry_list") {
     const rows = (formalProjection.rows || []).filter((row) => !carryHideZeroDemand || row.demand > 0);
+    const page = tablePagination.slice("formal-carry-list", rows, analysisPaginationContext([carryHideZeroDemand]));
     const maxCarryQuantity = rows.reduce((maxValue, row) => Math.max(maxValue, row.qty || 0), 1);
     return `
-      <div class="toolbar-row"><label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求量为 0</label><span>满足率下限：${fixed(rows[0]?.minimumSatisfactionRate || 0.9, 2)}；满足约束后利用率越高越优</span></div><div class="table-wrap">
+      <div class="toolbar-row"><label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求量为 0</label><span>预计满足率下限：${fixed(rows[0]?.minimumSatisfactionRate || 0.9, 2)}；满足约束后利用率越高越优</span></div><div class="table-wrap">
         <table>
-          <thead><tr><th>机型</th><th>备件</th><th>需求</th><th>推荐携行倍率</th><th>备件满足率</th><th>数量</th><th>备件利用率</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
-          <tbody>${rows.map((row) => `
+          <thead><tr><th>机型</th><th>备件</th><th>需求数量</th><th>推荐携行倍率</th><th>预计满足率</th><th>即时满足率</th><th>数量</th><th>备件利用率</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
+          <tbody>${page.rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.qty}</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
+              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate)}</td><td>${row.qty}</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
               <td><span class="status-badge ${row.priority === "高" ? "danger" : row.priority === "中" ? "warn" : "success"}">${htmlEscape(row.priority)}</span></td>
               <td class="bar-cell">${renderBar(row.qty, maxCarryQuantity, "blue")}</td>
             </tr>
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-carry-list", page)}
       <div class="decision-support-card"><strong>携行清单说明</strong><span>正式来源为 projection payload，默认目标为携行备件越少越好，按推荐携行倍率和风险等级形成转场前装箱评审清单。</span></div>
     `;
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
-    return `
-      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
-        <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.probability))}</td></tr>`).join("") || '<tr><td colspan="3">当前结果没有波次成功率明细</td></tr>'}</tbody>
-      </table></div>
-      ${renderLiteMesaMissionReliabilityWaveChart(rows.map((row) => ({
-        sequence: row.sequence,
-        waveLabel: row.waveLabel || row.timeLabel,
-        sampleCount: row.sampleCount,
-        meanMissionSuccessRate: row.probability
-      })))}
-    `;
+    return `${renderTaskReliabilityDetailTable(rows, "formal-mission-waves")} ${renderLiteMesaMissionReliabilityWaveChart(rows)}`;
   }
   if (formalProjection.analysisType === "downtime_factors") {
     const rows = formalProjection.rows || [];
     const primaryFactors = rows.slice(0, 2);
     const maxFactorCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.count || 0), 1);
     const snapshots = visibleDowntimeAnomalySnapshots(formalProjection);
+    const page = tablePagination.slice("formal-anomaly-snapshots", snapshots, analysisPaginationContext());
     return `
       <div class="factor-grid">
         <div class="factor-column"><h4>停机因素</h4><div class="factor-list">${primaryFactors.map((row) => `<div class="factor-item"><span>${htmlEscape(row.label)}</span><span>${row.contributionLabel}</span></div>`).join("")}</div></div>
@@ -19721,13 +19845,13 @@ function renderFormalProjectionBody(formalProjection) {
       <div class="table-wrap">
         <table>
           <thead><tr><th>序号</th><th>时间</th><th>事件</th><th>结果</th><th>保障活动状态</th><th>作业</th><th>状态</th><th>采样位置</th><th>快照动作</th></tr></thead>
-          <tbody>${snapshots.map((snapshot, index) => `
+          <tbody>${page.rows.map((snapshot, index) => `
             <tr>
-              <td>${index + 1}</td>
+              <td>${page.offset + index + 1}</td>
               <td>${htmlEscape(snapshot.timeLabel)}</td>
               <td>${htmlEscape(snapshot.eventLabel)}</td>
               <td>${htmlEscape(snapshot.result)}</td>
-              <td>${htmlEscape(`进行中作业 ${snapshot.activeJobs}；维修积压 ${snapshot.repairBacklog}；备件满足率 ${pct(snapshot.spareFillRate)}`)}</td>
+              <td>${htmlEscape(`进行中作业 ${snapshot.activeJobs}；维修积压 ${snapshot.repairBacklog}；备件满足率 ${snapshot.spareFillRate === null ? "不可用" : pct(snapshot.spareFillRate)}`)}</td>
               <td>${htmlEscape(snapshot.jobNodeLabel)}</td>
               <td>${htmlEscape(snapshot.jobState)}</td>
               <td>${htmlEscape(snapshot.frameLabel)}</td>
@@ -19736,6 +19860,7 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-anomaly-snapshots", page)}
     `;
   }
   return "";
@@ -19845,13 +19970,14 @@ function renderLineChart(points, { ariaLabel = "任务可靠度趋势" } = {}) {
   };
   const line = points.map((point) => `${xScale(point.x).toFixed(1)},${yScale(point.y).toFixed(1)}`).join(" ");
   const yTicks = [0, 0.5, 1];
+  const labelStride = Math.max(1, Math.ceil((points.length - 1) / 5));
   return `
     <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${htmlEscape(ariaLabel)}">
       <line class="line-chart-axis line-chart-y-axis" x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}"></line>
       <line class="line-chart-axis line-chart-x-axis" x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}"></line>
       ${yTicks.map((tick) => `<line class="line-chart-tick" x1="${plotLeft - 4}" y1="${yScale(tick).toFixed(1)}" x2="${plotRight}" y2="${yScale(tick).toFixed(1)}"></line><text class="line-chart-y-label" x="${plotLeft - 10}" y="${(yScale(tick) + 4).toFixed(1)}">${tick.toFixed(1)}</text>`).join("")}
       <polyline points="${line}"></polyline>
-      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"><title>${htmlEscape(point.tooltip || `${point.x}：${point.y}`)}</title></circle><text class="line-chart-x-label" x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
+      ${points.map((point, index) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"><title>${htmlEscape(point.tooltip || `${point.x}：${point.y}`)}</title></circle>${index % labelStride === 0 || index === points.length - 1 ? `<text class="line-chart-x-label" text-anchor="${index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}" x="${xScale(point.x).toFixed(1)}" y="168">${htmlEscape(point.label ?? point.x)}</text>` : ""}`).join("")}
     </svg>
   `;
 }
@@ -20054,7 +20180,7 @@ function analysisXlsxPayloadForPage(page, result) {
       summary: liteMesaAnalysisVisibleMetrics(definition, result.metrics || []).map(([label, value]) => [label, value, ""]),
       detail_sections: [{
         title: "携行清单明细",
-        columns: ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "需求次数", "短缺次数", "备件满足率", "满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
+        columns: ["机型", "产品", "建议携行数量", "预计使用数量", "携行总数量", "需求数量", "预计短缺数量", "预计满足率", "即时满足率", "预计满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
         rows: rows.map((row) => [
           row.aircraftModel || "未指定机型",
           carryListProductDisplayName(row, productsById),
@@ -20064,6 +20190,7 @@ function analysisXlsxPayloadForPage(page, result) {
           row.demand,
           row.shortage,
           pct(row.satisfactionRate),
+          row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate),
           pct(row.minimumSatisfactionRate),
           row.satisfactionConstraintMet ? "满足" : "未满足",
           carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin),
@@ -20131,12 +20258,8 @@ function analysisXlsxPayloadForPage(page, result) {
     ],
     detail_sections: [{
       title: "各波次任务可靠度明细",
-      columns: ["波次", "样本数", "波次成功率"],
-      rows: rows.map((row) => [
-        row.waveLabel || row.waveKey || "-",
-        Number(row.sampleCount || 0),
-        formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)
-      ])
+      columns: ["样本", "波次", "成功数", "计划数", "波次成功率"],
+      rows: normalizeTaskReliabilityWaveRows(rows).map(taskReliabilityDetailCells)
     }]
   };
 }
@@ -20237,7 +20360,7 @@ function analysisSettingExportLabel(key) {
     samples: "样本量",
     seed: "随机种子",
     parallelCores: "并行核心数",
-    missionConfidenceTarget: "备件满足率下限",
+    missionConfidenceTarget: "预计满足率下限",
     topN: "排序范围",
     aircraftModel: "飞机型号",
     missionProfile: "基本任务",
@@ -20557,7 +20680,7 @@ function renderLiteMesaAnalysisEditableSettings(definition, settings) {
   if (definition.analysisType === "carry_list") {
     return `
       <label class="lite-mesa-setting-chip editable">
-        <span>备件满足率下限</span>
+        <span>预计满足率下限</span>
         <input data-lite-mesa-analysis-field="missionConfidenceTarget" type="number" min="0" max="1" step="0.01" value="${htmlEscape(settings.missionConfidenceTarget ?? 0.9)}">
       </label>
     `;
@@ -20596,7 +20719,6 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
 }
 
 async function runLiteMesaAnalysisPage(page) {
-  liteMesaAnalysisSuiteState = null;
   const requestEpoch = ++liteMesaAnalysisRequestEpoch;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();
@@ -20710,6 +20832,7 @@ function normalizeCarryListAnalysisRows(rows) {
       carriedQuantity,
       minimumSatisfactionRate,
       satisfactionRate,
+      observedFillRate: nonnegativeFiniteAnalysisNumber(row.observedFillRate ?? row.observed_fill_rate),
       satisfactionConstraintMet: row.satisfactionConstraintMet ?? row.satisfaction_constraint_met
         ?? satisfactionRate + Number.EPSILON >= minimumSatisfactionRate,
       satisfactionConstraintMargin: Number(
@@ -20861,7 +20984,7 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 
 function liteMesaAnalysisVisibleMetrics(definition, metrics) {
   const hiddenLabels = {
-    carry_list: new Set(["备件满足率下限", "置信度目标", "样本数"]),
+    carry_list: new Set(["预计满足率下限", "置信度目标", "样本数"]),
     downtime_factors: new Set(["样本数"])
   }[definition.analysisType] || new Set();
   return (metrics || []).filter(([label]) => !hiddenLabels.has(String(label)));
@@ -20907,6 +21030,13 @@ function carrySatisfactionConstraintMarginDisplay(value) {
   return `${prefix}${(margin * 100).toFixed(2)}%`;
 }
 
+function analysisPaginationContext(filters = []) {
+  return JSON.stringify([
+    currentBackendProjectId(), selectedRunContextKey, selectedFeatureId,
+    liteMesaAnalysisRequestEpoch, backendRun?.run_id || "", ...filters
+  ]);
+}
+
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
     return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存运行中生成分析摘要。</p></div>`;
@@ -20925,35 +21055,32 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(concreteRows.map((row) => row.aircraftModel))].sort();
     const sortedRows = visibleSpareShortfallRows(result);
+    const page = tablePagination.slice("analysis-spare-shortfall", sortedRows, analysisPaginationContext([spareAircraftFilter, spareShortfallSort]));
     return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>风险</th></tr></thead>
-      <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
-    </table></div>`;
+      <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
+    </table></div>${renderPagination("analysis-spare-shortfall", page)}`;
   }
   if (definition.analysisType === "carry_list") {
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(rows.map((row) => String(row.aircraftModel || "").trim()).filter(Boolean))].sort();
     const activeAircraftFilter = aircraftModels.includes(carryAircraftFilter) ? carryAircraftFilter : "";
     const visibleRows = visibleCarryListRows(result);
+    const page = tablePagination.slice("analysis-carry-list", visibleRows, analysisPaginationContext([carryAircraftFilter, carryHideZeroDemand, carryRecommendedSort]));
     return `
       <div class="toolbar-row">
         <label>机型 <select data-carry-aircraft-filter><option value="">全部机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${activeAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label>
         <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
       </div>
       <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th>备件满足率</th><th>约束状态</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
-        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="12">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求数量</th><th>预计短缺数量</th><th>预计满足率</th><th>即时满足率</th><th>约束状态</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
+        <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="13">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
+      ${renderPagination("analysis-carry-list", page)}
     `;
   }
   if (definition.analysisType === "mission_reliability") {
-    return `
-      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
-        <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate))}</td></tr>`).join("") || '<tr><td colspan="3">当前会话没有波次成功率明细</td></tr>'}</tbody>
-      </table></div>
-      ${renderLiteMesaMissionReliabilityWaveChart(rows)}
-    `;
+    return `${renderTaskReliabilityDetailTable(rows)}${renderLiteMesaMissionReliabilityWaveChart(rows)}`;
   }
   if (definition.analysisType === "downtime_factors") {
     return renderLiteMesaDowntimeFactorAnalysis(result);
@@ -21038,6 +21165,9 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
     </label>
   `).join("");
   if (!selected.size) {
+    for (const key of ["analysis-downtime-events", "analysis-event-snapshots"]) {
+      tablePagination.slice(key, [], analysisPaginationContext([[]]));
+    }
     return `
       <div class="toolbar-row downtime-factor-filter" aria-label="停机因素筛选"><strong>停机因素</strong>${filterControls}</div>
       <div class="empty-state"><strong>请选择至少一种停机因素</strong><p>当前未选择停机因素，不展示历史筛选结果。</p></div>
@@ -21065,6 +21195,7 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
 }
 
 function renderLiteMesaDowntimeEventDetails(events) {
+  const page = tablePagination.slice("analysis-downtime-events", events, analysisPaginationContext([[...selectedDowntimeFactorTypes].sort()]));
   if (!events.length) {
     return `<div class="empty-state"><strong>暂无该类型停机事件</strong><p>当前筛选范围内没有可展示的停机事件明细。</p></div>`;
   }
@@ -21072,7 +21203,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
     <div class="section-head downtime-event-detail-head"><h3>停机事件明细</h3><span>${events.length} 条</span></div>
     <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table">
       <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长（小时）</th><th>事件说明</th><th>分类信息</th></tr></thead>
-      <tbody>${events.map((event) => {
+      <tbody>${page.rows.map((event) => {
         const row = downtimeEventDisplayRow(event);
         return `<tr>
           <td>${htmlEscape(row.factorLabel)}</td>
@@ -21087,6 +21218,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
         </tr>`;
       }).join("")}</tbody>
     </table></div>
+    ${renderPagination("analysis-downtime-events", page)}
   `;
 }
 
@@ -21094,12 +21226,26 @@ function renderDowntimeFactorSpecificDetails(rows) {
   return `<details class="downtime-factor-specific"><summary>查看</summary>${rows.map(([label, value]) => `<div><span>${htmlEscape(label)}</span><strong>${htmlEscape(downtimeDisplayValue(value))}</strong></div>`).join("")}</details>`;
 }
 
-function renderLiteMesaMissionReliabilityWaveChart(rows) {
+function taskReliabilityDetailCells(row) {
+  return [row.sampleLabel, row.waveLabel, row.successfulWaves ?? "不可用", row.plannedWaves ?? "不可用", formatReliabilityPercent(row.probability)];
+}
+
+function renderTaskReliabilityDetailTable(rows, key = "analysis-mission-waves") {
+  const page = tablePagination.slice(key, normalizeTaskReliabilityWaveRows(rows), analysisPaginationContext());
+  return `<div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
+    <thead><tr><th>样本</th><th>波次</th><th>成功数</th><th>计划数</th><th>波次成功率</th></tr></thead>
+    <tbody>${page.rows.map((row) => `<tr>${taskReliabilityDetailCells(row).map((value) => `<td>${htmlEscape(value)}</td>`).join("")}</tr>`).join("") || '<tr><td colspan="5">当前结果没有波次成功率明细</td></tr>'}</tbody>
+  </table></div>${renderPagination(key, page)}`;
+}
+
+function renderLiteMesaMissionReliabilityWaveChart(detailRows) {
+  const rows = aggregateTaskReliabilityWaves(detailRows);
   if (!rows.length) {
-    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>当前会话未返回波次成功率明细。</p></div>`;
+    return `<div class="empty-state"><strong>波次成功率趋势</strong><p>${detailRows.length ? "波次计数不完整，无法汇总趋势。" : "当前会话未返回波次成功率明细。"}</p></div>`;
   }
   const points = rows.map((row, index) => ({
     x: Number(row.sequence || index + 1),
+    label: row.waveLabel,
     y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0),
     tooltip: `${row.waveLabel || row.waveKey || `第${row.sequence ?? index + 1}波`}（${Number(row.sampleCount || 0)} 个样本）：${formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)}`
   }));
@@ -21112,6 +21258,7 @@ function renderLiteMesaMissionReliabilityWaveChart(rows) {
 }
 
 function renderLiteMesaDowntimeEventSnapshots(snapshots) {
+  const page = tablePagination.slice("analysis-event-snapshots", snapshots, analysisPaginationContext([[...selectedDowntimeFactorTypes].sort()]));
   if (!snapshots.length) {
     return `<div class="empty-state"><strong>停机事件一览</strong><p>当前停机因素运行未捕获到停机事件日志。</p></div>`;
   }
@@ -21121,12 +21268,13 @@ function renderLiteMesaDowntimeEventSnapshots(snapshots) {
         <h3>停机事件一览</h3>
         <span>${snapshots.length} 条停机事件</span>
       </div>
-      ${snapshots.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, index)).join("")}
+      ${page.rows.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, page.offset + index, index === 0)).join("")}
     </div>
+    ${renderPagination("analysis-event-snapshots", page)}
   `;
 }
 
-function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
+function renderLiteMesaDowntimeEventSnapshot(snapshot, index, expanded = index === 0) {
   const aircraft = Array.isArray(snapshot.aircraft_state?.aircraft) ? snapshot.aircraft_state.aircraft : [];
   const aircraftSummary = snapshot.aircraft_state?.summary || snapshot.aircraft_state || {};
   const resources = Array.isArray(snapshot.support_resources) ? snapshot.support_resources : [];
@@ -21137,7 +21285,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
     selectedExperimentPlanProjectJson()
   );
   return `
-    <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
+    <details class="lite-mesa-event-snapshot" ${expanded ? "open" : ""}>
       <summary>
         <strong>${htmlEscape(downtimeFactorLabel(downtimeEventFactor(snapshot)))} · ${htmlEscape(downtimeOperationalEventLabel(sourceEventType))}</strong>
         <span>随机种子 ${htmlEscape(snapshot.seed ?? "-")} / 仿真时刻 ${htmlEscape(formatDowntimeSimulationTime(snapshot.simulation_time))} / ${htmlEscape(downtimeSnapshotResultLabel(snapshot.result))}</span>

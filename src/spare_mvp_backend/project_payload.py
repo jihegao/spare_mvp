@@ -4308,9 +4308,6 @@ def _materialize_operations_support_activity_phases(project: dict[str, Any]) -> 
                 "equipmentId",
                 "resourceId",
                 "priority",
-                "durationMinutes",
-                "durationHours",
-                "spareQuantity",
             ):
                 if field in template:
                     created[field] = deepcopy(template[field])

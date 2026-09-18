@@ -94,6 +94,9 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     validateProject(projectJson) {
       return request({ method: "POST", path: "/projects/validate", body: projectJson });
     },
+    downloadProjectExcelTemplate() {
+      return request({ method: "GET", path: "/projects/excel-template", responseType: "download" });
+    },
     previewProjectXlsx(contentBase64, fileName) {
       return request({ method: "POST", path: "/projects/import-xlsx/preview", body: { content_base64: contentBase64, file_name: fileName } });
     },
@@ -209,6 +212,12 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
       return request({
         method: "POST",
         path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}/freeze`
+      });
+    },
+    unfreezeExperimentPlan(projectId, experimentPlanId) {
+      return request({
+        method: "POST",
+        path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}/unfreeze`
       });
     },
     createVisualizationSession(payload) {

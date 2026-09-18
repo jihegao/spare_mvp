@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.spare_mvp_backend.xlsx_text import workbook_bytes
+
 from datetime import datetime, timezone
 import io
 import re
@@ -93,7 +95,7 @@ def export_analysis_snapshot_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
         workbook.properties.title = analysis_name
         workbook.properties.creator = "spare_mvp"
         output = io.BytesIO()
-        workbook.save(output)
+        output.write(workbook_bytes(workbook))
     except Exception as exc:
         raise AnalysisXlsxError("分析结果包含无法写入 Excel 的字符或数值，请检查后重试。") from exc
     return {

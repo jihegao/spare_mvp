@@ -3,39 +3,27 @@ param()
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-
+. (Join-Path $PSScriptRoot 'portable-process.ps1')
 $PackageRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $PidRoot = Join-Path $PackageRoot 'data\pids'
+$Python = Join-Path $PackageRoot 'runtime\python.exe'
+$stoppingFailed = $false
 
-function Stop-RecordedPortableProcess {
-    param([string]$Name)
-
-    $pidPath = Join-Path $PidRoot "$Name.pid"
-    if (-not (Test-Path -LiteralPath $pidPath)) {
-        return
-    }
-    $pidText = (Get-Content -LiteralPath $pidPath -Raw).Trim()
-    $pidValue = 0
-    if ([int]::TryParse($pidText, [ref]$pidValue)) {
-        $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+foreach ($name in @('solara', 'backend')) {
+    $pidPath = Join-Path $PidRoot "$name.pid"
+    try {
+        $process = Get-OwnedPortableProcess -Name $name -Python $Python -PidPath $pidPath
         if ($null -ne $process) {
-            $commandLine = ''
-            try {
-                $commandLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop).CommandLine
-            } catch {
-                # Fall back to the package-owned PID file when WMI is unavailable.
-            }
-            if ([string]::IsNullOrWhiteSpace($commandLine) -or $commandLine.Contains($PackageRoot)) {
-                Stop-Process -Id $pidValue -Force
-                Write-Output "Stopped $Name service."
-            } else {
-                Write-Warning "PID $pidValue is not owned by this portable package and was not terminated."
-            }
+            Stop-Process -InputObject $process -Force
+            Remove-PortableProcessRecord -PidPath $pidPath
+            Write-Output "Stopped $name service."
         }
+    } catch {
+        $stoppingFailed = $true
+        Write-Warning "Could not safely stop $name service: $($_.Exception.Message)"
     }
-    Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
 }
-
-Stop-RecordedPortableProcess -Name 'solara'
-Stop-RecordedPortableProcess -Name 'backend'
-Remove-Item -LiteralPath (Join-Path $PackageRoot 'data\active-ports.json') -Force -ErrorAction SilentlyContinue
+if (-not (Test-Path (Join-Path $PidRoot 'backend.pid')) -and -not (Test-Path (Join-Path $PidRoot 'solara.pid'))) {
+    Remove-Item -LiteralPath (Join-Path $PackageRoot 'data\active-ports.json') -Force -ErrorAction SilentlyContinue
+}
+if ($stoppingFailed) { throw 'One or more services could not be stopped with verified ownership.' }

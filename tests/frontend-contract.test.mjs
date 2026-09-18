@@ -349,7 +349,7 @@ test("experiment plan list keeps selection with backend row actions", async () =
   assert.match(listSource, /data-experiment-plan-select/);
   assert.match(listSource, /selected-table-row/);
   assert.match(listSource, /data-experiment-plan-edit/);
-  assert.match(listSource, /<th>所属模块<\/th>/);
+  assert.doesNotMatch(listSource, /<th>所属模块<\/th>/);
   assert.match(listSource, /<th>关联运行<\/th>/);
   assert.match(listSource, /experimentPlanRowFromBackend/);
   assert.match(listSource, /run_count/);
@@ -359,7 +359,8 @@ test("experiment plan list keeps selection with backend row actions", async () =
 test("modeling pages expose project draft persistence without replacing experiment plans", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
 
-  assert.match(appSource, /data-project-draft-save/);
+  assert.doesNotMatch(appSource, /<button[^>]*data-project-draft-save/);
+  assert.match(appSource, /data-project-draft-retry/);
   assert.match(appSource, /function saveCurrentProjectDraftThroughApi/);
   assert.match(appSource, /function hydrateCurrentProjectDraftFromApi/);
   assert.match(appSource, /projectDraftSaveStatus/);
@@ -442,9 +443,9 @@ test("equipment system modeling is the post-project landing page and plan name l
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const indexSource = await readFile(new URL("../front/index.html", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
-  assert.match(appSource, /const PLATFORM_DISPLAY_NAME = "备件规划及任务可靠度验证评估平台 V1\.0"/);
+  assert.match(appSource, /const PLATFORM_DISPLAY_NAME = "备件规划及任务可靠度验证评估平台 V2\.0"/);
   assert.match(appSource, /<h1>\$\{PLATFORM_DISPLAY_NAME\}<\/h1>/);
-  assert.match(indexSource, /<h1>备件规划及任务可靠度验证评估平台 V1\.0<\/h1>/);
+  assert.match(indexSource, /<h1>备件规划及任务可靠度验证评估平台 V2\.0<\/h1>/);
   assert.match(appSource, /const DEFAULT_FEATURE_ID = "spare-planning-equipment-system"/);
   assert.equal(getFeaturePageById("spare-planning-equipment-system").module, "备件规划评估模块");
   assert.equal(getFeaturePageById("spare-planning-equipment-system").secondary, "仿真建模");
@@ -819,7 +820,7 @@ test("results analysis pages route to independent Mesa session wrappers", async 
   assert.match(appSource, /分析设定/);
   assert.match(appSource, /分析结果明细/);
   assert.match(appSource, /lite-mesa-analysis-setting-line/);
-  assert.match(appSource, /备件满足率下限/);
+  assert.match(appSource, /预计满足率下限/);
   assert.match(appSource, /data-lite-mesa-analysis-field="missionConfidenceTarget"/);
   assert.doesNotMatch(appSource, /data-lite-mesa-analysis-field="maxTimeWindow"|<span>时间窗口<\/span>/);
   assert.match(appSource, /data-lite-mesa-analysis-field="topN"/);
@@ -2384,7 +2385,7 @@ test("equipment import and export actions stay inside the equipment tree panel",
     appSource.indexOf("function buildEquipmentTreeNodes")
   );
   const treePanelSource = equipmentSource.slice(
-    equipmentSource.indexOf('<aside class="tree-container">'),
+    equipmentSource.indexOf('<aside class="tree-container equipment-modeling-tree"'),
     equipmentSource.indexOf('<section class="detail-panel equipment-system-table-panel">')
   );
   const detailPanelSource = equipmentSource.slice(
@@ -4043,7 +4044,7 @@ test("phase 6B carry list analysis fixes objective to minimum carried spares", a
   assert.match(formalCarrySource, /projection payload/);
 });
 
-test("phase 6C mission reliability chart uses formal cross-sample wave averages without hard-coded rates", async () => {
+test("phase 6C reliability reuses per-sample detail and separate wave chart without hard-coded rates", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const lineChartSource = appSource.slice(
     appSource.indexOf("function renderLineChart"),
@@ -4071,13 +4072,13 @@ test("phase 6C mission reliability chart uses formal cross-sample wave averages 
   assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
-  assert.match(formalReliabilitySource, /renderLiteMesaMissionReliabilityWaveChart\(rows\.map/);
-  assert.match(formalReliabilitySource, /meanMissionSuccessRate: row\.probability/);
+  assert.match(formalReliabilitySource, /renderLiteMesaMissionReliabilityWaveChart\(rows\)/);
+  assert.match(formalReliabilitySource, /renderTaskReliabilityDetailTable\(rows, "formal-mission-waves"\)/);
   assert.match(appSource, /function renderLiteMesaMissionReliabilityWaveChart/);
   assert.match(appSource, /meanMissionSuccessRate/);
   assert.match(lineChartSource, /point\.tooltip/);
-  assert.match(formalReliabilitySource, /<th>波次<\/th><th>样本数<\/th><th>波次成功率<\/th>/);
-  assert.match(formalReliabilitySource, /row\.sampleCount/);
+  assert.match(appSource, /<th>样本<\/th><th>波次<\/th><th>成功数<\/th><th>计划数<\/th><th>波次成功率<\/th>/);
+  assert.doesNotMatch(formalReliabilitySource, /row\.sampleCount/);
   assert.doesNotMatch(formalReliabilitySource, /最大下降波次|任务波次|状态/);
   assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
   assert.doesNotMatch(dashboardSource + formalReliabilitySource, /具体需求待甲方确定/);
@@ -4147,12 +4148,12 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
   assert.match(metricSource, /metricId: "sortie_rate", label: "出动架次率"/);
   assert.match(reliabilitySource, /metricLabels: \["出动架次率", "波次成功率", "整周期任务可靠度", "任务周期"\]/);
   assert.match(reliabilityTableSource, /task-reliability-result-table/);
-  assert.match(reliabilityTableSource, /<th>波次<\/th><th>样本数<\/th><th>波次成功率<\/th>/);
+  assert.match(appSource, /<th>样本<\/th><th>波次<\/th><th>成功数<\/th><th>计划数<\/th><th>波次成功率<\/th>/);
   assert.doesNotMatch(reliabilityTableSource, /平均出动架次率|formatLiteMesaAnalysisMetricValue|样本明细/);
   assert.doesNotMatch(metricSource + reliabilitySource + reliabilityTableSource, /出动完成率/);
 });
 
-test("lite Mesa analysis visible copy omits Mesa session wording and renders aggregated wave rows", async () => {
+test("lite Mesa analysis visible copy omits Mesa session wording and renders per-sample wave rows", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const analysisSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaAnalysisPage"),
@@ -4165,8 +4166,8 @@ test("lite Mesa analysis visible copy omits Mesa session wording and renders agg
 
   assert.match(analysisSource, /后端内存运行/);
   assert.match(reliabilityTableSource, /task-reliability-result-table/);
-  assert.match(reliabilityTableSource, /<th>波次<\/th><th>样本数<\/th><th>波次成功率<\/th>/);
-  assert.match(reliabilityTableSource, /row\.sampleCount/);
+  assert.match(appSource, /<th>样本<\/th><th>波次<\/th><th>成功数<\/th><th>计划数<\/th><th>波次成功率<\/th>/);
+  assert.match(appSource, /normalizeTaskReliabilityWaveRows\(rows\)/);
   assert.match(reliabilityTableSource, /renderLiteMesaMissionReliabilityWaveChart/);
   assert.doesNotMatch(reliabilityTableSource, /平均任务成功率|成功 \/ 总实验|失败实验|row\.seed|readyRate/);
   assert.doesNotMatch(appSource, /任务剖面可靠性/);
@@ -4220,14 +4221,14 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
 
   assert.match(carryDefinitionSource, /metricLabels: \["建议携行总数", "高优先级备件", "满足下限备件", "总体备件利用率"\]/);
   assert.match(downtimeDefinitionSource, /metricLabels: \["停机因素项", "首要因素", "最高贡献度"\]/);
-  assert.match(metricFilterSource, /carry_list: new Set\(\["备件满足率下限", "置信度目标", "样本数"\]\)/);
+  assert.match(metricFilterSource, /carry_list: new Set\(\["预计满足率下限", "置信度目标", "样本数"\]\)/);
   assert.match(metricFilterSource, /downtime_factors: new Set\(\["样本数"\]\)/);
   assert.doesNotMatch(carryBodySource, /<th>置信度目标<\/th>|row\.confidenceTarget/);
   assert.match(carryBodySource, /data-carry-hide-zero/);
   assert.match(carryBodySource, /隐藏需求数值为 0 的备件/);
   assert.match(carryBodySource, /data-carry-aircraft-filter/);
   assert.match(carryBodySource, /<th>机型<\/th>/);
-  assert.match(carryBodySource, /<th>备件满足率<\/th><th>约束状态<\/th>/);
+  assert.match(carryBodySource, /<th>预计满足率<\/th><th>即时满足率<\/th><th>约束状态<\/th>/);
   assert.match(carryBodySource, /row\.satisfactionRate/);
   assert.match(carryBodySource, /row\.satisfactionConstraintMet/);
   assert.match(carryBodySource, /carrySatisfactionConstraintMarginDisplay/);

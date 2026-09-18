@@ -3181,19 +3181,44 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_backend_api_lifecycle_audit_failure_rolls_back_state(self) -> None:
         cases = [
-            ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="missing-user")),
-            ("delete", lambda run_id: self.api.soft_delete_run(run_id, actor_user_id="missing-user")),
+            ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="user-admin")),
+            ("delete", lambda run_id: self.api.soft_delete_run(run_id, actor_user_id="user-admin")),
         ]
         for label, mutate in cases:
             with self.subTest(label):
                 run = self._submit_successful_run()
 
-                with self.assertRaises(sqlite3.IntegrityError):
-                    mutate(run["run_id"])
+                with mock.patch.object(
+                    self.repository,
+                    "_insert_audit_event_no_commit",
+                    side_effect=sqlite3.IntegrityError("injected audit write failure"),
+                ) as insert_audit:
+                    with self.assertRaises(sqlite3.IntegrityError):
+                        mutate(run["run_id"])
+                    insert_audit.assert_called_once()
+                    self.assertEqual(insert_audit.call_args.kwargs["actor_user_id"], "user-admin")
 
                 stored = self.api.get_run(run["run_id"])
                 self.assertEqual(stored["lifecycle_status"], "active")
                 self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_unknown_lifecycle_actor_is_denied_and_audited_without_foreign_key_failure(self) -> None:
+        for action, mutate in [
+            ("runs.archive", self.api.archive_run),
+            ("runs.delete", self.api.soft_delete_run),
+        ]:
+            with self.subTest(action):
+                run = self._submit_successful_run()
+                with self.assertRaises(BackendApiError) as error:
+                    mutate(run["run_id"], actor_user_id="missing-user")
+                self.assertEqual(error.exception.code, "forbidden")
+                self.assertEqual(self.api.get_run(run["run_id"])["lifecycle_status"], "active")
+                events = self.repository.list_audit_events(resource_id=run["run_id"])
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0]["action"], action)
+                self.assertEqual(events[0]["outcome"], "denied")
+                self.assertIsNone(events[0]["actor_user_id"])
+                self.assertEqual(events[0]["details"], {"reason": "unknown_user"})
 
     def test_backend_api_rejects_artifact_path_escape(self) -> None:
         run = self._submit_successful_run()
@@ -3754,9 +3779,9 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(payload["rows"])
         self.assertEqual(payload["rows"], payload["wave_rows"])
         self.assertEqual(payload["wave_rows"][0]["dayIndex"], 1)
-        self.assertEqual(payload["wave_rows"][0]["sampleCount"], 2)
-        self.assertNotIn("sampleIndex", payload["wave_rows"][0])
-        self.assertNotIn("sampleLabel", payload["wave_rows"][0])
+        self.assertEqual(payload["wave_rows"][0]["sampleIndex"], 0)
+        self.assertEqual(payload["wave_rows"][0]["sampleLabel"], "样本 1")
+        self.assertEqual({row["sampleIndex"] for row in payload["wave_rows"]}, {0, 1})
         self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
         self.assertNotIn("seed", payload["wave_rows"][0])
         self.assertEqual([field["key"] for field in payload["result_fields"]], [
@@ -3765,7 +3790,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["metrics"], [
             *[[field["label"], field["display_value"]] for field in payload["result_fields"]],
             ["仿真总次数", "2"],
-            ["成功次数", "0"],
+            ["成功次数", "2"],
         ])
         self.assertNotIn("任务剖面可靠性", json.dumps(payload["metrics"], ensure_ascii=False))
         self.assertEqual(payload["visualization_state_series"]["run_id"], payload["run_id"])
@@ -3932,44 +3957,33 @@ class BackendApiContractTest(unittest.TestCase):
         ])
         self.assertNotIn("任务失败次数", {label for label, _value in result["metrics"]})
 
-    def test_lite_mesa_mission_reliability_rows_average_each_wave_across_samples(self) -> None:
+    def test_lite_mesa_mission_reliability_preserves_authoritative_sample_rows(self) -> None:
+        samples = [
+            {"sample_index": sample, "mission_wave_reliability": [
+                {"day_index": day, "wave_index": wave, "planned_waves": 3 if sample else 1,
+                 "successful_waves": 1, "planned_sorties": 4, "launched_sorties": 2}
+                for day in range(1, 14) for wave in (1, 2)
+            ]}
+            for sample in range(4)
+        ]
+        adapter = SimulationAdapter()
+        detail = adapter._aircraft_support_v1_mission_wave_rows(samples)
         result = _lite_mesa_mission_reliability_result(
-            {"data": {"mission_success_probability": 0.8, "sortie_rate": 0.4}},
-            [
-                {
-                    "seed": 1,
-                    "metrics": {"failed_sorties": 0, "ready_rate": 1},
-                    "mission_wave_reliability": [
-                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 2, "launchedSorties": 2, "successfulSorties": 1, "plannedWaves": 1, "successfulWaves": 1, "missionSuccessRate": 1, "sortieRate": 1},
-                        {"dayIndex": 1, "waveIndex": 2, "plannedSorties": 2, "launchedSorties": 1, "successfulSorties": 0, "plannedWaves": 1, "successfulWaves": 0, "missionSuccessRate": 0, "sortieRate": 0.5},
-                    ],
-                },
-                {
-                    "seed": 2,
-                    "metrics": {"failed_sorties": 0, "ready_rate": 1},
-                    "mission_wave_reliability": [
-                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 6, "launchedSorties": 4, "successfulSorties": 0, "plannedWaves": 1, "successfulWaves": 0, "missionSuccessRate": 0, "sortieRate": 4 / 6},
-                    ],
-                },
-            ],
-            {"maxTimeWindow": 1},
+            {"data": {"mission_wave_rows": detail, "mission_success_probability": 0.4, "sortie_rate": 0.5}},
+            samples, {},
         )
-
+        self.assertEqual(len(result["wave_rows"]), 104)
         self.assertEqual(result["rows"], result["wave_rows"])
-        self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2"])
-        self.assertEqual([row["sampleCount"] for row in result["rows"]], [2, 1])
-        self.assertTrue(all("sampleIndex" not in row for row in result["rows"]))
-        self.assertTrue(all("sampleLabel" not in row for row in result["rows"]))
-        self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 4)
-        self.assertAlmostEqual(result["rows"][0]["launchedSorties"], 3)
-        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 0.5)
-        self.assertAlmostEqual(result["rows"][0]["plannedWaves"], 1)
-        self.assertAlmostEqual(result["rows"][0]["successfulWaves"], 0.5)
-        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 0.5)
-        self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 5 / 6)
-        self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
-        self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
-        self.assertNotIn("seed", result["rows"][0])
+        self.assertEqual({row["sampleIndex"] for row in result["rows"]}, {0, 1, 2, 3})
+        self.assertEqual(result["rows"][0]["waveLabel"], "第1天第1波次")
+        self.assertTrue(all(isinstance(row["plannedWaves"], int) for row in result["rows"]))
+        # Source samples can be missing or shuffled; transport follows the formal projection.
+        reordered = _lite_mesa_mission_reliability_result(
+            {"data": {"mission_wave_rows": detail}}, list(reversed(samples)), {},
+        )
+        self.assertEqual(result["rows"], reordered["rows"])
+        no_detail = _lite_mesa_mission_reliability_result({"data": {}}, samples, {})
+        self.assertEqual(no_detail["rows"], [])
 
     def test_task_reliability_result_fields_keep_percent_and_period_contract(self) -> None:
         fields = build_task_reliability_result_fields(
@@ -4101,7 +4115,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(all(row["productId"] for row in shortfall["rows"] + carry["rows"]))
         self.assertTrue(all("aircraftModel" in row for row in carry["rows"]))
         self.assertTrue(all("lifeLimited" in row and "lifeLandings" in row and "lifeHours" in row for row in carry["rows"]))
-        self.assertIn(["备件满足率下限", "0.73"], carry["metrics"])
+        self.assertIn(["预计满足率下限", "0.73"], carry["metrics"])
         self.assertTrue(all(row["minimumSatisfactionRate"] == 0.73 for row in carry["rows"]))
         self.assertTrue(all(row["satisfactionConstraintMet"] for row in carry["rows"]))
         self.assertNotIn("aircraft_support_v1_spares", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
@@ -4210,23 +4224,25 @@ class BackendApiContractTest(unittest.TestCase):
                     "sample_index": 0,
                     "events": [
                         {
-                            "event": "spare_shortage",
+                            "event": "spare_request",
                             "details": {
                                 "job_id": "job-001",
                                 "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "航电模块",
-                                "required_quantity": 1,
+                                "immediately_filled_quantity": 0,
+                                "demand_quantity": 1,
                             },
                         },
                         {
-                            "event": "spare_shortage",
+                            "event": "spare_request",
                             "details": {
                                 "job_id": "job-001",
                                 "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "航电模块",
-                                "required_quantity": 1,
+                                "immediately_filled_quantity": 0,
+                                "demand_quantity": 1,
                             },
                         },
                         {
@@ -4262,8 +4278,11 @@ class BackendApiContractTest(unittest.TestCase):
         shortfall_row = projections["spare_shortfall"]["data"][0]
         carry_row = projections["carry_list"]["data"][0]
         self.assertEqual(shortfall_row["demand_count"], 1)
-        self.assertEqual(shortfall_row["filled_count"], 1)
+        self.assertEqual(shortfall_row["filled_count"], 0)
         self.assertEqual(shortfall_row["shortage_count"], 1)
+        self.assertEqual(shortfall_row["shortage_quantity"], 1)
+        self.assertEqual(shortfall_row["request_count"], 1)
+        self.assertEqual(shortfall_row["shortage_probability"], 1)
         self.assertEqual(carry_row["shortage_count"], 0)
         self.assertEqual(carry_row["observed_shortage_count"], 1)
         self.assertEqual(carry_row["recommended_quantity"], 1)
@@ -4359,13 +4378,14 @@ class BackendApiContractTest(unittest.TestCase):
                 "sample_index": sample_index,
                 "events": [
                     {
-                        "event": "spare_shortage",
+                        "event": "spare_request",
                         "details": {
                             "job_id": f"job-{sample_index}",
                             "aircraft_model": "J-15",
                             "resource_id": "carrier-deck",
                             "spare_type": "航电模块",
-                            "required_quantity": sample_demand,
+                            "immediately_filled_quantity": 0,
+                            "demand_quantity": sample_demand,
                         },
                     }
                 ],
@@ -4428,23 +4448,25 @@ class BackendApiContractTest(unittest.TestCase):
                     "sample_index": 0,
                     "events": [
                         {
-                            "event": "spare_shortage",
+                            "event": "spare_request",
                             "details": {
                                 "job_id": "job-j15",
                                 "aircraft_model": "J-15",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "发动机备件",
-                                "required_quantity": 1,
+                                "immediately_filled_quantity": 0,
+                                "demand_quantity": 1,
                             },
                         },
                         {
-                            "event": "spare_shortage",
+                            "event": "spare_request",
                             "details": {
                                 "job_id": "job-j35",
                                 "aircraft_model": "J-35",
                                 "resource_id": "carrier-deck",
                                 "spare_type": "雷达备件",
-                                "required_quantity": 1,
+                                "immediately_filled_quantity": 0,
+                                "demand_quantity": 1,
                             },
                         },
                     ],

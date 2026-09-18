@@ -838,6 +838,19 @@ class ContractRepository:
             raise ValueError("ExperimentPlan changed while it was being frozen")
         self.connection.commit()
 
+    def compare_and_swap_unfreeze_experiment_plan(self, expected_plan: dict[str, Any], draft: dict[str, Any]) -> None:
+        cursor = self.connection.execute(
+            """UPDATE experiment_plans
+               SET status = 'draft', canonical_fingerprint = NULL, frozen_at = NULL,
+                   payload_json = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE experiment_plan_id = ? AND project_id = ? AND status = 'frozen' AND payload_json = ?""",
+            (_to_json(draft), draft["experiment_plan_id"], draft["project_id"], _to_json(expected_plan)),
+        )
+        if cursor.rowcount != 1:
+            self.connection.rollback()
+            raise ValueError("ExperimentPlan changed while it was being unfrozen")
+        self.connection.commit()
+
     def upsert_modeling_snapshot(self, snapshot: dict[str, Any]) -> None:
         self.connection.execute(
             """

@@ -40,6 +40,16 @@ def parse_project_xlsx(content: bytes) -> tuple[dict[str, Any], dict[str, dict[s
     except Exception as exc:
         raise ProjectXlsxError(f"无法读取 XLSX 工作簿: {exc}") from exc
 
+    from src.spare_mvp_backend.project_xlsx_template import GUIDE, parse_standard_workbook
+    if GUIDE in workbook.sheetnames:
+        try:
+            for sheet in workbook:
+                if sheet.max_row > MAX_XLSX_ROWS_PER_SHEET or sheet.max_column > MAX_XLSX_COLUMNS_PER_SHEET:
+                    raise ProjectXlsxError(f"sheet {sheet.title} 超过行列限制")
+            return parse_standard_workbook(workbook)
+        finally:
+            workbook.close()
+
     project: dict[str, Any] = {}
     locations: dict[str, dict[str, Any]] = {}
     issues: list[dict[str, Any]] = []
@@ -200,6 +210,11 @@ def validate_import_relations(project: dict[str, Any]) -> list[dict[str, Any]]:
                 seen[identity] = index
 
     components = [item for item in project.get("components", []) if isinstance(item, dict)]
+    product_ids = {str(item.get("id")) for item in project.get("products", []) if isinstance(item, dict) and item.get("id")}
+    for index, component in enumerate(components):
+        product_id = str(component.get("productId") or "")
+        if product_id and product_id not in product_ids:
+            issues.append(_path_issue("missing_product_reference", f"components[{index}].productId", f"组件引用了不存在的产品 {product_id}", product_id))
     parents = {str(item.get("id")): str(item.get("parentId")) for item in components if item.get("id") and item.get("parentId")}
     for component_id in parents:
         chain: set[str] = set()
@@ -233,12 +248,17 @@ def locate_issues(issues: list[dict[str, Any]], locations: dict[str, dict[str, A
     result = []
     for issue in issues:
         next_issue = dict(issue)
+        if all(key in issue for key in ("sheet", "row", "column")):
+            result.append(next_issue)
+            continue
         path = str(issue.get("path") or issue.get("field_path") or "")
         normalized = re.sub(r"\.([0-9]+)(?=\.|$)", r"[\1]", path)
         location = locations.get(normalized)
         if location is None:
-            candidates = [(key, value) for key, value in locations.items() if normalized.startswith(key) or key.startswith(normalized)]
-            location = max(candidates, key=lambda pair: len(pair[0]))[1] if candidates else None
+            ancestors = [(key, value) for key, value in locations.items() if key and (normalized.startswith(key + ".") or normalized.startswith(key + "["))]
+            descendants = [(key, value) for key, value in locations.items() if normalized and (key.startswith(normalized + ".") or key.startswith(normalized + "["))]
+            location = (max(ancestors, key=lambda pair: len(pair[0]))[1] if ancestors else
+                        min(descendants, key=lambda pair: len(pair[0]))[1] if descendants else locations.get(""))
         if location:
             next_issue.update({key: location[key] for key in ("sheet", "row", "column", "field") if key in location})
             if next_issue.get("reference_value") in (None, "") and "reference_value" in location:

@@ -31,6 +31,7 @@ from src.spare_mvp_backend.execution_context import (
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_parallel_cores
 from src.spare_mvp_backend.project_payload import (
+    ProjectJsonExporter,
     materialize_scenario_composition,
     normalize_project_basic_mission_support_activity_names,
     project_basic_mission_support_activity_name_errors,
@@ -41,6 +42,9 @@ from src.spare_mvp_backend.project_payload import (
 )
 from src.spare_mvp_backend.project_xlsx import (
     MAX_XLSX_BYTES, ProjectXlsxError, locate_issues, parse_project_xlsx, preview_counts, validate_import_relations,
+)
+from src.spare_mvp_backend.project_xlsx_template import (
+    ROOT as PROJECT_XLSX_ROOT, VERSION as PROJECT_XLSX_VERSION, export_project_xlsx, schema as project_excel_schema,
 )
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.rms_allocation_xlsx import (
@@ -194,15 +198,53 @@ class BackendApi:
         project = normalize_project_basic_mission_support_activity_names(project)
         validation = self.validate_project(project)
         relation_errors = validate_import_relations(project)
-        compile_errors = self.adapter._aircraft_support_v1_compile_issues(project)
+        compile_errors = []
+        standard = locations.get("", {}).get("sheet") == "项目信息"
+        if standard:
+            from jsonschema import Draft202012Validator
+            for error in Draft202012Validator(project_excel_schema()).iter_errors(project):
+                path = ".".join(str(part) for part in error.absolute_path)
+                keys = []
+                if error.validator == "additionalProperties" and isinstance(error.instance, dict):
+                    keys = [key for key in error.instance if key not in error.schema.get("properties", {})]
+                elif error.validator == "required" and isinstance(error.instance, dict):
+                    keys = [key for key in error.validator_value if key not in error.instance]
+                for field in keys or [None]:
+                    field_path = ".".join(part for part in (path, field) if part is not None and part != "")
+                    compile_errors.append({"code": "project_schema_error", "field_path": field_path, "message": error.message})
+        gate_status = "blocked"
+        if not parse_errors and not compile_errors:
+            try:
+                project = ProjectJsonExporter(target="aircraft_support_v1", repo_root=PROJECT_XLSX_ROOT).export(project)
+                gate = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+                gate_status = gate["status"]
+                compile_errors.extend(gate.get("issues", []))
+                if gate_status != "compiled" and not compile_errors:
+                    compile_errors.append({"code": "project_compile_blocked", "message": "Project无法编译"})
+            except (ValueError, AdapterError) as exc:
+                import re
+                match = re.search(r" schema at ([^:]+):", str(exc))
+                error_path = getattr(exc, "path", "") or (match.group(1) if match else "")
+                compile_errors.extend(getattr(exc, "issues", None) or [{"code": getattr(exc, "code", "invalid_clean_project"), "field_path": error_path, "message": str(exc)}])
         errors = locate_issues([*parse_errors, *validation.get("errors", []), *relation_errors, *compile_errors], locations)
         return {
-            "ok": not errors,
+            "ok": not errors and gate_status == "compiled",
             "project_json": project,
             "errors": errors,
             "counts": preview_counts(project),
             "sheets": sorted({location["sheet"] for location in locations.values()}),
+            "format_version": PROJECT_XLSX_VERSION if standard else "legacy-project-xlsx",
+            "compile_status": gate_status,
         }
+
+    def project_excel_template(self) -> dict[str, Any]:
+        project = json.loads((PROJECT_XLSX_ROOT / "exports/project-case-large.json").read_text(encoding="utf-8"))
+        project = ProjectJsonExporter(target="aircraft_support_v1", repo_root=PROJECT_XLSX_ROOT).export(project)
+        gate = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+        if gate["status"] != "compiled":
+            raise BackendApiError("template_compile_blocked", "标准模板示例未通过编译校验", issues=gate.get("issues", []))
+        return {"body": export_project_xlsx(project), "filename": "Project标准模板-v1.xlsx",
+                "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         try:
@@ -848,8 +890,11 @@ class BackendApi:
         self.repository.upsert_modeling_snapshot(snapshot)
         return snapshot
 
-    def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
-        return self._upsert_experiment_plan(project_id, config)
+    def create_experiment_plan(self, project_id: str, config: dict[str, Any], *, actor_user_id: str | None = None) -> dict[str, Any]:
+        if actor_user_id is not None:
+            self._require_role(actor_user_id, {"系统管理员", "数据管理员", "普通用户"},
+                               action="experiment_plans.create", resource_type="project", resource_id=project_id)
+        return self._upsert_experiment_plan(project_id, config, actor_user_id=actor_user_id)
 
     def update_experiment_plan(
         self,
@@ -885,6 +930,7 @@ class BackendApi:
             config,
             experiment_plan_id=experiment_plan_id,
             status=existing.get("status", "draft"),
+            actor_user_id=existing.get("created_by"),
         )
 
     def _upsert_experiment_plan(
@@ -894,6 +940,7 @@ class BackendApi:
         *,
         experiment_plan_id: str | None = None,
         status: str = "draft",
+        actor_user_id: str | None = None,
     ) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
         try:
@@ -916,6 +963,8 @@ class BackendApi:
         if snapshot is None:
             snapshot = self.create_modeling_snapshot(project_id)
         plan_key = {"config": plan_config, "modeling_snapshot_id": snapshot["snapshot_id"]}
+        if actor_user_id is not None:
+            plan_key["created_by"] = actor_user_id
         plan = {
             "experiment_plan_id": experiment_plan_id or f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
             "project_id": project_id,
@@ -923,6 +972,7 @@ class BackendApi:
             "schema_version": "experiment-plan-v0",
             "project_version": project["project_version"],
             "status": status,
+            "created_by": actor_user_id,
             "config": plan_config,
         }
         try:
@@ -1051,6 +1101,23 @@ class BackendApi:
             ) from exc
         return frozen
 
+    def unfreeze_experiment_plan(self, project_id: str, experiment_plan_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        self._require_role(actor_user_id, {"系统管理员", "数据管理员", "普通用户"},
+                           action="experiment_plans.unfreeze", resource_type="experiment_plan", resource_id=experiment_plan_id)
+        plan = self.repository.get_experiment_plan(experiment_plan_id)
+        if plan.get("project_id") != project_id:
+            raise BackendApiError("experiment_plan_project_mismatch", "ExperimentPlan does not belong to project")
+        if plan.get("status") != "frozen":
+            return plan
+        draft = {**plan, "status": "draft"}
+        draft.pop("canonical_fingerprint", None)
+        draft.pop("frozen_at", None)
+        try:
+            self.repository.compare_and_swap_unfreeze_experiment_plan(plan, draft)
+        except ValueError as exc:
+            raise BackendApiError("experiment_plan_version_conflict", str(exc)) from exc
+        return draft
+
     def list_experiment_plans(self, project_id: str) -> dict[str, Any]:
         return {
             "project_id": project_id,
@@ -1064,14 +1131,13 @@ class BackendApi:
         actor_user_id: str | None = None,
     ) -> dict[str, Any]:
         actor_user_id = _require_m7_actor(actor_user_id)
-        self._require_role(
-            actor_user_id,
-            {"系统管理员", "数据管理员"},
-            action="experiment_plans.delete",
-            resource_type="experiment_plan",
-            resource_id=experiment_plan_id,
-        )
         try:
+            plan = self.repository.get_experiment_plan(experiment_plan_id)
+            allowed_roles = {"系统管理员", "数据管理员"}
+            if plan.get("created_by") == actor_user_id:
+                allowed_roles.add("普通用户")
+            self._require_role(actor_user_id, allowed_roles, action="experiment_plans.delete",
+                               resource_type="experiment_plan", resource_id=experiment_plan_id)
             with self.visualization_session_lifecycle_lock:
                 deleted = self.run_service.delete_experiment_plan(
                     project_id,
@@ -2138,7 +2204,7 @@ class BackendApi:
             user = self.repository.get_user(actor_user_id)
         except KeyError as exc:
             self.repository.insert_audit_event(
-                actor_user_id=actor_user_id,
+                actor_user_id=None,
                 action=action,
                 resource_type=resource_type,
                 resource_id=resource_id,
@@ -2853,7 +2919,7 @@ def _lite_mesa_projection_event_required(event: Any) -> bool:
     if not isinstance(event, dict):
         return False
     event_name = str(event.get("event") or event.get("event_type") or "")
-    return event_name in {"spare_shortage", "spare_consumed"} or isinstance(event.get("snapshot"), dict)
+    return event_name in {"spare_request", "spare_shortage", "spare_consumed"} or isinstance(event.get("snapshot"), dict)
 
 
 def _sample_daily_mission_reliability(missions: list[Any], *, aircraft_count: int = 1) -> list[dict[str, Any]]:
@@ -2997,75 +3063,30 @@ def _sample_mission_wave_reliability(missions: list[Any]) -> list[dict[str, Any]
     return rows
 
 
-def _sample_mission_wave_rows(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows_by_wave_position: dict[int, list[dict[str, Any]]] = {}
-    for sample in samples:
-        for wave_position, row in enumerate(sample.get("mission_wave_reliability") or []):
-            day = max(1, _metric_int(row.get("dayIndex", row.get("day_index")), default=1))
-            wave = max(1, _metric_int(row.get("waveIndex", row.get("wave_index")), default=1))
-            planned_sorties = _metric_float(row.get("plannedSorties", row.get("planned_sorties")), default=0)
-            launched_sorties = _metric_float(row.get("launchedSorties", row.get("launched_sorties")), default=0)
-            planned_waves = _metric_float(row.get("plannedWaves", row.get("planned_waves")), default=0)
-            successful_waves = _metric_float(row.get("successfulWaves", row.get("successful_waves")), default=0)
-            mission_success = _clamp01(
-                successful_waves / planned_waves
-                if planned_waves > 0
-                else row.get("missionSuccessRate", row.get("mission_success_rate", row.get("mean_mission_success_rate")))
-            )
-            sortie_rate = _clamp01(
-                launched_sorties / planned_sorties
-                if planned_sorties > 0
-                else row.get("sortieRate", row.get("sortie_rate", row.get("mean_sortie_rate")))
-            )
-            rows_by_wave_position.setdefault(wave_position, []).append({
-                "dayIndex": day,
-                "waveIndex": wave,
-                "waveKey": _mission_wave_key(day, wave),
-                "waveLabel": _mission_wave_label(day, wave),
-                "plannedSorties": planned_sorties,
-                "launchedSorties": launched_sorties,
-                "successfulSorties": _metric_float(row.get("successfulSorties", row.get("successful_sorties")), default=0),
-                "plannedWaves": planned_waves,
-                "successfulWaves": successful_waves,
-                "meanMissionSuccessRate": mission_success,
-                "missionSuccessRate": mission_success,
-                "meanSortieRate": sortie_rate,
-                "sortieRate": sortie_rate,
-            })
-
-    rows: list[dict[str, Any]] = []
-    for wave_position in sorted(rows_by_wave_position):
-        sample_rows = rows_by_wave_position[wave_position]
-        reference = sample_rows[0]
-        sample_count = len(sample_rows)
-        mission_success_rate = sum(row["missionSuccessRate"] for row in sample_rows) / sample_count
-        sortie_rate = sum(row["sortieRate"] for row in sample_rows) / sample_count
-        rows.append({
-            "sequence": wave_position + 1,
-            "dayIndex": reference["dayIndex"],
-            "waveIndex": reference["waveIndex"],
-            "waveKey": reference["waveKey"],
-            "waveLabel": reference["waveLabel"],
-            "sampleCount": sample_count,
-            "plannedSorties": sum(row["plannedSorties"] for row in sample_rows) / sample_count,
-            "launchedSorties": sum(row["launchedSorties"] for row in sample_rows) / sample_count,
-            "successfulSorties": sum(row["successfulSorties"] for row in sample_rows) / sample_count,
-            "plannedWaves": sum(row["plannedWaves"] for row in sample_rows) / sample_count,
-            "successfulWaves": sum(row["successfulWaves"] for row in sample_rows) / sample_count,
-            "meanMissionSuccessRate": mission_success_rate,
-            "missionSuccessRate": mission_success_rate,
-            "meanSortieRate": sortie_rate,
-            "sortieRate": sortie_rate,
-        })
-    return rows
-
-
 def _mission_wave_key(day: int, wave: int) -> str:
     return f"d{day}-w{wave}"
 
 
 def _mission_wave_label(day: int, wave: int) -> str:
-    return f"第{day}天 第{wave}波"
+    return f"第{day}天第{wave}波次"
+
+
+def _projection_mission_wave_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Transport the adapter's authoritative per-sample detail without regrouping."""
+    names = {
+        "sample_index": "sampleIndex", "sample_label": "sampleLabel",
+        "day_index": "dayIndex", "wave_index": "waveIndex",
+        "wave_key": "waveKey", "wave_label": "waveLabel",
+        "planned_sorties": "plannedSorties", "launched_sorties": "launchedSorties",
+        "successful_sorties": "successfulSorties", "planned_waves": "plannedWaves",
+        "successful_waves": "successfulWaves", "mean_mission_success_rate": "meanMissionSuccessRate",
+        "mean_sortie_rate": "meanSortieRate", "sortie_rate": "sortieRate",
+        "mission_success_probability": "missionSuccessRate",
+    }
+    return [
+        {names.get(key, key): value for key, value in row.items()}
+        for row in data.get("mission_wave_rows", []) if isinstance(row, dict)
+    ]
 
 
 def _lite_mesa_analysis_page_result(
@@ -3188,7 +3209,8 @@ def _lite_mesa_carry_list_result(
                 "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
                 "observedFilled": max(0, _metric_int(item.get("observed_filled_count"), default=0)),
                 "observedShortage": max(0, _metric_int(item.get("observed_shortage_count"), default=0)),
-                "observedFillRate": _clamp01(item.get("observed_fill_rate", satisfaction_rate)),
+                "observedShortageQuantity": _optional_nonnegative_metric_float(item.get("observed_shortage_quantity")),
+                "observedFillRate": _optional_nonnegative_metric_float(item.get("observed_fill_rate")),
                 "satisfactionRate": satisfaction_rate,
                 "satisfactionConstraintMet": satisfaction_constraint_met,
                 "satisfactionConstraintMargin": satisfaction_constraint_margin,
@@ -3244,7 +3266,7 @@ def _lite_mesa_carry_list_result(
             ["高优先级备件", str(sum(1 for row in rows if row["riskLevel"] == "高"))],
             ["满足下限备件", f"{satisfied_constraint_count}/{len(constrained_rows)}"],
             ["总体备件利用率", overall_utilization_display],
-            ["备件满足率下限", f"{minimum_satisfaction_rate:.2f}"],
+            ["预计满足率下限", f"{minimum_satisfaction_rate:.2f}"],
             ["样本数", str(len(samples))],
         ],
         "rows": rows,
@@ -3257,7 +3279,7 @@ def _lite_mesa_mission_reliability_result(
     settings: dict[str, Any],
 ) -> dict[str, Any]:
     data = projection.get("data") if isinstance(projection.get("data"), dict) else {}
-    rows = _sample_mission_wave_rows(samples)
+    rows = _projection_mission_wave_rows(data)
     period_summary = period_completion_summary(samples)
     total_samples = period_summary["total_samples"]
     successful_samples = period_summary["successful_samples"]
@@ -3484,7 +3506,7 @@ def _lite_mesa_downtime_event_log_snapshot(
             "repair_backlog": sum(1 for item in active_jobs if item.get("kind") == "repair"),
             "postflight_backlog": sum(1 for item in active_jobs if item.get("kind") == "postflight"),
             "preventive_backlog": sum(1 for item in active_jobs if item.get("kind") == "preventive"),
-            "spare_fill_rate": _metric_float(metrics.get("spare_fill_rate"), default=0),
+            "spare_fill_rate": _optional_nonnegative_metric_float(metrics.get("spare_fill_rate")),
         },
         "job_node": {
             "job_id": job_id,
@@ -3568,7 +3590,7 @@ def _lite_mesa_downtime_frame_snapshot(
             "repair_backlog": _metric_float(resource_state.get("repair_backlog"), default=0),
             "postflight_backlog": _metric_float(resource_state.get("postflight_backlog"), default=0),
             "preventive_backlog": _metric_float(resource_state.get("preventive_backlog"), default=0),
-            "spare_fill_rate": _metric_float(resource_state.get("spare_fill_rate"), default=0),
+            "spare_fill_rate": _optional_nonnegative_metric_float(resource_state.get("spare_fill_rate")),
         },
         "job_node": {
             "job_id": str(job.get("job_id") or f"{event_type}-node"),

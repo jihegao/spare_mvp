@@ -1,0 +1,239 @@
+{
+  "activeModule": "sparePlanning",
+  "airports": [
+    "A"
+  ],
+  "basicMissions": [
+    {
+      "equipmentType": "J-15",
+      "id": "basic-small",
+      "missionId": "basic-small",
+      "missionPhases": [
+        {
+          "durationMinutes": 30,
+          "id": "phase-sortie",
+          "name": "sortie",
+          "sequence": 1
+        }
+      ],
+      "name": "small sortie",
+      "taskDurationMinutes": 30,
+      "supportActivityName": "Daily operations",
+      "equipmentQuantity": 1,
+      "cancelMinutes": 120,
+      "advanceNotice": 10
+    }
+  ],
+  "combatUnit": {
+    "members": [
+      {
+        "aircraftNo": "J15-001",
+        "airport": "A",
+        "model": "J-15",
+        "status": "ready",
+        "preLifeCalendarDays": 0,
+        "preLifeFlightHours": 0,
+        "preLifeTakeoffLandingCount": 0
+      }
+    ]
+  },
+  "products": [
+    {
+      "id": "product-whole-aircraft",
+      "kind": "whole",
+      "model": "whole-aircraft",
+      "name": "whole aircraft",
+      "failureDistribution": {
+        "distributionType": "指数分布",
+        "rate": 0.01
+      }
+    }
+  ],
+  "components": [
+    {
+      "aircraftModel": "J-15",
+      "failureDistribution": {
+        "distributionType": "指数分布",
+        "rate": 0.01
+      },
+      "id": "whole-aircraft",
+      "kOutOfN": {
+        "k": 1,
+        "n": 1,
+        "enabled": false
+      },
+      "name": "whole aircraft",
+      "productId": "product-whole-aircraft",
+      "productType": "whole",
+      "quantity": 1
+    }
+  ],
+  "missionProfile": {
+    "compositeTasks": [
+      {
+        "id": "daily",
+        "name": "Daily flights",
+        "taskItems": [
+          {
+            "basicMissionId": "basic-small",
+            "firstWaveTime": "01:00",
+            "dailyRepeatCount": 2,
+            "intervalHours": 1,
+            "equipmentType": "J-15"
+          }
+        ],
+        "priority": 1
+      }
+    ],
+    "durationDays": 1,
+    "name": "current aircraft support mission",
+    "periodicTasks": [
+      {
+        "id": "week",
+        "name": "Operations week",
+        "compositeTasks": [
+          {
+            "compositeTaskId": "daily",
+            "weekday": "monday"
+          }
+        ],
+        "compositeTaskIds": [
+          "daily"
+        ]
+      }
+    ]
+  },
+  "project_id": "project-operations-phases",
+  "project_version": "project-v0.1",
+  "scenarioId": "operations-phases",
+  "schema_version": "project-v0",
+  "supportActivities": [
+    {
+      "id": "ops-pre",
+      "activityName": "Daily operations",
+      "activityType": "使用保障",
+      "planType": "直接准备方案",
+      "planGroupId": "ops",
+      "aircraftModel": "J-15",
+      "resourceId": "node-a",
+      "activityCodes": [
+        "pre-b",
+        "pre-a"
+      ],
+      "predecessors": {
+        "pre-b": [
+          "pre-a"
+        ],
+        "pre-a": []
+      }
+    },
+    {
+      "id": "ops-re",
+      "activityName": "Relaunch",
+      "activityType": "使用保障",
+      "planType": "再次出动准备方案",
+      "planGroupId": "ops",
+      "aircraftModel": "J-15",
+      "resourceId": "node-a",
+      "activityCodes": [
+        "re"
+      ],
+      "predecessors": {
+        "re": []
+      }
+    },
+    {
+      "id": "ops-post",
+      "activityName": "Postflight",
+      "activityType": "使用保障",
+      "planType": "飞行后检查方案",
+      "planGroupId": "ops",
+      "aircraftModel": "J-15",
+      "resourceId": "node-a",
+      "activityCodes": [
+        "post"
+      ],
+      "predecessors": {
+        "post": []
+      }
+    }
+  ],
+  "supportActivityJobs": [
+    {
+      "activityCode": "pre-a",
+      "workName": "pre-a",
+      "durationMinutes": 2,
+      "applicableAircraft": "J-15",
+      "personnel": [],
+      "equipment": [],
+      "spare": []
+    },
+    {
+      "activityCode": "pre-b",
+      "workName": "pre-b",
+      "durationMinutes": 3,
+      "applicableAircraft": "J-15",
+      "personnel": [],
+      "equipment": [],
+      "spare": []
+    },
+    {
+      "activityCode": "re",
+      "workName": "re",
+      "durationMinutes": 4,
+      "applicableAircraft": "J-15",
+      "personnel": [],
+      "equipment": [],
+      "spare": []
+    },
+    {
+      "activityCode": "post",
+      "workName": "post",
+      "durationMinutes": 5,
+      "applicableAircraft": "J-15",
+      "personnel": [],
+      "equipment": [],
+      "spare": []
+    }
+  ],
+  "supportOrganization": {
+    "runtimeMode": "vertical",
+    "tree": {
+      "id": "node-a",
+      "name": "node A",
+      "serviceScope": {
+        "aircraftModels": [],
+        "airportIds": [],
+        "productIds": [],
+        "resourceTypes": []
+      },
+      "children": []
+    },
+    "relations": []
+  },
+  "supportNodes": [
+    {
+      "id": "node-a",
+      "name": "node A"
+    }
+  ],
+  "supportResources": [
+    {
+      "id": "node-a-personnel",
+      "name": "crew",
+      "organizationNodeId": "node-a",
+      "quantity": 1,
+      "supportNodeName": "node A",
+      "type": "personnel"
+    },
+    {
+      "id": "node-a-equipment",
+      "name": "tool",
+      "organizationNodeId": "node-a",
+      "quantity": 1,
+      "supportNodeName": "node A",
+      "type": "equipment"
+    }
+  ],
+  "transportPolicies": []
+}

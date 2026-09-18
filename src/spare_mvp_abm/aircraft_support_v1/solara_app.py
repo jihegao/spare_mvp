@@ -1239,7 +1239,14 @@ def SupportStage(frame: dict[str, Any]) -> None:
     )
     selected_support_node_id = support_point_ids.get(effective_support_point, "")
     selected_resources = _support_resources_for_point(resources, selected_support_node_id)
-    selected_spares = _support_spare_rows(spares, selected_support_node_id)
+    spare_sort = solara.use_reactive(("", False))
+    selected_spares = _sorted_support_spare_rows(
+        _support_spare_rows(spares, selected_support_node_id), *spare_sort.value
+    )
+
+    def toggle_spare_sort(column: str) -> None:
+        active_column, descending = spare_sort.value
+        spare_sort.set((column, not descending if active_column == column else False))
     support_scope_label = (
         effective_support_point
         if selected_support_node_id
@@ -1277,11 +1284,36 @@ def SupportStage(frame: dict[str, Any]) -> None:
     solara.HTML(
         unsafe_innerHTML=(
             f'<div class="sim-support-grid">{resource_cards}</div><div class="sim-detail-title">{html.escape(support_scope_label)}：备件库存量 / 已消耗 / 在途</div>'
-            '<div class="sim-table-wrap"><table class="sim-table"><thead><tr><th>备件</th><th>库存</th><th>已消耗</th><th>在途</th>'
-            f"</tr></thead><tbody>{spare_rows}</tbody></table></div>"
         ),
         classes=["sim-html"],
     )
+    with solara.v.Html(tag="div", class_="sim-table-wrap sim-html"):
+        with solara.v.Html(tag="table", class_="sim-table"):
+            with solara.v.Html(tag="thead"):
+                with solara.v.Html(tag="tr"):
+                    solara.v.Html(tag="th", children=["备件"])
+                    for column, label in (("quantity", "库存"), ("consumed", "已消耗"), ("pending_quantity", "在途")):
+                        active = spare_sort.value[0] == column
+                        descending = spare_sort.value[1]
+                        direction = ("descending" if descending else "ascending") if active else "none"
+                        with solara.v.Html(tag="th", attributes={"aria-sort": direction}):
+                            solara.Button(
+                                label=f"{label} {'↓' if descending else '↑'}" if active else label,
+                                text=True,
+                                on_click=lambda column=column: toggle_spare_sort(column),
+                                attributes={"aria-label": f"按{label}{'升序' if active and descending else '降序' if active else '升序'}排列"},
+                            )
+            solara.HTML(tag="tbody", unsafe_innerHTML=spare_rows)
+
+
+def _sorted_support_spare_rows(
+    rows: list[dict[str, Any]], column: str = "", descending: bool = False,
+) -> list[dict[str, Any]]:
+    """Keep name/product tie order stable even when numeric direction changes."""
+    stable_rows = sorted(rows, key=lambda item: (str(item.get("name", "")), str(item.get("product_id", ""))))
+    if column not in {"quantity", "consumed", "pending_quantity"}:
+        return stable_rows
+    return sorted(stable_rows, key=lambda item: _nonnegative_int(item.get(column)), reverse=descending)
 
 
 def _support_point_choices(
@@ -1353,7 +1385,7 @@ def _support_spare_rows(
 def _nonnegative_int(value: Any) -> int:
     try:
         return max(0, int(float(value)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -1485,7 +1517,7 @@ VISUAL_SIMULATION_STYLE = """
 .visual-simulation-page .v-card__title { color: #52677f; font-size: 14px; font-weight: 700; padding-bottom: 4px; }
 .visual-simulation-page .v-card__text { padding-top: 4px; }
 .visual-simulation-page .v-btn { color: #172033; border-color: #cbd7e6; background: #f7faff; box-shadow: none; }
-.visual-simulation-page .v-btn.primary { background: #0f766e !important; border-color: #0f766e !important; }
+.visual-simulation-page .v-btn.primary, .visual-simulation-page .v-btn.bg-primary { background: #0f5cbf !important; border-color: #0f5cbf !important; color: #ffffff !important; }
 .visual-simulation-page .v-input input { color: #172033; }
 .visual-simulation-page .sim-html { width: 100%; }
 .visual-simulation-page .sim-section-title, .visual-simulation-page .sim-detail-title { margin: 2px 0 9px; color: #52677f; font-size: 14px; font-weight: 700; }

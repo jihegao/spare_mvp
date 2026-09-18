@@ -164,3 +164,62 @@ function roundHalfEven(value, digits) {
   }
   return Math.round(scaled) / factor;
 }
+
+// Detail is never grouped: a sample and a business wave identify one observation.
+export function normalizeTaskReliabilityWaveRows(rows = []) {
+  const count = (value) => value !== null && value !== undefined && value !== "" && Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+  return rows.map((row, index) => {
+    const sampleIndex = count(row.sampleIndex ?? row.sample_index);
+    const dayIndex = count(row.dayIndex ?? row.day_index);
+    const waveIndex = count(row.waveIndex ?? row.wave_index);
+    const plannedWaves = count(row.plannedWaves ?? row.planned_waves);
+    const successfulWaves = count(row.successfulWaves ?? row.successful_waves);
+    const plannedSorties = count(row.plannedSorties ?? row.planned_sorties);
+    const launchedSorties = count(row.launchedSorties ?? row.launched_sorties);
+    const probability = plannedWaves > 0 && successfulWaves !== null
+      ? successfulWaves / plannedWaves
+      : Number(row.meanMissionSuccessRate ?? row.mean_mission_success_rate ?? row.missionSuccessRate ?? row.mission_success_probability ?? row.probability ?? 0);
+    const sortieRate = plannedSorties > 0 && launchedSorties !== null
+      ? launchedSorties / plannedSorties
+      : Number(row.meanSortieRate ?? row.mean_sortie_rate ?? row.sortieRate ?? row.sortie_rate ?? 0);
+    const waveLabel = dayIndex && waveIndex ? `第${dayIndex}天第${waveIndex}波次` : row.waveLabel ?? row.wave_label ?? row.timeLabel ?? "-";
+    return {
+      ...row, sequence: index + 1, sampleIndex,
+      sampleLabel: sampleIndex === null ? "不可用" : `样本 ${sampleIndex + 1}`,
+      dayIndex, waveIndex, waveLabel, timeLabel: waveLabel,
+      waveKey: dayIndex && waveIndex ? `d${dayIndex}-w${waveIndex}` : row.waveKey ?? row.wave_key ?? `wave-${index + 1}`,
+      plannedWaves, successfulWaves, plannedSorties, launchedSorties,
+      successfulSorties: count(row.successfulSorties ?? row.successful_sorties),
+      probability, meanMissionSuccessRate: probability, missionSuccessRate: probability,
+      sortieRate, meanSortieRate: sortieRate
+    };
+  });
+}
+
+export function aggregateTaskReliabilityWaves(rows = []) {
+  const groups = new Map();
+  for (const row of normalizeTaskReliabilityWaveRows(rows)) {
+    const group = groups.get(row.waveKey) || [];
+    group.push(row);
+    groups.set(row.waveKey, group);
+  }
+  return [...groups.values()]
+    .sort((a, b) => (a[0].dayIndex || 0) - (b[0].dayIndex || 0) || (a[0].waveIndex || 0) - (b[0].waveIndex || 0))
+    .map((group, index) => {
+      const total = (key) => group.every((row) => row[key] !== null) ? group.reduce((sum, row) => sum + row[key], 0) : null;
+      const plannedWaves = total("plannedWaves");
+      const successfulWaves = total("successfulWaves");
+      const plannedSorties = total("plannedSorties");
+      const launchedSorties = total("launchedSorties");
+      // A legacy aggregate can retain its rate, but missing counts cannot weight multiple observations.
+      const probability = plannedWaves > 0 && successfulWaves !== null ? successfulWaves / plannedWaves : group.length === 1 ? group[0].probability : null;
+      const sortieRate = plannedSorties > 0 && launchedSorties !== null ? launchedSorties / plannedSorties : group.length === 1 ? group[0].sortieRate : null;
+      return {
+        ...group[0], sequence: index + 1, sampleIndex: null,
+        sampleCount: group.every((row) => row.sampleIndex !== null) ? new Set(group.map((row) => row.sampleIndex)).size : group[0].sampleCount ?? 0,
+        plannedWaves, successfulWaves, plannedSorties, launchedSorties,
+        probability, meanMissionSuccessRate: probability, sortieRate,
+        sorties: Math.round(sortieRate * 100), available: Math.round(probability * 100)
+      };
+    }).filter((row) => row.probability !== null);
+}

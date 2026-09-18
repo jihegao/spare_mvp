@@ -51,6 +51,11 @@
         "stop_policy": {
           "source": "ExperimentPlan.config.stopPolicy, defaulted to duration stop when absent",
           "constructor_param": "stop_policy"
+        },
+        "operations_support_policy": {
+          "source": "SimulationAdapter emits daily-v1 for Project compilation; explicit operations phase and plan-group bindings derive from project.supportActivities and effective mission equipment type",
+          "constructor_param": "operations_support_policy",
+          "behavior": "daily-v1 selects preflight/relaunch by actual daily takeoffs and postflight after final daily return; absent policy preserves historical compiled-input behavior."
         }
       }
     }

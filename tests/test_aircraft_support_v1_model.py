@@ -306,6 +306,23 @@ def _canonical_import_inputs() -> dict:
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_simultaneous_downtime_closure_preserves_event_insertion_order(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        first, second = model.aircraft
+        model.minute = 1
+        second.failed_component_id = "test-failure"
+        model._record_downtime_minutes()
+        model.minute = 2
+        first.failed_component_id = "test-failure"
+        model._record_downtime_minutes()
+        model.minute = 3
+        first.failed_component_id = second.failed_component_id = None
+        model._record_downtime_minutes()
+        self.assertEqual([event["tail_number"] for event in model.downtime_events],
+                         [second.tail_number, first.tail_number])
+        self.assertEqual([event["event_id"] for event in model.downtime_events],
+                         ["downtime-000001", "downtime-000002"])
+
     def test_composite_items_without_ids_have_distinct_runtime_missions_and_all_complete(self) -> None:
         inputs = _minimal_inputs()
         inputs["time"]["duration_minutes"] = 120

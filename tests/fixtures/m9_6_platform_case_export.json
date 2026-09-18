@@ -18,6 +18,7 @@
           "missionProfile.periodicTasks",
           "basicMissions",
           "basicMissions[].missionPhases",
+          "basicMissions[].supportActivityName",
           "airports",
           "products[]",
           "components[].productId",
@@ -47,6 +48,8 @@
           "supportActivities[].takeoffLandingInterval",
           "supportActivities[].activityCodes",
           "supportActivities[].predecessors",
+          "supportActivities[].planType",
+          "supportActivities[].planGroupId",
           "supportActivities[].maintenanceMethods",
           "supportActivities[].replacementRatio",
           "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
@@ -798,7 +801,8 @@
                 "equipmentType": "J-15",
                 "firstWaveTime": "08:00",
                 "groupName": "昼间制空编队",
-                "intervalHours": 6
+                "intervalHours": 6,
+                "operations_plan_group_id": "preflight"
               }
             ]
           },
@@ -814,7 +818,8 @@
                 "equipmentType": "J-35",
                 "firstWaveTime": "20:15",
                 "groupName": "夜间警戒编队",
-                "intervalHours": 8
+                "intervalHours": 8,
+                "operations_plan_group_id": "preflight"
               }
             ]
           }
@@ -962,6 +967,7 @@
           ]
         }
       },
+      "operations_support_policy": "daily-v1",
       "project_identity": {
         "project_id": "project-carrier-day-night",
         "project_version": "import-v1",
@@ -985,7 +991,7 @@
         "activities": [
           {
             "activity_type": "飞行前保障",
-            "aircraft_model": "",
+            "aircraft_model": "J-15 / J-35",
             "calendarDayInterval": null,
             "duration_minutes": 60,
             "equipment_id": "j15-avionics",
@@ -994,7 +1000,7 @@
             "jobs": [
               {
                 "activityCode": "OPS-001",
-                "applicableAircraft": "J-15",
+                "applicableAircraft": "J-15 / J-35",
                 "durationMinutes": 5,
                 "durationProfile": {
                   "distributionType": "三角分布",
@@ -1026,7 +1032,7 @@
               },
               {
                 "activityCode": "OPS-002",
-                "applicableAircraft": "J-15",
+                "applicableAircraft": "J-15 / J-35",
                 "durationMinutes": 10,
                 "durationProfile": {
                   "distributionType": "均匀分布",
@@ -1055,6 +1061,8 @@
               }
             ],
             "name": "典型保障方案",
+            "operations_phase": "preflight",
+            "plan_group_id": "preflight",
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
@@ -1268,7 +1276,7 @@
           },
           {
             "activity_type": "使用保障",
-            "aircraft_model": "J-15",
+            "aircraft_model": "J-15 / J-35",
             "calendarDayInterval": null,
             "duration_minutes": 60,
             "equipment_id": "j15-engine",
@@ -1277,7 +1285,7 @@
             "jobs": [
               {
                 "activityCode": "BA-001",
-                "applicableAircraft": "J-15",
+                "applicableAircraft": "J-15 / J-35",
                 "durationMinutes": 5,
                 "equipment": [
                   {
@@ -1298,6 +1306,8 @@
               }
             ],
             "name": "J-15再次出动准备活动",
+            "operations_phase": "relaunch",
+            "plan_group_id": "preflight",
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
@@ -1308,7 +1318,7 @@
           },
           {
             "activity_type": "使用保障",
-            "aircraft_model": "J-15",
+            "aircraft_model": "J-15 / J-35",
             "calendarDayInterval": null,
             "duration_minutes": 60,
             "equipment_id": "j15-engine",
@@ -1317,7 +1327,7 @@
             "jobs": [
               {
                 "activityCode": "BA-002",
-                "applicableAircraft": "J-15",
+                "applicableAircraft": "J-15 / J-35",
                 "durationMinutes": 30,
                 "equipment": [
                   {
@@ -1338,6 +1348,8 @@
               }
             ],
             "name": "J-15飞行后检查活动",
+            "operations_phase": "postflight",
+            "plan_group_id": "preflight",
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
@@ -2443,6 +2455,7 @@
             ],
             "activityName": "典型保障方案",
             "activityType": "飞行前保障",
+            "aircraftModel": "J-15 / J-35",
             "durationHours": 1,
             "equipmentId": "j15-avionics",
             "id": "preflight",
@@ -2532,7 +2545,7 @@
             ],
             "activityName": "J-15再次出动准备活动",
             "activityType": "使用保障",
-            "aircraftModel": "J-15",
+            "aircraftModel": "J-15 / J-35",
             "durationHours": 0.08333333333333333,
             "equipmentId": "j15-engine",
             "id": "ops-support-j-15---5",
@@ -2551,7 +2564,7 @@
             ],
             "activityName": "J-15飞行后检查活动",
             "activityType": "使用保障",
-            "aircraftModel": "J-15",
+            "aircraftModel": "J-15 / J-35",
             "durationHours": 0.5,
             "equipmentId": "j15-engine",
             "id": "ops-support-j-15---6",
@@ -2568,7 +2581,7 @@
         "supportActivityJobs": [
           {
             "activityCode": "OPS-001",
-            "applicableAircraft": "J-15",
+            "applicableAircraft": "J-15 / J-35",
             "durationMinutes": 5,
             "durationProfile": {
               "distributionType": "三角分布",
@@ -2599,7 +2612,7 @@
           },
           {
             "activityCode": "OPS-002",
-            "applicableAircraft": "J-15",
+            "applicableAircraft": "J-15 / J-35",
             "durationMinutes": 10,
             "durationProfile": {
               "distributionType": "均匀分布",
@@ -2756,7 +2769,7 @@
           },
           {
             "activityCode": "BA-001",
-            "applicableAircraft": "J-15",
+            "applicableAircraft": "J-15 / J-35",
             "durationMinutes": 5,
             "equipment": [
               {
@@ -2776,7 +2789,7 @@
           },
           {
             "activityCode": "BA-002",
-            "applicableAircraft": "J-15",
+            "applicableAircraft": "J-15 / J-35",
             "durationMinutes": 30,
             "equipment": [
               {
@@ -3799,6 +3812,7 @@
           ],
           "activityName": "典型保障方案",
           "activityType": "飞行前保障",
+          "aircraftModel": "J-15 / J-35",
           "durationHours": 1,
           "equipmentId": "j15-avionics",
           "id": "preflight",
@@ -3888,7 +3902,7 @@
           ],
           "activityName": "J-15再次出动准备活动",
           "activityType": "使用保障",
-          "aircraftModel": "J-15",
+          "aircraftModel": "J-15 / J-35",
           "durationHours": 0.08333333333333333,
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---5",
@@ -3907,7 +3921,7 @@
           ],
           "activityName": "J-15飞行后检查活动",
           "activityType": "使用保障",
-          "aircraftModel": "J-15",
+          "aircraftModel": "J-15 / J-35",
           "durationHours": 0.5,
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---6",
@@ -3924,7 +3938,7 @@
       "supportActivityJobs": [
         {
           "activityCode": "OPS-001",
-          "applicableAircraft": "J-15",
+          "applicableAircraft": "J-15 / J-35",
           "durationMinutes": 5,
           "durationProfile": {
             "distributionType": "三角分布",
@@ -3955,7 +3969,7 @@
         },
         {
           "activityCode": "OPS-002",
-          "applicableAircraft": "J-15",
+          "applicableAircraft": "J-15 / J-35",
           "durationMinutes": 10,
           "durationProfile": {
             "distributionType": "均匀分布",
@@ -4112,7 +4126,7 @@
         },
         {
           "activityCode": "BA-001",
-          "applicableAircraft": "J-15",
+          "applicableAircraft": "J-15 / J-35",
           "durationMinutes": 5,
           "equipment": [
             {
@@ -4132,7 +4146,7 @@
         },
         {
           "activityCode": "BA-002",
-          "applicableAircraft": "J-15",
+          "applicableAircraft": "J-15 / J-35",
           "durationMinutes": 30,
           "equipment": [
             {
@@ -5169,6 +5183,7 @@
         ],
         "activityName": "典型保障方案",
         "activityType": "飞行前保障",
+        "aircraftModel": "J-15 / J-35",
         "durationHours": 1,
         "equipmentId": "j15-avionics",
         "id": "preflight",
@@ -5258,7 +5273,7 @@
         ],
         "activityName": "J-15再次出动准备活动",
         "activityType": "使用保障",
-        "aircraftModel": "J-15",
+        "aircraftModel": "J-15 / J-35",
         "durationHours": 0.08333333333333333,
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---5",
@@ -5277,7 +5292,7 @@
         ],
         "activityName": "J-15飞行后检查活动",
         "activityType": "使用保障",
-        "aircraftModel": "J-15",
+        "aircraftModel": "J-15 / J-35",
         "durationHours": 0.5,
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---6",
@@ -5294,7 +5309,7 @@
     "supportActivityJobs": [
       {
         "activityCode": "OPS-001",
-        "applicableAircraft": "J-15",
+        "applicableAircraft": "J-15 / J-35",
         "durationMinutes": 5,
         "durationProfile": {
           "distributionType": "三角分布",
@@ -5325,7 +5340,7 @@
       },
       {
         "activityCode": "OPS-002",
-        "applicableAircraft": "J-15",
+        "applicableAircraft": "J-15 / J-35",
         "durationMinutes": 10,
         "durationProfile": {
           "distributionType": "均匀分布",
@@ -5482,7 +5497,7 @@
       },
       {
         "activityCode": "BA-001",
-        "applicableAircraft": "J-15",
+        "applicableAircraft": "J-15 / J-35",
         "durationMinutes": 5,
         "equipment": [
           {
@@ -5502,7 +5517,7 @@
       },
       {
         "activityCode": "BA-002",
-        "applicableAircraft": "J-15",
+        "applicableAircraft": "J-15 / J-35",
         "durationMinutes": 30,
         "equipment": [
           {
@@ -6740,6 +6755,7 @@
         {
           "activityName": "典型保障方案",
           "activityType": "飞行前保障",
+          "aircraftModel": "J-15 / J-35",
           "durationHours": 1,
           "equipmentId": "j15-avionics",
           "id": "preflight",
@@ -7027,13 +7043,14 @@
         {
           "activityName": "J-15再次出动准备活动",
           "activityType": "使用保障",
-          "aircraftModel": "J-15",
+          "aircraftModel": "J-15 / J-35",
           "durationHours": 0.08333333333333333,
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---5",
           "jobs": [
             {
               "activityCode": "BA-001",
+              "applicableAircraft": "J-15 / J-35",
               "durationMinutes": 5,
               "equipment": [
                 {
@@ -7062,13 +7079,14 @@
         {
           "activityName": "J-15飞行后检查活动",
           "activityType": "使用保障",
-          "aircraftModel": "J-15",
+          "aircraftModel": "J-15 / J-35",
           "durationHours": 0.5,
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---6",
           "jobs": [
             {
               "activityCode": "BA-001",
+              "applicableAircraft": "J-15 / J-35",
               "durationMinutes": 30,
               "equipment": [
                 {

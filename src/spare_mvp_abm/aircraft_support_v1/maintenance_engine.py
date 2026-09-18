@@ -28,6 +28,7 @@ class MaintenanceEngineMixin:
             self._release_job_resources(job)
             task = job.current_task or {}
             self._consume_task_spare(job, task)
+            self._operations_step_event("operations_step_completed", job, task)
             job.task_index += 1
             if job.task_index >= len(job.tasks):
                 job.state = "completed"
@@ -99,11 +100,21 @@ class MaintenanceEngineMixin:
                 )
                 continue
             spare_requirements = self._task_spare_requirements(job, task)
+            # Capture availability before this request initiates any replenishment.
+            immediately_available = all(
+                self._available_spare_for_job(job, node, product_id) >= quantity
+                for product_id, quantity in spare_requirements
+            )
             canonical_failure_reasons: dict[str, str] = {}
             if self.canonical_organization_enabled:
                 canonical_failure_reasons = self._ensure_canonical_spare_dispatches(
                     job, node, spare_requirements
                 )
+                immediately_reserved = immediately_available and not canonical_failure_reasons and all(
+                    job.spare_reservations.get((job.task_index, product_id), 0) >= quantity
+                    for product_id, quantity in spare_requirements
+                )
+                self._record_spare_request(job, node, spare_requirements, immediately_reserved)
             else:
                 for spare_type, spare_qty in spare_requirements:
                     if node["inventory"].get(spare_type, 0) < spare_qty and not self._has_in_transit_spare(node["id"], spare_type):
@@ -127,6 +138,7 @@ class MaintenanceEngineMixin:
                 if self._available_spare_for_job(job, node, spare_type) < spare_qty
             ]
             if shortages:
+                self._record_spare_request(job, node, spare_requirements, False)
                 job.shortage_reason = shortages[0][3]
                 shortage_signature = tuple(shortages)
                 if job.spare_shortage_signature == shortage_signature:
@@ -141,6 +153,7 @@ class MaintenanceEngineMixin:
                         f"{job.job_id} blocked by {display_name} shortage at {node['id']}",
                         {
                             "job_id": job.job_id,
+                            "task_index": job.task_index,
                             "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                             "resource_id": node["id"],
                             "product_id": spare_type,
@@ -178,7 +191,9 @@ class MaintenanceEngineMixin:
                         },
                     )
             if not self._consume_task_spare(job, task):
+                self._record_spare_request(job, node, spare_requirements, False)
                 continue
+            self._record_spare_request(job, node, spare_requirements, immediately_available)
             if not self.canonical_organization_enabled:
                 node["personnel_in_use"] += personnel
                 node["equipment_in_use"] += equipment
@@ -188,15 +203,16 @@ class MaintenanceEngineMixin:
             job.started_time = job.started_time if job.started_time is not None else self.minute
             job.shortage_reason = None
             self._event("job_started", f"{job.job_id} started {task.get('workName') or task.get('activityCode') or 'task'}")
+            self._operations_step_event("operations_step_started", job, task)
 
     def _generate_preventive_jobs(self) -> None:
+        active_preventive_tails = {
+            job.tail_number
+            for job in self.jobs
+            if job.kind == "preventive" and job.state in {"waiting", "running"}
+        }
         for aircraft in self.aircraft:
-            if any(
-                job.kind == "preventive"
-                and job.tail_number == aircraft.tail_number
-                and job.state in {"waiting", "running"}
-                for job in self.jobs
-            ):
+            if aircraft.tail_number in active_preventive_tails:
                 continue
             due_cycles = self._due_preventive_cycles(aircraft)
             if not due_cycles:
@@ -221,6 +237,7 @@ class MaintenanceEngineMixin:
                 kind="preventive",
                 due_dimensions=due_dimensions,
             )
+            active_preventive_tails.add(aircraft.tail_number)
             self._event(
                 "preventive_created",
                 f"{aircraft.tail_number} preventive maintenance created",
@@ -383,7 +400,7 @@ class MaintenanceEngineMixin:
     ) -> None:
         self._job_sequence += 1
         job_id = f"job-{self._job_sequence:04d}"
-        tasks = copy.deepcopy(activity.get("jobs") or [{"activityCode": kind, "durationMinutes": 30}])
+        tasks = copy.deepcopy(activity.get("jobs") or ([] if activity.get("operations_phase") else [{"activityCode": kind, "durationMinutes": 30}]))
         for task in tasks:
             task.setdefault("durationMinutes", activity.get("duration_minutes") or 30)
             task.setdefault("requiredPersonnel", activity.get("required_personnel") or 1)
@@ -425,6 +442,8 @@ class MaintenanceEngineMixin:
             tasks=tasks,
             priority=max(1, int(activity.get("priority") or 1)),
             resource_node_id=str(activity.get("resource_id") or self._default_resource_node_id(aircraft)),
+            operations_phase=str(activity.get("operations_phase") or ""),
+            plan_group_id=str(activity.get("plan_group_id") or ""),
             mission_id=mission_id,
             component_id=str(component.get("id")) if component else None,
             maintenance_method=maintenance_method,
@@ -435,6 +454,12 @@ class MaintenanceEngineMixin:
             due_dimensions=list(due_dimensions or []),
         )
         self.jobs.append(job)
+        if job.operations_phase:
+            self._operations_step_event("operations_phase_created", job)
+            if not tasks:
+                job.state = "completed"
+                job.started_time = job.completed_time = self.minute
+                self._complete_job_effect(job)
         if maintenance_method is not None:
             self._event(
                 "maintenance_method_selected",
@@ -524,6 +549,7 @@ class MaintenanceEngineMixin:
         aircraft = next((item for item in self.aircraft if item.tail_number == job.tail_number), None)
         if aircraft is None:
             return
+        self._operations_step_event("operations_phase_completed", job)
         if job.kind == "preflight" and job.mission_id:
             aircraft.prepared_mission_ids.add(job.mission_id)
             aircraft.current_mission_id = job.mission_id
@@ -542,7 +568,9 @@ class MaintenanceEngineMixin:
         elif job.kind == "postflight":
             aircraft.state = "available"
             aircraft.postflight_required = False
-            self.completed_sorties += 1
+            aircraft.postflight_due = False
+            if not self.operations_phases_enabled:
+                self.completed_sorties += 1
             self._event("postflight_completed", f"{aircraft.tail_number} postflight completed")
         elif job.kind == "preventive":
             aircraft.state = "available"

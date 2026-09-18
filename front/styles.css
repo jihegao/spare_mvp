@@ -95,7 +95,7 @@ h4 {
 }
 
 .auth-panel {
-  width: min(480px, 94vw);
+  width: min(480px, 100%);
   display: grid;
   gap: 14px;
   padding: 28px;
@@ -406,6 +406,7 @@ h4 {
 }
 
 .nav-module > summary {
+  white-space: nowrap;
   margin-bottom: 10px;
   font-size: 15px;
   font-weight: 700;
@@ -2174,6 +2175,11 @@ select[multiple].table-edit-select {
   font-size: 12px;
 }
 
+.equipment-system-table input:not([type="checkbox"]):not([type="radio"]),
+.equipment-system-table select {
+  height: 32px;
+}
+
 .equipment-product-combobox-cell {
   display: grid;
   gap: 4px;
@@ -2288,6 +2294,8 @@ select[multiple].table-edit-select {
 }
 
 .equipment-param-fields label {
+  white-space: nowrap;
+  align-content: start;
   gap: 3px;
   font-size: 11px;
 }
@@ -5440,3 +5448,69 @@ tr.clickable-table-row.selected-table-row td {
     grid-column: auto;
   }
 }
+
+/* V2.0 product shell: original local asset, no external requests. */
+.auth-page { background: #081e3b url("./assets/aircraft-v2.png") center / cover no-repeat; justify-items: center; padding: clamp(24px, 7vw, 112px); }
+.auth-panel { background: rgba(255,255,255,.96); box-shadow: 0 18px 64px #0005; }
+.project-page { min-height: calc(100vh - 80px); background: linear-gradient(#071b36bb, #071b36dd), url("./assets/aircraft-v2.png") center / cover fixed; }
+.project-page .project-toolbar { color: var(--ink); }
+.project-page .project-card { background: white; }
+.topbar { background: #0b2345; color: white; }
+.topbar p { color: #d8e7ff; }
+.project-save-notice { padding: 10px 12px; margin-bottom: 12px; background: #fff7e6; border-left: 3px solid #b45309; }
+.equipment-system-table-panel input, .equipment-system-table-panel select { min-height: 34px; height: 34px; }
+
+.table-pagination button { padding: 6px 12px; }
+/* Equipment modeling keeps its chosen split across tree edits and rerenders. */
+.equipment-modeling-layout {
+  grid-template-columns: clamp(300px, var(--equipment-tree-width, 300px), max(300px, min(900px, calc(100% - 332px)))) minmax(0, 1fr);
+}
+
+.equipment-modeling-tree {
+  position: relative;
+  box-sizing: border-box;
+}
+
+.equipment-modeling-tree > .object-tree {
+  overflow-x: auto;
+}
+
+.equipment-modeling-tree .tree-node-label {
+  white-space: nowrap;
+}
+
+.equipment-tree-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -9px;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 4px;
+}
+
+.equipment-tree-resize::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 5px;
+  width: 2px;
+  background: var(--line);
+}
+
+.equipment-tree-resize:hover::after,
+.equipment-tree-resize:focus-visible::after {
+  background: var(--primary);
+}
+
+.equipment-tree-resize:focus-visible {
+  outline: 2px solid var(--primary);
+}
+
+@media (max-width: 900px) {
+  .equipment-modeling-layout { grid-template-columns: minmax(0, 1fr); }
+  .equipment-tree-resize { display: none; }
+}
+.table-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0; }

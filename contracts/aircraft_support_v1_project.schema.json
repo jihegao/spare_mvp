@@ -215,7 +215,7 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "missionId": { "type": "string" },
-        "supportActivityName": { "type": "string" },
+        "supportActivityName": { "type": "string", "description": "An operations activity reference selects its stable planGroupId for all three runtime phases." },
         "minRequiredSorties": { "type": "integer", "minimum": 0 },
         "taskDurationMinutes": { "type": "integer", "minimum": 1 },
         "equipmentType": { "type": "string" },
@@ -475,7 +475,7 @@
             "后勤保障方案"
           ]
         },
-        "planGroupId": { "type": "string", "minLength": 1 },
+        "planGroupId": { "type": "string", "minLength": 1, "description": "Shared identity for preflight, relaunch and postflight; empty phase work lists pass with no time or resources." },
         "aircraftModel": { "type": "string" },
         "equipmentId": { "type": "string" },
         "resourceId": { "type": "string", "minLength": 1 },

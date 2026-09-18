@@ -1511,6 +1511,35 @@ test("project data replacement preserves the opaque backend version token", asyn
   }
 });
 
+test("project Excel template downloads a named workbook without project writes", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-project-data-management" });
+  try {
+    assert.match(runtime.appNode.innerHTML, /data-project-xlsx-template/);
+    await runtime.click("[data-project-xlsx-template]");
+    assert.equal(runtime.downloads.at(-1)?.download, "Project标准模板-v1.xlsx");
+    assert.match(runtime.appNode.innerHTML, /已下载 Excel 标准模板/);
+    assert.equal(runtime.requests.filter((r) => r.options.method === "POST" && /\/projects(?:$|\/import-xlsx\/create)/.test(r.url)).length, 0);
+  } finally { runtime.restore(); }
+});
+
+test("project Excel template permission denial never triggers a file download", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-project-data-management", sessionUser: { username: "user", role: "普通用户" } });
+  try {
+    await runtime.click("[data-project-xlsx-template]");
+    assert.equal(runtime.downloads.length, 0);
+  } finally { runtime.restore(); }
+});
+
+test("project Excel drop previews data without confirming a write", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-project-data-management" });
+  try {
+    await runtime.drop("[data-project-xlsx-drop]", { name: "valid-project.xlsx", async arrayBuffer() { return new Uint8Array([80,75]).buffer; } });
+    assert.match(runtime.appNode.innerHTML, /导入预览/);
+    assert.ok(runtime.requests.find((r) => r.url === "/api/projects/import-xlsx/preview"));
+    assert.equal(runtime.requests.filter((r) => r.url === "/api/projects/import-xlsx/create").length, 0);
+  } finally { runtime.restore(); }
+});
+
 test("project XLSX preview shows located errors and blocks both write actions", async () => {
   const file = {
     name: "invalid-project.xlsx",
@@ -1528,7 +1557,7 @@ test("project XLSX preview shows located errors and blocks both write actions", 
     const request = runtime.requests.find((item) => item.url === "/api/projects/import-xlsx/preview");
     assert.ok(request, "expected XLSX preview request");
     assert.equal(JSON.parse(request.options.body).content_base64, "UEsDBA==");
-    assert.match(runtime.appNode.innerHTML, /components 第 3 行 \/ components\[0\]\.productId/);
+    assert.match(runtime.appNode.innerHTML, /components 第 3 行 第 4 列 \/ components\[0\]\.productId/);
     assert.match(runtime.appNode.innerHTML, /引用值：missing-product/);
     assert.match(runtime.appNode.innerHTML, /data-project-replacement-confirm disabled/);
     assert.match(runtime.appNode.innerHTML, /data-project-xlsx-create disabled/);
@@ -1764,11 +1793,57 @@ test("periodic task editor uses named week month and year profiles without total
     assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 4 周已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置周剖面<\/option>/g) || []).length, 3);
     await reopenedRuntime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
-    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周/);
+    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周 · 已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置月剖面<\/option>/g) || []).length, 11);
   } finally {
     reopenedRuntime.restore();
   }
+});
+
+test("year profile status accepts any configured month while preserving invalid-reference errors", async () => {
+  for (const configured of [0, 1, 12, "missing"]) {
+    const monthProfileIds = Array(12).fill("");
+    if (configured === "missing") monthProfileIds[0] = "missing-month";
+    else monthProfileIds.fill("month-status", 0, configured);
+    const runtime = await setupRuntimeApp({
+      hash: "feature=spare-planning-periodic-task",
+      projectJson: createRuntimeProjectJson({ missionProfile: {
+        periodicTasks: [{ id: "week-status", name: "week", compositeTasks: [] }],
+        periodicProfileLists: {
+          week: [{ id: "week-status", name: "week" }],
+          month: [{ id: "month-status", name: "month", weekProfileIds: ["week-status", "", "", ""] }],
+          year: [{ id: "year-status", name: "year", monthProfileIds }]
+        }
+      } })
+    });
+    try {
+      await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+      if (configured === "missing") {
+        assert.match(runtime.appNode.innerHTML, /年剖面引用不存在的月剖面 missing-month/);
+        assert.match(runtime.appNode.innerHTML, /0 \/ 12 月 · 0 \/ 52 周 · 待完善/);
+      } else {
+        assert.match(runtime.appNode.innerHTML, new RegExp(`${configured} / 12 月 · ${configured} / 52 周 · ${configured ? "已配置" : "待完善"}`));
+      }
+    } finally { runtime.restore(); }
+  }
+});
+
+test("a year with one empty month is configured without claiming the schedule is valid", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-periodic-task",
+    projectJson: createRuntimeProjectJson({ missionProfile: {
+      periodicTasks: [{ id: "week-empty", name: "empty week", compositeTasks: [] }],
+      periodicProfileLists: {
+        month: [{ id: "month-empty", name: "empty month", weekProfileIds: Array(4).fill("") }],
+        year: [{ id: "year-empty", name: "year", monthProfileIds: ["month-empty", ...Array(11).fill("")] }]
+      }
+    } })
+  });
+  try {
+    await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+    assert.match(runtime.appNode.innerHTML, /1 \/ 12 月 · 0 \/ 52 周 · 已配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /1 \/ 12 月 · 0 \/ 52 周 · 有效/);
+  } finally { runtime.restore(); }
 });
 
 test("periodic task editor preserves invalid configured references and marks the simulation source invalid", async () => {
@@ -2510,23 +2585,23 @@ test("spare shortfall result filters products and stably sorts demand quantity o
 
     await runtime.change("[data-spare-aircraft-filter]", {}, { value: "J-15" });
     await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "asc" });
-    let tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    let tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal demand rows preserve source order");
     assert.ok(tableRows.indexOf("备用组件 / BK-15") < tableRows.indexOf("发动机控制模块 / EC-15"));
     assert.doesNotMatch(tableRows, /J-35|雷达组件/);
     assert.match(runtime.appNode.innerHTML, /data-spare-shortfall-sort="demand" data-sort-direction="asc"[^>]*aria-pressed="true"/);
 
     await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "desc" });
-    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(tableRows.indexOf("发动机控制模块 / EC-15") < tableRows.indexOf("液压组件 / HY-15"));
     assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal demand rows remain stable descending");
 
     await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "fillRate", sortDirection: "asc" });
-    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(tableRows.indexOf("发动机控制模块 / EC-15") < tableRows.indexOf("液压组件 / HY-15"));
 
     await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "fillRate", sortDirection: "desc" });
-    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal fill-rate rows preserve source order");
     assert.ok(tableRows.indexOf("备用组件 / BK-15") < tableRows.indexOf("发动机控制模块 / EC-15"));
     assert.match(runtime.appNode.innerHTML, /data-spare-shortfall-sort="fillRate" data-sort-direction="desc"[^>]*aria-pressed="true"/);
@@ -2566,10 +2641,10 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     assert.match(detailPanel, /总体备件利用率[\s\S]*20\.00%/);
     assert.match(detailPanel, /满足下限备件[\s\S]*2\/2/);
     assert.match(detailPanel, /<th>机型<\/th><th>产品<\/th>/);
-    assert.match(detailPanel, /<th>备件满足率<\/th><th>约束状态<\/th>/);
+    assert.match(detailPanel, /<th>预计满足率<\/th><th>即时满足率<\/th><th>约束状态<\/th>/);
     assert.match(detailPanel, /<th>备件利用率<\/th>/);
-    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>90%<\/td><td>满足（0\.00%）<\/td><td>100\.00%<\/td>/);
-    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>满足（\+10\.00%）<\/td><td>11\.11%<\/td>/);
+    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>90%<\/td><td>不可用<\/td><td>满足（0\.00%）<\/td><td>100\.00%<\/td>/);
+    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>不可用<\/td><td>满足（\+10\.00%）<\/td><td>11\.11%<\/td>/);
     assert.match(detailPanel, /隐藏需求数值为 0 的备件/);
     assert.match(detailPanel, /data-carry-hide-zero checked/);
     assert.match(detailPanel, /data-carry-aircraft-filter/);
@@ -2583,23 +2658,23 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     assert.doesNotMatch(detailPanel, /不得显示的旧|零需求产品/);
 
     await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "asc" });
-    const ascendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    const ascendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(ascendingRows.indexOf("雷达组件 / RD-35") < ascendingRows.indexOf("发动机控制模块 / EC-15"));
     assert.match(runtime.appNode.innerHTML, /data-carry-recommended-sort="asc"[^>]*aria-label="按建议携行数量升序排列" aria-pressed="true"/);
 
     await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "desc" });
-    const descendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    const descendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(descendingRows.indexOf("发动机控制模块 / EC-15") < descendingRows.indexOf("雷达组件 / RD-35"));
     assert.match(runtime.appNode.innerHTML, /data-carry-recommended-sort="desc"[^>]*aria-label="按建议携行数量降序排列" aria-pressed="true"/);
 
     await runtime.change("[data-carry-aircraft-filter]", {}, { value: "J-15" });
-    const j15Rows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    const j15Rows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.match(j15Rows, /J-15[\s\S]*发动机控制模块/);
     assert.doesNotMatch(j15Rows, /J-35|雷达组件/);
     assert.match(runtime.appNode.innerHTML, /总体备件利用率[\s\S]*20\.00%/);
 
     await runtime.change("[data-carry-hide-zero]", {}, { checked: false });
-    const filteredAndSortedRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    const filteredAndSortedRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO/);
     assert.ok(filteredAndSortedRows.indexOf("发动机控制模块 / EC-15") < filteredAndSortedRows.indexOf("零需求产品 / ZERO"));
   } finally {
@@ -2705,8 +2780,8 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     }),
     liteMesaAnalysisResponseOverrides: {
       rows: [
-        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, usedQuantity: 8, carriedQuantity: 4, demand: 4, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 0, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
-        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, usedQuantity: 0, carriedQuantity: 0, demand: 3, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 2, lifeLimited: false, riskLevel: "低" },
+        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, usedQuantity: 8, carriedQuantity: 4, demand: 4, shortage: 0, satisfactionRate: 1, observedFillRate: 0.5, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 0, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
+        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, usedQuantity: 0, carriedQuantity: 0, demand: 3, shortage: 0, satisfactionRate: 1, observedFillRate: 0.25, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 2, lifeLimited: false, riskLevel: "低" },
         { aircraftModel: "J-15", productId: "carry-zero", recommended: 0, usedQuantity: 0, carriedQuantity: 0, demand: 0, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, lifeLimited: false, riskLevel: "低" },
         { aircraftModel: "J-16", productId: "carry-a", recommended: 1, usedQuantity: 0, carriedQuantity: 1, demand: 1, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, lifeLimited: false, riskLevel: "低" }
       ]
@@ -2723,18 +2798,19 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     assert.equal(body.analysis_type, "carry_list");
     assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
     assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("总体备件利用率"), "160.00%");
-    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "需求次数", "短缺次数", "备件满足率", "满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
-    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[7], row[8], row[9], row[10], row[11], row[12]]), [
+    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "预计使用数量", "携行总数量", "需求数量", "预计短缺数量", "预计满足率", "即时满足率", "预计满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[7], row[9], row[10], row[11], row[12], row[13]]), [
       ["J-15", "液压泵 / B-01", 2, 0, 0, "100%", "90%", "满足", "+10.00%", "不可计算", "否"],
       ["J-15", "航电模块 / A-01", 4, 8, 4, "100%", "90%", "满足", "+10.00%", "200.00%", "是"]
     ]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[8]), ["25%", "50%"]);
     assert.doesNotMatch(JSON.stringify(body), /J-16|零需求件/);
   } finally {
     runtime.restore();
   }
 });
 
-test("task reliability Excel export preserves summary rounding and aggregated wave rows", async () => {
+test("task reliability Excel export preserves summary rounding and sample wave rows", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson(),
@@ -2748,8 +2824,9 @@ test("task reliability Excel export preserves summary rounding and aggregated wa
       period_total_samples: 2,
       successful_samples: 1,
       wave_rows: [
-        { sequence: 1, sampleCount: 2, waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 0.5 },
-        { sequence: 2, sampleCount: 2, waveKey: "d1-w2", waveLabel: "第1天 第2波", meanMissionSuccessRate: 0.25 }
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 1, plannedWaves: 2, successfulWaves: 1 },
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 2, plannedWaves: 4, successfulWaves: 1 },
+        { sampleIndex: 1, dayIndex: 1, waveIndex: 1, plannedWaves: 6, successfulWaves: 3 }
       ]
     },
     analysisXlsxExportDelayMs: 40
@@ -2774,10 +2851,11 @@ test("task reliability Excel export preserves summary rounding and aggregated wa
       ["仿真总次数", 2],
       ["成功次数", 1]
     ]);
-    assert.deepEqual(body.detail_sections[0].columns, ["波次", "样本数", "波次成功率"]);
+    assert.deepEqual(body.detail_sections[0].columns, ["样本", "波次", "成功数", "计划数", "波次成功率"]);
     assert.deepEqual(body.detail_sections[0].rows, [
-      ["第1天 第1波", 2, "50%"],
-      ["第1天 第2波", 2, "25%"]
+      ["样本 1", "第1天第1波次", 1, 2, "50%"],
+      ["样本 1", "第1天第2波次", 1, 4, "25%"],
+      ["样本 2", "第1天第1波次", 3, 6, "50%"]
     ]);
     assert.equal(runtime.downloads.length, 1);
   } finally {
@@ -2886,7 +2964,7 @@ test("carry list analysis restores context and complete settings while preservin
   try {
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-hero">[\s\S]*<h3>飞机转场携行清单分析<\/h3>[\s\S]*运行上下文/);
     assert.match(runtime.appNode.innerHTML, /<section class="lite-mesa-settings lite-mesa-analysis-settings">/);
-    assert.match(runtime.appNode.innerHTML, /运行状态[\s\S]*样本量[\s\S]*随机种子[\s\S]*优化方向[\s\S]*备件满足率下限/);
+    assert.match(runtime.appNode.innerHTML, /运行状态[\s\S]*样本量[\s\S]*随机种子[\s\S]*优化方向[\s\S]*预计满足率下限/);
     assert.match(runtime.appNode.innerHTML, /样本量[\s\S]*<strong>4<\/strong>/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /样本量 \/ 随机种子只读/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
@@ -2933,7 +3011,7 @@ test("task reliability analysis restores its title and project context", async (
   }
 });
 
-test("task reliability analysis renders summary counts and cross-sample wave averages", async () => {
+test("task reliability analysis renders sample details and a separate cross-sample trend", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson(),
@@ -2947,8 +3025,9 @@ test("task reliability analysis renders summary counts and cross-sample wave ave
       period_total_samples: 2,
       successful_samples: 1,
       wave_rows: [
-        { sequence: 1, sampleCount: 2, waveKey: "d1-w1", waveLabel: "第1天 第1波", meanMissionSuccessRate: 0.5 },
-        { sequence: 2, sampleCount: 2, waveKey: "d1-w2", waveLabel: "第1天 第2波", meanMissionSuccessRate: 0.25 }
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 1, plannedWaves: 2, successfulWaves: 1 },
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 2, plannedWaves: 4, successfulWaves: 1 },
+        { sampleIndex: 1, dayIndex: 1, waveIndex: 1, plannedWaves: 6, successfulWaves: 3 }
       ]
     }
   });
@@ -2966,12 +3045,12 @@ test("task reliability analysis renders summary counts and cross-sample wave ave
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(runtime.appNode.innerHTML, /<span>仿真总次数<\/span>\s*<strong>2<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<span>成功次数<\/span>\s*<strong>1<\/strong>/);
-    assert.match(detailPanel, /<thead><tr><th>波次<\/th><th>样本数<\/th><th>波次成功率<\/th><\/tr><\/thead>/);
-    assert.match(detailPanel, /第1天 第1波[\s\S]*2[\s\S]*50%[\s\S]*第1天 第2波[\s\S]*2[\s\S]*25%/);
+    assert.match(detailPanel, /<thead><tr><th>样本<\/th><th>波次<\/th><th>成功数<\/th><th>计划数<\/th><th>波次成功率<\/th><\/tr><\/thead>/);
+    assert.match(detailPanel, /样本 1[\s\S]*第1天第1波次[\s\S]*50%[\s\S]*第1天第2波次[\s\S]*25%[\s\S]*样本 2/);
     assert.match(detailPanel, /波次成功率趋势/);
     assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
     assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);
-    assert.match(detailPanel, /<title>第1天 第1波（2 个样本）：50%<\/title>/);
+    assert.match(detailPanel, /<title>第1天第1波次（2 个样本）：50%<\/title>/);
     assert.match(runtime.appNode.innerHTML, />0\.5<\/text>/);
     assert.doesNotMatch(detailPanel, /任务剖面可靠性|整周期任务失败次数|任务可靠度百分比|平均任务成功率/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<span>时间窗口<\/span>|data-lite-mesa-analysis-field="maxTimeWindow"/);
@@ -2997,7 +3076,7 @@ test("task reliability analysis marks missing counts unavailable and does not in
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(runtime.appNode.innerHTML, /<span>仿真总次数<\/span>\s*<strong>不可用<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<span>成功次数<\/span>\s*<strong>不可用<\/strong>/);
-    assert.match(detailPanel, /当前会话没有波次成功率明细/);
+    assert.match(detailPanel, /当前结果没有波次成功率明细/);
     assert.doesNotMatch(detailPanel, /样本 1|projection/);
   } finally {
     runtime.restore();
@@ -3337,6 +3416,249 @@ test("project list rename persists and survives creating another project from th
   }
 });
 
+test("modeling pagination keeps phase indexes and selects only the visible page before batch deletion", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-basic-mission",
+    projectJson: createRuntimeProjectJson({ basicMissions: [{
+      id: "paged-basic", name: "分页基本任务", equipmentType: "J-15", taskDurationMinutes: 90,
+      missionPhases: Array.from({ length: 21 }, (_, i) => ({ name: `阶段${i}`, phaseRatio: i === 0 ? 1 : 0 }))
+    }] })
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-mission-phase-select="20"/);
+    await runtime.change("[data-basic-mission-phase-select-all]", {}, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "mission-phases", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="basicMissions\.0\.missionPhases\.20\.name"/);
+    await runtime.change("[data-basic-mission-phase-select-all]", {}, { checked: true });
+    await runtime.click("[data-basic-mission-phase-batch-delete]");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="mission-phases"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-mission-phase-select="/g) || []).length, 20);
+    assert.match(runtime.appNode.innerHTML, /value="阶段19"/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination keeps three operations stage lists independent and bulk selection page scoped", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivityJobs = Array.from({ length: 21 }, (_, i) => ({ activityCode: `JOB-${i}`, workName: `工作${i}`, durationMinutes: 1 }));
+  projectJson.supportActivities = ["直接准备方案", "再次出动准备方案", "飞行后检查方案"].map((planType, i) => ({
+    id: `ops-${i}`, activityType: "使用保障活动", planType, planGroupId: "ops-many",
+    activityName: "分页保障方案", aircraftModel: "J-15", activityCodes: projectJson.supportActivityJobs.map(x => x.activityCode)
+  }));
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-operations-support-activity", projectJson });
+  try {
+    await runtime.change("[data-support-activity-job-select-all]", { supportActivityJobSelectAll: "ops_preflight" }, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "support-jobs:ops_preflight", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-job="ops_preflight-20"/);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-job="ops_postflight-20"/);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "直接准备方案" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页/);
+    await runtime.change("[data-support-activity-job-select-all]", { supportActivityJobSelectAll: "ops_preflight" }, { checked: true });
+    await runtime.click("[data-support-activity-job-batch-delete]", { supportActivityJobBatchDelete: "ops_preflight" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="support-jobs:ops_preflight"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-support-activity-job="ops_preflight-/g) || []).length, 20);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
+    assert.match(runtime.appNode.innerHTML, /共 21 条/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination scopes basic activity select all and retains dialog resource original indexes", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivityJobs = Array.from({ length: 21 }, (_, i) => ({
+    activityCode: `BA-PAGE-${i}`, workName: `分页活动${i}`, durationMinutes: 1,
+    personnel: Array.from({ length: 21 }, (_, j) => ({ professional: `专业${j}`, quantity: 1 }))
+  }));
+  projectJson.supportActivities[0].activityCodes = projectJson.supportActivityJobs.map(x => x.activityCode);
+  projectJson.supportActivities[0].predecessors = {};
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-basic-support-activity", projectJson });
+  try {
+    await waitForRuntimeHtml(runtime, /分页活动0/, "expected paged library to hydrate");
+    await runtime.change("[data-basic-activity-select-all]", {}, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "basic-activity-library", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /共 21 条/);
+    const key = runtime.appNode.innerHTML.match(/data-basic-activity-edit="([^"]+)"/)[1];
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: key });
+    await runtime.click("[data-basic-activity-resource-dialog-open]", { basicActivityKey: key, basicActivityResourceDialogOpen: "personnel" });
+    await runtime.click("[data-pagination-key]", { paginationKey: "basic-activity-requirements:personnel", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-index="20"/);
+    const dialog = runtime.appNode.innerHTML.split('class="basic-activity-resource-config-table"')[1];
+    assert.doesNotMatch(dialog, /data-basic-activity-resource-index="0"/);
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click("[data-basic-activity-dialog-close]");
+    await runtime.change("[data-basic-activity-select-all]", {}, { checked: true });
+    await runtime.click("[data-basic-activity-batch-delete]");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="basic-activity-library"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-edit="/g) || []).length, 20);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination separates composite list items and timeline while preserving original edit paths", async () => {
+  const projectJson = createRuntimeProjectJson({ missionProfile: {
+    compositeTasks: Array.from({ length: 21 }, (_, i) => ({ id: `composite-page-${i}`, name: `复合${i}`,
+      taskItems: Array.from({ length: 21 }, (_, j) => ({ basicMissionId: "basic-runtime", groupName: `组${j}`, firstWaveTime: "08:00", dailyRepeatCount: 1, intervalHours: 1 }))
+    }))
+  } });
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-composite-task", projectJson });
+  try {
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-list", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-select-composite-task="composite-page-20"/);
+    await runtime.click("[data-select-composite-task]", { selectCompositeTask: "composite-page-20" });
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-items", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.20\.taskItems\.20\.groupName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.20\.taskItems\.0\.groupName"/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-timeline", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /<td>21<\/td>/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-list", paginationDelta: "-1" });
+    await runtime.click("[data-select-composite-task]", { selectCompositeTask: "composite-page-0" });
+    assert.match(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.0\.taskItems\.0\.groupName"/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination limits resource selection to the current page", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-support-personnel",
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: { tree: { id: "org-root", name: "保障组织", children: [{ id: "relay-1", name: "中继1", children: [] }] } },
+      supportNodes: [{ id: "relay-1", name: "中继1" }],
+      supportResources: Array.from({ length: 21 }, (_, i) => ({ id: `crew-${i}`, organizationNodeId: "relay-1", supportNodeName: "中继1", type: "personnel", name: `专业${i}`, model: `专业${i}`, quantity: 1 }))
+    })
+  });
+  try {
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "relay-1" });
+    await runtime.change("[data-support-resource-select-all]", { supportResourceSelectAll: "保障人员" }, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "support-resources:保障人员", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+    assert.match(runtime.appNode.innerHTML, /<td>21<\/td>/);
+    await runtime.change("[data-support-resource-select-all]", { supportResourceSelectAll: "保障人员" }, { checked: true });
+    await runtime.click("[data-support-resource-batch-delete]", { supportResourceBatchDelete: "保障人员" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="support-resources:保障人员"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-support-resource-select="/g) || []).length, 20);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination covers aircraft transport and profile lists without slicing fixed calendar editors", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-combat-unit",
+    projectJson: createRuntimeProjectJson({
+      combatUnit: { members: Array.from({ length: 21 }, (_, i) => ({ aircraftNo: `AC-${i}`, model: "J-15", airport: "甲板" })) },
+      transportPolicies: Array.from({ length: 21 }, (_, i) => ({ id: `transport-${i}`, name: `运输${i}`, fromSupportNodeName: `基地${i}`, toSupportNodeName: "甲板", transportTimeHours: 1 })),
+      missionProfile: {
+        periodicTasks: Array.from({ length: 21 }, (_, i) => ({ id: `week-${i}`, name: `周${i}`, compositeTasks: [] })),
+        periodicProfileLists: {
+          month: Array.from({ length: 21 }, (_, i) => ({ id: `month-${i}`, name: `月${i}`, weekProfileIds: ["week-0", "", "", ""] })),
+          year: Array.from({ length: 21 }, (_, i) => ({ id: `year-${i}`, name: `年${i}`, monthProfileIds: ["month-0", ...Array(11).fill("")] }))
+        }
+      }
+    })
+  });
+  try {
+    await runtime.click("[data-pagination-key]", { paginationKey: "combat-members", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-combat-unit-index="20"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-combat-unit-index="0"/);
+    await runtime.setHash("feature=spare-planning-logistics-support-activity");
+    await runtime.click("[data-pagination-key]", { paginationKey: "transport-policies", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="transportPolicies\.20\.name"/);
+    await runtime.setHash("feature=spare-planning-periodic-task");
+    for (const kind of ["week", "month", "year"]) {
+      await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: kind });
+      await runtime.click("[data-pagination-key]", { paginationKey: `periodic-profiles:${kind}`, paginationDelta: "1" });
+      assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+      assert.ok(runtime.appNode.innerHTML.includes(`data-periodic-profile-select="${kind}-20"`));
+    }
+    assert.equal((runtime.appNode.innerHTML.match(/data-periodic-composition-index="/g) || []).length, 12);
+    assert.match(runtime.appNode.innerHTML, /第 21 年/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination keeps the entire RBD SVG while node and edge detail pages move independently", async () => {
+  const components = Array.from({ length: 22 }, (_, index) => ({
+    id: `rbd-page-${index}`, name: `分页RBD节点${index}`, aircraftModel: "J-15",
+    parentId: "rbd-parent", quantity: 1, productType: "LRU"
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-reliability-block-diagram",
+    projectJson: createRuntimeProjectJson({ components: [{ id: "rbd-parent", name: "RBD父系统", aircraftModel: "J-15", parentId: "aircraft-root", quantity: 1 }, ...components], reliabilityBlockDiagram: {
+      nodes: [{ id: "rbd-parent", name: "RBD父系统", parentId: "aircraft-root", type: "component" }, ...components.map((component) => ({ ...component, type: "component" }))],
+      edges: components.slice(1).map((component, index) => ({ from: `rbd-page-${index}`, to: component.id, type: "series" }))
+    } })
+  });
+  const svg = () => runtime.appNode.innerHTML.match(/<svg class="rbd-diagram"[\s\S]*?<\/svg>/)?.[0];
+  const tableBodies = () => [...runtime.appNode.innerHTML.matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)].map(match => match[1]);
+  try {
+    await runtime.click("[data-select-rbd-equipment-component]", { selectRbdEquipmentComponent: "rbd-parent" });
+    const fullSvg = svg();
+    assert.ok(fullSvg, runtime.appNode.innerHTML);
+    assert.equal((fullSvg.match(/<g class="rbd-node /g) || []).length, 22);
+    assert.match(fullSvg, /分页RBD节点21/);
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [20, 20]);
+    await runtime.click("[data-pagination-key]", { paginationKey: "rbd-nodes", paginationDelta: "1" });
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [2, 20]);
+    assert.match(tableBodies()[0], /分页RBD节点21/);
+    assert.equal(svg(), fullSvg);
+    await runtime.click("[data-pagination-key]", { paginationKey: "rbd-edges", paginationDelta: "1" });
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [2, 1]);
+    assert.match(tableBodies()[1], /rbd-page-21/);
+    assert.equal(svg(), fullSvg);
+  } finally { runtime.restore(); }
+});
+
+test("adding an aircraft opens its last page and keeps the new selection deletable", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-combat-unit",
+    projectJson: createRuntimeProjectJson({ combatUnit: {
+      members: Array.from({ length: 20 }, (_, index) => ({ aircraftNo: `AC-${index}`, model: "J-15", airport: "甲板" }))
+    } })
+  });
+  try {
+    await runtime.click("[data-combat-unit-add]");
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+    assert.match(runtime.appNode.innerHTML, /data-select-combat-unit-member="20" checked/);
+    assert.match(runtime.appNode.innerHTML, /data-combat-unit-index="20"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-combat-unit-delete disabled/);
+    await runtime.click("[data-combat-unit-delete]");
+    assert.equal((runtime.appNode.innerHTML.match(/data-select-combat-unit-member="/g) || []).length, 20);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="combat-members"/);
+  } finally { runtime.restore(); }
+});
+
+test("equipment pagination renders twenty rows, retains original edit indexes and exports every row", async () => {
+  const components = Array.from({ length: 41 }, (_, index) => ({
+    id: `paged-part-${index}`, name: `分页组件${index}`, aircraftModel: "J-15",
+    parentId: "aircraft-root", productType: "LRU", quantity: 1
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-equipment-system",
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 }, components
+    })
+  });
+  const tableHtml = () => runtime.appNode.innerHTML.split('<table class="equipment-system-table">')[1].split('</table>')[0];
+  try {
+    await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页 · 共 42 条/);
+    assert.equal((tableHtml().split('<tbody>')[1].match(/<tr/g) || []).length, 20);
+    assert.match(tableHtml(), /data-path="components\.18\.name"/);
+    assert.doesNotMatch(tableHtml(), /data-path="components\.19\.name"/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "equipment-system", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 3 页/);
+    assert.match(tableHtml(), /data-path="components\.19\.name"/);
+    assert.doesNotMatch(tableHtml(), /data-path="components\.0\.name"/);
+    await runtime.change("[data-path]", { path: "components.19.name" }, { value: "改名第20组件" });
+    await runtime.click("[data-equipment-export-data]");
+    const csv = await runtime.downloads[0].blob.text();
+    assert.match(csv, /改名第20组件/);
+    for (let index = 0; index < 41; index += 1) assert.ok(csv.includes(`paged-part-${index},`));
+    await runtime.click("[data-pagination-key]", { paginationKey: "equipment-system", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 3 \/ 3 页/);
+    assert.equal((tableHtml().split('<tbody>')[1].match(/<tr/g) || []).length, 2);
+    await runtime.input("[data-equipment-search]", {}, { value: "no-match-pagination-context" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+    assert.match(tableHtml(), /data-path="components\.0\.name"/);
+  } finally { runtime.restore(); }
+});
+
 test("equipment aircraft-list selection renders whole aircraft rows and descendants", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -3395,7 +3717,7 @@ test("equipment parent node selector uses Chinese names while retaining parent I
 
     const equipmentHtml = runtime.appNode.innerHTML;
     const treePanel = equipmentHtml.slice(
-      equipmentHtml.indexOf('<aside class="tree-container">'),
+      equipmentHtml.indexOf('<aside class="tree-container equipment-modeling-tree"'),
       equipmentHtml.indexOf('class="detail-panel equipment-system-table-panel"')
     );
     const rightPanel = equipmentHtml.slice(equipmentHtml.indexOf("equipment-system-table-panel"));
@@ -6464,6 +6786,144 @@ test("ambiguous legacy logistics endpoint names stay visibly unresolved", async 
   }
 });
 
+test("analysis tables paginate 0, 20, 21 and 41 rows without truncating exports", async () => {
+  for (const [feature, key, kind] of [
+    ["spare-planning-spare-shortfall-analysis", "analysis-spare-shortfall", "spares"],
+    ["spare-planning-carry-list-analysis", "analysis-carry-list", "carry"],
+    ["mission-reliability-task-reliability", "analysis-mission-waves", "waves"]
+  ]) {
+    for (const count of [0, 20, 21, 41]) {
+      const rows = Array.from({ length: count }, (_, index) => ({
+        aircraftModel: index < 21 ? "A" : "B", productId: `page-product-${index}`,
+        demand: index + 1, filled: 1, fillRate: 1, recommended: index + 1,
+        satisfactionRate: 1, shortage: 0, riskLevel: "低",
+        waveLabel: `page-wave-${index}`, sampleCount: 2, meanMissionSuccessRate: 1
+      }));
+      if (kind === "carry") {
+        rows.splice(0, 0, { aircraftModel: "A", productId: "hidden-zero-first", demand: 0, recommended: 0 });
+        rows.push({ aircraftModel: "A", productId: "hidden-zero-last", demand: 0, recommended: 0 });
+      }
+      const runtime = await setupRuntimeApp({
+        hash: `feature=${feature}`,
+        liteMesaAnalysisResponseOverrides: { rows, wave_rows: kind === "waves" ? rows : [] }
+      });
+      try {
+        await runtime.click("[data-lite-mesa-analysis-action='run']");
+        const body = () => runtime.appNode.innerHTML.match(/<table class="lite-mesa-stat-table(?: task-reliability-result-table)?">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)?.[1] || "";
+        if (count > 20) {
+          assert.match(runtime.appNode.innerHTML, new RegExp(`第 1 / ${Math.ceil(count / 20)} 页 · 共 ${count} 条`));
+          assert.equal((body().match(/<tr>/g) || []).length, 20);
+          assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="-1" disabled`));
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          assert.match(body(), kind === "waves" ? /page-wave-20/ : /page-product-20/);
+          assert.doesNotMatch(body(), kind === "waves" ? /page-wave-0</ : /page-product-0</);
+          await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: feature });
+          assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[0].rows.length, count);
+          if (count === 41) {
+            await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+            assert.equal((body().match(/<tr>/g) || []).length, 1);
+            assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="1" disabled`));
+            assert.match(body(), kind === "waves" ? /page-wave-40/ : /page-product-40/);
+            if (kind === "spares") {
+              await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "desc" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+              assert.match(body(), /page-product-40/);
+              await runtime.change("[data-spare-aircraft-filter]", {}, { value: "A" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+            }
+            if (kind === "carry") {
+              await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "desc" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+              await runtime.change("[data-carry-aircraft-filter]", {}, { value: "A" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+              await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+              await runtime.change("[data-carry-hide-zero]", {}, { checked: false, type: "checkbox" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 23 条/);
+            }
+          }
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          await runtime.click("[data-lite-mesa-analysis-action='run']");
+          assert.match(runtime.appNode.innerHTML, /第 1 \/ [23] 页/);
+        } else {
+          assert.doesNotMatch(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}"`));
+          assert.equal((body().match(/<tr>/g) || []).length, count || 1);
+        }
+      } finally { runtime.restore(); }
+    }
+  }
+});
+
+test("downtime pagination appears only beyond twenty details or snapshots", async () => {
+  for (const count of [0, 20, 21]) {
+    const events = Array.from({ length: count }, (_, index) => ({
+      factor: "failure", equipment_name: `small-event-${index}`, seed: index,
+      start_minute: index, end_minute: index + 1, duration_hours: 1 / 60
+    }));
+    const runtime = await setupRuntimeApp({
+      hash: "feature=mission-reliability-downtime-factor-analysis",
+      liteMesaAnalysisResponseOverrides: { event_details: events, event_snapshots: events }
+    });
+    try {
+      await runtime.click("[data-lite-mesa-analysis-action='run']");
+      assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, Math.min(count, 20));
+      for (const key of ["analysis-downtime-events", "analysis-event-snapshots"]) {
+        if (count <= 20) assert.doesNotMatch(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}"`));
+        else {
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="1" disabled`));
+        }
+      }
+      if (count === 21) {
+        assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, 1);
+        assert.match(runtime.appNode.innerHTML, /small-event-20/);
+      }
+    } finally { runtime.restore(); }
+  }
+});
+
+test("downtime details and snapshots paginate independently and export the full filtered events", async () => {
+  const events = Array.from({ length: 41 }, (_, index) => ({
+    factor: index < 21 ? "failure" : "spare_shortage", equipment_name: `event-equipment-${index}`,
+    start_minute: index, end_minute: index + 1, duration_hours: 1 / 60
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-downtime-factor-analysis",
+    liteMesaAnalysisResponseOverrides: {
+      event_details: events,
+      event_snapshots: events.map((event, index) => ({ ...event, seed: 1000 + index, simulation_time: index }))
+    }
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const details = () => runtime.appNode.innerHTML.match(/downtime-event-detail-table">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)?.[1] || "";
+    assert.equal((details().match(/<tr>/g) || []).length, 20);
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, 20);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-downtime-events", paginationDelta: "1" });
+    assert.match(details(), /event-equipment-20/);
+    assert.match(runtime.appNode.innerHTML, /随机种子 1000/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /随机种子 1020/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /随机种子 1000/);
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1020/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1040/);
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-downtime-factor-analysis" });
+    assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[1].rows.length, 41);
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false, type: "checkbox" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+    assert.match(details(), /event-equipment-0</);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-downtime-events", paginationDelta: "1" });
+    for (const factor of ["failure", "equipment_shortage", "preventive"]) {
+      await runtime.change("[data-downtime-factor-filter]", {}, { value: factor, checked: false, type: "checkbox" });
+    }
+    assert.match(runtime.appNode.innerHTML, /请选择至少一种停机因素/);
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "failure", checked: true, type: "checkbox" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页/);
+  } finally { runtime.restore(); }
+});
+
 test("experiment plan row selection is interactive for template-created projects at runtime", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-list" });
 
@@ -6482,6 +6942,31 @@ test("experiment plan row selection is interactive for template-created projects
   } finally {
     runtime.restore();
   }
+});
+
+test("opening an experiment branch copies configuration without running simulations", () => {
+  const appSource = fs.readFileSync(new URL("../front/app.js", import.meta.url), "utf8");
+  const branchSource = appSource.slice(
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject()"),
+    appSource.indexOf("function renderCollapsibleTree(")
+  );
+  const source = { components: [{ id: "component-one", quantity: 2 }] };
+  const openBranch = new Function("scenario", "updatePreviewResultsThroughApiClient", `
+    let experimentPlanDraft, experimentPlanBranchActive = false;
+    const selectedFeatureId = "plan-management", experimentPlanManagementMode = "editor";
+    const getFeaturePageById = () => ({ component: "experiment-plan-management" });
+    const cloneScenario = structuredClone;
+    const ensureMonteCarloSweepDefaults = () => {};
+    const ensureExperimentPlanDraftDefaults = () => {};
+    ${branchSource}
+    createExperimentPlanBranchFromCurrentProject();
+    return { draft: experimentPlanDraft, active: experimentPlanBranchActive };
+  `);
+  const result = openBranch(source, () => assert.fail("opening a plan must not run preview simulations"));
+  assert.equal(result.active, true);
+  assert.deepEqual(result.draft, source);
+  result.draft.components[0].quantity = 99;
+  assert.equal(source.components[0].quantity, 2);
 });
 
 test("experiment plan add opens an editable plan branch", async () => {
@@ -7402,6 +7887,65 @@ test("an in-flight Monte Carlo response cannot restore results from an updated f
   }
 });
 
+test("unfreezing the selected plan clears completed analysis and persists current-project context", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-unfreeze", name: "待取消方案", projectJson: createRuntimeProjectJson(), samples: 7, seed: 707 })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis", experimentPlans,
+    liteMesaAnalysisResponseOverrides: { sample_count: 7 }
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-unfreeze" });
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    assert.match(runtime.appNode.innerHTML, /分析结果已生成：7 个样本/);
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    await runtime.click("[data-lite-mesa-action='run']");
+    assert.match(runtime.appNode.innerHTML, /总样本/);
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-unfreeze]", { experimentPlanUnfreeze: "plan-unfreeze" });
+    assert.equal(experimentPlans[0].status, "draft");
+    assert.equal(JSON.parse(runtime.storage.get("spare-mvp:selectedRunContextByProject"))["project-runtime"], "current-project:project-runtime");
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /冻结方案参数只读/);
+    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /分析结果已生成：7 个样本/);
+  } finally { runtime.restore(); }
+});
+
+test("late frozen analysis responses cannot reappear after unfreeze", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-unfreeze-flight", name: "并发取消方案", projectJson: createRuntimeProjectJson(), samples: 7 })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail", experimentPlans, liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-unfreeze-flight" });
+    await runtime.click("[data-lite-mesa-action='run']");
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-unfreeze]", { experimentPlanUnfreeze: "plan-unfreeze-flight" });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    await runtime.flush();
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本/);
+  } finally { runtime.restore(); }
+});
+
+test("refreshing a selected plan that became draft resets its runnable context", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-remote-unfreeze", name: "远程取消方案", projectJson: createRuntimeProjectJson(), samples: 7 })];
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-monte-carlo-experiment-detail", experimentPlans });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-remote-unfreeze" });
+    experimentPlans[0].status = "draft";
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", {});
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.equal(JSON.parse(runtime.storage.get("spare-mvp:selectedRunContextByProject"))["project-runtime"], "current-project:project-runtime");
+  } finally { runtime.restore(); }
+});
+
 test("frozen run context survives a cold workbench restore", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
@@ -7483,6 +8027,28 @@ test("run context defaults to current Project and excludes unsaved or invalid ex
   } finally {
     runtime.restore();
   }
+});
+
+test("restored ordinary user can delete owned plans but not other or unowned plans", async () => {
+  const projectJson = createRuntimeProjectJson();
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    sessionUser: { user_id: "user-basic", username: "user", role: "普通用户" },
+    projectJson,
+    experimentPlans: [
+      { experiment_plan_id: "own-plan", created_by: "user-basic", runs: [{ run_id: "completed-run", status: "succeeded" }] },
+      { experiment_plan_id: "other-plan", created_by: "user-data" },
+      { experiment_plan_id: "legacy-plan" }
+    ].map((plan) => ({ ...plan, status: "frozen", config: { name: plan.experiment_plan_id, projectJson } }))
+  });
+  try {
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-delete="own-plan"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-delete="(?:other|legacy)-plan"/);
+    for (const id of ["own-plan", "other-plan", "legacy-plan"]) {
+      assert.ok(runtime.appNode.innerHTML.includes(`data-experiment-plan-unfreeze="${id}"`));
+    }
+  } finally { runtime.restore(); }
 });
 
 test("experiment plan list selection editing and saving do not change the run context", async () => {
@@ -8096,6 +8662,13 @@ async function setupRuntimeApp({
         projects: backendProjectCatalog
       });
     }
+    if (url === "/api/projects/excel-template" && method === "GET") {
+      if (!["系统管理员", "数据管理员"].includes(sessionUser.role)) return jsonResponse({ code: "forbidden", message: "无权下载模板" }, { ok: false, status: 403 });
+      return { ok: true, status: 200,
+        headers: { get(name) { return name.toLowerCase() === "content-disposition" ? `attachment; filename*=UTF-8''${encodeURIComponent("Project标准模板-v1.xlsx")}` : ""; } },
+        async blob() { return new Blob(["PK-template"], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }); }
+      };
+    }
     const projectMatch = url.match(/^\/api\/projects\/([^/]+)$/);
     if (projectMatch && method === "GET") {
       const projectId = decodeURIComponent(projectMatch[1]);
@@ -8143,6 +8716,17 @@ async function setupRuntimeApp({
         experiment_plan_id: "plan-runtime-created",
         config: body.config || {}
       });
+    }
+    const unfreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/unfreeze$/);
+    if (unfreezeMatch && method === "POST") {
+      const id = decodeURIComponent(unfreezeMatch[2]);
+      const plan = experimentPlans.find((item) => item.experiment_plan_id === id);
+      if (plan) {
+        plan.status = "draft";
+        delete plan.canonical_fingerprint;
+        delete plan.frozen_at;
+      }
+      return jsonResponse(plan || { experiment_plan_id: id, status: "draft" });
     }
     const experimentPlanFreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/freeze$/);
     if (experimentPlanFreezeMatch && method === "POST") {
@@ -8569,6 +9153,10 @@ async function setupRuntimeApp({
     storage,
     async click(selector, dataset = {}, props = {}) {
       await appListeners.click?.({ target: eventTarget(selector, dataset, props) });
+      await flushRuntimeTasks();
+    },
+    async drop(selector, file) {
+      await appListeners.drop?.({ target: eventTarget(selector), dataTransfer: { files: [file] }, preventDefault() {} });
       await flushRuntimeTasks();
     },
     async change(selector, dataset = {}, props = {}) {
@@ -9140,3 +9728,49 @@ function jsonResponse(payload, { ok = true, status = 200 } = {}) {
     }
   };
 }
+
+
+test("V2 per-sample reliability pagination retains counts and full export", async () => {
+  const rows = Array.from({ length: 41 }, (_, index) => ({
+    sampleIndex: index, dayIndex: 1, waveIndex: 1, plannedWaves: 4, successfulWaves: 1
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    liteMesaAnalysisResponseOverrides: { rows, wave_rows: rows }
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-mission-waves", paginationDelta: "1" });
+    const table = runtime.appNode.innerHTML.match(/<table class="lite-mesa-stat-table task-reliability-result-table">[\s\S]*?<\/table>/)?.[0] || "";
+    assert.match(table, /<th>样本<\/th><th>波次<\/th><th>成功数<\/th><th>计划数<\/th>/);
+    assert.match(table, /<td>样本 21<\/td><td>第1天第1波次<\/td><td>1<\/td><td>4<\/td><td>25%<\/td>/);
+    assert.doesNotMatch(table, /<td>样本 1<\/td>/);
+    assert.equal((table.match(/<tr>/g) || []).length, 21);
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-task-reliability" });
+    const detail = analysisExportBodies(runtime).at(-1).detail_sections[0];
+    assert.equal(detail.rows.length, 41);
+    assert.deepEqual(detail.rows[20].slice(0, 4), ["样本 21", "第1天第1波次", 1, 4]);
+  } finally { runtime.restore(); }
+});
+
+test("five original analysis pages retain independent run actions without a product suite", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-monte-carlo-experiment-detail" });
+  try {
+    for (const [feature, action, analysisType] of [
+      ["spare-planning-monte-carlo-experiment-detail", "[data-lite-mesa-action='run']", "mission_reliability"],
+      ["spare-planning-spare-shortfall-analysis", "[data-lite-mesa-analysis-action='run']", "spare_shortfall"],
+      ["spare-planning-carry-list-analysis", "[data-lite-mesa-analysis-action='run']", "carry_list"],
+      ["mission-reliability-task-reliability", "[data-lite-mesa-analysis-action='run']", "mission_reliability"],
+      ["mission-reliability-downtime-factor-analysis", "[data-lite-mesa-analysis-action='run']", "downtime_factors"]
+    ]) {
+      await runtime.setHash(`feature=${feature}`);
+      assert.doesNotMatch(runtime.appNode.innerHTML, /data-analysis-suite|运行五项分析|五项分析结果|每项独立运行 50 个样本|完成后可在各分析页查看结果/);
+      const before = runtime.requests.filter(request => request.url === "/api/mesa-analysis-runs").length;
+      await runtime.click(action);
+      const requests = runtime.requests.filter(request => request.url === "/api/mesa-analysis-runs");
+      assert.equal(requests.length, before + 1);
+      assert.equal(JSON.parse(requests.at(-1).options.body).analysis_type, analysisType);
+      assert.doesNotMatch(runtime.appNode.innerHTML, /data-analysis-suite/);
+    }
+  } finally { runtime.restore(); }
+});

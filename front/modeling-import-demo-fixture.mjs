@@ -939,6 +939,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
       {
         "activityName": "典型保障方案",
         "activityType": "飞行前保障",
+        "aircraftModel": "J-15 / J-35",
         "durationHours": 1,
         "equipmentId": "j15-avionics",
         "id": "preflight",
@@ -1226,13 +1227,14 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
       {
         "activityName": "J-15再次出动准备活动",
         "activityType": "使用保障",
-        "aircraftModel": "J-15",
+        "aircraftModel": "J-15 / J-35",
         "durationHours": 0.08333333333333333,
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---5",
         "jobs": [
           {
             "activityCode": "BA-001",
+            "applicableAircraft": "J-15 / J-35",
             "durationMinutes": 5,
             "equipment": [
               {
@@ -1261,13 +1263,14 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
       {
         "activityName": "J-15飞行后检查活动",
         "activityType": "使用保障",
-        "aircraftModel": "J-15",
+        "aircraftModel": "J-15 / J-35",
         "durationHours": 0.5,
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---6",
         "jobs": [
           {
             "activityCode": "BA-001",
+            "applicableAircraft": "J-15 / J-35",
             "durationMinutes": 30,
             "equipment": [
               {

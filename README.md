@@ -45,14 +45,18 @@
 
 ### 可导入 Project JSON 模板
 
-`exports/project-case-large.json` 和 `exports/project-minimum-001.json` 是经 clean Project 导出器规范化的可导入模板。重新生成时，Case-large 以已提交模板自身为稳定来源，MINIMUM-001 从本地 `project-carrier-day-night` Project 读取，并写为独立的 `project-template-minimum-001`，避免覆盖运行案例：
+`exports/project-case-large.json` 和 `exports/project-minimum-001.json` 是经 clean Project 导出器规范化的可导入模板。默认重新生成只读取这两份已提交 JSON，不依赖本地 SQLite。Case-large 的四个 J16 任务明确绑定“J16使用保障基本保障活动”，J16D 任务明确绑定“J16D使用保障基本保障活动”；其他方案保留供选择。MINIMUM-001 保持独立的 `project-template-minimum-001`，避免覆盖运行案例：
 
 ```bash
 .venv/bin/python scripts/export-project-json-templates.py --write
 .venv/bin/python scripts/export-project-json-templates.py --check
 ```
 
+如需从明确授权的本地 `project-carrier-day-night` Project 重建最小模板，可显式添加 `--database <path>`；该可选源只读打开。`--check` 对比规范化业务内容，忽略 JSON 属性排列。
+
 两份文件必须通过 clean schema、后端保存/重读和 `aircraft_support_v1` compile gate；保障作业定义保存在顶层 `supportActivityJobs[]`，活动只保留 `activityCodes[]`、`predecessors` 和规范运行保障点引用。
+
+平台 canonical 案例另有确定性来源：`tests/fixtures/case_new.json` 经 `scripts/export-simulation-analysis-cases.py --write` 生成公开导入模板和 analysis fixture；`tests/fixtures/modeling_import_project.json` 经 `scripts/export-m9-6-case-package.py --write` 生成 M9.6 快照及编译输入，clean golden 再由 `tests.clean_project_fixture_cases.clean_project_fixture_payloads` 导出。两份来源的日常运行保障组都明确覆盖 J-15 / J-35；修改来源后应重建派生文件并运行 `tests.test_clean_project_golden_fixtures`，不可只更新 golden。
 
 ## 本地运行
 
@@ -158,3 +162,7 @@ python3 scripts/export-simulation-analysis-cases.py --check
 ## 边界
 
 该原型是可交互、可运行的第一版，不是校准后的工程级仿真平台。小样本结果只能解释“在当前规则和参数下的模型行为”，不能直接声称真实最优方案。
+
+### 完整 Project Excel 模板
+
+项目数据管理可下载标准 `.xlsx`，按任务、装备、保障组织、保障活动填写完整建模数据，并经上传预览、Project clean 导出及公开编译门槛校验后覆盖或新建。保留旧 Excel/JSON 导入，复杂集合使用子表而非 JSON 单元格。详见 [Project Excel 标准模板](docs/project-excel-template.md)。

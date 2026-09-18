@@ -27,6 +27,10 @@ class MissionEngineMixin:
         aircraft.flight_hours += flight_hours
         aircraft.landing_count += 1
         self._record_preventive_usage(aircraft, flight_hours=flight_hours, landings=1)
+        if self.operations_phases_enabled:
+            aircraft.postflight_required = True
+            if not aircraft.in_flight_failure:
+                self.completed_sorties += 1
         if aircraft.in_flight_failure:
             aircraft.state = "maintenance"
             self.failed_sorties += 1
@@ -58,15 +62,15 @@ class MissionEngineMixin:
             )
             self._event("mission_returned_with_component_failure", f"{aircraft.tail_number} returned with component failure and needs repair")
         else:
-            aircraft.state = "post_support"
-            aircraft.postflight_required = True
-            self._create_job(
-                aircraft,
-                self.postflight_activity,
-                kind="postflight",
-                mission_id=mission.mission_id if mission is not None else aircraft.current_mission_id,
-            )
-            self._event("mission_returned", f"{aircraft.tail_number} returned from mission and needs postflight")
+            if self.operations_phases_enabled:
+                aircraft.state = "available"
+                self._event("mission_returned", f"{aircraft.tail_number} returned and retains turnaround eligibility")
+            else:
+                aircraft.state = "post_support"
+                aircraft.postflight_required = True
+                self._create_job(aircraft, self.postflight_activity, kind="postflight",
+                                 mission_id=mission.mission_id if mission is not None else aircraft.current_mission_id)
+                self._event("mission_returned", f"{aircraft.tail_number} returned from mission and needs postflight")
         aircraft.current_mission_id = None
         aircraft.return_time = None
         if mission is not None and not aircraft.in_flight_failure:
@@ -105,6 +109,7 @@ class MissionEngineMixin:
                 aircraft
                 for aircraft in self.aircraft
                 if aircraft.state == "available"
+                and not (self.operations_phases_enabled and aircraft.postflight_due)
                 and self._aircraft_matches_mission_type(aircraft, mission)
                 and not aircraft.prepared_mission_ids
                 and aircraft.tail_number not in active_preflight_tails
@@ -129,6 +134,8 @@ class MissionEngineMixin:
         mission: MissionState,
         aircraft: AircraftState,
     ) -> dict[str, Any]:
+        if self.operations_phases_enabled:
+            return self._operations_preparation_activity(mission, aircraft)
         candidates = [
             activity
             for activity in self.activities
@@ -170,6 +177,8 @@ class MissionEngineMixin:
                     aircraft.prepared_mission_ids.discard(mission.mission_id)
                     aircraft.return_time = self.minute + mission.duration_minutes
                     aircraft.takeoff_count += 1
+                    if self.operations_phases_enabled:
+                        self._operations_departure(aircraft, mission)
                     self._record_preventive_usage(aircraft, takeoffs=1)
                 mission.status = "launched"
                 mission.actual_start = self.minute
@@ -363,6 +372,7 @@ class MissionEngineMixin:
             if reserved_for_mission or aircraft.tail_number in affected_tails:
                 aircraft.state = "available"
                 aircraft.current_mission_id = None
+                aircraft.prepared_operations_day = None
                 released_tails.append(aircraft.tail_number)
             aircraft.prepared_mission_ids.discard(mission.mission_id)
         self._event(

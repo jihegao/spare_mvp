@@ -1111,7 +1111,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertNotIn("maintenance_methods", runtime_activity)
         self.assertNotIn("replacement_ratio", runtime_activity)
 
-    def test_aircraft_support_v1_accepts_authoring_phase_rows_without_runtime_phase_contract(self) -> None:
+    def test_aircraft_support_v1_compiles_three_runtime_phases_and_empty_work(self) -> None:
         project = self._load_fixture("aircraft_support_v1_project.json")
         activity = project["supportActivities"][0]
         activity.update({
@@ -1142,14 +1142,16 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(len(runtime_activities), 3)
         self.assertEqual([len(item["jobs"]) for item in runtime_activities], [1, 0, 0])
         self.assertEqual(len({item["name"] for item in runtime_activities}), 3)
+        self.assertEqual([item["operations_phase"] for item in runtime_activities], ["preflight", "relaunch", "postflight"])
+        self.assertEqual(scenario["simulation_inputs"]["operations_support_policy"], "daily-v1")
         for runtime_activity in runtime_activities:
             self.assertNotIn("planType", runtime_activity)
             self.assertNotIn("plan_type", runtime_activity)
             self.assertNotIn("planGroupId", runtime_activity)
-            self.assertNotIn("plan_group_id", runtime_activity)
+            self.assertEqual(runtime_activity["plan_group_id"], clean_activities[0]["planGroupId"])
         consumed = scenario["compiled_from"]["mapping_provenance"]["consumed_fields"]
-        self.assertNotIn("supportActivities[].planType", consumed)
-        self.assertNotIn("supportActivities[].planGroupId", consumed)
+        self.assertIn("supportActivities[].planType", consumed)
+        self.assertIn("supportActivities[].planGroupId", consumed)
         input_schema = json.loads(
             (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
         )
@@ -2360,6 +2362,24 @@ class SimulationAdapterTest(unittest.TestCase):
             ),
             [],
         )
+
+    def test_mission_projection_summary_uses_count_totals_not_mean_sample_rates(self) -> None:
+        samples = [
+            {"sample_index": 2, "mission_wave_reliability": [
+                {"day_index": 2, "wave_index": 1, "planned_waves": 1, "successful_waves": 1},
+            ]},
+            {"sample_index": 7, "mission_wave_reliability": [
+                {"day_index": 1, "wave_index": 2, "planned_waves": 3, "successful_waves": 0},
+            ]},
+        ]
+        projection = self.adapter._aircraft_support_v1_analysis_projections(
+            {"mission_success_rate": 0.5, "sortie_rate": 1},
+            "artifact-counts", samples=samples, run_id="run-counts",
+        )["mission_reliability"]["data"]
+        self.assertEqual(projection["wave_success_rate"], 0.25)
+        self.assertEqual(projection["result_fields"][1]["display_value"], "25%")
+        self.assertEqual([row["sample_index"] for row in projection["mission_wave_rows"]], [2, 7])
+        self.assertEqual([row["wave_label"] for row in projection["mission_wave_rows"]], ["第2天第1波次", "第1天第2波次"])
 
     def test_aircraft_support_v1_monte_carlo_isolates_failed_samples(self) -> None:
         class FailingSampleAdapter(SimulationAdapter):
