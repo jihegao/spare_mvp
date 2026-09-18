@@ -1076,6 +1076,35 @@ class BackendApiContractTest(unittest.TestCase):
             write_event_snapshots=False,
         )
 
+    def test_lite_mesa_worker_compiles_once_and_creates_independent_models(self) -> None:
+        from src.spare_mvp_abm.aircraft_support_v1.compiled_runtime import CompiledAircraftSupportModel, CompiledSimulation
+
+        inputs = self.adapter.compile_scenario(small_aircraft_support_project("compiled-worker"))["simulation_inputs"]
+        with mock.patch.object(CompiledSimulation, "compile", wraps=CompiledSimulation.compile) as compile_structure:
+            _initialize_lite_mesa_sample_worker(inputs)
+            self.assertEqual(compile_structure.call_count, 1)
+            with mock.patch("src.spare_mvp_abm.aircraft_support_v1.compiled_runtime.CompiledAircraftSupportModel",
+                            wraps=CompiledAircraftSupportModel) as model:
+                first = _run_lite_mesa_analysis_sample_worker((101, 0, False, 30))
+                second = _run_lite_mesa_analysis_sample_worker((102, 1, False, 30))
+            self.assertEqual(compile_structure.call_count, 1)
+        self.assertEqual(first["status"], "ok")
+        self.assertEqual(second["status"], "ok")
+        self.assertEqual(model.call_count, 2)
+        self.assertIs(model.call_args_list[0].kwargs["compiled"], model.call_args_list[1].kwargs["compiled"])
+        self.assertIsNot(model.call_args_list[0].args[0], model.call_args_list[1].args[0])
+        self.assertEqual([first["seed"], second["seed"]], [101, 102])
+        self.assertNotIn("disable_visualization_frames", inputs)
+
+    def test_lite_mesa_worker_compile_error_becomes_sample_failure(self) -> None:
+        with mock.patch("src.spare_mvp_abm.aircraft_support_v1.compiled_runtime.CompiledSimulation.compile",
+                        side_effect=ValueError("invalid graph")):
+            _initialize_lite_mesa_sample_worker({})
+        outcome = _run_lite_mesa_analysis_sample_worker((101, 0, False, 30))
+        self.assertEqual(outcome["status"], "failed")
+        self.assertEqual(outcome["failure"]["error"]["code"], "sample_failed")
+        self.assertIn("invalid graph", outcome["failure"]["error"]["message"])
+
     def test_lite_mesa_seed_only_task_keeps_parent_side_failure_diagnostics(self) -> None:
         task = (20260718, 3, False, 90)
 

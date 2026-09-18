@@ -1,4 +1,5 @@
 import "./browser-compat.mjs";
+import { ANALYSIS_SUITE_TYPES, analysisSuiteRows } from "./analysis-suite.mjs";
 
 import {
   FEATURE_PAGES,
@@ -716,6 +717,7 @@ let liteMesaMonteCarloRequestEpoch = 0;
 const DEFAULT_LITE_MESA_ANALYSIS_SAMPLES = 4;
 const DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES = 4;
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
+let liteMesaAnalysisSuiteState = null;
 let liteMesaAnalysisResults = {};
 let liteMesaAnalysisRequestEpoch = 0;
 let analysisXlsxExportState = {};
@@ -1802,6 +1804,13 @@ function bindEvents() {
     const aircraftReliabilityAction = event.target.closest("[data-aircraft-reliability-action]");
     if (aircraftReliabilityAction) {
       handleAircraftMissionReliabilityAction(aircraftReliabilityAction.dataset.aircraftReliabilityAction).finally(() => render());
+      return;
+    }
+
+    const suiteButton = event.target.closest("[data-analysis-suite-run]");
+    if (suiteButton) {
+      runLiteMesaAnalysisSuite().finally(() => render());
+      render();
       return;
     }
 
@@ -12425,6 +12434,7 @@ function invalidateSelectedRunContextResults(message) {
   liteMesaAnalysisRequestEpoch += 1;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
+  liteMesaAnalysisSuiteState = null;
   analysisXlsxExportState = {};
   aircraftMissionReliabilityState.result = null;
   aircraftMissionReliabilityState.status = message;
@@ -12486,6 +12496,7 @@ function selectCurrentExperimentPlan(planKey) {
     ? `已绑定实验方案：${selected.name}`
     : `已切换运行来源：${selected.name}`;
   liteMesaAnalysisResults = {};
+  liteMesaAnalysisSuiteState = null;
   aircraftMissionReliabilityState.result = null;
   aircraftMissionReliabilityState.status = "运行上下文已更新，请重新运行。";
   if (selected.kind === "current-project") {
@@ -13113,6 +13124,7 @@ function resetWorkbenchStateForCurrentProject() {
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
+  liteMesaAnalysisSuiteState = null;
   resetSupportOrganizationWorkbenchSelection();
   analysisXlsxExportState = {};
   aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
@@ -18711,6 +18723,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
           ${renderExperimentPlanContextDropdown(page)}
         </div>
       </section>
+      ${renderLiteMesaAnalysisSuite()}
       <div class="lite-mesa-layout">
         <section class="lite-mesa-settings">
           <div class="section-head">
@@ -18723,6 +18736,8 @@ function renderLiteMesaMonteCarloAnalysis(page) {
           ${settingsError ? `<p class="inline-status error">${htmlEscape(settingsError)}</p>` : ""}
           <button type="button" class="btn-primary" data-lite-mesa-action="run" ${settingsError ? "disabled" : ""}>运行分析</button>
           <p class="inline-status">${htmlEscape(liteMesaMonteCarloStatus)}</p>
+          <button type="button" class="btn-primary" data-analysis-suite-run ${!canRunLiteMesaAnalysisSuite() || settingsError || liteMesaAnalysisSuiteState?.running || (frozenPlan && Number(displayedSettings.samples) !== 50) ? "disabled" : ""}>运行五项分析（各 50 样本）</button>
+          <p class="inline-status">每项独立运行 50 个样本；${frozenPlan && Number(displayedSettings.samples) !== 50 ? "请先选择样本数为 50 的冻结方案，或切换当前项目。" : "完成后可在各分析页查看结果。"}</p>
         </section>
         <section class="lite-mesa-results">
           <div class="section-head">
@@ -18806,7 +18821,103 @@ function updateLiteMesaMonteCarloSetting(field, value) {
   liteMesaMonteCarloStatus = "设置已更新，等待重新运行 Mesa 分析。";
 }
 
+function canRunLiteMesaAnalysisSuite() {
+  const visibleTypes = new Set(getVisibleFeaturePagesForRole(FEATURE_PAGES, currentUser?.role)
+    .filter((page) => page.component === "lite-mesa-analysis")
+    .map(analysisTypeForPage));
+  return Object.keys(LITE_MESA_ANALYSIS_DEFINITIONS).every((type) => visibleTypes.has(type));
+}
+
+function renderLiteMesaAnalysisSuite() {
+  const state = liteMesaAnalysisSuiteState;
+  if (!state) return "";
+  return `<section class="lite-mesa-stat-section" aria-live="polite" data-analysis-suite-result>
+    <h3>五项分析结果</h3>
+    <p>${htmlEscape(state.message)}</p>
+    ${state.response ? `<div class="table-wrap"><table class="lite-mesa-stat-table"><thead><tr><th>功能</th><th>完成样本</th><th>失败样本</th><th>关键结果</th><th>启动至显示</th><th>状态</th></tr></thead><tbody>${analysisSuiteRows(state.response).map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${row.completed}/50</td><td>${row.failed}</td><td>${htmlEscape(row.metrics.slice(0, 3).map(([label, value]) => `${label}：${value}`).join("；") || "请查看对应分析页")}</td><td>${row.elapsed === null ? "—" : `${row.elapsed.toFixed(2)} 秒`}</td><td>${htmlEscape(row.complete ? row.elapsed === null ? "结果已显示，正在计时" : row.withinTarget ? "完成，≤60秒" : "完成，超过60秒" : row.status === "pending" ? "等待启动" : row.status === "running" ? "运行中" : row.message || "未完整完成，请重试")}</td></tr>`).join("")}</tbody></table></div>` : ""}
+  </section>`;
+}
+
+async function runLiteMesaAnalysisSuite() {
+  if (liteMesaAnalysisSuiteState?.running) return;
+  const requestEpoch = ++liteMesaMonteCarloRequestEpoch;
+  const analysisEpoch = ++liteMesaAnalysisRequestEpoch;
+  const requestContextKey = selectedExperimentPlanContextKey();
+  const requestContextFingerprint = selectedRunContextRequestFingerprint();
+  const context = selectedExperimentPlanContext();
+  const analysisSource = captureAnalysisSourceIdentity();
+  const settings = selectedExperimentPlanRunSettings();
+  const started = performance.now();
+  const stillCurrent = () => requestEpoch === liteMesaMonteCarloRequestEpoch
+    && analysisEpoch === liteMesaAnalysisRequestEpoch
+    && runContextRequestStillCurrent(requestContextKey, requestContextFingerprint);
+  liteMesaAnalysisSuiteState = { running: true, message: "正在运行五项分析，每项独立 50 个样本……" };
+  try {
+    if (!canRunLiteMesaAnalysisSuite()) throw new Error("当前角色没有全部五项分析权限");
+    if (settings.validationError) throw new Error(settings.validationError);
+    if (context?.kind === "experiment-plan" && Number(settings.samples) !== 50) {
+      throw new Error("请选择样本数为 50 的冻结方案，或切换当前项目。");
+    }
+    const normalizedSettings = { ...settings, samples: 50, parallelCores: normalizeMonteCarloParallelCores(settings.parallelCores) };
+    const response = { analyses: {} };
+    liteMesaAnalysisSuiteState.response = response;
+    const backendContext = buildBackendRunContext(context);
+    for (const [index, [analysisType, label]] of ANALYSIS_SUITE_TYPES.entries()) {
+      if (!stillCurrent()) return;
+      const itemStarted = performance.now();
+      const itemSettings = {
+        ...normalizedSettings,
+        seed: Math.trunc(Number(normalizedSettings.seed) || 0) + index * 50,
+        ...(analysisType === "downtime_factors" ? { write_event_snapshots: true } : {})
+      };
+      response.analyses[analysisType] = { status: "running" };
+      liteMesaAnalysisSuiteState.message = `正在运行${label}（${index + 1}/5），各项启动至显示分别计时，目标各 ≤60 秒。`;
+      render();
+      let payload;
+      try {
+        payload = await backendApi.runLiteMesaAnalysis(
+          backendContext, analysisType === "monte_carlo" ? "mission_reliability" : analysisType,
+          context?.kind === "current-project" ? itemSettings : {}, undefined, itemSettings
+        );
+      } catch (error) {
+        payload = { status: "blocked", sample_count: 0, message: `请求失败：${error?.message || "运行错误"}，请检查后重试。` };
+      }
+      if (!stillCurrent()) return;
+      response.analyses[analysisType] = payload;
+      if (analysisType === "monte_carlo") {
+        liteMesaMonteCarloSettings = normalizedSettings;
+        liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(payload);
+        liteMesaMonteCarloStatus = liteMesaMonteCarloResult.status === "blocked"
+          ? `分析未完成：${liteMesaMonteCarloResult.message}`
+          : liteMesaMonteCarloCompletionStatus(liteMesaMonteCarloResult, { samples: 50, runCount: liteMesaMonteCarloResult.sampleCount });
+      } else {
+        const definition = LITE_MESA_ANALYSIS_DEFINITIONS[analysisType];
+        liteMesaAnalysisSettings[analysisType] = { ...liteMesaAnalysisSettings[analysisType], ...itemSettings };
+        liteMesaAnalysisResults[analysisType] = {
+          ...normalizeLiteMesaAnalysisResult({ ...definition, analysisType }, payload),
+          completedAt: new Date().toISOString(), analysisSource
+        };
+      }
+      analysisXlsxExportState = {};
+      render();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (!stillCurrent()) return;
+      payload.display_elapsed_seconds = (performance.now() - itemStarted) / 1000;
+      render();
+    }
+    const rows = analysisSuiteRows(response);
+    const complete = rows.every((row) => row.complete);
+    const elapsed = (performance.now() - started) / 1000;
+    liteMesaAnalysisSuiteState.running = false;
+    liteMesaAnalysisSuiteState.message = `${complete ? "五项各 50 样本全部完成" : "五项分析未完整完成"}；${rows.filter((row) => row.withinTarget).length}/5 项在启动至显示 ≤60 秒内完成。五项累计耗时 ${elapsed.toFixed(2)} 秒（仅供参考，不作为单项验收条件）。${complete ? "" : "请检查各项状态后重试。"}`;
+  } catch (error) {
+    if (!stillCurrent()) return;
+    liteMesaAnalysisSuiteState = { running: false, message: `五项分析失败：${error?.message || "运行错误"}。请检查运行设置或后端状态后重试。` };
+  }
+}
+
 async function runLiteMesaMonteCarloAnalysis() {
+  liteMesaAnalysisSuiteState = null;
   const requestEpoch = ++liteMesaMonteCarloRequestEpoch;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();
@@ -20485,6 +20596,7 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
 }
 
 async function runLiteMesaAnalysisPage(page) {
+  liteMesaAnalysisSuiteState = null;
   const requestEpoch = ++liteMesaAnalysisRequestEpoch;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();

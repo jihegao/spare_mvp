@@ -83,6 +83,8 @@ LITE_MESA_SAMPLE_TIMEOUT_SECONDS = 90
 LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS = 180
 LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS = 900
 _LITE_MESA_WORKER_INPUTS: dict[str, Any] | None = None
+_LITE_MESA_WORKER_COMPILED: Any = None
+_LITE_MESA_WORKER_COMPILE_ERROR: str | None = None
 
 
 class LiteMesaSampleTimeoutError(TimeoutError):
@@ -2735,8 +2737,18 @@ def _run_lite_mesa_analysis_sample_worker(
 
 
 def _initialize_lite_mesa_sample_worker(inputs: dict[str, Any]) -> None:
-    global _LITE_MESA_WORKER_INPUTS
+    global _LITE_MESA_WORKER_INPUTS, _LITE_MESA_WORKER_COMPILED, _LITE_MESA_WORKER_COMPILE_ERROR
+    from src.spare_mvp_abm.aircraft_support_v1.compiled_runtime import CompiledSimulation
+
     _LITE_MESA_WORKER_INPUTS = inputs
+    _LITE_MESA_WORKER_COMPILED = None
+    _LITE_MESA_WORKER_COMPILE_ERROR = None
+    try:
+        _LITE_MESA_WORKER_COMPILED = CompiledSimulation.compile(inputs)
+    except Exception as exc:
+        # Raising from a multiprocessing initializer respawns workers indefinitely.
+        # Keep initialization failures as ordinary per-sample failures instead.
+        _LITE_MESA_WORKER_COMPILE_ERROR = str(exc)
 
 
 def _lite_mesa_sample_task_values(
@@ -2786,14 +2798,17 @@ def _run_aircraft_support_v1_analysis_sample(
     sample_index: int,
     write_event_snapshots: bool = False,
 ) -> dict[str, Any]:
-    from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
+    from src.spare_mvp_abm.aircraft_support_v1.compiled_runtime import CompiledAircraftSupportModel
 
     sample_inputs = copy.deepcopy(inputs)
     sample_inputs["seed"] = seed
     sample_inputs["disable_visualization_frames"] = True
     if write_event_snapshots:
         sample_inputs["write_event_snapshots"] = True
-    model = AircraftSupportV1Model(sample_inputs)
+    if inputs is _LITE_MESA_WORKER_INPUTS and _LITE_MESA_WORKER_COMPILE_ERROR is not None:
+        raise ValueError(f"Simulation structure compilation failed: {_LITE_MESA_WORKER_COMPILE_ERROR}")
+    compiled = _LITE_MESA_WORKER_COMPILED if inputs is _LITE_MESA_WORKER_INPUTS else None
+    model = CompiledAircraftSupportModel(sample_inputs, compiled=compiled)
     execution = model.run()
     daily_mission_reliability = _sample_daily_mission_reliability(model.missions, aircraft_count=len(model.aircraft))
     mission_wave_reliability = _sample_mission_wave_reliability(model.missions)

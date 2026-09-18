@@ -186,7 +186,7 @@ test("active runtime wording promotes lite Mesa and demotes the old run ledger",
   const runService = await readFile(new URL("../src/spare_mvp_backend/run_service.py", import.meta.url), "utf8");
   const adapter = await readFile(new URL("../src/spare_mvp_contract/adapter.py", import.meta.url), "utf8");
 
-  const liteMesaPath = /POST \/api\/mesa-analysis-runs[\s\S]{0,120}AircraftSupportV1Model[\s\S]{0,80}lite Mesa 会话/;
+  const liteMesaPath = /POST \/api\/mesa-analysis-runs[\s\S]{0,120}(?:AircraftSupportV1Model|CompiledAircraftSupportModel)[\s\S]{0,80}lite Mesa 会话/;
   const oldLedgerBoundary = /\/api\/runs[\s\S]{0,120}(历史实现|内部治理能力|后续持久化运行治理候选)/;
   for (const content of [readme, docsReadme, agentDoc, liteMesaRuntime]) {
     assert.match(content, /\/api\/mesa-analysis-runs/);
@@ -199,6 +199,8 @@ test("active runtime wording promotes lite Mesa and demotes the old run ledger",
   for (const content of [readme, docsReadme, agentDoc]) {
     assert.match(content, liteMesaPath);
   }
+  assert.match(docsReadme, /CompiledSimulation \+ in-memory CompiledAircraftSupportModel/);
+  assert.match(liteMesaRuntime, /CompiledAircraftSupportModel/);
   for (const content of [productRoadmap, contractsReadme]) {
     assert.doesNotMatch(content, /RunService -> artifacts/);
   }
