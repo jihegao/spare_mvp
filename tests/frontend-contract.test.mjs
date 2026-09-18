@@ -2385,7 +2385,7 @@ test("equipment import and export actions stay inside the equipment tree panel",
     appSource.indexOf("function buildEquipmentTreeNodes")
   );
   const treePanelSource = equipmentSource.slice(
-    equipmentSource.indexOf('<aside class="tree-container">'),
+    equipmentSource.indexOf('<aside class="tree-container equipment-modeling-tree"'),
     equipmentSource.indexOf('<section class="detail-panel equipment-system-table-panel">')
   );
   const detailPanelSource = equipmentSource.slice(
@@ -4073,7 +4073,7 @@ test("phase 6C reliability reuses per-sample detail and separate wave chart with
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
   assert.match(formalReliabilitySource, /renderLiteMesaMissionReliabilityWaveChart\(rows\)/);
-  assert.match(formalReliabilitySource, /renderTaskReliabilityDetailTable\(rows\)/);
+  assert.match(formalReliabilitySource, /renderTaskReliabilityDetailTable\(rows, "formal-mission-waves"\)/);
   assert.match(appSource, /function renderLiteMesaMissionReliabilityWaveChart/);
   assert.match(appSource, /meanMissionSuccessRate/);
   assert.match(lineChartSource, /point\.tooltip/);

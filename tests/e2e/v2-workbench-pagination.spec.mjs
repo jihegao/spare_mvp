@@ -23,7 +23,7 @@ window.workbenchReview = {
     render();
   },
   selection() { return [...selectedBasicMissionPhaseIndexes]; },
-  switchProject() { currentProject = { ...currentProject, id: "review-project-next" }; render(); },
+  switchProject() { currentProject = { ...currentProject, id: "review-project-next", projectBackendId: "project-review-next" }; render(); },
   reliability(count) {
     const rows = Array.from({ length: count }, (_, i) => ({ sampleIndex: Math.floor(i / 26), dayIndex: Math.floor(i % 26 / 2) + 1, waveIndex: i % 2 + 1, plannedWaves: 1, successfulWaves: 1 }));
     liteMesaAnalysisResults.mission_reliability = {
@@ -61,14 +61,14 @@ test("unified navigation preserves the RBD tab and role-specific administration"
 
 test("mission phases select and delete only the current page and reset on project switch", async ({ page }) => {
   await page.evaluate(() => { window.workbenchReview.seed("spare-planning-basic-mission"); window.workbenchReview.phases(45); });
-  const table = page.locator('[data-paginate="mission-phases"]');
+  const table = page.locator("table").filter({ has: page.locator("[data-basic-mission-phase-select-all]") });
   await expect(table.locator("tbody tr:visible")).toHaveCount(20);
   await page.getByRole("button", { name: "下一页", exact: true }).click();
   await expect(table.locator("tbody tr:visible").first().locator("td").nth(1)).toHaveText("21");
   await page.locator("[data-basic-mission-phase-select-all]").check();
   expect(await page.evaluate(() => window.workbenchReview.selection())).toEqual(Array.from({ length: 20 }, (_, i) => String(i + 20)));
   await page.locator("[data-basic-mission-phase-batch-delete]").click();
-  await expect(table.locator("tbody tr")).toHaveCount(25);
+  await expect(table.locator("tbody tr")).toHaveCount(5);
   await expect(table.locator("tbody tr:visible")).toHaveCount(5);
   await expect(table.locator("tbody tr:visible").first().locator('input[data-path$=".name"]')).toHaveValue("验收阶段41");
   await page.evaluate(() => window.workbenchReview.switchProject());
@@ -84,7 +84,7 @@ test("104 reliability detail rows paginate while Excel exports all 104", async (
   });
   await page.evaluate(() => { window.workbenchReview.seed("mission-reliability-task-reliability"); window.workbenchReview.reliability(104); });
   const rows = page.locator(".task-reliability-result-table tbody tr");
-  await expect(rows).toHaveCount(104);
+  await expect(rows).toHaveCount(20);
   await expect(page.locator(".task-reliability-result-table tbody tr:visible")).toHaveCount(20);
   await page.getByRole("button", { name: "下一页", exact: true }).click();
   await page.locator("[data-analysis-xlsx-export]").click();

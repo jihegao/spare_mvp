@@ -51,6 +51,53 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         payload.update(overrides)
         return payload
 
+    def test_support_spare_numeric_sort_preserves_ties_and_input(self) -> None:
+        rows = [
+            {"name": "C", "product_id": "c", "quantity": "10", "consumed": "2", "pending_quantity": "0"},
+            {"name": "B", "product_id": "b", "quantity": "2", "consumed": "10", "pending_quantity": "2"},
+            {"name": "A", "product_id": "a", "quantity": 2, "consumed": 0, "pending_quantity": 10},
+            {"name": "Z", "product_id": "z", "quantity": 0, "consumed": 0, "pending_quantity": 0},
+        ]
+        original = copy.deepcopy(rows)
+        for column, ascending, descending in (
+            ("quantity", ["z", "a", "b", "c"], ["c", "a", "b", "z"]),
+            ("consumed", ["a", "z", "c", "b"], ["b", "c", "a", "z"]),
+            ("pending_quantity", ["c", "z", "b", "a"], ["a", "b", "c", "z"]),
+        ):
+            for reverse, expected in ((False, ascending), (True, descending)):
+                self.assertEqual([r["product_id"] for r in solara_app._sorted_support_spare_rows(rows, column, reverse)], expected)
+        self.assertEqual(rows, original)
+        self.assertEqual(solara_app._sorted_support_spare_rows([], "quantity"), [])
+
+    def test_support_spare_sort_buttons_persist_across_frame_refresh(self) -> None:
+        import ipyvuetify
+        import solara
+
+        frame = {"spares": [
+            {"product_id": "a", "name": "part-A", "quantity": 10},
+            {"product_id": "b", "name": "part-B", "quantity": 2},
+        ]}
+        _, context = solara.render(solara_app.SupportStage(frame), handle_error=False)
+        try:
+            button = context.find(ipyvuetify.Btn).widgets[0]
+            button.fire_event("click", {})
+            self.assertEqual(button.children, ["库存 ↑"])
+            body = context.find(solara.widgets.HTML).widgets[-1]
+            self.assertLess(body.unsafe_innerHTML.index("part-B"), body.unsafe_innerHTML.index("part-A"))
+            button.fire_event("click", {})
+            self.assertEqual(button.children, ["库存 ↓"])
+            self.assertLess(body.unsafe_innerHTML.index("part-A"), body.unsafe_innerHTML.index("part-B"))
+            refreshed = copy.deepcopy(frame)
+            refreshed["spares"][1]["quantity"] = 20
+            context.render(solara_app.SupportStage(refreshed), context.container)
+            self.assertEqual(button.children, ["库存 ↓"])
+            self.assertLess(body.unsafe_innerHTML.index("part-B"), body.unsafe_innerHTML.index("part-A"))
+            context.find(ipyvuetify.Btn).widgets[1].fire_event("click", {})
+            self.assertEqual(button.children, ["库存"])
+            self.assertEqual(context.find(ipyvuetify.Btn).widgets[1].children, ["已消耗 ↑"])
+        finally:
+            context.close()
+
     def test_model_step_advances_for_solara_controller(self) -> None:
         inputs = dict(self.default_inputs)
         inputs["time"] = {**inputs.get("time", {}), "duration_minutes": 3, "tick_minutes": 1}

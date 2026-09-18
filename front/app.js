@@ -1,6 +1,7 @@
 import "./browser-compat.mjs";
-import { createTablePagination, currentPageKeys, updatePageSelection } from "./table-pagination.mjs";
-const applyTablePagination = createTablePagination();
+import { createPaginationState, renderPagination } from "./pagination.mjs";
+const tablePagination = createPaginationState();
+const modelingPageViews = new Map();
 
 import {
   FEATURE_PAGES,
@@ -850,6 +851,7 @@ let periodicProfileRenameState = null;
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let equipmentSearchQuery = "";
+let equipmentTreeWidth = 300;
 let equipmentProductEditorComponentId = "";
 let equipmentProductQuery = "";
 let equipmentProductActiveOptionIndex = -1;
@@ -1070,7 +1072,81 @@ render();
 bindEvents();
 restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi());
 
+function bindEquipmentTreeResize() {
+  let drag = null;
+  const syncAria = (layout) => {
+    const handle = layout?.querySelector("[data-equipment-tree-resize]");
+    if (!handle || !handle.getClientRects().length) return;
+    handle.setAttribute("aria-valuenow", String(Math.round(handle.parentElement.getBoundingClientRect().width)));
+    handle.setAttribute("aria-valuemax", String(Math.round(Math.max(300, Math.min(900, layout.clientWidth - 332)))));
+  };
+  // A single observer follows the current rendered layout. Replaced trees are
+  // disconnected; the app observer watches child changes, not our ARIA writes.
+  if (typeof ResizeObserver !== "undefined" && typeof MutationObserver !== "undefined") {
+    let observedLayout = null;
+    const resizeObserver = new ResizeObserver(() => syncAria(observedLayout));
+    const observeCurrentLayout = () => {
+      const layout = app.querySelector(".equipment-modeling-layout");
+      if (layout !== observedLayout) {
+        resizeObserver.disconnect();
+        observedLayout = layout;
+        if (layout) resizeObserver.observe(layout);
+      }
+      syncAria(layout);
+    };
+    const appObserver = new MutationObserver(observeCurrentLayout);
+    appObserver.observe(app, { childList: true, subtree: true });
+    observeCurrentLayout();
+    const onViewportResize = () => syncAria(observedLayout);
+    window.addEventListener("resize", onViewportResize);
+    window.addEventListener("pagehide", (event) => {
+      if (event?.persisted) return;
+      resizeObserver.disconnect();
+      appObserver.disconnect();
+      window.removeEventListener("resize", onViewportResize);
+      observedLayout = null;
+    });
+  }
+  const applyWidth = (handle, width) => {
+    const layout = handle.closest(".equipment-modeling-layout");
+    if (!layout) return;
+    // CSS owns the responsive bounds. Read the rendered width so keyboard and
+    // pointer updates cannot accumulate invisible width beyond the current cap.
+    layout.style.setProperty("--equipment-tree-width", "900px");
+    const maximum = handle.parentElement.getBoundingClientRect().width;
+    layout.style.setProperty("--equipment-tree-width", `${width}px`);
+    equipmentTreeWidth = Math.round(handle.parentElement.getBoundingClientRect().width);
+    layout.style.setProperty("--equipment-tree-width", `${equipmentTreeWidth}px`);
+    handle.setAttribute("aria-valuenow", String(equipmentTreeWidth));
+    handle.setAttribute("aria-valuemax", String(maximum));
+  };
+  app.addEventListener("pointerdown", (event) => {
+    const handle = event.target.closest("[data-equipment-tree-resize]");
+    if (!handle || event.button !== 0) return;
+    event.preventDefault();
+    drag = { handle, pointerId: event.pointerId, startX: event.clientX, width: handle.parentElement.getBoundingClientRect().width };
+    handle.setPointerCapture(event.pointerId);
+  });
+  app.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    applyWidth(drag.handle, drag.width + event.clientX - drag.startX);
+  });
+  const stopDrag = () => { drag = null; };
+  app.addEventListener("pointerup", stopDrag);
+  app.addEventListener("pointercancel", stopDrag);
+  app.addEventListener("lostpointercapture", stopDrag);
+  app.addEventListener("keydown", (event) => {
+    const handle = event.target.closest("[data-equipment-tree-resize]");
+    if (!handle || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const width = event.key === "Home" ? 300 : event.key === "End" ? 900
+      : handle.parentElement.getBoundingClientRect().width + (event.key === "ArrowRight" ? 20 : -20);
+    applyWidth(handle, width);
+  });
+}
+
 function bindEvents() {
+  bindEquipmentTreeResize();
   window.addEventListener("hashchange", () => {
     const previousPage = getFeaturePageById(selectedFeatureId);
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
@@ -1092,6 +1168,14 @@ function bindEvents() {
   });
 
   app.addEventListener("click", (event) => {
+    const paginationButton = event.target.closest("[data-pagination-key]");
+    if (paginationButton) {
+      clearModelingPageSelection(paginationButton.dataset.paginationKey);
+      tablePagination.move(paginationButton.dataset.paginationKey, Number(paginationButton.dataset.paginationDelta));
+      render();
+      return;
+    }
+
     const clickedTreeToggleIcon = event.target.closest(".tree-node-toggle");
     if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CLICK_SELECTORS)) {
       event.preventDefault?.();
@@ -2264,6 +2348,12 @@ function bindEvents() {
       return;
     }
 
+    const experimentPlanUnfreezeButton = event.target.closest("[data-experiment-plan-unfreeze]");
+    if (experimentPlanUnfreezeButton) {
+      unfreezeExperimentPlanFromList(experimentPlanUnfreezeButton.dataset.experimentPlanUnfreeze || "").finally(() => render());
+      return;
+    }
+
     const experimentPlanFreezeButton = event.target.closest("[data-experiment-plan-freeze]");
     if (experimentPlanFreezeButton) {
       freezeExperimentPlanFromList(experimentPlanFreezeButton.dataset.experimentPlanFreeze || "").finally(() => render());
@@ -2587,9 +2677,12 @@ function bindEvents() {
 
     const basicMissionPhaseSelectAll = event.target.closest("[data-basic-mission-phase-select-all]");
     if (basicMissionPhaseSelectAll) {
-      const phases = selectedBasicMissionPhases();
-      selectedBasicMissionPhaseIndexes = updatePageSelection(selectedBasicMissionPhaseIndexes,
-        currentPageKeys(basicMissionPhaseSelectAll, "data-basic-mission-phase-select") ?? phases.map((_, index) => String(index)), basicMissionPhaseSelectAll.checked);
+      const next = new Set(selectedBasicMissionPhaseIndexes);
+      for (const { index } of modelingPageEntries("mission-phases")) {
+        if (basicMissionPhaseSelectAll.checked) next.add(String(index));
+        else next.delete(String(index));
+      }
+      selectedBasicMissionPhaseIndexes = next;
       render();
       return;
     }
@@ -2607,7 +2700,7 @@ function bindEvents() {
 
     const basicActivitySelectAll = event.target.closest("[data-basic-activity-select-all]");
     if (basicActivitySelectAll) {
-      toggleAllBasicActivitySelection(basicActivitySelectAll.checked, currentPageKeys(basicActivitySelectAll, "data-basic-activity-select"));
+      toggleAllBasicActivitySelection(basicActivitySelectAll.checked);
       render();
       return;
     }
@@ -2669,7 +2762,7 @@ function bindEvents() {
 
     const supportResourceSelectAll = event.target.closest("[data-support-resource-select-all]");
     if (supportResourceSelectAll) {
-      toggleAllSupportResourceSelection(supportResourceSelectAll.dataset.supportResourceSelectAll, supportResourceSelectAll.checked, currentPageKeys(supportResourceSelectAll, "data-support-resource-select"));
+      toggleAllSupportResourceSelection(supportResourceSelectAll.dataset.supportResourceSelectAll, supportResourceSelectAll.checked);
       render();
       return;
     }
@@ -2818,7 +2911,7 @@ function bindEvents() {
 
     const supportActivitySelectAll = event.target.closest("[data-support-activity-job-select-all]");
     if (supportActivitySelectAll) {
-      toggleAllSupportActivityJobSelection(supportActivitySelectAll.dataset.supportActivityJobSelectAll, supportActivitySelectAll.checked, currentPageKeys(supportActivitySelectAll, "data-support-activity-job-select"));
+      toggleAllSupportActivityJobSelection(supportActivitySelectAll.dataset.supportActivityJobSelectAll, supportActivitySelectAll.checked);
       render();
       return;
     }
@@ -3387,14 +3480,7 @@ function render() {
     app.innerHTML = nextHtml;
   }
   renderedVisualizationSessionId = activeVisualizationSessionId;
-  applyTablePagination(app, JSON.stringify([
-    currentProject?.id, selectedFeatureId, selectedBasicMissionKey, selectedCompositeTaskId,
-    selectedEquipmentNodeKey, selectedSupportOrgNodeId, periodicActiveProfile,
-    selectedOperationsSupportActivityKey, selectedPreventiveMaintenanceActivityKey,
-    spareAircraftFilter, spareShortfallSort, carryAircraftFilter, carryRecommendedSort,
-    [...selectedDowntimeFactorTypes], selectedRunContextKey,
-    Object.values(currentAnalysisResults).map((result) => [result?.run_id, result?.updated_at, result?.status])
-  ]));
+
 }
 
 function renderAppHtmlPreservingVisualizationIframe(html, visualizationSessionId) {
@@ -3880,7 +3966,7 @@ function createExperimentPlanBranchFromCurrentProject() {
   ensureMonteCarloSweepDefaults(experimentPlanDraft);
   ensureExperimentPlanDraftDefaults(experimentPlanDraft);
   experimentPlanBranchActive = true;
-  updatePreviewResultsThroughApiClient(experimentPlanDraft);
+  // Opening this configuration editor does not consume preview simulation results.
 }
 
 function renderCollapsibleTree(nodes, options = {}) {
@@ -5888,8 +5974,32 @@ function renderBuiltInScenario(page) {
   `;
 }
 
+function clearModelingPageSelection(key) {
+  if (key === "mission-phases") selectedBasicMissionPhaseIndexes = new Set();
+  if (key === "basic-activity-library") selectedBasicActivityKeys = new Set();
+  if (key.startsWith("support-resources:")) selectedSupportResourceKeys = new Set();
+  if (key === "transport-policies") selectedLogisticsTransportStrategyIndexes = new Set();
+  if (key.startsWith("support-jobs:")) {
+    const tabKey = key.slice("support-jobs:".length);
+    selectedSupportActivityJobKeys = new Set([...selectedSupportActivityJobKeys].filter((item) => !item.startsWith(`${tabKey}:`)));
+  }
+}
+
+function modelingPage(key, rows, context = "") {
+  const contextKey = JSON.stringify([currentBackendProjectId(), context]);
+  if (modelingPageViews.get(key)?.context !== contextKey) clearModelingPageSelection(key);
+  const view = tablePagination.slice(key, rows.map((value, index) => ({ value, index })), contextKey);
+  modelingPageViews.set(key, view);
+  return view;
+}
+
+function modelingPageEntries(key) {
+  return modelingPageViews.get(key)?.rows || [];
+}
+
 function renderCombatUnitModeling(page) {
   const members = scenario.combatUnit.members || [];
+  const memberPage = modelingPage("combat-members", members);
   const boundedSelectedIndex = clamp(selectedCombatUnitMemberIndex, 0, Math.max(members.length - 1, 0));
   selectedCombatUnitMemberIndex = boundedSelectedIndex;
   return `
@@ -5898,17 +6008,17 @@ function renderCombatUnitModeling(page) {
           <h4>飞机列表</h4>
         <div class="toolbar-row" style="margin-bottom:0;">
           <button type="button" class="btn-primary" data-combat-unit-add>新增</button>
-          <button type="button" class="btn-danger" data-combat-unit-delete>删除</button>
+          <button type="button" class="btn-danger" data-combat-unit-delete ${memberPage.rows.some(({ index }) => index === boundedSelectedIndex) ? "" : "disabled"}>删除</button>
         </div>
       </div>
       <div class="table-wrap unframed-table">
-        <table class="combat-unit-table" data-paginate="renderCombatUnitModeling-1">
+        <table class="combat-unit-table">
           <thead>
             <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th rowspan="2">所属机场</th><th colspan="3" class="combat-unit-prelife-heading">寿命初始状态</th></tr>
             <tr><th class="combat-unit-prelife-column">已用日历天数</th><th class="combat-unit-prelife-column">累计飞行小时</th><th class="combat-unit-prelife-column">累计起落次数</th></tr>
           </thead>
           <tbody>
-            ${members.map((member, index) => `
+            ${memberPage.rows.map(({ value: member, index }) => `
               <tr class="${index === boundedSelectedIndex ? "selected-table-row" : ""}">
                 <td class="combat-unit-select-col"><input type="checkbox" data-select-combat-unit-member="${index}" ${index === boundedSelectedIndex ? "checked" : ""} aria-label="选择${htmlEscape(member.aircraftNo || `第${index + 1}架飞机`)}"></td>
                 <td>${combatUnitMemberInput(index, "aircraftNo", member.aircraftNo)}</td>
@@ -5922,6 +6032,7 @@ function renderCombatUnitModeling(page) {
           </tbody>
         </table>
       </div>
+      ${renderPagination("combat-members", memberPage)}
     </div>
   `;
 }
@@ -6011,6 +6122,8 @@ function addCombatUnitMember() {
   });
   scenario.combatUnit.quantity = members.length;
   selectedCombatUnitMemberIndex = members.length - 1;
+  const memberPage = modelingPage("combat-members", members);
+  tablePagination.move("combat-members", memberPage.pageCount - 1 - memberPage.page);
   updatePreviewResultsThroughApiClient();
 }
 
@@ -6028,8 +6141,9 @@ function renderBasicMissionModeling(page) {
   const selectedMission = resolveSelectedBasicMission();
   const missionPath = selectedMission.path || "basicMissions.0";
   const phases = selectedBasicMissionPhases();
+  const phasePage = modelingPage("mission-phases", phases, missionPath);
   selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(phases);
-  const allPhasesSelected = phases.length > 0 && phases.every((_, index) => selectedBasicMissionPhaseIndexes.has(String(index)));
+  const allPhasesSelected = phasePage.rows.length > 0 && phasePage.rows.every(({ index }) => selectedBasicMissionPhaseIndexes.has(String(index)));
   const phaseRatioTotal = missionPhaseRatioTotal(phases);
   const phaseRatioValid = phases.length === 0 || Math.abs(phaseRatioTotal - 1) < 0.001;
   return `
@@ -6073,10 +6187,10 @@ function renderBasicMissionModeling(page) {
           </div>
           <div class="inline-status ${phaseRatioValid ? "success" : "warn"}">阶段占比合计 ${fixed(phaseRatioTotal, 2)}；${phaseRatioValid ? "满足合计为 1" : "必须调整为 1 后才能作为正式编译输入"}</div>
           <div class="table-wrap">
-            <table data-paginate="mission-phases">
+            <table>
               <thead><tr><th><input type="checkbox" data-basic-mission-phase-select-all aria-label="全选任务阶段" ${allPhasesSelected ? "checked" : ""}></th><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>删除</th></tr></thead>
               <tbody>
-                ${phases.map((phase, index) => `
+                ${phasePage.rows.map(({ value: phase, index }) => `
                   <tr class="${selectedBasicMissionPhaseIndexes.has(String(index)) ? "selected-table-row" : ""}">
                     <td><input type="checkbox" data-basic-mission-phase-select="${index}" aria-label="选择任务阶段${index + 1}" ${selectedBasicMissionPhaseIndexes.has(String(index)) ? "checked" : ""}></td>
                     <td>${index + 1}</td>
@@ -6088,6 +6202,7 @@ function renderBasicMissionModeling(page) {
               </tbody>
             </table>
           </div>
+          ${renderPagination("mission-phases", phasePage)}
           <div class="table-wrap">
             <table>
               <tbody>
@@ -6159,6 +6274,9 @@ function renderCompositeTaskModeling(page) {
   const composite = selected.task || { name: "", taskItems: [] };
   const compositePath = selected.path;
   const timelineRows = buildCompositeTimelineRows(composite);
+  const listPage = modelingPage("composite-list", compositeTasks);
+  const itemPage = modelingPage("composite-items", composite.taskItems || [], compositePath);
+  const timelinePage = modelingPage("composite-timeline", timelineRows, compositePath);
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
@@ -6173,10 +6291,10 @@ function renderCompositeTaskModeling(page) {
             </div>
         </div>
         <div class="table-wrap">
-          <table data-paginate="renderCompositeTaskModeling-1">
+          <table>
             <thead><tr><th>复合任务名称</th></tr></thead>
             <tbody>
-              ${compositeTasks.map((task, index) => `
+              ${listPage.rows.map(({ value: task, index }) => `
                 <tr class="clickable-table-row ${index === selected.index ? "selected-table-row" : ""}" data-select-composite-task="${htmlEscape(task.id || index)}" tabindex="0" aria-selected="${index === selected.index ? "true" : "false"}">
                   <td>${htmlEscape(task.name)}</td>
                 </tr>
@@ -6184,6 +6302,7 @@ function renderCompositeTaskModeling(page) {
             </tbody>
           </table>
         </div>
+        ${renderPagination("composite-list", listPage)}
       </div>
       <div class="detail-panel">
         <div class="detail-card">
@@ -6199,10 +6318,10 @@ function renderCompositeTaskModeling(page) {
               ${field("任务优先级（1最高）", `${compositePath}.priority`, "number", { min: "1", step: "1" })}
             </div>
             <div class="table-wrap">
-              <table data-paginate="renderCompositeTaskModeling-2">
+              <table>
                 <thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量（继承）</th><th>删除</th></tr></thead>
                 <tbody>
-                  ${(composite.taskItems || []).map((item, index) => {
+                  ${itemPage.rows.map(({ value: item, index }) => {
                     const basicTask = findBasicMissionForTaskItem(item);
                     const inherited = compositeTaskInheritedBasicFields(item, basicTask);
                     return `
@@ -6222,15 +6341,16 @@ function renderCompositeTaskModeling(page) {
                 </tbody>
               </table>
             </div>
+          ${renderPagination("composite-items", itemPage)}
           ` : `<div class="alert warn">请先新增复合任务。</div>`}
         </div>
         <div class="detail-card network-card">
           <h4>典型组合任务时序表</h4>
           <div class="table-wrap">
-            <table data-paginate="renderCompositeTaskModeling-3">
+            <table>
               <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>出动时刻</th></tr></thead>
               <tbody>
-                ${timelineRows.map((row) => `
+                ${timelinePage.rows.map(({ value: row }) => `
                   <tr>
                     <td>${row.sequence}</td>
                     <td>${htmlEscape(row.basicTaskName)}</td>
@@ -6241,6 +6361,7 @@ function renderCompositeTaskModeling(page) {
               </tbody>
             </table>
           </div>
+          ${renderPagination("composite-timeline", timelinePage)}
           <h4>典型组合任务时序图</h4>
           ${renderCompositeTimelineChart(timelineRows)}
         </div>
@@ -6272,14 +6393,16 @@ function renderPeriodicTaskModeling(page) {
     ...compositeTasks.map((task) => ({ value: task.id, label: task.name }))
   ];
   const activeProfiles = profiles[periodicActiveProfile];
+  const profilePageKey = `periodic-profiles:${periodicActiveProfile}`;
+  const profilePage = modelingPage(profilePageKey, activeProfiles);
   const selectedProfileId = selectedPeriodicProfileIds[periodicActiveProfile];
   const selectedProfile = activeProfiles.find((item) => item.id === selectedProfileId) || activeProfiles[0];
   const profileLabels = { week: "周", month: "月", year: "年" };
   const activeLabel = profileLabels[periodicActiveProfile];
   const activeProfileList = `
-    <div data-paginate="periodic-profiles" class="periodic-profile-list" aria-label="${activeLabel}剖面列表">
+    <div class="periodic-profile-list" aria-label="${activeLabel}剖面列表">
       <div class="periodic-list-head"><strong>${activeLabel}剖面列表</strong><button type="button" data-periodic-profile-add="${periodicActiveProfile}" title="新增${activeLabel}剖面">＋ 新增</button></div>
-      ${activeProfiles.length ? activeProfiles.map((item, itemIndex) => {
+      ${activeProfiles.length ? profilePage.rows.map(({ value: item, index: itemIndex }) => {
         const isSelected = item.id === selectedProfile?.id;
         const isRenaming = periodicProfileRenameState?.id === String(item.id) && periodicProfileRenameState?.type === periodicActiveProfile;
         const renameErrorId = `periodic-profile-rename-error-${periodicActiveProfile}-${itemIndex}`;
@@ -6306,6 +6429,7 @@ function renderPeriodicTaskModeling(page) {
           </div>
         `;
       }).join("") : `<div class="muted periodic-list-empty">暂无${activeLabel}剖面，请新增。</div>`}
+      ${renderPagination(profilePageKey, profilePage)}
     </div>
   `;
   const profileTabs = ["week", "month", "year"].map((type) => {
@@ -6335,13 +6459,13 @@ function renderPeriodicTaskModeling(page) {
   `;
   const yearMonths = selectedProfile?.monthProfileIds || [];
   const selectedYearIndex = Math.max(0, profiles.year.findIndex((item) => item.id === selectedProfile?.id));
-  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => Boolean(monthProfileId)).length;
+  const yearConfiguredMonthCount = yearMonths.filter((monthProfileId) => profiles.month.some((month) => month.id === monthProfileId)).length;
   const yearTotalWeeks = yearMonths.reduce((sum, monthProfileId) => {
     const monthProfile = profiles.month.find((item) => item.id === monthProfileId);
     return sum + (monthProfile?.weekProfileIds?.filter((weekProfileId) => Boolean(weekProfileId)).length || 0);
   }, 0);
   const yearEditor = `
-    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "有效" : "配置未完整"}</span>` : ""}</div>
+    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount > 0 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount > 0 ? "已配置" : "待完善"}</span>` : ""}</div>
     ${selectedProfile ? `<div class="toolbar-row periodic-year-actions"><button type="button" data-periodic-year-action="duplicate" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">复制为下一年</button><button type="button" data-periodic-year-action="up" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">上移一年</button><button type="button" data-periodic-year-action="down" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">下移一年</button></div>` : ""}
     ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}"><option value="" ${yearMonths[index] ? "" : "selected"}>未配置月剖面</option>${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
   `;
@@ -6855,8 +6979,8 @@ function renderEquipmentModeling(page) {
     <div class="section-head section-context">
       <span>装备结构树 / 装备系统建模表</span>
     </div>
-    <div class="organization-layout equipment-layout">
-      <aside class="tree-container">
+    <div class="organization-layout equipment-layout equipment-modeling-layout" style="--equipment-tree-width: ${equipmentTreeWidth}px">
+      <aside class="tree-container equipment-modeling-tree" id="equipment-modeling-tree">
         <div class="tree-toolbar equipment-tree-toolbar">
           <h4>装备结构树</h4>
           <div class="equipment-tree-actions">
@@ -6875,6 +6999,7 @@ function renderEquipmentModeling(page) {
         </section>
         <label class="equipment-tree-search">搜索名称<input data-equipment-search value="${htmlEscape(equipmentSearchQuery)}" placeholder="输入系统或组件名称"></label>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
+        <div class="equipment-tree-resize" data-equipment-tree-resize role="separator" tabindex="0" aria-label="调整装备树宽度" aria-orientation="vertical" aria-controls="equipment-modeling-tree" aria-valuemin="300" aria-valuemax="900" aria-valuenow="${equipmentTreeWidth}"></div>
       </aside>
       <section class="detail-panel equipment-system-table-panel">
         <div class="detail-card">
@@ -7568,9 +7693,11 @@ function renderEquipmentSystemTable(selectedState, productsById) {
   const aircraftRows = selectedState.kind === "aircraft-list"
     ? wholeMachineModels().map((model) => renderEquipmentAircraftTableRow(model, { editable: false }))
     : (selectedState.kind === "aircraft" ? [renderEquipmentAircraftTableRow(selectedState.aircraftModel)] : []);
+  const allRows = [...aircraftRows, ...rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById))];
+  const page = tablePagination.slice("equipment-system", allRows, JSON.stringify([currentBackendProjectId(), selectedEquipmentNodeKey, equipmentSearchQuery]));
   return `
     <div class="table-wrap equipment-system-table-wrap">
-      <table class="equipment-system-table" data-paginate="renderEquipmentSystemTable-1">
+      <table class="equipment-system-table">
         <thead>
           <tr>
             <th>组件名称</th>
@@ -7586,11 +7713,11 @@ function renderEquipmentSystemTable(selectedState, productsById) {
           </tr>
         </thead>
         <tbody>
-          ${aircraftRows.join("")}
-          ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState, productsById)).join("")}
+          ${page.rows.join("")}
         </tbody>
       </table>
     </div>
+    ${renderPagination("equipment-system", page)}
   `;
 }
 
@@ -7888,6 +8015,8 @@ function renderReliabilityBlockDiagram() {
   const nodes = layout.nodes;
   const tableNodes = Array.isArray(layout.logicalNodes) ? layout.logicalNodes : nodes;
   const diagramEdges = Array.isArray(rbdProject.reliabilityBlockDiagram?.edges) ? rbdProject.reliabilityBlockDiagram.edges : [];
+  const nodePage = modelingPage("rbd-nodes", tableNodes, selectedEquipmentNodeKey);
+  const edgePage = modelingPage("rbd-edges", diagramEdges, selectedEquipmentNodeKey);
   const detailContent = nodes.length ? `
           <div class="section-head">
             <h3>装备可靠性框图</h3>
@@ -7895,17 +8024,19 @@ function renderReliabilityBlockDiagram() {
           </div>
           ${renderReliabilityBlockDiagramSvg(layout)}
           <div class="table-wrap compact-table">
-            <table data-paginate="renderReliabilityBlockDiagram-1">
+            <table>
               <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>n中取k / k-out-of-n</th></tr></thead>
-              <tbody>${tableNodes.map((node) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(reliabilityNodeTypeLabel(node))}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
+              <tbody>${nodePage.rows.map(({ value: node }) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(reliabilityNodeTypeLabel(node))}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
             </table>
           </div>
+          ${renderPagination("rbd-nodes", nodePage)}
           <div class="table-wrap compact-table">
-            <table data-paginate="renderReliabilityBlockDiagram-2">
+            <table>
               <thead><tr><th>起点</th><th>终点</th><th>串联/并联/备用/k-out-of-n</th><th>权重</th></tr></thead>
-              <tbody>${diagramEdges.map((edge) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
+              <tbody>${edgePage.rows.map(({ value: edge }) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
             </table>
           </div>
+          ${renderPagination("rbd-edges", edgePage)}
   ` : importedDataEmptyState("装备可靠性框图");
   return `
     <div class="organization-layout equipment-layout rbd-layout">
@@ -8067,10 +8198,12 @@ function renderSupportOrganizationWorkbench(page) {
     selectedSupportOrgNode,
     resourceSelection ? { orgNodes: resourceSelection.resourceOrgNodes } : undefined
   ).filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const resourcePageKey = `support-resources:${activeResourceType}`;
+  const resourcePage = modelingPage(resourcePageKey, visibleResourceRows, selectedSupportOrgNode?.id);
   const supportResourceConflictMessage = visibleResourceRows.some((row) => row.conflict)
     ? "检测到同一组织和产品的多条备件记录；为防止覆盖，冲突行已禁用，请先清理重复记录。"
     : "";
-  const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
+  const allResourceRowsSelected = resourcePage.rows.length > 0 && resourcePage.rows.every(({ value: row }) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
   const resourceColumns = supportResourceDataColumns(activeResourceType);
   const resourceControlsDisabled = locked || !selectedIsEditableNode;
@@ -8113,13 +8246,14 @@ function renderSupportOrganizationWorkbench(page) {
               ${activeResourceType === "备件" && resourceSelection ? renderSpareSupportOrganizationGuidance(resourceSelection, locked) : ""}
               <p class="rms-import-status">${htmlEscape(supportResourceConflictMessage || supportResourceImportStatus)}</p>
               <div class="table-wrap">
-                <table data-paginate="renderSupportOrganizationWorkbench-1">
+                <table>
                   <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${resourceControlsDisabledAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
-                  <tbody>${visibleResourceRows.map((row, index) => `
+                  <tbody>${resourcePage.rows.map(({ value: row, index }) => `
                     <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${resourceControlsDisabledAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, resourceControlsDisabled)}</td>`).join("")}</tr>
                   `).join("") || `<tr><td colspan="${resourceColumns.length + 3}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
+              ${renderPagination(resourcePageKey, resourcePage)}
             `}
           </div>
         </section>
@@ -8669,12 +8803,8 @@ function activateSupportResourceEdit(key) {
   selectedSupportResourceKeys = new Set([key]);
 }
 
-function toggleAllSupportResourceSelection(activeResourceType, checked, pageKeys = null) {
-  const orgTree = supportOrganizationTree();
-  const selectedOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
-  const keys = pageKeys ?? buildSupportResourceRows(activeResourceType, selectedOrgNode)
-    .filter((row) => !supportResourceDeletedKeySet().has(row.key))
-    .map((row) => row.key);
+function toggleAllSupportResourceSelection(activeResourceType, checked) {
+  const keys = modelingPageEntries(`support-resources:${activeResourceType}`).map(({ value }) => value.key);
   const next = new Set(selectedSupportResourceKeys);
   for (const key of keys) {
     if (checked) next.add(key);
@@ -9517,9 +9647,8 @@ function remapSupportActivityJobPredecessors(jobs, oldCode, newCode) {
   });
 }
 
-function toggleAllSupportActivityJobSelection(tabKey, checked, pageKeys = null) {
-  const activity = findSupportActivityByJobTabKey(tabKey);
-  const keys = pageKeys ?? supportActivityJobs(activity || {}).map((_, index) => supportActivityJobKey(tabKey, index));
+function toggleAllSupportActivityJobSelection(tabKey, checked) {
+  const keys = modelingPageEntries(`support-jobs:${tabKey}`).map(({ index }) => supportActivityJobKey(tabKey, index));
   const next = new Set(selectedSupportActivityJobKeys);
   for (const key of keys) {
     if (checked) next.add(key);
@@ -9663,10 +9792,10 @@ function describeDurationProfile(profile, fallbackMinutes) {
   return `${profile.distributionType || "固定值"} ${profile.value ?? fallbackMinutes ?? ""}min`.trim();
 }
 
-function renderSupportActivityJobRows(activity, tabKey) {
+function renderSupportActivityJobRows(activity, tabKey, jobPage) {
   const jobs = supportActivityJobs(activity);
   const lockedAttr = modelingLockDisabledAttr();
-  return jobs.map((job, index) => {
+  return jobPage.rows.map(({ value: job, index }) => {
     const key = supportActivityJobKey(tabKey, index);
     return `
       <tr class="${selectedSupportActivityJobKeys.has(key) ? "selected-table-row" : ""}">
@@ -9711,24 +9840,27 @@ function supportActivityPredecessorValue(job, index) {
 
 function renderSupportActivityJobTable(activity, tabKey) {
   const jobs = supportActivityJobs(activity);
-  const selectedCount = jobs.filter((_, index) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
-  const allSelected = jobs.length > 0 && selectedCount === jobs.length;
+  const jobPageKey = `support-jobs:${tabKey}`;
+  const jobPage = modelingPage(jobPageKey, jobs, activity.id || (scenario.supportActivities || []).indexOf(activity));
+  const selectedCount = jobPage.rows.filter(({ index }) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
+  const allSelected = jobPage.rows.length > 0 && selectedCount === jobPage.rows.length;
   const dialogJob = supportActivityJobByKey(supportActivityJobDialogKey);
   const predecessorDialogJob = supportActivityJobByKey(supportActivityPredecessorDialogKey);
   const lockedAttr = modelingLockDisabledAttr();
   const body = jobs.length
-    ? renderSupportActivityJobRows(activity, tabKey)
+    ? renderSupportActivityJobRows(activity, tabKey, jobPage)
     : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
     <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}"${lockedAttr}>新增工作项目</button><button type="button" class="rms-file-button rms-import-button" data-support-jobs-download-template>下载模板</button><label class="rms-file-button rms-import-button">上传数据<input type="file" data-support-jobs-import-file="${htmlEscape(tabKey)}" accept=".csv,.json,application/json,text/csv"${lockedAttr}></label><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}"${lockedAttr}>批量删除</button></div>
     ${renderBasicActivityTemplatePicker(tabKey)}
     <div class="table-wrap">
-      <table data-paginate="renderSupportActivityJobTable-1">
+      <table>
         <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""} aria-label="全选工作项目"${lockedAttr}></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>编辑</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>
+    ${renderPagination(jobPageKey, jobPage)}
     ${dialogJob?.tabKey === tabKey ? renderSupportActivityJobDialog(dialogJob) : ""}
     ${predecessorDialogJob?.tabKey === tabKey ? renderSupportActivityPredecessorDialog(predecessorDialogJob) : ""}
     ${renderSupportActivityGanttChart(activity, tabKey)}
@@ -10008,7 +10140,8 @@ function supportActivityJobBasicActivitySelect(selectedJob) {
 
 function renderBasicActivityLibrary() {
   const rows = filteredBasicActivityLibraryRows();
-  const allSelected = rows.length > 0 && rows.every((row) => selectedBasicActivityKeys.has(row.key));
+  const libraryPage = modelingPage("basic-activity-library", rows, [basicActivityQuery, selectedBasicActivityImportType]);
+  const allSelected = libraryPage.rows.length > 0 && libraryPage.rows.every(({ value: row }) => selectedBasicActivityKeys.has(row.key));
   const dialogRow = basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY
     ? basicActivityDraft
     : basicActivityLibraryRows().find((row) => row.key === basicActivityDialogKey);
@@ -10033,7 +10166,7 @@ function renderBasicActivityLibrary() {
       </div>
       <div class="form-note" role="status" data-basic-activity-import-status>${htmlEscape(basicActivityImportStatus)}</div>
       <div class="table-wrap">
-        <table data-paginate="renderBasicActivityLibrary-1">
+        <table>
           <thead>
             <tr>
               <th><input type="checkbox" data-basic-activity-select-all ${allSelected ? "checked" : ""}${lockedAttr}></th>
@@ -10041,7 +10174,7 @@ function renderBasicActivityLibrary() {
               <th>编辑</th>
             </tr>
           </thead>
-          <tbody>${rows.map((row, index) => `
+          <tbody>${libraryPage.rows.map(({ value: row, index }) => `
             <tr>
               <td><input type="checkbox" data-basic-activity-select="${htmlEscape(row.key)}" ${selectedBasicActivityKeys.has(row.key) ? "checked" : ""} aria-label="选择${htmlEscape(row.workName || `基本保障活动${index + 1}`)}"${lockedAttr}></td>
               <td>${index + 1}</td>
@@ -10055,6 +10188,7 @@ function renderBasicActivityLibrary() {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("basic-activity-library", libraryPage)}
       ${dialogRow ? renderBasicActivityEditor(dialogRow, basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY) : ""}
     </div>
   `;
@@ -10167,12 +10301,14 @@ function renderBasicActivityResourceSectionHead(row, resourceKind, label) {
 }
 
 function renderBasicActivityResourceSummaryTable(requirements, resourceKind) {
+  const summaryKey = `basic-activity-summary:${resourceKind}`;
+  const summaryPage = modelingPage(summaryKey, requirements, basicActivityDialogKey);
   if (!requirements.length) return `<div class="muted">暂无配置，点击新增配置多条${basicActivityResourceKindLabel(resourceKind)}需求</div>`;
   return `
     <div class="basic-activity-resource-summary">
       <table>
         <thead><tr><th>${resourceKind === "personnel" ? "专业" : "名称"}</th><th>数量</th></tr></thead>
-        <tbody>${requirements.map((item) => `
+        <tbody>${summaryPage.rows.map(({ value: item }) => `
           <tr>
             <td>${htmlEscape(basicActivityRequirementDisplayName(item, resourceKind))}</td>
             <td>${htmlEscape(item.quantity ?? 1)}</td>
@@ -10180,6 +10316,7 @@ function renderBasicActivityResourceSummaryTable(requirements, resourceKind) {
         `).join("")}</tbody>
       </table>
     </div>
+    ${renderPagination(summaryKey, summaryPage)}
   `;
 }
 
@@ -10195,6 +10332,8 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
   const kind = ["personnel", "equipment", "spare"].includes(resourceKind) ? resourceKind : "personnel";
   const label = basicActivityResourceKindLabel(kind);
   const requirements = normalizeBasicActivityResourceRequirements(row, kind);
+  const requirementPageKey = `basic-activity-requirements:${kind}`;
+  const requirementPage = modelingPage(requirementPageKey, requirements, row.key);
   const lockedAttr = modelingLockDisabledAttr();
   return `
     <div class="activity-job-dialog-backdrop nested-dialog-backdrop">
@@ -10211,13 +10350,14 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
           <span class="muted">可一次配置多条${htmlEscape(label)}参数</span>
         </div>
         <div class="table-wrap">
-          <table class="basic-activity-resource-config-table" data-paginate="renderBasicActivityResourceConfigDialog-1">
+          <table class="basic-activity-resource-config-table">
             <thead>${renderBasicActivityResourceDialogHeader(kind)}</thead>
             <tbody>
-              ${requirements.map((item, index) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="3">暂无配置</td></tr>`}
+              ${requirementPage.rows.map(({ value: item, index }) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="3">暂无配置</td></tr>`}
             </tbody>
           </table>
         </div>
+        ${renderPagination(requirementPageKey, requirementPage)}
         <div class="plan-editor-actions">
           <button type="button" class="btn-primary" data-basic-activity-resource-dialog-close>完成</button>
         </div>
@@ -11208,8 +11348,13 @@ function deleteSelectedBasicActivityJobs() {
   selectedBasicActivityKeys = new Set();
 }
 
-function toggleAllBasicActivitySelection(checked, pageKeys = null) {
-  selectedBasicActivityKeys = updatePageSelection(selectedBasicActivityKeys, pageKeys ?? filteredBasicActivityLibraryRows().map((row) => row.key), checked);
+function toggleAllBasicActivitySelection(checked) {
+  const next = new Set(selectedBasicActivityKeys);
+  for (const { value: row } of modelingPageEntries("basic-activity-library")) {
+    if (checked) next.add(row.key);
+    else next.delete(row.key);
+  }
+  selectedBasicActivityKeys = next;
 }
 
 function downloadBasicSupportActivityCsvTemplate() {
@@ -12019,6 +12164,7 @@ function nextTransportPolicyId() {
 
 function renderLogisticsSupportActivity(activePlan, activity) {
   const transportPolicies = ensureTransportPolicies();
+  const transportPage = modelingPage("transport-policies", transportPolicies);
   selectedLogisticsTransportStrategyIndexes = new Set(
     Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportPolicies.length)
   );
@@ -12047,9 +12193,9 @@ function renderLogisticsSupportActivity(activePlan, activity) {
         ${supportActivityRuntimeNodeField(activity, activityIndex)}
       </div>
       <div class="table-wrap">
-        <table data-paginate="renderLogisticsSupportActivity-1">
+        <table>
           <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
-          <tbody>${transportPolicies.map((row, index) => {
+          <tbody>${transportPage.rows.map(({ value: row, index }) => {
             const basePath = `transportPolicies.${index}`;
             const fromSupportNodeOptions = logisticsSupportNodeOptionsWithCurrent(supportNodeOptions, row.fromOrganizationNodeId);
             const toSupportNodeOptions = logisticsSupportNodeOptionsWithCurrent(supportNodeOptions, row.toOrganizationNodeId);
@@ -12071,6 +12217,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
           }).join("") || `<tr><td colspan="8" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
         </table>
       </div>
+      ${renderPagination("transport-policies", transportPage)}
     </div>
   `;
 }
@@ -12243,11 +12390,11 @@ function renderExperimentPlanList(page) {
               <td>${htmlEscape(plan.run_count ?? 0)}</td>
               <td><span class="badge">${htmlEscape(experimentStatusLabel(plan.status))}</span></td>
               <td class="table-action-cell">
-                ${String(plan.status || "").toLowerCase() === "frozen"
-                  ? `<span class="badge">已冻结，不可编辑</span>`
+                ${String(plan.plan_status || plan.status || "").toLowerCase() === "frozen"
+                  ? `<span class="badge">已冻结，不可编辑</span><button type="button" class="btn-secondary" data-experiment-plan-unfreeze="${htmlEscape(plan.experiment_plan_id)}">取消冻结实验</button>`
                   : `<button type="button" class="inline-action" data-experiment-plan-edit="${htmlEscape(plan.experiment_plan_id)}" data-experiment-plan-name="${htmlEscape(plan.name)}">编辑</button>
                     <button type="button" class="btn-secondary" data-experiment-plan-freeze="${htmlEscape(plan.experiment_plan_id)}">冻结</button>`}
-                <button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>
+                ${canDeleteExperimentPlan(plan) ? `<button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>` : ""}
               </td>
             </tr>
           `).join("") : `<tr><td colspan="7">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
@@ -12271,6 +12418,8 @@ function experimentPlanRowFromBackend(plan, page) {
   const latestRun = Array.isArray(plan.runs) && plan.runs.length ? plan.runs[0] : null;
   return {
     experiment_plan_id: plan.experiment_plan_id || "",
+    created_by: plan.created_by || null,
+    plan_status: plan.status || "draft",
     selectionKey: experimentPlanSelectionKey(plan),
     name: config.name || projectJson.experiment?.name || plan.experiment_plan_id || "未命名方案",
     module: page.module,
@@ -12531,10 +12680,10 @@ function syncSelectedRunContextAfterPlanRefresh() {
 
 function resetMissingRunContextAfterPlanRefresh() {
   if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) return;
-  const selectedPlanStillExists = backendExperimentPlans.some((plan) => (
-    String(plan?.experiment_plan_id || "").trim() === selectedRunContextKey
+  const selectedPlanStillRunnable = experimentPlanContextOptions().some((option) => (
+    option.kind === "experiment-plan" && option.key === selectedRunContextKey
   ));
-  if (!selectedPlanStillExists) resetRunContextToCurrentProject();
+  if (!selectedPlanStillRunnable) resetRunContextToCurrentProject();
 }
 
 function selectCurrentExperimentPlan(planKey) {
@@ -13094,6 +13243,7 @@ async function handleLogin() {
     backendAuthToken = session.session.token;
     localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
     currentUser = {
+      user_id: session.user.user_id,
       username: session.user.username,
       role: session.user.role
     };
@@ -13120,6 +13270,7 @@ async function restoreStoredBackendSessionOnBoot() {
     const session = await backendApi.getSession();
     const user = session?.user || {};
     currentUser = {
+      user_id: user.user_id,
       username: user.username || currentUser.username,
       role: user.role || currentUser.role
     };
@@ -13717,7 +13868,7 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     experimentPlanListStatus = "当前方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
     return;
   }
-  if (!canManageM7Lifecycle()) {
+  if (!canDeleteExperimentPlan(backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId))) {
     experimentPlanListStatus = `当前角色 ${currentUser.role || "未知"} 无权删除仿真实验方案`;
     return;
   }
@@ -13741,6 +13892,27 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     await refreshM7RunArtifactPanel();
   } catch (err) {
     experimentPlanListStatus = `删除方案失败：${formatBackendError(err)}`;
+  }
+}
+
+function canDeleteExperimentPlan(plan) {
+  return canManageM7Lifecycle() || Boolean(plan?.created_by && plan.created_by === currentUser?.user_id);
+}
+
+async function unfreezeExperimentPlanFromList(experimentPlanId) {
+  if (!experimentPlanId) return;
+  const projectId = currentBackendProjectId();
+  try {
+    await backendApi.unfreezeExperimentPlan(projectId, experimentPlanId);
+    if (currentBackendProjectId() !== projectId) return;
+    if (selectedRunContextKey === experimentPlanId) resetRunContextToCurrentProject();
+    experimentPlanListStatus = `方案 ${experimentPlanId} 已取消冻结。`;
+    await refreshExperimentPlanList(projectId, { force: true });
+    if (experimentPlan?.experiment_plan_id === experimentPlanId) {
+      experimentPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId) || null;
+    }
+  } catch (err) {
+    experimentPlanListStatus = `取消冻结失败：${formatBackendError(err)}`;
   }
 }
 
@@ -19606,12 +19778,13 @@ function renderFormalProjectionBody(formalProjection) {
       ? sourceRows.filter((row) => row.aircraftModel === spareAircraftFilter)
       : sourceRows;
     const rows = sortSpareShortfallRows(filteredRows);
+    const page = tablePagination.slice("formal-spare-shortfall", rows, analysisPaginationContext([spareAircraftFilter, spareShortfallSort]));
     const maxShortage = rows.reduce((maxValue, row) => Math.max(maxValue, row.shortage || row.shortageProbability || 0), 1);
     return `
       <div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap">
-        <table data-paginate="formal-analysis-details">
+        <table>
           <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
-          <tbody>${rows.map((row) => `
+          <tbody>${page.rows.map((row) => `
             <tr>
               <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
               <td><span class="status-badge ${row.level === "严重" ? "danger" : row.level === "短缺" ? "warn" : ""}">${htmlEscape(row.level)}</span></td>
@@ -19620,16 +19793,18 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-spare-shortfall", page)}
     `;
   }
   if (formalProjection.analysisType === "carry_list") {
     const rows = (formalProjection.rows || []).filter((row) => !carryHideZeroDemand || row.demand > 0);
+    const page = tablePagination.slice("formal-carry-list", rows, analysisPaginationContext([carryHideZeroDemand]));
     const maxCarryQuantity = rows.reduce((maxValue, row) => Math.max(maxValue, row.qty || 0), 1);
     return `
       <div class="toolbar-row"><label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求量为 0</label><span>预计满足率下限：${fixed(rows[0]?.minimumSatisfactionRate || 0.9, 2)}；满足约束后利用率越高越优</span></div><div class="table-wrap">
-        <table data-paginate="formal-analysis-details">
+        <table>
           <thead><tr><th>机型</th><th>备件</th><th>需求数量</th><th>推荐携行倍率</th><th>预计满足率</th><th>即时满足率</th><th>数量</th><th>备件利用率</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
-          <tbody>${rows.map((row) => `
+          <tbody>${page.rows.map((row) => `
             <tr>
               <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate)}</td><td>${row.qty}</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
               <td><span class="status-badge ${row.priority === "高" ? "danger" : row.priority === "中" ? "warn" : "success"}">${htmlEscape(row.priority)}</span></td>
@@ -19638,18 +19813,20 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-carry-list", page)}
       <div class="decision-support-card"><strong>携行清单说明</strong><span>正式来源为 projection payload，默认目标为携行备件越少越好，按推荐携行倍率和风险等级形成转场前装箱评审清单。</span></div>
     `;
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
-    return `${renderTaskReliabilityDetailTable(rows)}${renderLiteMesaMissionReliabilityWaveChart(rows)}`;
+    return `${renderTaskReliabilityDetailTable(rows, "formal-mission-waves")} ${renderLiteMesaMissionReliabilityWaveChart(rows)}`;
   }
   if (formalProjection.analysisType === "downtime_factors") {
     const rows = formalProjection.rows || [];
     const primaryFactors = rows.slice(0, 2);
     const maxFactorCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.count || 0), 1);
     const snapshots = visibleDowntimeAnomalySnapshots(formalProjection);
+    const page = tablePagination.slice("formal-anomaly-snapshots", snapshots, analysisPaginationContext());
     return `
       <div class="factor-grid">
         <div class="factor-column"><h4>停机因素</h4><div class="factor-list">${primaryFactors.map((row) => `<div class="factor-item"><span>${htmlEscape(row.label)}</span><span>${row.contributionLabel}</span></div>`).join("")}</div></div>
@@ -19657,7 +19834,7 @@ function renderFormalProjectionBody(formalProjection) {
         <div class="factor-column"><h4>结果来源</h4><div class="factor-list"><div class="factor-item"><span>正式分析投影</span><span>停机因素结果</span></div></div></div>
       </div>
       <div class="table-wrap">
-        <table data-paginate="formal-analysis-details">
+        <table>
           <thead><tr><th>停机因素</th><th>事件次数</th><th>累计停机时长(h)</th><th>时长贡献度</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${row.count}</td><td>${fixed(row.downtimeHours, 2)}</td><td>${pct(row.durationContribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), row.durationContribution >= 0.35 ? "red" : "blue")}</td></tr>`).join("")}</tbody>
         </table>
@@ -19666,11 +19843,11 @@ function renderFormalProjectionBody(formalProjection) {
         <button type="button" data-downtime-snapshot-export ${snapshots.length ? "" : "disabled"}>导出异常快照</button>
       </div>
       <div class="table-wrap">
-        <table data-paginate="formal-analysis-details">
+        <table>
           <thead><tr><th>序号</th><th>时间</th><th>事件</th><th>结果</th><th>保障活动状态</th><th>作业</th><th>状态</th><th>采样位置</th><th>快照动作</th></tr></thead>
-          <tbody>${snapshots.map((snapshot, index) => `
+          <tbody>${page.rows.map((snapshot, index) => `
             <tr>
-              <td>${index + 1}</td>
+              <td>${page.offset + index + 1}</td>
               <td>${htmlEscape(snapshot.timeLabel)}</td>
               <td>${htmlEscape(snapshot.eventLabel)}</td>
               <td>${htmlEscape(snapshot.result)}</td>
@@ -19683,6 +19860,7 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("formal-anomaly-snapshots", page)}
     `;
   }
   return "";
@@ -20852,6 +21030,13 @@ function carrySatisfactionConstraintMarginDisplay(value) {
   return `${prefix}${(margin * 100).toFixed(2)}%`;
 }
 
+function analysisPaginationContext(filters = []) {
+  return JSON.stringify([
+    currentBackendProjectId(), selectedRunContextKey, selectedFeatureId,
+    liteMesaAnalysisRequestEpoch, backendRun?.run_id || "", ...filters
+  ]);
+}
+
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
     return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存运行中生成分析摘要。</p></div>`;
@@ -20870,25 +21055,28 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(concreteRows.map((row) => row.aircraftModel))].sort();
     const sortedRows = visibleSpareShortfallRows(result);
-    return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table" data-paginate="renderLiteMesaAnalysisSessionBody-1">
+    const page = tablePagination.slice("analysis-spare-shortfall", sortedRows, analysisPaginationContext([spareAircraftFilter, spareShortfallSort]));
+    return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>风险</th></tr></thead>
-      <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
-    </table></div>`;
+      <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
+    </table></div>${renderPagination("analysis-spare-shortfall", page)}`;
   }
   if (definition.analysisType === "carry_list") {
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(rows.map((row) => String(row.aircraftModel || "").trim()).filter(Boolean))].sort();
     const activeAircraftFilter = aircraftModels.includes(carryAircraftFilter) ? carryAircraftFilter : "";
     const visibleRows = visibleCarryListRows(result);
+    const page = tablePagination.slice("analysis-carry-list", visibleRows, analysisPaginationContext([carryAircraftFilter, carryHideZeroDemand, carryRecommendedSort]));
     return `
       <div class="toolbar-row">
         <label>机型 <select data-carry-aircraft-filter><option value="">全部机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${activeAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label>
         <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
       </div>
-      <div class="table-wrap"><table class="lite-mesa-stat-table" data-paginate="renderLiteMesaAnalysisSessionBody-2">
+      <div class="table-wrap"><table class="lite-mesa-stat-table">
         <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求数量</th><th>预计短缺数量</th><th>预计满足率</th><th>即时满足率</th><th>约束状态</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
-        <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="13">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+        <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="13">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
+      ${renderPagination("analysis-carry-list", page)}
     `;
   }
   if (definition.analysisType === "mission_reliability") {
@@ -20898,7 +21086,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     return renderLiteMesaDowntimeFactorAnalysis(result);
   }
   return `
-    <div class="table-wrap"><table class="lite-mesa-stat-table" data-paginate="renderLiteMesaAnalysisSessionBody-4">
+    <div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>因素</th><th>类型</th><th>次数</th><th>贡献度</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.reason)}</td><td>${row.count}</td><td>${pct(row.contribution)}</td></tr>`).join("")}</tbody>
     </table></div>
@@ -20977,6 +21165,9 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
     </label>
   `).join("");
   if (!selected.size) {
+    for (const key of ["analysis-downtime-events", "analysis-event-snapshots"]) {
+      tablePagination.slice(key, [], analysisPaginationContext([[]]));
+    }
     return `
       <div class="toolbar-row downtime-factor-filter" aria-label="停机因素筛选"><strong>停机因素</strong>${filterControls}</div>
       <div class="empty-state"><strong>请选择至少一种停机因素</strong><p>当前未选择停机因素，不展示历史筛选结果。</p></div>
@@ -21004,14 +21195,15 @@ function renderLiteMesaDowntimeFactorAnalysis(result) {
 }
 
 function renderLiteMesaDowntimeEventDetails(events) {
+  const page = tablePagination.slice("analysis-downtime-events", events, analysisPaginationContext([[...selectedDowntimeFactorTypes].sort()]));
   if (!events.length) {
     return `<div class="empty-state"><strong>暂无该类型停机事件</strong><p>当前筛选范围内没有可展示的停机事件明细。</p></div>`;
   }
   return `
     <div class="section-head downtime-event-detail-head"><h3>停机事件明细</h3><span>${events.length} 条</span></div>
-    <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table" data-paginate="renderLiteMesaDowntimeEventDetails-1">
+    <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table">
       <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长（小时）</th><th>事件说明</th><th>分类信息</th></tr></thead>
-      <tbody>${events.map((event) => {
+      <tbody>${page.rows.map((event) => {
         const row = downtimeEventDisplayRow(event);
         return `<tr>
           <td>${htmlEscape(row.factorLabel)}</td>
@@ -21026,6 +21218,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
         </tr>`;
       }).join("")}</tbody>
     </table></div>
+    ${renderPagination("analysis-downtime-events", page)}
   `;
 }
 
@@ -21037,11 +21230,12 @@ function taskReliabilityDetailCells(row) {
   return [row.sampleLabel, row.waveLabel, row.successfulWaves ?? "不可用", row.plannedWaves ?? "不可用", formatReliabilityPercent(row.probability)];
 }
 
-function renderTaskReliabilityDetailTable(rows) {
-  return `<div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table" data-paginate="task-reliability-detail">
+function renderTaskReliabilityDetailTable(rows, key = "analysis-mission-waves") {
+  const page = tablePagination.slice(key, normalizeTaskReliabilityWaveRows(rows), analysisPaginationContext());
+  return `<div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
     <thead><tr><th>样本</th><th>波次</th><th>成功数</th><th>计划数</th><th>波次成功率</th></tr></thead>
-    <tbody>${normalizeTaskReliabilityWaveRows(rows).map((row) => `<tr>${taskReliabilityDetailCells(row).map((value) => `<td>${htmlEscape(value)}</td>`).join("")}</tr>`).join("") || '<tr><td colspan="5">当前结果没有波次成功率明细</td></tr>'}</tbody>
-  </table></div>`;
+    <tbody>${page.rows.map((row) => `<tr>${taskReliabilityDetailCells(row).map((value) => `<td>${htmlEscape(value)}</td>`).join("")}</tr>`).join("") || '<tr><td colspan="5">当前结果没有波次成功率明细</td></tr>'}</tbody>
+  </table></div>${renderPagination(key, page)}`;
 }
 
 function renderLiteMesaMissionReliabilityWaveChart(detailRows) {
@@ -21064,21 +21258,23 @@ function renderLiteMesaMissionReliabilityWaveChart(detailRows) {
 }
 
 function renderLiteMesaDowntimeEventSnapshots(snapshots) {
+  const page = tablePagination.slice("analysis-event-snapshots", snapshots, analysisPaginationContext([[...selectedDowntimeFactorTypes].sort()]));
   if (!snapshots.length) {
     return `<div class="empty-state"><strong>停机事件一览</strong><p>当前停机因素运行未捕获到停机事件日志。</p></div>`;
   }
   return `
-    <div data-paginate="downtime-snapshots" class="lite-mesa-event-snapshots">
+    <div class="lite-mesa-event-snapshots">
       <div class="section-head">
         <h3>停机事件一览</h3>
         <span>${snapshots.length} 条停机事件</span>
       </div>
-      ${snapshots.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, index)).join("")}
+      ${page.rows.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, page.offset + index, index === 0)).join("")}
     </div>
+    ${renderPagination("analysis-event-snapshots", page)}
   `;
 }
 
-function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
+function renderLiteMesaDowntimeEventSnapshot(snapshot, index, expanded = index === 0) {
   const aircraft = Array.isArray(snapshot.aircraft_state?.aircraft) ? snapshot.aircraft_state.aircraft : [];
   const aircraftSummary = snapshot.aircraft_state?.summary || snapshot.aircraft_state || {};
   const resources = Array.isArray(snapshot.support_resources) ? snapshot.support_resources : [];
@@ -21089,7 +21285,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
     selectedExperimentPlanProjectJson()
   );
   return `
-    <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
+    <details class="lite-mesa-event-snapshot" ${expanded ? "open" : ""}>
       <summary>
         <strong>${htmlEscape(downtimeFactorLabel(downtimeEventFactor(snapshot)))} · ${htmlEscape(downtimeOperationalEventLabel(sourceEventType))}</strong>
         <span>随机种子 ${htmlEscape(snapshot.seed ?? "-")} / 仿真时刻 ${htmlEscape(formatDowntimeSimulationTime(snapshot.simulation_time))} / ${htmlEscape(downtimeSnapshotResultLabel(snapshot.result))}</span>

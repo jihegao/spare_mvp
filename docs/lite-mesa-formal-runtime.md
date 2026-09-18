@@ -8,7 +8,7 @@
 
 当前用户可见的分析运行路径收敛为 lite Mesa 分析会话；可视化推演由平台管理的临时可视化 session 和 Solara iframe 直接驱动 Mesa 模型。
 
-分析和可视化都保留“运行上下文”下拉框。选择当前项目时，前端提交当前 Project draft，后端实时规范化、校验和编译，且不写回 Project、不创建 ExperimentPlan 或正式运行账本；选择已冻结方案时，后端只读取该方案的不可变 Project 快照。分析主路径通过 `POST /api/mesa-analysis-runs` 在内存中运行 `AircraftSupportV1Model` 样本并返回 lite Mesa 会话摘要。可视化主路径通过 `POST /api/visualization-sessions` 生成短期 session，Solara iframe 只携带 session identity，并通过 Mesa/Solara 控制器调用 `AircraftSupportV1Model.step()` 推进单条轨迹。
+分析和可视化都保留“运行上下文”下拉框。选择当前项目时，前端提交当前 Project draft，后端实时规范化、校验和编译，且不写回 Project、不创建 ExperimentPlan 或正式运行账本；选择已冻结方案时，后端只读取该方案的不可变 Project 快照。分析主路径通过 `POST /api/mesa-analysis-runs` 在内存中运行 `CompiledAircraftSupportModel` 样本并返回 lite Mesa 会话摘要。可视化主路径通过 `POST /api/visualization-sessions` 生成短期 session，Solara iframe 只携带 session identity，并通过 Mesa/Solara 控制器调用 `AircraftSupportV1Model.step()` 推进单条轨迹。
 
 ## 当前边界
 
@@ -37,3 +37,13 @@
 - 当前用户主流程不再依赖运行账本路径作为正式结果来源。
 - 页面正式结果来自 lite Mesa 会话返回的指标、表格和事件摘要。
 - 文档不得把小样本会话结果描述成工程级校准结论。
+
+## 预编译和状态触发执行（2026-09-18）
+
+分析 worker 对 canonical `simulation_inputs` 构建一次 `CompiledSimulation`，复用任务时点、拓扑排序后的保障作业、DAG 依赖和结构模板。每个样本单独复制可变飞机、库存、任务及随机数状态；Project 到输入的唯一编译入口仍为 `SimulationAdapter`。
+
+无可视化帧且步长为 1 分钟的分析跳到下一个状态变化或指标采样时刻。资源只在创建作业、释放资源、到货或返还预留备件后重新分配；活动集合剔除已结束作业，完整历史仍用于结果和事件快照。保障作业保持原有顺序执行语义，不把 DAG 独立分支擅自改成并行。可视化帧和其他步长继续使用参考执行器。
+
+任务、故障、维修和调运时间、小时可用度、每日战备完好率和停机区间保持原口径。资源等待重试次数及重复等待事件由逐分钟计数改为状态变化时计数，不应再解释为等待分钟；等待时长以停机区间计算。
+
+蒙特卡洛、备件短板、转场携行清单、任务可靠度、停机因素保留各自的分析入口与运行参数。产品页面不提供批量五项运行入口；逐项性能验收由外部验收脚本完成，测量结果不构成任意案例或硬件的固定性能承诺。

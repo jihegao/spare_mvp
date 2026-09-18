@@ -1076,6 +1076,35 @@ class BackendApiContractTest(unittest.TestCase):
             write_event_snapshots=False,
         )
 
+    def test_lite_mesa_worker_compiles_once_and_creates_independent_models(self) -> None:
+        from src.spare_mvp_abm.aircraft_support_v1.compiled_runtime import CompiledAircraftSupportModel, CompiledSimulation
+
+        inputs = self.adapter.compile_scenario(small_aircraft_support_project("compiled-worker"))["simulation_inputs"]
+        with mock.patch.object(CompiledSimulation, "compile", wraps=CompiledSimulation.compile) as compile_structure:
+            _initialize_lite_mesa_sample_worker(inputs)
+            self.assertEqual(compile_structure.call_count, 1)
+            with mock.patch("src.spare_mvp_abm.aircraft_support_v1.compiled_runtime.CompiledAircraftSupportModel",
+                            wraps=CompiledAircraftSupportModel) as model:
+                first = _run_lite_mesa_analysis_sample_worker((101, 0, False, 30))
+                second = _run_lite_mesa_analysis_sample_worker((102, 1, False, 30))
+            self.assertEqual(compile_structure.call_count, 1)
+        self.assertEqual(first["status"], "ok")
+        self.assertEqual(second["status"], "ok")
+        self.assertEqual(model.call_count, 2)
+        self.assertIs(model.call_args_list[0].kwargs["compiled"], model.call_args_list[1].kwargs["compiled"])
+        self.assertIsNot(model.call_args_list[0].args[0], model.call_args_list[1].args[0])
+        self.assertEqual([first["seed"], second["seed"]], [101, 102])
+        self.assertNotIn("disable_visualization_frames", inputs)
+
+    def test_lite_mesa_worker_compile_error_becomes_sample_failure(self) -> None:
+        with mock.patch("src.spare_mvp_abm.aircraft_support_v1.compiled_runtime.CompiledSimulation.compile",
+                        side_effect=ValueError("invalid graph")):
+            _initialize_lite_mesa_sample_worker({})
+        outcome = _run_lite_mesa_analysis_sample_worker((101, 0, False, 30))
+        self.assertEqual(outcome["status"], "failed")
+        self.assertEqual(outcome["failure"]["error"]["code"], "sample_failed")
+        self.assertIn("invalid graph", outcome["failure"]["error"]["message"])
+
     def test_lite_mesa_seed_only_task_keeps_parent_side_failure_diagnostics(self) -> None:
         task = (20260718, 3, False, 90)
 
@@ -3152,19 +3181,44 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_backend_api_lifecycle_audit_failure_rolls_back_state(self) -> None:
         cases = [
-            ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="missing-user")),
-            ("delete", lambda run_id: self.api.soft_delete_run(run_id, actor_user_id="missing-user")),
+            ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="user-admin")),
+            ("delete", lambda run_id: self.api.soft_delete_run(run_id, actor_user_id="user-admin")),
         ]
         for label, mutate in cases:
             with self.subTest(label):
                 run = self._submit_successful_run()
 
-                with self.assertRaises(sqlite3.IntegrityError):
-                    mutate(run["run_id"])
+                with mock.patch.object(
+                    self.repository,
+                    "_insert_audit_event_no_commit",
+                    side_effect=sqlite3.IntegrityError("injected audit write failure"),
+                ) as insert_audit:
+                    with self.assertRaises(sqlite3.IntegrityError):
+                        mutate(run["run_id"])
+                    insert_audit.assert_called_once()
+                    self.assertEqual(insert_audit.call_args.kwargs["actor_user_id"], "user-admin")
 
                 stored = self.api.get_run(run["run_id"])
                 self.assertEqual(stored["lifecycle_status"], "active")
                 self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_unknown_lifecycle_actor_is_denied_and_audited_without_foreign_key_failure(self) -> None:
+        for action, mutate in [
+            ("runs.archive", self.api.archive_run),
+            ("runs.delete", self.api.soft_delete_run),
+        ]:
+            with self.subTest(action):
+                run = self._submit_successful_run()
+                with self.assertRaises(BackendApiError) as error:
+                    mutate(run["run_id"], actor_user_id="missing-user")
+                self.assertEqual(error.exception.code, "forbidden")
+                self.assertEqual(self.api.get_run(run["run_id"])["lifecycle_status"], "active")
+                events = self.repository.list_audit_events(resource_id=run["run_id"])
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0]["action"], action)
+                self.assertEqual(events[0]["outcome"], "denied")
+                self.assertIsNone(events[0]["actor_user_id"])
+                self.assertEqual(events[0]["details"], {"reason": "unknown_user"})
 
     def test_backend_api_rejects_artifact_path_escape(self) -> None:
         run = self._submit_successful_run()

@@ -97,7 +97,11 @@ class RunService:
                 model_family,
             )
             if plan is not None:
-                runtime_config = _compile_runtime_config(plan, model_family=model_family)
+                branch = (plan.get("config") or {}).get("projectJson") or (plan.get("config") or {}).get("project_json")
+                # This exact branch has already crossed the exporter above. Reuse
+                # its validated result only when project identity was unchanged.
+                exported_branch = project_for_compile if isinstance(branch, dict) and branch.get("project_id") == project.get("project_id") else None
+                runtime_config = _compile_runtime_config(plan, model_family=model_family, exported_branch_project=exported_branch)
         except RunServiceError:
             raise
         except ValueError as exc:
@@ -930,11 +934,14 @@ def _project_for_experiment_plan(
     return strip_project_sweep(snapshot["project"]) if snapshot else strip_project_sweep(project)
 
 
-def _compile_runtime_config(plan: dict[str, Any], mc_config: Any | None = None, *, model_family: str) -> dict[str, Any]:
+def _compile_runtime_config(plan: dict[str, Any], mc_config: Any | None = None, *, model_family: str, exported_branch_project: dict[str, Any] | None = None) -> dict[str, Any]:
     runtime_config = copy.deepcopy(plan.get("config") or {})
     branch_project = runtime_config.get("projectJson") or runtime_config.get("project_json")
     if isinstance(branch_project, dict):
-        project_for_config, _metadata = _export_project_for_model_family(strip_project_sweep(branch_project), model_family)
+        if exported_branch_project is None:
+            project_for_config, _metadata = _export_project_for_model_family(strip_project_sweep(branch_project), model_family)
+        else:
+            project_for_config = copy.deepcopy(exported_branch_project)
         runtime_config["projectJson"] = project_for_config
         runtime_config.pop("project_json", None)
     if mc_config is not None:

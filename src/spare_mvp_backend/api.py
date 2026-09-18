@@ -87,6 +87,8 @@ LITE_MESA_SAMPLE_TIMEOUT_SECONDS = 90
 LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS = 180
 LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS = 900
 _LITE_MESA_WORKER_INPUTS: dict[str, Any] | None = None
+_LITE_MESA_WORKER_COMPILED: Any = None
+_LITE_MESA_WORKER_COMPILE_ERROR: str | None = None
 
 
 class LiteMesaSampleTimeoutError(TimeoutError):
@@ -888,8 +890,11 @@ class BackendApi:
         self.repository.upsert_modeling_snapshot(snapshot)
         return snapshot
 
-    def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
-        return self._upsert_experiment_plan(project_id, config)
+    def create_experiment_plan(self, project_id: str, config: dict[str, Any], *, actor_user_id: str | None = None) -> dict[str, Any]:
+        if actor_user_id is not None:
+            self._require_role(actor_user_id, {"系统管理员", "数据管理员", "普通用户"},
+                               action="experiment_plans.create", resource_type="project", resource_id=project_id)
+        return self._upsert_experiment_plan(project_id, config, actor_user_id=actor_user_id)
 
     def update_experiment_plan(
         self,
@@ -925,6 +930,7 @@ class BackendApi:
             config,
             experiment_plan_id=experiment_plan_id,
             status=existing.get("status", "draft"),
+            actor_user_id=existing.get("created_by"),
         )
 
     def _upsert_experiment_plan(
@@ -934,6 +940,7 @@ class BackendApi:
         *,
         experiment_plan_id: str | None = None,
         status: str = "draft",
+        actor_user_id: str | None = None,
     ) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
         try:
@@ -956,6 +963,8 @@ class BackendApi:
         if snapshot is None:
             snapshot = self.create_modeling_snapshot(project_id)
         plan_key = {"config": plan_config, "modeling_snapshot_id": snapshot["snapshot_id"]}
+        if actor_user_id is not None:
+            plan_key["created_by"] = actor_user_id
         plan = {
             "experiment_plan_id": experiment_plan_id or f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
             "project_id": project_id,
@@ -963,6 +972,7 @@ class BackendApi:
             "schema_version": "experiment-plan-v0",
             "project_version": project["project_version"],
             "status": status,
+            "created_by": actor_user_id,
             "config": plan_config,
         }
         try:
@@ -1091,6 +1101,23 @@ class BackendApi:
             ) from exc
         return frozen
 
+    def unfreeze_experiment_plan(self, project_id: str, experiment_plan_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        self._require_role(actor_user_id, {"系统管理员", "数据管理员", "普通用户"},
+                           action="experiment_plans.unfreeze", resource_type="experiment_plan", resource_id=experiment_plan_id)
+        plan = self.repository.get_experiment_plan(experiment_plan_id)
+        if plan.get("project_id") != project_id:
+            raise BackendApiError("experiment_plan_project_mismatch", "ExperimentPlan does not belong to project")
+        if plan.get("status") != "frozen":
+            return plan
+        draft = {**plan, "status": "draft"}
+        draft.pop("canonical_fingerprint", None)
+        draft.pop("frozen_at", None)
+        try:
+            self.repository.compare_and_swap_unfreeze_experiment_plan(plan, draft)
+        except ValueError as exc:
+            raise BackendApiError("experiment_plan_version_conflict", str(exc)) from exc
+        return draft
+
     def list_experiment_plans(self, project_id: str) -> dict[str, Any]:
         return {
             "project_id": project_id,
@@ -1104,14 +1131,13 @@ class BackendApi:
         actor_user_id: str | None = None,
     ) -> dict[str, Any]:
         actor_user_id = _require_m7_actor(actor_user_id)
-        self._require_role(
-            actor_user_id,
-            {"系统管理员", "数据管理员"},
-            action="experiment_plans.delete",
-            resource_type="experiment_plan",
-            resource_id=experiment_plan_id,
-        )
         try:
+            plan = self.repository.get_experiment_plan(experiment_plan_id)
+            allowed_roles = {"系统管理员", "数据管理员"}
+            if plan.get("created_by") == actor_user_id:
+                allowed_roles.add("普通用户")
+            self._require_role(actor_user_id, allowed_roles, action="experiment_plans.delete",
+                               resource_type="experiment_plan", resource_id=experiment_plan_id)
             with self.visualization_session_lifecycle_lock:
                 deleted = self.run_service.delete_experiment_plan(
                     project_id,
@@ -2178,7 +2204,7 @@ class BackendApi:
             user = self.repository.get_user(actor_user_id)
         except KeyError as exc:
             self.repository.insert_audit_event(
-                actor_user_id=actor_user_id,
+                actor_user_id=None,
                 action=action,
                 resource_type=resource_type,
                 resource_id=resource_id,
@@ -2777,8 +2803,18 @@ def _run_lite_mesa_analysis_sample_worker(
 
 
 def _initialize_lite_mesa_sample_worker(inputs: dict[str, Any]) -> None:
-    global _LITE_MESA_WORKER_INPUTS
+    global _LITE_MESA_WORKER_INPUTS, _LITE_MESA_WORKER_COMPILED, _LITE_MESA_WORKER_COMPILE_ERROR
+    from src.spare_mvp_abm.aircraft_support_v1.compiled_runtime import CompiledSimulation
+
     _LITE_MESA_WORKER_INPUTS = inputs
+    _LITE_MESA_WORKER_COMPILED = None
+    _LITE_MESA_WORKER_COMPILE_ERROR = None
+    try:
+        _LITE_MESA_WORKER_COMPILED = CompiledSimulation.compile(inputs)
+    except Exception as exc:
+        # Raising from a multiprocessing initializer respawns workers indefinitely.
+        # Keep initialization failures as ordinary per-sample failures instead.
+        _LITE_MESA_WORKER_COMPILE_ERROR = str(exc)
 
 
 def _lite_mesa_sample_task_values(
@@ -2828,14 +2864,17 @@ def _run_aircraft_support_v1_analysis_sample(
     sample_index: int,
     write_event_snapshots: bool = False,
 ) -> dict[str, Any]:
-    from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
+    from src.spare_mvp_abm.aircraft_support_v1.compiled_runtime import CompiledAircraftSupportModel
 
     sample_inputs = copy.deepcopy(inputs)
     sample_inputs["seed"] = seed
     sample_inputs["disable_visualization_frames"] = True
     if write_event_snapshots:
         sample_inputs["write_event_snapshots"] = True
-    model = AircraftSupportV1Model(sample_inputs)
+    if inputs is _LITE_MESA_WORKER_INPUTS and _LITE_MESA_WORKER_COMPILE_ERROR is not None:
+        raise ValueError(f"Simulation structure compilation failed: {_LITE_MESA_WORKER_COMPILE_ERROR}")
+    compiled = _LITE_MESA_WORKER_COMPILED if inputs is _LITE_MESA_WORKER_INPUTS else None
+    model = CompiledAircraftSupportModel(sample_inputs, compiled=compiled)
     execution = model.run()
     daily_mission_reliability = _sample_daily_mission_reliability(model.missions, aircraft_count=len(model.aircraft))
     mission_wave_reliability = _sample_mission_wave_reliability(model.missions)

@@ -195,10 +195,12 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(information["历史记录 ID"], "analysis-project-a-history")
                 self.assertNotIn("实验方案 ID", information)
 
+                # V2 uses the binary-stream OOXML writer for lossless Windows
+                # newlines; inject failure at the actual serialization boundary.
                 with mock.patch(
-                    "src.spare_mvp_backend.analysis_xlsx.Workbook.save",
-                    side_effect=ValueError("openpyxl write failed"),
-                ):
+                    "src.spare_mvp_backend.analysis_xlsx.workbook_bytes",
+                    side_effect=ValueError("OOXML write failed"),
+                ) as serialize_workbook:
                     status, error = self._json_error_with_status(
                         base_url,
                         "POST",
@@ -207,6 +209,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         auth_token=token,
                     )
                 self.assertEqual(status, 400)
+                serialize_workbook.assert_called_once()
                 self.assertEqual(error["code"], "analysis_export_invalid")
                 self.assertIn("无法写入 Excel", error["message"])
             finally:

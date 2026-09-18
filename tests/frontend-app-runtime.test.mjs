@@ -1793,11 +1793,57 @@ test("periodic task editor uses named week month and year profiles without total
     assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 4 周已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置周剖面<\/option>/g) || []).length, 3);
     await reopenedRuntime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
-    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周/);
+    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周 · 已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置月剖面<\/option>/g) || []).length, 11);
   } finally {
     reopenedRuntime.restore();
   }
+});
+
+test("year profile status accepts any configured month while preserving invalid-reference errors", async () => {
+  for (const configured of [0, 1, 12, "missing"]) {
+    const monthProfileIds = Array(12).fill("");
+    if (configured === "missing") monthProfileIds[0] = "missing-month";
+    else monthProfileIds.fill("month-status", 0, configured);
+    const runtime = await setupRuntimeApp({
+      hash: "feature=spare-planning-periodic-task",
+      projectJson: createRuntimeProjectJson({ missionProfile: {
+        periodicTasks: [{ id: "week-status", name: "week", compositeTasks: [] }],
+        periodicProfileLists: {
+          week: [{ id: "week-status", name: "week" }],
+          month: [{ id: "month-status", name: "month", weekProfileIds: ["week-status", "", "", ""] }],
+          year: [{ id: "year-status", name: "year", monthProfileIds }]
+        }
+      } })
+    });
+    try {
+      await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+      if (configured === "missing") {
+        assert.match(runtime.appNode.innerHTML, /年剖面引用不存在的月剖面 missing-month/);
+        assert.match(runtime.appNode.innerHTML, /0 \/ 12 月 · 0 \/ 52 周 · 待完善/);
+      } else {
+        assert.match(runtime.appNode.innerHTML, new RegExp(`${configured} / 12 月 · ${configured} / 52 周 · ${configured ? "已配置" : "待完善"}`));
+      }
+    } finally { runtime.restore(); }
+  }
+});
+
+test("a year with one empty month is configured without claiming the schedule is valid", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-periodic-task",
+    projectJson: createRuntimeProjectJson({ missionProfile: {
+      periodicTasks: [{ id: "week-empty", name: "empty week", compositeTasks: [] }],
+      periodicProfileLists: {
+        month: [{ id: "month-empty", name: "empty month", weekProfileIds: Array(4).fill("") }],
+        year: [{ id: "year-empty", name: "year", monthProfileIds: ["month-empty", ...Array(11).fill("")] }]
+      }
+    } })
+  });
+  try {
+    await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+    assert.match(runtime.appNode.innerHTML, /1 \/ 12 月 · 0 \/ 52 周 · 已配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /1 \/ 12 月 · 0 \/ 52 周 · 有效/);
+  } finally { runtime.restore(); }
 });
 
 test("periodic task editor preserves invalid configured references and marks the simulation source invalid", async () => {
@@ -3370,6 +3416,249 @@ test("project list rename persists and survives creating another project from th
   }
 });
 
+test("modeling pagination keeps phase indexes and selects only the visible page before batch deletion", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-basic-mission",
+    projectJson: createRuntimeProjectJson({ basicMissions: [{
+      id: "paged-basic", name: "分页基本任务", equipmentType: "J-15", taskDurationMinutes: 90,
+      missionPhases: Array.from({ length: 21 }, (_, i) => ({ name: `阶段${i}`, phaseRatio: i === 0 ? 1 : 0 }))
+    }] })
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-mission-phase-select="20"/);
+    await runtime.change("[data-basic-mission-phase-select-all]", {}, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "mission-phases", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="basicMissions\.0\.missionPhases\.20\.name"/);
+    await runtime.change("[data-basic-mission-phase-select-all]", {}, { checked: true });
+    await runtime.click("[data-basic-mission-phase-batch-delete]");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="mission-phases"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-mission-phase-select="/g) || []).length, 20);
+    assert.match(runtime.appNode.innerHTML, /value="阶段19"/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination keeps three operations stage lists independent and bulk selection page scoped", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivityJobs = Array.from({ length: 21 }, (_, i) => ({ activityCode: `JOB-${i}`, workName: `工作${i}`, durationMinutes: 1 }));
+  projectJson.supportActivities = ["直接准备方案", "再次出动准备方案", "飞行后检查方案"].map((planType, i) => ({
+    id: `ops-${i}`, activityType: "使用保障活动", planType, planGroupId: "ops-many",
+    activityName: "分页保障方案", aircraftModel: "J-15", activityCodes: projectJson.supportActivityJobs.map(x => x.activityCode)
+  }));
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-operations-support-activity", projectJson });
+  try {
+    await runtime.change("[data-support-activity-job-select-all]", { supportActivityJobSelectAll: "ops_preflight" }, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "support-jobs:ops_preflight", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-job="ops_preflight-20"/);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-job="ops_postflight-20"/);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "直接准备方案" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页/);
+    await runtime.change("[data-support-activity-job-select-all]", { supportActivityJobSelectAll: "ops_preflight" }, { checked: true });
+    await runtime.click("[data-support-activity-job-batch-delete]", { supportActivityJobBatchDelete: "ops_preflight" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="support-jobs:ops_preflight"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-support-activity-job="ops_preflight-/g) || []).length, 20);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
+    assert.match(runtime.appNode.innerHTML, /共 21 条/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination scopes basic activity select all and retains dialog resource original indexes", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivityJobs = Array.from({ length: 21 }, (_, i) => ({
+    activityCode: `BA-PAGE-${i}`, workName: `分页活动${i}`, durationMinutes: 1,
+    personnel: Array.from({ length: 21 }, (_, j) => ({ professional: `专业${j}`, quantity: 1 }))
+  }));
+  projectJson.supportActivities[0].activityCodes = projectJson.supportActivityJobs.map(x => x.activityCode);
+  projectJson.supportActivities[0].predecessors = {};
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-basic-support-activity", projectJson });
+  try {
+    await waitForRuntimeHtml(runtime, /分页活动0/, "expected paged library to hydrate");
+    await runtime.change("[data-basic-activity-select-all]", {}, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "basic-activity-library", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /共 21 条/);
+    const key = runtime.appNode.innerHTML.match(/data-basic-activity-edit="([^"]+)"/)[1];
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: key });
+    await runtime.click("[data-basic-activity-resource-dialog-open]", { basicActivityKey: key, basicActivityResourceDialogOpen: "personnel" });
+    await runtime.click("[data-pagination-key]", { paginationKey: "basic-activity-requirements:personnel", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-index="20"/);
+    const dialog = runtime.appNode.innerHTML.split('class="basic-activity-resource-config-table"')[1];
+    assert.doesNotMatch(dialog, /data-basic-activity-resource-index="0"/);
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click("[data-basic-activity-dialog-close]");
+    await runtime.change("[data-basic-activity-select-all]", {}, { checked: true });
+    await runtime.click("[data-basic-activity-batch-delete]");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="basic-activity-library"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-edit="/g) || []).length, 20);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination separates composite list items and timeline while preserving original edit paths", async () => {
+  const projectJson = createRuntimeProjectJson({ missionProfile: {
+    compositeTasks: Array.from({ length: 21 }, (_, i) => ({ id: `composite-page-${i}`, name: `复合${i}`,
+      taskItems: Array.from({ length: 21 }, (_, j) => ({ basicMissionId: "basic-runtime", groupName: `组${j}`, firstWaveTime: "08:00", dailyRepeatCount: 1, intervalHours: 1 }))
+    }))
+  } });
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-composite-task", projectJson });
+  try {
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-list", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-select-composite-task="composite-page-20"/);
+    await runtime.click("[data-select-composite-task]", { selectCompositeTask: "composite-page-20" });
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-items", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.20\.taskItems\.20\.groupName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.20\.taskItems\.0\.groupName"/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-timeline", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /<td>21<\/td>/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-list", paginationDelta: "-1" });
+    await runtime.click("[data-select-composite-task]", { selectCompositeTask: "composite-page-0" });
+    assert.match(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.0\.taskItems\.0\.groupName"/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination limits resource selection to the current page", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-support-personnel",
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: { tree: { id: "org-root", name: "保障组织", children: [{ id: "relay-1", name: "中继1", children: [] }] } },
+      supportNodes: [{ id: "relay-1", name: "中继1" }],
+      supportResources: Array.from({ length: 21 }, (_, i) => ({ id: `crew-${i}`, organizationNodeId: "relay-1", supportNodeName: "中继1", type: "personnel", name: `专业${i}`, model: `专业${i}`, quantity: 1 }))
+    })
+  });
+  try {
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "relay-1" });
+    await runtime.change("[data-support-resource-select-all]", { supportResourceSelectAll: "保障人员" }, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "support-resources:保障人员", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+    assert.match(runtime.appNode.innerHTML, /<td>21<\/td>/);
+    await runtime.change("[data-support-resource-select-all]", { supportResourceSelectAll: "保障人员" }, { checked: true });
+    await runtime.click("[data-support-resource-batch-delete]", { supportResourceBatchDelete: "保障人员" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="support-resources:保障人员"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-support-resource-select="/g) || []).length, 20);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination covers aircraft transport and profile lists without slicing fixed calendar editors", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-combat-unit",
+    projectJson: createRuntimeProjectJson({
+      combatUnit: { members: Array.from({ length: 21 }, (_, i) => ({ aircraftNo: `AC-${i}`, model: "J-15", airport: "甲板" })) },
+      transportPolicies: Array.from({ length: 21 }, (_, i) => ({ id: `transport-${i}`, name: `运输${i}`, fromSupportNodeName: `基地${i}`, toSupportNodeName: "甲板", transportTimeHours: 1 })),
+      missionProfile: {
+        periodicTasks: Array.from({ length: 21 }, (_, i) => ({ id: `week-${i}`, name: `周${i}`, compositeTasks: [] })),
+        periodicProfileLists: {
+          month: Array.from({ length: 21 }, (_, i) => ({ id: `month-${i}`, name: `月${i}`, weekProfileIds: ["week-0", "", "", ""] })),
+          year: Array.from({ length: 21 }, (_, i) => ({ id: `year-${i}`, name: `年${i}`, monthProfileIds: ["month-0", ...Array(11).fill("")] }))
+        }
+      }
+    })
+  });
+  try {
+    await runtime.click("[data-pagination-key]", { paginationKey: "combat-members", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-combat-unit-index="20"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-combat-unit-index="0"/);
+    await runtime.setHash("feature=spare-planning-logistics-support-activity");
+    await runtime.click("[data-pagination-key]", { paginationKey: "transport-policies", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="transportPolicies\.20\.name"/);
+    await runtime.setHash("feature=spare-planning-periodic-task");
+    for (const kind of ["week", "month", "year"]) {
+      await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: kind });
+      await runtime.click("[data-pagination-key]", { paginationKey: `periodic-profiles:${kind}`, paginationDelta: "1" });
+      assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+      assert.ok(runtime.appNode.innerHTML.includes(`data-periodic-profile-select="${kind}-20"`));
+    }
+    assert.equal((runtime.appNode.innerHTML.match(/data-periodic-composition-index="/g) || []).length, 12);
+    assert.match(runtime.appNode.innerHTML, /第 21 年/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination keeps the entire RBD SVG while node and edge detail pages move independently", async () => {
+  const components = Array.from({ length: 22 }, (_, index) => ({
+    id: `rbd-page-${index}`, name: `分页RBD节点${index}`, aircraftModel: "J-15",
+    parentId: "rbd-parent", quantity: 1, productType: "LRU"
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-reliability-block-diagram",
+    projectJson: createRuntimeProjectJson({ components: [{ id: "rbd-parent", name: "RBD父系统", aircraftModel: "J-15", parentId: "aircraft-root", quantity: 1 }, ...components], reliabilityBlockDiagram: {
+      nodes: [{ id: "rbd-parent", name: "RBD父系统", parentId: "aircraft-root", type: "component" }, ...components.map((component) => ({ ...component, type: "component" }))],
+      edges: components.slice(1).map((component, index) => ({ from: `rbd-page-${index}`, to: component.id, type: "series" }))
+    } })
+  });
+  const svg = () => runtime.appNode.innerHTML.match(/<svg class="rbd-diagram"[\s\S]*?<\/svg>/)?.[0];
+  const tableBodies = () => [...runtime.appNode.innerHTML.matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)].map(match => match[1]);
+  try {
+    await runtime.click("[data-select-rbd-equipment-component]", { selectRbdEquipmentComponent: "rbd-parent" });
+    const fullSvg = svg();
+    assert.ok(fullSvg, runtime.appNode.innerHTML);
+    assert.equal((fullSvg.match(/<g class="rbd-node /g) || []).length, 22);
+    assert.match(fullSvg, /分页RBD节点21/);
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [20, 20]);
+    await runtime.click("[data-pagination-key]", { paginationKey: "rbd-nodes", paginationDelta: "1" });
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [2, 20]);
+    assert.match(tableBodies()[0], /分页RBD节点21/);
+    assert.equal(svg(), fullSvg);
+    await runtime.click("[data-pagination-key]", { paginationKey: "rbd-edges", paginationDelta: "1" });
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [2, 1]);
+    assert.match(tableBodies()[1], /rbd-page-21/);
+    assert.equal(svg(), fullSvg);
+  } finally { runtime.restore(); }
+});
+
+test("adding an aircraft opens its last page and keeps the new selection deletable", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-combat-unit",
+    projectJson: createRuntimeProjectJson({ combatUnit: {
+      members: Array.from({ length: 20 }, (_, index) => ({ aircraftNo: `AC-${index}`, model: "J-15", airport: "甲板" }))
+    } })
+  });
+  try {
+    await runtime.click("[data-combat-unit-add]");
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+    assert.match(runtime.appNode.innerHTML, /data-select-combat-unit-member="20" checked/);
+    assert.match(runtime.appNode.innerHTML, /data-combat-unit-index="20"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-combat-unit-delete disabled/);
+    await runtime.click("[data-combat-unit-delete]");
+    assert.equal((runtime.appNode.innerHTML.match(/data-select-combat-unit-member="/g) || []).length, 20);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="combat-members"/);
+  } finally { runtime.restore(); }
+});
+
+test("equipment pagination renders twenty rows, retains original edit indexes and exports every row", async () => {
+  const components = Array.from({ length: 41 }, (_, index) => ({
+    id: `paged-part-${index}`, name: `分页组件${index}`, aircraftModel: "J-15",
+    parentId: "aircraft-root", productType: "LRU", quantity: 1
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-equipment-system",
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 }, components
+    })
+  });
+  const tableHtml = () => runtime.appNode.innerHTML.split('<table class="equipment-system-table">')[1].split('</table>')[0];
+  try {
+    await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页 · 共 42 条/);
+    assert.equal((tableHtml().split('<tbody>')[1].match(/<tr/g) || []).length, 20);
+    assert.match(tableHtml(), /data-path="components\.18\.name"/);
+    assert.doesNotMatch(tableHtml(), /data-path="components\.19\.name"/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "equipment-system", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 3 页/);
+    assert.match(tableHtml(), /data-path="components\.19\.name"/);
+    assert.doesNotMatch(tableHtml(), /data-path="components\.0\.name"/);
+    await runtime.change("[data-path]", { path: "components.19.name" }, { value: "改名第20组件" });
+    await runtime.click("[data-equipment-export-data]");
+    const csv = await runtime.downloads[0].blob.text();
+    assert.match(csv, /改名第20组件/);
+    for (let index = 0; index < 41; index += 1) assert.ok(csv.includes(`paged-part-${index},`));
+    await runtime.click("[data-pagination-key]", { paginationKey: "equipment-system", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 3 \/ 3 页/);
+    assert.equal((tableHtml().split('<tbody>')[1].match(/<tr/g) || []).length, 2);
+    await runtime.input("[data-equipment-search]", {}, { value: "no-match-pagination-context" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+    assert.match(tableHtml(), /data-path="components\.0\.name"/);
+  } finally { runtime.restore(); }
+});
+
 test("equipment aircraft-list selection renders whole aircraft rows and descendants", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -3428,7 +3717,7 @@ test("equipment parent node selector uses Chinese names while retaining parent I
 
     const equipmentHtml = runtime.appNode.innerHTML;
     const treePanel = equipmentHtml.slice(
-      equipmentHtml.indexOf('<aside class="tree-container">'),
+      equipmentHtml.indexOf('<aside class="tree-container equipment-modeling-tree"'),
       equipmentHtml.indexOf('class="detail-panel equipment-system-table-panel"')
     );
     const rightPanel = equipmentHtml.slice(equipmentHtml.indexOf("equipment-system-table-panel"));
@@ -6497,6 +6786,144 @@ test("ambiguous legacy logistics endpoint names stay visibly unresolved", async 
   }
 });
 
+test("analysis tables paginate 0, 20, 21 and 41 rows without truncating exports", async () => {
+  for (const [feature, key, kind] of [
+    ["spare-planning-spare-shortfall-analysis", "analysis-spare-shortfall", "spares"],
+    ["spare-planning-carry-list-analysis", "analysis-carry-list", "carry"],
+    ["mission-reliability-task-reliability", "analysis-mission-waves", "waves"]
+  ]) {
+    for (const count of [0, 20, 21, 41]) {
+      const rows = Array.from({ length: count }, (_, index) => ({
+        aircraftModel: index < 21 ? "A" : "B", productId: `page-product-${index}`,
+        demand: index + 1, filled: 1, fillRate: 1, recommended: index + 1,
+        satisfactionRate: 1, shortage: 0, riskLevel: "低",
+        waveLabel: `page-wave-${index}`, sampleCount: 2, meanMissionSuccessRate: 1
+      }));
+      if (kind === "carry") {
+        rows.splice(0, 0, { aircraftModel: "A", productId: "hidden-zero-first", demand: 0, recommended: 0 });
+        rows.push({ aircraftModel: "A", productId: "hidden-zero-last", demand: 0, recommended: 0 });
+      }
+      const runtime = await setupRuntimeApp({
+        hash: `feature=${feature}`,
+        liteMesaAnalysisResponseOverrides: { rows, wave_rows: kind === "waves" ? rows : [] }
+      });
+      try {
+        await runtime.click("[data-lite-mesa-analysis-action='run']");
+        const body = () => runtime.appNode.innerHTML.match(/<table class="lite-mesa-stat-table(?: task-reliability-result-table)?">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)?.[1] || "";
+        if (count > 20) {
+          assert.match(runtime.appNode.innerHTML, new RegExp(`第 1 / ${Math.ceil(count / 20)} 页 · 共 ${count} 条`));
+          assert.equal((body().match(/<tr>/g) || []).length, 20);
+          assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="-1" disabled`));
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          assert.match(body(), kind === "waves" ? /page-wave-20/ : /page-product-20/);
+          assert.doesNotMatch(body(), kind === "waves" ? /page-wave-0</ : /page-product-0</);
+          await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: feature });
+          assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[0].rows.length, count);
+          if (count === 41) {
+            await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+            assert.equal((body().match(/<tr>/g) || []).length, 1);
+            assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="1" disabled`));
+            assert.match(body(), kind === "waves" ? /page-wave-40/ : /page-product-40/);
+            if (kind === "spares") {
+              await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "desc" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+              assert.match(body(), /page-product-40/);
+              await runtime.change("[data-spare-aircraft-filter]", {}, { value: "A" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+            }
+            if (kind === "carry") {
+              await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "desc" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 3 页/);
+              await runtime.change("[data-carry-aircraft-filter]", {}, { value: "A" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+              await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+              await runtime.change("[data-carry-hide-zero]", {}, { checked: false, type: "checkbox" });
+              assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 23 条/);
+            }
+          }
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          await runtime.click("[data-lite-mesa-analysis-action='run']");
+          assert.match(runtime.appNode.innerHTML, /第 1 \/ [23] 页/);
+        } else {
+          assert.doesNotMatch(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}"`));
+          assert.equal((body().match(/<tr>/g) || []).length, count || 1);
+        }
+      } finally { runtime.restore(); }
+    }
+  }
+});
+
+test("downtime pagination appears only beyond twenty details or snapshots", async () => {
+  for (const count of [0, 20, 21]) {
+    const events = Array.from({ length: count }, (_, index) => ({
+      factor: "failure", equipment_name: `small-event-${index}`, seed: index,
+      start_minute: index, end_minute: index + 1, duration_hours: 1 / 60
+    }));
+    const runtime = await setupRuntimeApp({
+      hash: "feature=mission-reliability-downtime-factor-analysis",
+      liteMesaAnalysisResponseOverrides: { event_details: events, event_snapshots: events }
+    });
+    try {
+      await runtime.click("[data-lite-mesa-analysis-action='run']");
+      assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, Math.min(count, 20));
+      for (const key of ["analysis-downtime-events", "analysis-event-snapshots"]) {
+        if (count <= 20) assert.doesNotMatch(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}"`));
+        else {
+          await runtime.click("[data-pagination-key]", { paginationKey: key, paginationDelta: "1" });
+          assert.match(runtime.appNode.innerHTML, new RegExp(`data-pagination-key="${key}" data-pagination-delta="1" disabled`));
+        }
+      }
+      if (count === 21) {
+        assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, 1);
+        assert.match(runtime.appNode.innerHTML, /small-event-20/);
+      }
+    } finally { runtime.restore(); }
+  }
+});
+
+test("downtime details and snapshots paginate independently and export the full filtered events", async () => {
+  const events = Array.from({ length: 41 }, (_, index) => ({
+    factor: index < 21 ? "failure" : "spare_shortage", equipment_name: `event-equipment-${index}`,
+    start_minute: index, end_minute: index + 1, duration_hours: 1 / 60
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-downtime-factor-analysis",
+    liteMesaAnalysisResponseOverrides: {
+      event_details: events,
+      event_snapshots: events.map((event, index) => ({ ...event, seed: 1000 + index, simulation_time: index }))
+    }
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const details = () => runtime.appNode.innerHTML.match(/downtime-event-detail-table">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/)?.[1] || "";
+    assert.equal((details().match(/<tr>/g) || []).length, 20);
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot"/g) || []).length, 20);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-downtime-events", paginationDelta: "1" });
+    assert.match(details(), /event-equipment-20/);
+    assert.match(runtime.appNode.innerHTML, /随机种子 1000/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /随机种子 1020/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /随机种子 1000/);
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1020/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1040/);
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-downtime-factor-analysis" });
+    assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[1].rows.length, 41);
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false, type: "checkbox" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+    assert.match(details(), /event-equipment-0</);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-downtime-events", paginationDelta: "1" });
+    for (const factor of ["failure", "equipment_shortage", "preventive"]) {
+      await runtime.change("[data-downtime-factor-filter]", {}, { value: factor, checked: false, type: "checkbox" });
+    }
+    assert.match(runtime.appNode.innerHTML, /请选择至少一种停机因素/);
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "failure", checked: true, type: "checkbox" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页/);
+  } finally { runtime.restore(); }
+});
+
 test("experiment plan row selection is interactive for template-created projects at runtime", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-list" });
 
@@ -6515,6 +6942,31 @@ test("experiment plan row selection is interactive for template-created projects
   } finally {
     runtime.restore();
   }
+});
+
+test("opening an experiment branch copies configuration without running simulations", () => {
+  const appSource = fs.readFileSync(new URL("../front/app.js", import.meta.url), "utf8");
+  const branchSource = appSource.slice(
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject()"),
+    appSource.indexOf("function renderCollapsibleTree(")
+  );
+  const source = { components: [{ id: "component-one", quantity: 2 }] };
+  const openBranch = new Function("scenario", "updatePreviewResultsThroughApiClient", `
+    let experimentPlanDraft, experimentPlanBranchActive = false;
+    const selectedFeatureId = "plan-management", experimentPlanManagementMode = "editor";
+    const getFeaturePageById = () => ({ component: "experiment-plan-management" });
+    const cloneScenario = structuredClone;
+    const ensureMonteCarloSweepDefaults = () => {};
+    const ensureExperimentPlanDraftDefaults = () => {};
+    ${branchSource}
+    createExperimentPlanBranchFromCurrentProject();
+    return { draft: experimentPlanDraft, active: experimentPlanBranchActive };
+  `);
+  const result = openBranch(source, () => assert.fail("opening a plan must not run preview simulations"));
+  assert.equal(result.active, true);
+  assert.deepEqual(result.draft, source);
+  result.draft.components[0].quantity = 99;
+  assert.equal(source.components[0].quantity, 2);
 });
 
 test("experiment plan add opens an editable plan branch", async () => {
@@ -7435,6 +7887,65 @@ test("an in-flight Monte Carlo response cannot restore results from an updated f
   }
 });
 
+test("unfreezing the selected plan clears completed analysis and persists current-project context", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-unfreeze", name: "待取消方案", projectJson: createRuntimeProjectJson(), samples: 7, seed: 707 })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis", experimentPlans,
+    liteMesaAnalysisResponseOverrides: { sample_count: 7 }
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-unfreeze" });
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    assert.match(runtime.appNode.innerHTML, /分析结果已生成：7 个样本/);
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    await runtime.click("[data-lite-mesa-action='run']");
+    assert.match(runtime.appNode.innerHTML, /总样本/);
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-unfreeze]", { experimentPlanUnfreeze: "plan-unfreeze" });
+    assert.equal(experimentPlans[0].status, "draft");
+    assert.equal(JSON.parse(runtime.storage.get("spare-mvp:selectedRunContextByProject"))["project-runtime"], "current-project:project-runtime");
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /冻结方案参数只读/);
+    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /分析结果已生成：7 个样本/);
+  } finally { runtime.restore(); }
+});
+
+test("late frozen analysis responses cannot reappear after unfreeze", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-unfreeze-flight", name: "并发取消方案", projectJson: createRuntimeProjectJson(), samples: 7 })];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail", experimentPlans, liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-unfreeze-flight" });
+    await runtime.click("[data-lite-mesa-action='run']");
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-unfreeze]", { experimentPlanUnfreeze: "plan-unfreeze-flight" });
+    await new Promise(resolve => setTimeout(resolve, 40));
+    await runtime.flush();
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本/);
+  } finally { runtime.restore(); }
+});
+
+test("refreshing a selected plan that became draft resets its runnable context", async () => {
+  const experimentPlans = [frozenRuntimePlan({ id: "plan-remote-unfreeze", name: "远程取消方案", projectJson: createRuntimeProjectJson(), samples: 7 })];
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-monte-carlo-experiment-detail", experimentPlans });
+  try {
+    await runtime.change("[data-current-experiment-plan]", {}, { value: "plan-remote-unfreeze" });
+    experimentPlans[0].status = "draft";
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", {});
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.equal(JSON.parse(runtime.storage.get("spare-mvp:selectedRunContextByProject"))["project-runtime"], "current-project:project-runtime");
+  } finally { runtime.restore(); }
+});
+
 test("frozen run context survives a cold workbench restore", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
@@ -7516,6 +8027,28 @@ test("run context defaults to current Project and excludes unsaved or invalid ex
   } finally {
     runtime.restore();
   }
+});
+
+test("restored ordinary user can delete owned plans but not other or unowned plans", async () => {
+  const projectJson = createRuntimeProjectJson();
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    sessionUser: { user_id: "user-basic", username: "user", role: "普通用户" },
+    projectJson,
+    experimentPlans: [
+      { experiment_plan_id: "own-plan", created_by: "user-basic", runs: [{ run_id: "completed-run", status: "succeeded" }] },
+      { experiment_plan_id: "other-plan", created_by: "user-data" },
+      { experiment_plan_id: "legacy-plan" }
+    ].map((plan) => ({ ...plan, status: "frozen", config: { name: plan.experiment_plan_id, projectJson } }))
+  });
+  try {
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-delete="own-plan"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-delete="(?:other|legacy)-plan"/);
+    for (const id of ["own-plan", "other-plan", "legacy-plan"]) {
+      assert.ok(runtime.appNode.innerHTML.includes(`data-experiment-plan-unfreeze="${id}"`));
+    }
+  } finally { runtime.restore(); }
 });
 
 test("experiment plan list selection editing and saving do not change the run context", async () => {
@@ -8183,6 +8716,17 @@ async function setupRuntimeApp({
         experiment_plan_id: "plan-runtime-created",
         config: body.config || {}
       });
+    }
+    const unfreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/unfreeze$/);
+    if (unfreezeMatch && method === "POST") {
+      const id = decodeURIComponent(unfreezeMatch[2]);
+      const plan = experimentPlans.find((item) => item.experiment_plan_id === id);
+      if (plan) {
+        plan.status = "draft";
+        delete plan.canonical_fingerprint;
+        delete plan.frozen_at;
+      }
+      return jsonResponse(plan || { experiment_plan_id: id, status: "draft" });
     }
     const experimentPlanFreezeMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)\/freeze$/);
     if (experimentPlanFreezeMatch && method === "POST") {
@@ -9184,3 +9728,49 @@ function jsonResponse(payload, { ok = true, status = 200 } = {}) {
     }
   };
 }
+
+
+test("V2 per-sample reliability pagination retains counts and full export", async () => {
+  const rows = Array.from({ length: 41 }, (_, index) => ({
+    sampleIndex: index, dayIndex: 1, waveIndex: 1, plannedWaves: 4, successfulWaves: 1
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    liteMesaAnalysisResponseOverrides: { rows, wave_rows: rows }
+  });
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-mission-waves", paginationDelta: "1" });
+    const table = runtime.appNode.innerHTML.match(/<table class="lite-mesa-stat-table task-reliability-result-table">[\s\S]*?<\/table>/)?.[0] || "";
+    assert.match(table, /<th>样本<\/th><th>波次<\/th><th>成功数<\/th><th>计划数<\/th>/);
+    assert.match(table, /<td>样本 21<\/td><td>第1天第1波次<\/td><td>1<\/td><td>4<\/td><td>25%<\/td>/);
+    assert.doesNotMatch(table, /<td>样本 1<\/td>/);
+    assert.equal((table.match(/<tr>/g) || []).length, 21);
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-task-reliability" });
+    const detail = analysisExportBodies(runtime).at(-1).detail_sections[0];
+    assert.equal(detail.rows.length, 41);
+    assert.deepEqual(detail.rows[20].slice(0, 4), ["样本 21", "第1天第1波次", 1, 4]);
+  } finally { runtime.restore(); }
+});
+
+test("five original analysis pages retain independent run actions without a product suite", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-monte-carlo-experiment-detail" });
+  try {
+    for (const [feature, action, analysisType] of [
+      ["spare-planning-monte-carlo-experiment-detail", "[data-lite-mesa-action='run']", "mission_reliability"],
+      ["spare-planning-spare-shortfall-analysis", "[data-lite-mesa-analysis-action='run']", "spare_shortfall"],
+      ["spare-planning-carry-list-analysis", "[data-lite-mesa-analysis-action='run']", "carry_list"],
+      ["mission-reliability-task-reliability", "[data-lite-mesa-analysis-action='run']", "mission_reliability"],
+      ["mission-reliability-downtime-factor-analysis", "[data-lite-mesa-analysis-action='run']", "downtime_factors"]
+    ]) {
+      await runtime.setHash(`feature=${feature}`);
+      assert.doesNotMatch(runtime.appNode.innerHTML, /data-analysis-suite|运行五项分析|五项分析结果|每项独立运行 50 个样本|完成后可在各分析页查看结果/);
+      const before = runtime.requests.filter(request => request.url === "/api/mesa-analysis-runs").length;
+      await runtime.click(action);
+      const requests = runtime.requests.filter(request => request.url === "/api/mesa-analysis-runs");
+      assert.equal(requests.length, before + 1);
+      assert.equal(JSON.parse(requests.at(-1).options.body).analysis_type, analysisType);
+      assert.doesNotMatch(runtime.appNode.innerHTML, /data-analysis-suite/);
+    }
+  } finally { runtime.restore(); }
+});

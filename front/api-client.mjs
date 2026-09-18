@@ -214,6 +214,12 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}/freeze`
       });
     },
+    unfreezeExperimentPlan(projectId, experimentPlanId) {
+      return request({
+        method: "POST",
+        path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}/unfreeze`
+      });
+    },
     createVisualizationSession(payload) {
       return request({
         method: "POST",
