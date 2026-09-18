@@ -5440,3 +5440,21 @@ tr.clickable-table-row.selected-table-row td {
     grid-column: auto;
   }
 }
+
+/* V2.0 product shell: original local asset, no external requests. */
+.auth-page { background: #081e3b url("./assets/aircraft-v2.png") center / cover no-repeat; justify-items: start; padding: clamp(24px, 7vw, 112px); }
+.auth-panel { background: rgba(255,255,255,.96); box-shadow: 0 18px 64px #0005; }
+.project-page { min-height: calc(100vh - 80px); background: linear-gradient(#071b36bb, #071b36dd), url("./assets/aircraft-v2.png") center / cover fixed; }
+.project-page .project-toolbar { color: white; }
+.project-page .project-card { background: white; }
+.topbar { background: #0b2345; color: white; }
+.topbar p { color: #d8e7ff; }
+.project-save-notice { padding: 10px 12px; margin-bottom: 12px; background: #fff7e6; border-left: 3px solid #b45309; }
+.equipment-layout { grid-template-columns: max-content minmax(0, 1fr); }
+.equipment-layout > .tree-container { width: 280px; min-width: 220px; max-width: min(520px, 45vw); resize: horizontal; overflow: auto; border: 1px solid var(--line); }
+.equipment-system-table-panel input, .equipment-system-table-panel select { min-height: 34px; height: 34px; }
+@media (max-width: 800px) { .equipment-layout { grid-template-columns: 1fr; } .equipment-layout > .tree-container { width: 100%; max-width: 100%; resize: none; } }
+
+[data-paginate] [hidden] { display: none !important; }
+.table-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 0; }
+.table-pagination button { padding: 6px 12px; }

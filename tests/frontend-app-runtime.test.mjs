@@ -2510,23 +2510,23 @@ test("spare shortfall result filters products and stably sorts demand quantity o
 
     await runtime.change("[data-spare-aircraft-filter]", {}, { value: "J-15" });
     await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "asc" });
-    let tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    let tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal demand rows preserve source order");
     assert.ok(tableRows.indexOf("备用组件 / BK-15") < tableRows.indexOf("发动机控制模块 / EC-15"));
     assert.doesNotMatch(tableRows, /J-35|雷达组件/);
     assert.match(runtime.appNode.innerHTML, /data-spare-shortfall-sort="demand" data-sort-direction="asc"[^>]*aria-pressed="true"/);
 
     await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "demand", sortDirection: "desc" });
-    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(tableRows.indexOf("发动机控制模块 / EC-15") < tableRows.indexOf("液压组件 / HY-15"));
     assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal demand rows remain stable descending");
 
     await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "fillRate", sortDirection: "asc" });
-    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(tableRows.indexOf("发动机控制模块 / EC-15") < tableRows.indexOf("液压组件 / HY-15"));
 
     await runtime.click("[data-spare-shortfall-sort]", { spareShortfallSort: "fillRate", sortDirection: "desc" });
-    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    tableRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(tableRows.indexOf("液压组件 / HY-15") < tableRows.indexOf("备用组件 / BK-15"), "equal fill-rate rows preserve source order");
     assert.ok(tableRows.indexOf("备用组件 / BK-15") < tableRows.indexOf("发动机控制模块 / EC-15"));
     assert.match(runtime.appNode.innerHTML, /data-spare-shortfall-sort="fillRate" data-sort-direction="desc"[^>]*aria-pressed="true"/);
@@ -2583,23 +2583,23 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     assert.doesNotMatch(detailPanel, /不得显示的旧|零需求产品/);
 
     await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "asc" });
-    const ascendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    const ascendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(ascendingRows.indexOf("雷达组件 / RD-35") < ascendingRows.indexOf("发动机控制模块 / EC-15"));
     assert.match(runtime.appNode.innerHTML, /data-carry-recommended-sort="asc"[^>]*aria-label="按建议携行数量升序排列" aria-pressed="true"/);
 
     await runtime.click("[data-carry-recommended-sort]", { carryRecommendedSort: "desc" });
-    const descendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    const descendingRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.ok(descendingRows.indexOf("发动机控制模块 / EC-15") < descendingRows.indexOf("雷达组件 / RD-35"));
     assert.match(runtime.appNode.innerHTML, /data-carry-recommended-sort="desc"[^>]*aria-label="按建议携行数量降序排列" aria-pressed="true"/);
 
     await runtime.change("[data-carry-aircraft-filter]", {}, { value: "J-15" });
-    const j15Rows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    const j15Rows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.match(j15Rows, /J-15[\s\S]*发动机控制模块/);
     assert.doesNotMatch(j15Rows, /J-35|雷达组件/);
     assert.match(runtime.appNode.innerHTML, /总体备件利用率[\s\S]*20\.00%/);
 
     await runtime.change("[data-carry-hide-zero]", {}, { checked: false });
-    const filteredAndSortedRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    const filteredAndSortedRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO/);
     assert.ok(filteredAndSortedRows.indexOf("发动机控制模块 / EC-15") < filteredAndSortedRows.indexOf("零需求产品 / ZERO"));
   } finally {

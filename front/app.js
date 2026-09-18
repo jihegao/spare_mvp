@@ -1,4 +1,6 @@
 import "./browser-compat.mjs";
+import { createTablePagination, currentPageKeys, updatePageSelection } from "./table-pagination.mjs";
+const applyTablePagination = createTablePagination();
 
 import {
   FEATURE_PAGES,
@@ -181,7 +183,7 @@ let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-equipment-system";
-const PLATFORM_DISPLAY_NAME = "备件规划及任务可靠度验证评估平台 V1.0";
+const PLATFORM_DISPLAY_NAME = "备件规划及任务可靠度验证评估平台 V2.0";
 const DEMO_USERS = [
   { username: "admin", role: "系统管理员" },
   { username: "data", role: "数据管理员" },
@@ -1856,7 +1858,7 @@ function bindEvents() {
       return;
     }
 
-    const projectDraftSaveButton = event.target.closest("[data-project-draft-save]");
+    const projectDraftSaveButton = (event.target.closest("[data-project-draft-retry]") || event.target.closest("[data-project-draft-save]"));
     if (projectDraftSaveButton) {
       saveProjectDraftNow().finally(() => render());
       return;
@@ -2571,9 +2573,8 @@ function bindEvents() {
     const basicMissionPhaseSelectAll = event.target.closest("[data-basic-mission-phase-select-all]");
     if (basicMissionPhaseSelectAll) {
       const phases = selectedBasicMissionPhases();
-      selectedBasicMissionPhaseIndexes = basicMissionPhaseSelectAll.checked
-        ? new Set(phases.map((_, index) => String(index)))
-        : new Set();
+      selectedBasicMissionPhaseIndexes = updatePageSelection(selectedBasicMissionPhaseIndexes,
+        currentPageKeys(basicMissionPhaseSelectAll, "data-basic-mission-phase-select") ?? phases.map((_, index) => String(index)), basicMissionPhaseSelectAll.checked);
       render();
       return;
     }
@@ -2591,7 +2592,7 @@ function bindEvents() {
 
     const basicActivitySelectAll = event.target.closest("[data-basic-activity-select-all]");
     if (basicActivitySelectAll) {
-      toggleAllBasicActivitySelection(basicActivitySelectAll.checked);
+      toggleAllBasicActivitySelection(basicActivitySelectAll.checked, currentPageKeys(basicActivitySelectAll, "data-basic-activity-select"));
       render();
       return;
     }
@@ -2653,7 +2654,7 @@ function bindEvents() {
 
     const supportResourceSelectAll = event.target.closest("[data-support-resource-select-all]");
     if (supportResourceSelectAll) {
-      toggleAllSupportResourceSelection(supportResourceSelectAll.dataset.supportResourceSelectAll, supportResourceSelectAll.checked);
+      toggleAllSupportResourceSelection(supportResourceSelectAll.dataset.supportResourceSelectAll, supportResourceSelectAll.checked, currentPageKeys(supportResourceSelectAll, "data-support-resource-select"));
       render();
       return;
     }
@@ -2802,7 +2803,7 @@ function bindEvents() {
 
     const supportActivitySelectAll = event.target.closest("[data-support-activity-job-select-all]");
     if (supportActivitySelectAll) {
-      toggleAllSupportActivityJobSelection(supportActivitySelectAll.dataset.supportActivityJobSelectAll, supportActivitySelectAll.checked);
+      toggleAllSupportActivityJobSelection(supportActivitySelectAll.dataset.supportActivityJobSelectAll, supportActivitySelectAll.checked, currentPageKeys(supportActivitySelectAll, "data-support-activity-job-select"));
       render();
       return;
     }
@@ -3371,6 +3372,14 @@ function render() {
     app.innerHTML = nextHtml;
   }
   renderedVisualizationSessionId = activeVisualizationSessionId;
+  applyTablePagination(app, JSON.stringify([
+    currentProject?.id, selectedFeatureId, selectedBasicMissionKey, selectedCompositeTaskId,
+    selectedEquipmentNodeKey, selectedSupportOrgNodeId, periodicActiveProfile,
+    selectedOperationsSupportActivityKey, selectedPreventiveMaintenanceActivityKey,
+    spareAircraftFilter, spareShortfallSort, carryAircraftFilter, carryRecommendedSort,
+    [...selectedDowntimeFactorTypes], selectedRunContextKey,
+    Object.values(currentAnalysisResults).map((result) => [result?.run_id, result?.updated_at, result?.status])
+  ]));
 }
 
 function renderAppHtmlPreservingVisualizationIframe(html, visualizationSessionId) {
@@ -3505,7 +3514,7 @@ function renderProjectListPage() {
       <div class="left">
         <div class="brand-mark">BJGH</div>
       <div>
-          <h1>项目列表</h1>
+          <h1>${PLATFORM_DISPLAY_NAME}</h1>
           <p>${currentUser.role} / 选择项目后进入功能导航页</p>
         </div>
       </div>
@@ -3583,7 +3592,7 @@ function projectSourceBadge(project) {
 
 function projectSourceHelpText(project) {
   if (project.sourceKind === PROJECT_SOURCE.imported_sample) {
-    return "来自后端 Project 数据，可用于正式后端测试。";
+    return "";
   }
   return "项目来源待确认。";
 }
@@ -3609,12 +3618,30 @@ function canAccessSystemManagementModule() {
     .some((page) => page.module === SYSTEM_SUPPORT_MODULE_NAME);
 }
 
+function unifiedNavigationGroups() {
+  const groups = {};
+  const seen = new Set();
+  for (const page of getVisibleFeaturePagesForRole(FEATURE_PAGES, currentUser?.role)) {
+    const module = page.module === SYSTEM_SUPPORT_MODULE_NAME
+      ? page.module : "备件规划及任务可靠度验证评估模块";
+    const tertiary = page.tertiary === "仿真实验方案管理" ? "仿真实验管理" : page.tertiary;
+    const key = `${module}/${page.secondary}/${tertiary}/${page.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    groups[module] ||= {};
+    groups[module][page.secondary] ||= {};
+    groups[module][page.secondary][tertiary] ||= [];
+    groups[module][page.secondary][tertiary].push(page);
+  }
+  return groups;
+}
+
 function renderNavigation(activePage) {
-  const groups = currentFeatureGroups();
+  const groups = unifiedNavigationGroups();
   return `
     <aside class="feature-nav" aria-label="功能导航">
       ${Object.entries(groups).map(([moduleName, secondaryGroups]) => `
-        <details class="nav-module" ${moduleName === activePage.module ? "open" : ""}>
+        <details class="nav-module" ${moduleName !== SYSTEM_SUPPORT_MODULE_NAME || moduleName === activePage.module ? "open" : ""}>
           <summary>${moduleName}</summary>
           ${moduleName === SYSTEM_SUPPORT_MODULE_NAME
             ? renderSystemManagementNavigation(activePage, secondaryGroups)
@@ -3622,7 +3649,7 @@ function renderNavigation(activePage) {
               <details class="nav-secondary" ${secondaryName === activePage.secondary ? "open" : ""}>
                 <summary>${secondaryName}</summary>
                 ${Object.entries(tertiaryGroups).map(([tertiaryName, pages]) => `
-                  <button type="button" class="nav-tertiary-link ${isActiveTertiary(activePage, pages) ? "active" : ""}" data-feature-id="${pages[0].id}">
+                  <button type="button" class="nav-tertiary-link ${pages.some((item) => item.name === activePage.name) ? "active" : ""}" data-feature-id="${pages[0].id}">
                     ${tertiaryName}
                   </button>
                 `).join("")}
@@ -3666,15 +3693,12 @@ function renderFeaturePage(page) {
 
 function renderProjectDraftToolbar(page) {
   if (page.secondary !== "仿真建模") return "";
-  const savedAtText = projectDraftLastSavedAt ? ` / ${htmlEscape(projectDraftLastSavedAt)}` : "";
-  const hydrateText = projectDraftHydrateStatus ? `<span>${htmlEscape(projectDraftHydrateStatus)}</span>` : "";
-  return `
-    <div class="toolbar-row project-draft-toolbar">
-      <button type="button" class="btn-primary" data-project-draft-save>保存 Project draft</button>
-      <span class="badge">${htmlEscape(projectDraftSaveStatus)}${savedAtText}</span>
-      ${hydrateText}
-    </div>
-  `;
+  if (projectDraftSaveStatus === "已保存" && !projectDraftHydrateStatus.startsWith("未读取")) return "";
+  const failed = projectDraftSaveStatus === "保存失败" || projectDraftHydrateStatus.startsWith("未读取");
+  return `<div class="project-save-notice" role="${failed ? "alert" : "status"}">
+    ${htmlEscape(failed ? projectDraftHydrateStatus : "修改尚未保存，正在自动保存…")}
+    ${failed ? `<button type="button" data-project-draft-retry>重试保存</button>` : ""}
+  </div>`;
 }
 
 function renderCurrentContext(page) {
@@ -5841,7 +5865,7 @@ function renderCombatUnitModeling(page) {
         </div>
       </div>
       <div class="table-wrap unframed-table">
-        <table class="combat-unit-table">
+        <table class="combat-unit-table" data-paginate="renderCombatUnitModeling-1">
           <thead>
             <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th rowspan="2">所属机场</th><th colspan="3" class="combat-unit-prelife-heading">寿命初始状态</th></tr>
             <tr><th class="combat-unit-prelife-column">已用日历天数</th><th class="combat-unit-prelife-column">累计飞行小时</th><th class="combat-unit-prelife-column">累计起落次数</th></tr>
@@ -6012,7 +6036,7 @@ function renderBasicMissionModeling(page) {
           </div>
           <div class="inline-status ${phaseRatioValid ? "success" : "warn"}">阶段占比合计 ${fixed(phaseRatioTotal, 2)}；${phaseRatioValid ? "满足合计为 1" : "必须调整为 1 后才能作为正式编译输入"}</div>
           <div class="table-wrap">
-            <table>
+            <table data-paginate="mission-phases">
               <thead><tr><th><input type="checkbox" data-basic-mission-phase-select-all aria-label="全选任务阶段" ${allPhasesSelected ? "checked" : ""}></th><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>删除</th></tr></thead>
               <tbody>
                 ${phases.map((phase, index) => `
@@ -6112,7 +6136,7 @@ function renderCompositeTaskModeling(page) {
             </div>
         </div>
         <div class="table-wrap">
-          <table>
+          <table data-paginate="renderCompositeTaskModeling-1">
             <thead><tr><th>复合任务名称</th></tr></thead>
             <tbody>
               ${compositeTasks.map((task, index) => `
@@ -6138,7 +6162,7 @@ function renderCompositeTaskModeling(page) {
               ${field("任务优先级（1最高）", `${compositePath}.priority`, "number", { min: "1", step: "1" })}
             </div>
             <div class="table-wrap">
-              <table>
+              <table data-paginate="renderCompositeTaskModeling-2">
                 <thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量（继承）</th><th>删除</th></tr></thead>
                 <tbody>
                   ${(composite.taskItems || []).map((item, index) => {
@@ -6166,7 +6190,7 @@ function renderCompositeTaskModeling(page) {
         <div class="detail-card network-card">
           <h4>典型组合任务时序表</h4>
           <div class="table-wrap">
-            <table>
+            <table data-paginate="renderCompositeTaskModeling-3">
               <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>出动时刻</th></tr></thead>
               <tbody>
                 ${timelineRows.map((row) => `
@@ -6216,7 +6240,7 @@ function renderPeriodicTaskModeling(page) {
   const profileLabels = { week: "周", month: "月", year: "年" };
   const activeLabel = profileLabels[periodicActiveProfile];
   const activeProfileList = `
-    <div class="periodic-profile-list" aria-label="${activeLabel}剖面列表">
+    <div data-paginate="periodic-profiles" class="periodic-profile-list" aria-label="${activeLabel}剖面列表">
       <div class="periodic-list-head"><strong>${activeLabel}剖面列表</strong><button type="button" data-periodic-profile-add="${periodicActiveProfile}" title="新增${activeLabel}剖面">＋ 新增</button></div>
       ${activeProfiles.length ? activeProfiles.map((item, itemIndex) => {
         const isSelected = item.id === selectedProfile?.id;
@@ -6280,7 +6304,7 @@ function renderPeriodicTaskModeling(page) {
     return sum + (monthProfile?.weekProfileIds?.filter((weekProfileId) => Boolean(weekProfileId)).length || 0);
   }, 0);
   const yearEditor = `
-    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "有效" : "待完善"}</span>` : ""}</div>
+    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount === 12 && yearTotalWeeks === 52 ? "有效" : "配置未完整"}</span>` : ""}</div>
     ${selectedProfile ? `<div class="toolbar-row periodic-year-actions"><button type="button" data-periodic-year-action="duplicate" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">复制为下一年</button><button type="button" data-periodic-year-action="up" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">上移一年</button><button type="button" data-periodic-year-action="down" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">下移一年</button></div>` : ""}
     ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}"><option value="" ${yearMonths[index] ? "" : "selected"}>未配置月剖面</option>${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
   `;
@@ -7509,7 +7533,7 @@ function renderEquipmentSystemTable(selectedState, productsById) {
     : (selectedState.kind === "aircraft" ? [renderEquipmentAircraftTableRow(selectedState.aircraftModel)] : []);
   return `
     <div class="table-wrap equipment-system-table-wrap">
-      <table class="equipment-system-table">
+      <table class="equipment-system-table" data-paginate="renderEquipmentSystemTable-1">
         <thead>
           <tr>
             <th>组件名称</th>
@@ -7834,13 +7858,13 @@ function renderReliabilityBlockDiagram() {
           </div>
           ${renderReliabilityBlockDiagramSvg(layout)}
           <div class="table-wrap compact-table">
-            <table>
+            <table data-paginate="renderReliabilityBlockDiagram-1">
               <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>n中取k / k-out-of-n</th></tr></thead>
               <tbody>${tableNodes.map((node) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(reliabilityNodeTypeLabel(node))}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
             </table>
           </div>
           <div class="table-wrap compact-table">
-            <table>
+            <table data-paginate="renderReliabilityBlockDiagram-2">
               <thead><tr><th>起点</th><th>终点</th><th>串联/并联/备用/k-out-of-n</th><th>权重</th></tr></thead>
               <tbody>${diagramEdges.map((edge) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
             </table>
@@ -8052,7 +8076,7 @@ function renderSupportOrganizationWorkbench(page) {
               ${activeResourceType === "备件" && resourceSelection ? renderSpareSupportOrganizationGuidance(resourceSelection, locked) : ""}
               <p class="rms-import-status">${htmlEscape(supportResourceConflictMessage || supportResourceImportStatus)}</p>
               <div class="table-wrap">
-                <table>
+                <table data-paginate="renderSupportOrganizationWorkbench-1">
                   <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${resourceControlsDisabledAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
                   <tbody>${visibleResourceRows.map((row, index) => `
                     <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${resourceControlsDisabledAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, resourceControlsDisabled)}</td>`).join("")}</tr>
@@ -8608,10 +8632,10 @@ function activateSupportResourceEdit(key) {
   selectedSupportResourceKeys = new Set([key]);
 }
 
-function toggleAllSupportResourceSelection(activeResourceType, checked) {
+function toggleAllSupportResourceSelection(activeResourceType, checked, pageKeys = null) {
   const orgTree = supportOrganizationTree();
   const selectedOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
-  const keys = buildSupportResourceRows(activeResourceType, selectedOrgNode)
+  const keys = pageKeys ?? buildSupportResourceRows(activeResourceType, selectedOrgNode)
     .filter((row) => !supportResourceDeletedKeySet().has(row.key))
     .map((row) => row.key);
   const next = new Set(selectedSupportResourceKeys);
@@ -9456,9 +9480,9 @@ function remapSupportActivityJobPredecessors(jobs, oldCode, newCode) {
   });
 }
 
-function toggleAllSupportActivityJobSelection(tabKey, checked) {
+function toggleAllSupportActivityJobSelection(tabKey, checked, pageKeys = null) {
   const activity = findSupportActivityByJobTabKey(tabKey);
-  const keys = supportActivityJobs(activity || {}).map((_, index) => supportActivityJobKey(tabKey, index));
+  const keys = pageKeys ?? supportActivityJobs(activity || {}).map((_, index) => supportActivityJobKey(tabKey, index));
   const next = new Set(selectedSupportActivityJobKeys);
   for (const key of keys) {
     if (checked) next.add(key);
@@ -9663,7 +9687,7 @@ function renderSupportActivityJobTable(activity, tabKey) {
     <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}"${lockedAttr}>新增工作项目</button><button type="button" class="rms-file-button rms-import-button" data-support-jobs-download-template>下载模板</button><label class="rms-file-button rms-import-button">上传数据<input type="file" data-support-jobs-import-file="${htmlEscape(tabKey)}" accept=".csv,.json,application/json,text/csv"${lockedAttr}></label><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}"${lockedAttr}>批量删除</button></div>
     ${renderBasicActivityTemplatePicker(tabKey)}
     <div class="table-wrap">
-      <table>
+      <table data-paginate="renderSupportActivityJobTable-1">
         <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""} aria-label="全选工作项目"${lockedAttr}></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>编辑</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
@@ -9972,7 +9996,7 @@ function renderBasicActivityLibrary() {
       </div>
       <div class="form-note" role="status" data-basic-activity-import-status>${htmlEscape(basicActivityImportStatus)}</div>
       <div class="table-wrap">
-        <table>
+        <table data-paginate="renderBasicActivityLibrary-1">
           <thead>
             <tr>
               <th><input type="checkbox" data-basic-activity-select-all ${allSelected ? "checked" : ""}${lockedAttr}></th>
@@ -10150,7 +10174,7 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
           <span class="muted">可一次配置多条${htmlEscape(label)}参数</span>
         </div>
         <div class="table-wrap">
-          <table class="basic-activity-resource-config-table">
+          <table class="basic-activity-resource-config-table" data-paginate="renderBasicActivityResourceConfigDialog-1">
             <thead>${renderBasicActivityResourceDialogHeader(kind)}</thead>
             <tbody>
               ${requirements.map((item, index) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="3">暂无配置</td></tr>`}
@@ -11147,8 +11171,8 @@ function deleteSelectedBasicActivityJobs() {
   selectedBasicActivityKeys = new Set();
 }
 
-function toggleAllBasicActivitySelection(checked) {
-  selectedBasicActivityKeys = checked ? new Set(filteredBasicActivityLibraryRows().map((row) => row.key)) : new Set();
+function toggleAllBasicActivitySelection(checked, pageKeys = null) {
+  selectedBasicActivityKeys = updatePageSelection(selectedBasicActivityKeys, pageKeys ?? filteredBasicActivityLibraryRows().map((row) => row.key), checked);
 }
 
 function downloadBasicSupportActivityCsvTemplate() {
@@ -11986,7 +12010,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
         ${supportActivityRuntimeNodeField(activity, activityIndex)}
       </div>
       <div class="table-wrap">
-        <table>
+        <table data-paginate="renderLogisticsSupportActivity-1">
           <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
           <tbody>${transportPolicies.map((row, index) => {
             const basePath = `transportPolicies.${index}`;
@@ -12171,17 +12195,16 @@ function renderExperimentPlanList(page) {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>选择</th><th>方案名称</th><th>所属模块</th><th>步数</th><th>样本</th><th>关联运行</th><th>状态</th><th>方案动作</th></tr></thead>
+        <thead><tr><th>选择</th><th>方案名称</th><th>步数</th><th>样本</th><th>关联运行</th><th>状态</th><th>方案动作</th></tr></thead>
         <tbody>
           ${plans.length ? plans.map((plan) => `
             <tr class="${selectedExperimentPlanKeys.has(plan.selectionKey) ? "selected-table-row" : ""}">
               <td><input type="checkbox" data-experiment-plan-select="${htmlEscape(plan.selectionKey)}" ${selectedExperimentPlanKeys.has(plan.selectionKey) ? "checked" : ""} aria-label="选择方案 ${htmlEscape(plan.name)}"></td>
               <td>${htmlEscape(plan.name)}</td>
-              <td>${htmlEscape(plan.module)}</td>
               <td>${htmlEscape(plan.steps)}</td>
               <td>${htmlEscape(plan.samples)}</td>
               <td>${htmlEscape(plan.run_count ?? 0)}</td>
-              <td><span class="badge">${htmlEscape(plan.status)}</span></td>
+              <td><span class="badge">${htmlEscape(experimentStatusLabel(plan.status))}</span></td>
               <td class="table-action-cell">
                 ${String(plan.status || "").toLowerCase() === "frozen"
                   ? `<span class="badge">已冻结，不可编辑</span>`
@@ -12190,11 +12213,19 @@ function renderExperimentPlanList(page) {
                 <button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>
               </td>
             </tr>
-          `).join("") : `<tr><td colspan="8">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
+          `).join("") : `<tr><td colspan="7">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
         </tbody>
       </table>
     </div>
   `;
+}
+
+function experimentStatusLabel(status) {
+  const labels = { draft: "草稿", frozen: "已冻结", pending: "等待中", queued: "排队中",
+    created: "已创建", submitted: "已提交", running: "运行中", completed: "已完成",
+    succeeded: "已完成", success: "已完成", failed: "失败", cancelled: "已取消",
+    canceled: "已取消", timeout: "已超时", timed_out: "已超时", deleted: "已清理", "已清理": "已清理" };
+  return labels[String(status || "").toLowerCase()] || `未知状态（${String(status || "空")}）`;
 }
 
 function experimentPlanRowFromBackend(plan, page) {
@@ -20813,7 +20844,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     const productsById = analysisProductsById();
     const aircraftModels = [...new Set(concreteRows.map((row) => row.aircraftModel))].sort();
     const sortedRows = visibleSpareShortfallRows(result);
-    return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table">
+    return `<div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap"><table class="lite-mesa-stat-table" data-paginate="renderLiteMesaAnalysisSessionBody-1">
       <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>满足数量</th><th>平均备件延误时间(h)</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>风险</th></tr></thead>
       <tbody>${sortedRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(analysisProductDisplayName(row, productsById))}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="7">当前机型没有可展示的备件短板明细</td></tr>'}</tbody>
     </table></div>`;
@@ -20828,7 +20859,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
         <label>机型 <select data-carry-aircraft-filter><option value="">全部机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${activeAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label>
         <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
       </div>
-      <div class="table-wrap"><table class="lite-mesa-stat-table">
+      <div class="table-wrap"><table class="lite-mesa-stat-table" data-paginate="renderLiteMesaAnalysisSessionBody-2">
         <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求次数</th><th>短缺次数</th><th>备件满足率</th><th>约束状态</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
         <tbody>${visibleRows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="12">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
@@ -20836,7 +20867,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   }
   if (definition.analysisType === "mission_reliability") {
     return `
-      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table">
+      <div class="table-wrap"><table class="lite-mesa-stat-table task-reliability-result-table" data-paginate="renderLiteMesaAnalysisSessionBody-3">
         <thead><tr><th>波次</th><th>样本数</th><th>波次成功率</th></tr></thead>
         <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || "-")}</td><td>${Number(row.sampleCount || 0)}</td><td>${htmlEscape(formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate))}</td></tr>`).join("") || '<tr><td colspan="3">当前会话没有波次成功率明细</td></tr>'}</tbody>
       </table></div>
@@ -20847,7 +20878,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     return renderLiteMesaDowntimeFactorAnalysis(result);
   }
   return `
-    <div class="table-wrap"><table class="lite-mesa-stat-table">
+    <div class="table-wrap"><table class="lite-mesa-stat-table" data-paginate="renderLiteMesaAnalysisSessionBody-4">
       <thead><tr><th>因素</th><th>类型</th><th>次数</th><th>贡献度</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.reason)}</td><td>${row.count}</td><td>${pct(row.contribution)}</td></tr>`).join("")}</tbody>
     </table></div>
@@ -20958,7 +20989,7 @@ function renderLiteMesaDowntimeEventDetails(events) {
   }
   return `
     <div class="section-head downtime-event-detail-head"><h3>停机事件明细</h3><span>${events.length} 条</span></div>
-    <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table">
+    <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table" data-paginate="renderLiteMesaDowntimeEventDetails-1">
       <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长（小时）</th><th>事件说明</th><th>分类信息</th></tr></thead>
       <tbody>${events.map((event) => {
         const row = downtimeEventDisplayRow(event);
@@ -21004,7 +21035,7 @@ function renderLiteMesaDowntimeEventSnapshots(snapshots) {
     return `<div class="empty-state"><strong>停机事件一览</strong><p>当前停机因素运行未捕获到停机事件日志。</p></div>`;
   }
   return `
-    <div class="lite-mesa-event-snapshots">
+    <div data-paginate="downtime-snapshots" class="lite-mesa-event-snapshots">
       <div class="section-head">
         <h3>停机事件一览</h3>
         <span>${snapshots.length} 条停机事件</span>
