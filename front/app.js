@@ -5997,6 +5997,8 @@ function addCombatUnitMember() {
   });
   scenario.combatUnit.quantity = members.length;
   selectedCombatUnitMemberIndex = members.length - 1;
+  const memberPage = modelingPage("combat-members", members);
+  tablePagination.move("combat-members", memberPage.pageCount - 1 - memberPage.page);
   updatePreviewResultsThroughApiClient();
 }
 

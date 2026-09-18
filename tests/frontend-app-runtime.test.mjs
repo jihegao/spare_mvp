@@ -3525,6 +3525,25 @@ test("modeling pagination keeps the entire RBD SVG while node and edge detail pa
   } finally { runtime.restore(); }
 });
 
+test("adding an aircraft opens its last page and keeps the new selection deletable", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-combat-unit",
+    projectJson: createRuntimeProjectJson({ combatUnit: {
+      members: Array.from({ length: 20 }, (_, index) => ({ aircraftNo: `AC-${index}`, model: "J-15", airport: "甲板" }))
+    } })
+  });
+  try {
+    await runtime.click("[data-combat-unit-add]");
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+    assert.match(runtime.appNode.innerHTML, /data-select-combat-unit-member="20" checked/);
+    assert.match(runtime.appNode.innerHTML, /data-combat-unit-index="20"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-combat-unit-delete disabled/);
+    await runtime.click("[data-combat-unit-delete]");
+    assert.equal((runtime.appNode.innerHTML.match(/data-select-combat-unit-member="/g) || []).length, 20);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="combat-members"/);
+  } finally { runtime.restore(); }
+});
+
 test("equipment pagination renders twenty rows, retains original edit indexes and exports every row", async () => {
   const components = Array.from({ length: 41 }, (_, index) => ({
     id: `paged-part-${index}`, name: `分页组件${index}`, aircraftModel: "J-15",
