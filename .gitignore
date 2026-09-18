@@ -15,3 +15,8 @@ runs/*
 .playwright-cli/
 .agent-screenshots/
 scripts/start-system.bat
+
+# Local exploratory schedulers and case-dependent benchmark reports.
+# Maintained runtime and regression tests live in src/ and tests/.
+/experiments/event_calendar/
+/experiments/compiled_routes/
