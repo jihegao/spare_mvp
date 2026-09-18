@@ -1071,6 +1071,39 @@ restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi()
 
 function bindEquipmentTreeResize() {
   let drag = null;
+  const syncAria = (layout) => {
+    const handle = layout?.querySelector("[data-equipment-tree-resize]");
+    if (!handle || !handle.getClientRects().length) return;
+    handle.setAttribute("aria-valuenow", String(Math.round(handle.parentElement.getBoundingClientRect().width)));
+    handle.setAttribute("aria-valuemax", String(Math.round(Math.max(300, Math.min(900, layout.clientWidth - 332)))));
+  };
+  // A single observer follows the current rendered layout. Replaced trees are
+  // disconnected; the app observer watches child changes, not our ARIA writes.
+  if (typeof ResizeObserver !== "undefined" && typeof MutationObserver !== "undefined") {
+    let observedLayout = null;
+    const resizeObserver = new ResizeObserver(() => syncAria(observedLayout));
+    const observeCurrentLayout = () => {
+      const layout = app.querySelector(".equipment-modeling-layout");
+      if (layout !== observedLayout) {
+        resizeObserver.disconnect();
+        observedLayout = layout;
+        if (layout) resizeObserver.observe(layout);
+      }
+      syncAria(layout);
+    };
+    const appObserver = new MutationObserver(observeCurrentLayout);
+    appObserver.observe(app, { childList: true, subtree: true });
+    observeCurrentLayout();
+    const onViewportResize = () => syncAria(observedLayout);
+    window.addEventListener("resize", onViewportResize);
+    window.addEventListener("pagehide", (event) => {
+      if (event?.persisted) return;
+      resizeObserver.disconnect();
+      appObserver.disconnect();
+      window.removeEventListener("resize", onViewportResize);
+      observedLayout = null;
+    });
+  }
   const applyWidth = (handle, width) => {
     const layout = handle.closest(".equipment-modeling-layout");
     if (!layout) return;
@@ -6331,7 +6364,7 @@ function renderPeriodicTaskModeling(page) {
     return sum + (monthProfile?.weekProfileIds?.filter((weekProfileId) => Boolean(weekProfileId)).length || 0);
   }, 0);
   const yearEditor = `
-    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount > 0 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount > 0 ? "有效" : "待完善"}</span>` : ""}</div>
+    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；未配置的月份不会自动套用其他月剖面。</p></div>${selectedProfile ? `<span class="status-badge ${yearConfiguredMonthCount > 0 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearConfiguredMonthCount} / 12 月 · ${yearTotalWeeks} / 52 周 · ${yearConfiguredMonthCount > 0 ? "已配置" : "待完善"}</span>` : ""}</div>
     ${selectedProfile ? `<div class="toolbar-row periodic-year-actions"><button type="button" data-periodic-year-action="duplicate" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">复制为下一年</button><button type="button" data-periodic-year-action="up" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">上移一年</button><button type="button" data-periodic-year-action="down" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">下移一年</button></div>` : ""}
     ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}"><option value="" ${yearMonths[index] ? "" : "selected"}>未配置月剖面</option>${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
   `;

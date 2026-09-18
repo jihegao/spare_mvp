@@ -55,11 +55,15 @@ test('equipment splitter responds immediately after its layout shrinks', async (
   await page.addScriptTag({ content: `const app = document.querySelector('#split-test'); let equipmentTreeWidth = 300; ${binding}; bindEquipmentTreeResize();` });
   const handle = page.locator('[data-equipment-tree-resize]');
   const tree = page.locator('.equipment-modeling-tree');
+  await expect(handle).toHaveAttribute('aria-valuenow', '300');
+  await expect(handle).toHaveAttribute('aria-valuemax', '900');
   await handle.focus();
   await handle.press('End');
   expect((await tree.boundingBox()).width).toBe(900);
   await page.locator('.equipment-modeling-layout').evaluate(el => { el.style.width = '1100px'; });
   expect((await tree.boundingBox()).width).toBe(768);
+  await expect(handle).toHaveAttribute('aria-valuenow', '768');
+  await expect(handle).toHaveAttribute('aria-valuemax', '768');
   await handle.press('ArrowLeft');
   expect((await tree.boundingBox()).width).toBe(748);
   await expect(handle).toHaveAttribute('aria-valuenow', '748');
@@ -68,6 +72,12 @@ test('equipment splitter responds immediately after its layout shrinks', async (
   expect((await tree.boundingBox()).width).toBe(768);
   await handle.press('Home');
   expect((await tree.boundingBox()).width).toBe(300);
+  await page.locator('#split-test').evaluate(el => { el.innerHTML = ''; });
+  await page.locator('#split-test').evaluate(el => {
+    el.innerHTML = '<div class="organization-layout equipment-modeling-layout" style="width:1000px;--equipment-tree-width:700px"><aside class="tree-container equipment-modeling-tree"><div data-equipment-tree-resize class="equipment-tree-resize" tabindex="0" role="separator"></div></aside><section>details</section></div>';
+  });
+  await expect(handle).toHaveAttribute('aria-valuenow', '668');
+  await expect(handle).toHaveAttribute('aria-valuemax', '668');
   await page.setViewportSize({ width: 800, height: 900 });
   await expect(handle).toBeHidden();
 });

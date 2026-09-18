@@ -1764,7 +1764,7 @@ test("periodic task editor uses named week month and year profiles without total
     assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 4 周已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置周剖面<\/option>/g) || []).length, 3);
     await reopenedRuntime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
-    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周 · 有效/);
+    assert.match(reopenedRuntime.appNode.innerHTML, /1 \/ 12 月 · 1 \/ 52 周 · 已配置/);
     assert.equal((reopenedRuntime.appNode.innerHTML.match(/<option value="" selected>未配置月剖面<\/option>/g) || []).length, 11);
   } finally {
     reopenedRuntime.restore();
@@ -1793,10 +1793,28 @@ test("year profile status accepts any configured month while preserving invalid-
         assert.match(runtime.appNode.innerHTML, /年剖面引用不存在的月剖面 missing-month/);
         assert.match(runtime.appNode.innerHTML, /0 \/ 12 月 · 0 \/ 52 周 · 待完善/);
       } else {
-        assert.match(runtime.appNode.innerHTML, new RegExp(`${configured} / 12 月 · ${configured} / 52 周 · ${configured ? "有效" : "待完善"}`));
+        assert.match(runtime.appNode.innerHTML, new RegExp(`${configured} / 12 月 · ${configured} / 52 周 · ${configured ? "已配置" : "待完善"}`));
       }
     } finally { runtime.restore(); }
   }
+});
+
+test("a year with one empty month is configured without claiming the schedule is valid", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-periodic-task",
+    projectJson: createRuntimeProjectJson({ missionProfile: {
+      periodicTasks: [{ id: "week-empty", name: "empty week", compositeTasks: [] }],
+      periodicProfileLists: {
+        month: [{ id: "month-empty", name: "empty month", weekProfileIds: Array(4).fill("") }],
+        year: [{ id: "year-empty", name: "year", monthProfileIds: ["month-empty", ...Array(11).fill("")] }]
+      }
+    } })
+  });
+  try {
+    await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "year" });
+    assert.match(runtime.appNode.innerHTML, /1 \/ 12 月 · 0 \/ 52 周 · 已配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /1 \/ 12 月 · 0 \/ 52 周 · 有效/);
+  } finally { runtime.restore(); }
 });
 
 test("periodic task editor preserves invalid configured references and marks the simulation source invalid", async () => {
