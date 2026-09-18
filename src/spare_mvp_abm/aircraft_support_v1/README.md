@@ -17,6 +17,7 @@ Project-to-model compilation.
 - `maintenance_engine.py`: job lifecycle and preventive-maintenance scheduling.
 - `support_engine.py`: support-resource and spare allocation.
 - `transport_engine.py`: replenishment and resource movement.
+- `operations_engine.py`: explicit daily preflight/relaunch/final inspection scheduling and phase events.
 - `metrics_engine.py`: stop conditions, readiness, availability, and downtime.
 - `telemetry.py`: snapshots, visualization frames, and event projection.
 - `runtime_utils.py`: pure normalization helpers shared by the modules above.
@@ -24,9 +25,11 @@ Project-to-model compilation.
 ## Runtime invariants
 
 The order in `AircraftSupportV1Model.step()` is behaviorally significant. In
-particular, arrivals and completed work are applied before new work is started;
-failures are evaluated before mission success and return processing; preventive
-work is generated after mission return processing. Reordering these operations
+particular, arrivals, scheduled returns and completed work are applied before new
+work is started. Failures and early returns precede operations-phase coordination;
+preventive work follows it. Operations coordination runs again after dispatch and
+cancellation to close newly determined final returns. Cutoff records unfinished
+inspection obligations. Reordering these operations
 changes same-minute resource visibility and seeded simulation results.
 
 Failure-timer initialization intentionally samples every behavior component in

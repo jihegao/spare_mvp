@@ -756,6 +756,8 @@ class SimulationAdapter:
         )
         support_node_aliases = self._support_node_reference_aliases(project)
         basic_missions = copy.deepcopy(self._basic_missions(project))
+        for mission in basic_missions:
+            mission["operations_plan_group_id"] = self._operations_plan_group(project, mission)
         composite_tasks = copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks")))
         self._normalize_mission_task_field_ownership(basic_missions, composite_tasks)
         periodic_plan = self._compile_periodic_profile_plan(mission_profile, composite_tasks)
@@ -764,6 +766,7 @@ class SimulationAdapter:
 
         inputs = {
             "schema_version": "aircraft-support-v1-input-v1",
+            "operations_support_policy": "daily-v1",
             "project_identity": {
                 "project_id": validation["project_id"],
                 "project_version": validation["project_version"],
@@ -1656,7 +1659,37 @@ class SimulationAdapter:
             methods, replacement_ratio = self._support_activity_maintenance_policy(activity)
             compiled["maintenance_methods"] = methods
             compiled["replacement_ratio"] = replacement_ratio
+        phase = {"直接准备方案": "preflight", "再次出动准备方案": "relaunch", "飞行后检查方案": "postflight"}.get(activity.get("planType"))
+        if phase:
+            compiled["operations_phase"] = phase
+            compiled["plan_group_id"] = str(activity["planGroupId"])
         return compiled
+
+    def _operations_plan_group(self, project: dict[str, Any], mission: dict[str, Any]) -> str:
+        from src.spare_mvp_abm.aircraft_support_v1.component_index import aircraft_type_tokens
+
+        phases = {"直接准备方案", "再次出动准备方案", "飞行后检查方案"}
+        activities = [row for row in self._dict_list(project.get("supportActivities")) if row.get("planType") in phases]
+        if not activities:
+            return ""
+        reference = str(mission.get("supportActivityName") or "").strip()
+        models = aircraft_type_tokens(mission.get("equipmentType"))
+        compatible = [row for row in activities if not models or not aircraft_type_tokens(row.get("aircraftModel"))
+                      or models & aircraft_type_tokens(row.get("aircraftModel"))]
+        if reference:
+            compatible = [row for row in compatible if row.get("activityName") == reference]
+        groups = {str(row.get("planGroupId") or "") for row in compatible} - {""}
+        if len(groups) != 1:
+            raise ValueError("task must identify one compatible operations support plan group")
+        group = next(iter(groups))
+        for phase in phases:
+            stage = [row for row in activities if row.get("planGroupId") == group and row.get("planType") == phase]
+            if len(stage) != 1:
+                raise ValueError("operations plan group must contain exactly one of each phase")
+            stage_models = aircraft_type_tokens(stage[0].get("aircraftModel"))
+            if models and stage_models and not models & stage_models:
+                raise ValueError("all operations plan phases must apply to the task aircraft type")
+        return group
 
     def _support_activity_maintenance_kind(self, activity: dict[str, Any]) -> str:
         plan_type = str(activity.get("planType") or "").strip()
@@ -1773,6 +1806,7 @@ class SimulationAdapter:
                 "missionProfile.periodicTasks",
                 "basicMissions",
                 "basicMissions[].missionPhases",
+                "basicMissions[].supportActivityName",
                 "airports",
                 "products[]",
                 "components[].productId",
@@ -1802,6 +1836,8 @@ class SimulationAdapter:
                 "supportActivities[].takeoffLandingInterval",
                 "supportActivities[].activityCodes",
                 "supportActivities[].predecessors",
+                "supportActivities[].planType",
+                "supportActivities[].planGroupId",
                 "supportActivities[].maintenanceMethods",
                 "supportActivities[].replacementRatio",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
@@ -2027,6 +2063,11 @@ class SimulationAdapter:
 
         issues.extend(self._periodic_profile_compile_issues(project))
         issues.extend(self._aircraft_pre_life_compile_issues(project))
+        for index, mission in enumerate(self._basic_missions(project)):
+            try:
+                self._operations_plan_group(project, mission)
+            except ValueError as error:
+                issues.append(self._compile_issue("invalid_operations_plan_reference", f"basicMissions[{index}].supportActivityName", str(error), "任务建模"))
 
         organization_graph = self._aircraft_support_v1_organization_graph(project)
         if organization_graph["runtime_mode"] in {"vertical", "vertical_lateral"}:

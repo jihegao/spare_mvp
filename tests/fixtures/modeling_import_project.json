@@ -1012,7 +1012,8 @@
         "requiredPersonnel": 2,
         "resourceId": "基地",
         "spareQuantity": 0,
-        "spareType": null
+        "spareType": null,
+        "aircraftModel": "J-15 / J-35"
       },
       {
         "activityName": "航电模块故障修复方案",
@@ -1224,7 +1225,7 @@
       {
         "activityName": "J-15再次出动准备活动",
         "activityType": "使用保障",
-        "aircraftModel": "J-15",
+        "aircraftModel": "J-15 / J-35",
         "id": "ops-support-j-15---5",
         "jobs": [
           {
@@ -1245,7 +1246,8 @@
             ],
             "predecessors": [],
             "spare": [],
-            "workName": "再次出动准备基本保障活动1"
+            "workName": "再次出动准备基本保障活动1",
+            "applicableAircraft": "J-15 / J-35"
           }
         ],
         "maxWorkTimeRefMinutes": 45,
@@ -1259,7 +1261,7 @@
       {
         "activityName": "J-15飞行后检查活动",
         "activityType": "使用保障",
-        "aircraftModel": "J-15",
+        "aircraftModel": "J-15 / J-35",
         "id": "ops-support-j-15---6",
         "jobs": [
           {
@@ -1280,7 +1282,8 @@
             ],
             "predecessors": [],
             "spare": [],
-            "workName": "飞行后检查基本保障活动1"
+            "workName": "飞行后检查基本保障活动1",
+            "applicableAircraft": "J-15 / J-35"
           }
         ],
         "maxWorkTimeRefMinutes": 60,

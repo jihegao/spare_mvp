@@ -39,6 +39,12 @@ class AircraftState:
     preventive_due_dimensions: list[str] = field(default_factory=list)
     source_initial_state: str = "available"
     initial_preventive_due: bool = False
+    operations_day: int | None = None
+    daily_takeoffs: int = 0
+    operations_plan_group_id: str = ""
+    last_operations_mission_id: str | None = None
+    prepared_operations_day: int | None = None
+    postflight_due: bool = False
 
 
 @dataclass
@@ -68,6 +74,7 @@ class MissionState:
     basic_task_name: str = ""
     required_aircraft_type: str = ""
     support_activity_name: str = ""
+    operations_plan_group_id: str = ""
     group_name: str = ""
     wave_index: int = 1
     day_index: int = 1
@@ -94,6 +101,8 @@ class JobState:
     tasks: list[dict[str, Any]]
     priority: int
     resource_node_id: str
+    operations_phase: str = ""
+    plan_group_id: str = ""
     mission_id: str | None = None
     component_id: str | None = None
     task_index: int = 0

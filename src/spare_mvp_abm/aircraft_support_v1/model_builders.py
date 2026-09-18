@@ -547,6 +547,8 @@ class ModelBuilderMixin:
         return ordered
 
     def _activity_kind_matches(self, activity: dict[str, Any], kind: str) -> bool:
+        if activity.get("operations_phase"):
+            return activity["operations_phase"] == kind
         text = f"{activity.get('id', '')} {activity.get('name', '')} {activity.get('activity_type', '')}".lower()
         if kind == "preflight":
             return (
@@ -700,6 +702,7 @@ class ModelBuilderMixin:
                                 basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
                                 required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
                                 support_activity_name=str(basic.get("supportActivityName") or ""),
+                                operations_plan_group_id=str(basic.get("operations_plan_group_id") or ""),
                                 group_name=str(item.get("groupName") or ""),
                                 wave_index=wave_index,
                                 day_index=day_index,
@@ -726,6 +729,7 @@ class ModelBuilderMixin:
                     basic_task_name=str(basic.get("name") or "mission"),
                     required_aircraft_type=str(basic.get("equipmentType") or ""),
                     support_activity_name=str(basic.get("supportActivityName") or ""),
+                    operations_plan_group_id=str(basic.get("operations_plan_group_id") or ""),
                     day_index=planned_start // 1440 + 1,
                 )
             )

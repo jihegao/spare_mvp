@@ -16,6 +16,7 @@
         "missionProfile.periodicTasks",
         "basicMissions",
         "basicMissions[].missionPhases",
+        "basicMissions[].supportActivityName",
         "airports",
         "products[]",
         "components[].productId",
@@ -45,6 +46,8 @@
         "supportActivities[].takeoffLandingInterval",
         "supportActivities[].activityCodes",
         "supportActivities[].predecessors",
+        "supportActivities[].planType",
+        "supportActivities[].planGroupId",
         "supportActivities[].maintenanceMethods",
         "supportActivities[].replacementRatio",
         "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
@@ -229,6 +232,7 @@
             }
           ],
           "name": "small sortie",
+          "operations_plan_group_id": "",
           "taskDurationMinutes": 30
         }
       ],
@@ -266,6 +270,7 @@
         ]
       }
     },
+    "operations_support_policy": "daily-v1",
     "project_identity": {
       "project_id": "project-aircraft-support-contract-001",
       "project_version": "project-v0.1",

@@ -62,8 +62,8 @@
             "后勤保障方案"
           ]
         },
-        "planGroupId": { "type": "string", "minLength": 1 },
-        "activityCodes": { "type": "array", "items": { "type": "string" } },
+        "planGroupId": { "type": "string", "minLength": 1, "description": "Stable shared identity of the three operations phases, referenced through the basic mission support activity." },
+        "activityCodes": { "type": "array", "items": { "type": "string" }, "description": "An empty operations stage passes immediately with zero time and resource use." },
         "predecessors": {
           "type": "object",
           "additionalProperties": { "type": "array", "items": { "type": "string" } }

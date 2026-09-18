@@ -17,6 +17,7 @@ from src.spare_mvp_abm.aircraft_support_v1.failure_engine import FailureEngineMi
 from src.spare_mvp_abm.aircraft_support_v1.maintenance_engine import MaintenanceEngineMixin
 from src.spare_mvp_abm.aircraft_support_v1.metrics_engine import MetricsEngineMixin
 from src.spare_mvp_abm.aircraft_support_v1.mission_engine import MissionEngineMixin
+from src.spare_mvp_abm.aircraft_support_v1.operations_engine import OperationsEngineMixin
 from src.spare_mvp_abm.aircraft_support_v1.model_builders import ModelBuilderMixin
 from src.spare_mvp_abm.aircraft_support_v1.support_engine import SupportEngineMixin
 from src.spare_mvp_abm.aircraft_support_v1.telemetry import TelemetryMixin
@@ -54,6 +55,7 @@ BEHAVIOR_DRIVING_FIELDS = [
     "missionProfile.periodicTasks",
     "basicMissions",
     "basicMissions[].missionPhases",
+    "basicMissions[].supportActivityName",
     "airports",
     "products[]",
     "components[].productId",
@@ -80,6 +82,8 @@ BEHAVIOR_DRIVING_FIELDS = [
     "supportActivities[].takeoffLandingInterval",
     "supportActivities[].activityCodes",
     "supportActivities[].predecessors",
+    "supportActivities[].planType",
+    "supportActivities[].planGroupId",
     "supportActivities[].maintenanceMethods",
     "supportActivities[].replacementRatio",
     "experiment.seed",
@@ -111,6 +115,7 @@ M9_7_4_COVERAGE_HARDENING_FIELDS: list[str] = []
 
 
 class AircraftSupportV1Model(
+    OperationsEngineMixin,
     FailureEngineMixin,
     MissionEngineMixin,
     MaintenanceEngineMixin,
@@ -164,6 +169,7 @@ class AircraftSupportV1Model(
             self.inputs.get("support_network", {}).get("organization_graph")
         )
         self.activities = self._build_activities()
+        self.operations_phases_enabled = self.inputs.get("operations_support_policy") == "daily-v1"
         self.mission_context = self._mission_context()
         self.preflight_activity = self._select_activity("preflight")
         self.repair_activity = self._select_activity("repair")
@@ -268,10 +274,12 @@ class AircraftSupportV1Model(
             self._process_mission_returns()
             self._process_job_progress_and_completions()
             self._evaluate_failures()
+            self._coordinate_operations_postflight()
             self._generate_preventive_jobs()
             self._create_due_preflight_jobs()
             self._start_waiting_jobs()
             self._dispatch_due_missions()
+            self._coordinate_operations_postflight()
             self._evaluate_mission_success_points()
             self._record_daily_readiness_sample_if_due()
             self._record_operational_availability_sample_if_due()
@@ -287,6 +295,7 @@ class AircraftSupportV1Model(
                     {"reason": stop_reason, "conditions": stop_conditions},
                 )
             if should_stop or self.minute >= self.duration_minutes:
+                self._finalize_operations_cutoff()
                 self.running = False
             return True
         except Exception:
