@@ -21158,13 +21158,13 @@ function renderLiteMesaDowntimeEventSnapshots(snapshots) {
         <h3>停机事件一览</h3>
         <span>${snapshots.length} 条停机事件</span>
       </div>
-      ${page.rows.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, page.offset + index)).join("")}
+      ${page.rows.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, page.offset + index, index === 0)).join("")}
     </div>
     ${renderPagination("analysis-event-snapshots", page)}
   `;
 }
 
-function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
+function renderLiteMesaDowntimeEventSnapshot(snapshot, index, expanded = index === 0) {
   const aircraft = Array.isArray(snapshot.aircraft_state?.aircraft) ? snapshot.aircraft_state.aircraft : [];
   const aircraftSummary = snapshot.aircraft_state?.summary || snapshot.aircraft_state || {};
   const resources = Array.isArray(snapshot.support_resources) ? snapshot.support_resources : [];
@@ -21175,7 +21175,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
     selectedExperimentPlanProjectJson()
   );
   return `
-    <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
+    <details class="lite-mesa-event-snapshot" ${expanded ? "open" : ""}>
       <summary>
         <strong>${htmlEscape(downtimeFactorLabel(downtimeEventFactor(snapshot)))} · ${htmlEscape(downtimeOperationalEventLabel(sourceEventType))}</strong>
         <span>随机种子 ${htmlEscape(snapshot.seed ?? "-")} / 仿真时刻 ${htmlEscape(formatDowntimeSimulationTime(snapshot.simulation_time))} / ${htmlEscape(downtimeSnapshotResultLabel(snapshot.result))}</span>

@@ -6618,6 +6618,11 @@ test("downtime details and snapshots paginate independently and export the full 
     await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
     assert.match(runtime.appNode.innerHTML, /随机种子 1020/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /随机种子 1000/);
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1020/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "analysis-event-snapshots", paginationDelta: "1" });
+    assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1040/);
     await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-downtime-factor-analysis" });
     assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[1].rows.length, 41);
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false, type: "checkbox" });
