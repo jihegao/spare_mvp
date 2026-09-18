@@ -19758,13 +19758,14 @@ function renderLineChart(points, { ariaLabel = "任务可靠度趋势" } = {}) {
   };
   const line = points.map((point) => `${xScale(point.x).toFixed(1)},${yScale(point.y).toFixed(1)}`).join(" ");
   const yTicks = [0, 0.5, 1];
+  const labelStride = Math.max(1, Math.ceil((points.length - 1) / 5));
   return `
     <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${htmlEscape(ariaLabel)}">
       <line class="line-chart-axis line-chart-y-axis" x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}"></line>
       <line class="line-chart-axis line-chart-x-axis" x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}"></line>
       ${yTicks.map((tick) => `<line class="line-chart-tick" x1="${plotLeft - 4}" y1="${yScale(tick).toFixed(1)}" x2="${plotRight}" y2="${yScale(tick).toFixed(1)}"></line><text class="line-chart-y-label" x="${plotLeft - 10}" y="${(yScale(tick) + 4).toFixed(1)}">${tick.toFixed(1)}</text>`).join("")}
       <polyline points="${line}"></polyline>
-      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"><title>${htmlEscape(point.tooltip || `${point.x}：${point.y}`)}</title></circle><text class="line-chart-x-label" x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
+      ${points.map((point, index) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"><title>${htmlEscape(point.tooltip || `${point.x}：${point.y}`)}</title></circle>${index % labelStride === 0 || index === points.length - 1 ? `<text class="line-chart-x-label" text-anchor="${index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}" x="${xScale(point.x).toFixed(1)}" y="168">${htmlEscape(point.label ?? point.x)}</text>` : ""}`).join("")}
     </svg>
   `;
 }
@@ -21014,6 +21015,7 @@ function renderLiteMesaMissionReliabilityWaveChart(detailRows) {
   }
   const points = rows.map((row, index) => ({
     x: Number(row.sequence || index + 1),
+    label: row.waveLabel,
     y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0),
     tooltip: `${row.waveLabel || row.waveKey || `第${row.sequence ?? index + 1}波`}（${Number(row.sampleCount || 0)} 个样本）：${formatReliabilityPercent(row.meanMissionSuccessRate ?? row.missionSuccessRate)}`
   }));
