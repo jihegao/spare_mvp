@@ -1517,7 +1517,7 @@ VISUAL_SIMULATION_STYLE = """
 .visual-simulation-page .v-card__title { color: #52677f; font-size: 14px; font-weight: 700; padding-bottom: 4px; }
 .visual-simulation-page .v-card__text { padding-top: 4px; }
 .visual-simulation-page .v-btn { color: #172033; border-color: #cbd7e6; background: #f7faff; box-shadow: none; }
-.visual-simulation-page .v-btn.primary { background: #0f5cbf !important; border-color: #0f5cbf !important; color: #ffffff !important; }
+.visual-simulation-page .v-btn.primary, .visual-simulation-page .v-btn.bg-primary { background: #0f5cbf !important; border-color: #0f5cbf !important; color: #ffffff !important; }
 .visual-simulation-page .v-input input { color: #172033; }
 .visual-simulation-page .sim-html { width: 100%; }
 .visual-simulation-page .sim-section-title, .visual-simulation-page .sim-detail-title { margin: 2px 0 9px; color: #52677f; font-size: 14px; font-weight: 700; }
