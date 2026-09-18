@@ -24,7 +24,7 @@
 
 ## 候选源码和打包
 
-Solara 浏览器资源也必须离线准备：Python wheels 不包含运行时 CDN 的全部 JS、动态 chunks、CSS 和字体。`packaging/solara-assets.lock.json` 锁定官方 npm 归档及每个输出文件 SHA-256；准备脚本只读取归档中的受审文件，不执行 npm 安装脚本。完整 dist 保留动态资源（不含调试 sourcemap），并包括 Font Awesome、RequireJS、KaTeX 和 Mermaid。新版 runtime 准备脚本同时生成 `solara-cdn/`；已有已验证 runtime 可独立准备资源而无需重建：
+Solara 浏览器资源也必须离线准备：Python wheels 不包含运行时 CDN 的全部 JS、动态 chunks、CSS 和字体。`packaging/solara-assets.lock.json` 锁定官方 npm 归档及每个输出文件 SHA-256；准备脚本只读取归档中的受审文件，不执行 npm 安装脚本。dist 保留生产动态资源（不含调试 sourcemap，以及两项仅被未压缩开发入口引用的长名称 dev chunks），并包括 Font Awesome、RequireJS、KaTeX 和 Mermaid。原包 webpack 配置将 `.min.js` 标为 production；app8 的动态加载器只请求 `692`、`872` 两个 `.min.js` chunks，app7 对应 `155`、`306`，准备和校验均检查该闭包。新版 runtime 准备脚本同时生成 `solara-cdn/`；已有已验证 runtime 可独立准备资源而无需重建：
 
 ```bash
 python scripts/prepare-solara-assets.py --destination /tmp/spare-solara-cdn

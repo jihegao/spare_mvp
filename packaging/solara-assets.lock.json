@@ -586,18 +586,6 @@
           "size": 14197
         },
         {
-          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/vendors-solara-widget-manager8_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager8-d5d6d2.solara-vuetify-app8.js",
-          "member": "package/dist/vendors-solara-widget-manager8_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager8-d5d6d2.solara-vuetify-app8.js",
-          "sha256": "c7f0721e08f847106e226fbcd8b02466c2acea6ff3d3b2db3e102493fe2329ad",
-          "size": 948921
-        },
-        {
-          "path": "@widgetti/solara-vuetify3-app@5.0.2/dist/vendors-solara-widget-manager_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager_n-7d48b1.solara-vuetify-app7.js",
-          "member": "package/dist/vendors-solara-widget-manager_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager_n-7d48b1.solara-vuetify-app7.js",
-          "sha256": "a686b7340cb0ed675c6b0f16cf4aee3b7c4ba7611c598557bb8f4052f6bf9f3c",
-          "size": 1008470
-        },
-        {
           "path": "@widgetti/solara-vuetify3-app@5.0.2/package.json",
           "member": "package/package.json",
           "sha256": "571de12784554da0fd82724b18a9f33f5b7ef1722e9fb860d50bfebe1b4930dc",
@@ -3387,6 +3375,26 @@
           "sha256": "9485f0917f97fcf4f63a5ea365200ffd57f123f451382a2f9a1ad2e2fd51ac9b",
           "size": 86483
         }
+      ]
+    }
+  ],
+  "excluded_development_assets": [
+    "@widgetti/solara-vuetify3-app@5.0.2/dist/vendors-solara-widget-manager_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager_n-7d48b1.solara-vuetify-app7.js",
+    "@widgetti/solara-vuetify3-app@5.0.2/dist/vendors-solara-widget-manager8_node_modules_codemirror_mode_apl_apl_js-solara-widget-manager8-d5d6d2.solara-vuetify-app8.js"
+  ],
+  "production_bundles": [
+    {
+      "entry": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app7.min.js",
+      "chunks": [
+        "@widgetti/solara-vuetify3-app@5.0.2/dist/155.solara-vuetify-app7.min.js",
+        "@widgetti/solara-vuetify3-app@5.0.2/dist/306.solara-vuetify-app7.min.js"
+      ]
+    },
+    {
+      "entry": "@widgetti/solara-vuetify3-app@5.0.2/dist/solara-vuetify-app8.min.js",
+      "chunks": [
+        "@widgetti/solara-vuetify3-app@5.0.2/dist/692.solara-vuetify-app8.min.js",
+        "@widgetti/solara-vuetify3-app@5.0.2/dist/872.solara-vuetify-app8.min.js"
       ]
     }
   ]

@@ -5,6 +5,7 @@ import argparse
 import hashlib
 from io import BytesIO
 import json
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import tarfile
@@ -56,6 +57,27 @@ def verify(root: Path, lock: dict) -> None:
     if actual != expected:
         changed = sorted(name for name in actual.keys() | expected.keys() if actual.get(name) != expected.get(name))
         raise ValueError(f'Solara frontend cache missing, extra or changed files: {changed[:10]}')
+    verify_production_closure(root, lock)
+
+
+def verify_production_closure(root: Path, lock: dict) -> None:
+    """Verify the pinned webpack production loader and every dynamic chunk edge."""
+    known = {entry['path'] for package in lock['packages'] for entry in package['files']}
+    for bundle in lock.get('production_bundles', []):
+        names = {bundle['entry'], *bundle['chunks']}
+        if not names.issubset(known):
+            raise ValueError('Production bundle refers to an unlocked asset')
+        source = (root / bundle['entry']).read_text(encoding='utf-8')
+        rule = re.search(r'\.u=([A-Za-z_$][\w$]*)=>\1\+"([^"\n]+)"', source)
+        if not rule:
+            raise ValueError('Unsupported production webpack chunk loader')
+        referenced = set()
+        for name in names:
+            text = (root / name).read_text(encoding='utf-8')
+            for chunk in re.findall(r'\.e\((\d+)\)', text):
+                referenced.add(str(PurePosixPath(bundle['entry']).parent / (chunk + rule[2])))
+        if referenced != set(bundle['chunks']):
+            raise ValueError('Production webpack dynamic chunk closure differs from the reviewed lock')
 
 
 def prepare(destination: Path, lock: dict, offline_source: Path | None = None) -> None:

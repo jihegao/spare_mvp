@@ -4,7 +4,7 @@ import hashlib
 from io import BytesIO
 import importlib.util
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import tarfile
 import tempfile
 import unittest
@@ -79,6 +79,27 @@ class SolaraOfflineAssetTest(unittest.TestCase):
         self.assertIn('requirejs@2.3.6/require.js', names)
         self.assertIn('katex@0.16.9/dist/contrib/auto-render.min.js', names)
         self.assertIn('mermaid@10.8.0/dist/mermaid.min.js', names)
+        target = PureWindowsPath(r'C:\Users\user\Models\spare_mvp-acceptance-20260918T151500-1091c98\package-62a5412\assets\solara-cdn')
+        self.assertLess(max(len(str(target / name)) for name in names), 260)
+        self.assertEqual(len(lock['excluded_development_assets']), 2)
+        self.assertTrue(set(lock['excluded_development_assets']).isdisjoint(names))
+
+    def test_production_closure_rejects_unlocked_dynamic_edges_and_loader_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            entry = root / 'app.min.js'
+            entry.write_text('__webpack_require__.u=e=>e+".min.js";n.e(692);')
+            (root / '692.min.js').write_text('loaded chunk')
+            lock = {'packages': [{'files': [{'path': 'app.min.js'}, {'path': '692.min.js'}]}],
+                    'production_bundles': [{'entry': 'app.min.js', 'chunks': ['692.min.js']}]}
+            assets.verify_production_closure(root, lock)
+            (root / '692.min.js').write_text('n.e(999);')
+            with self.assertRaisesRegex(ValueError, 'closure differs'):
+                assets.verify_production_closure(root, lock)
+            (root / '692.min.js').write_text('loaded chunk')
+            entry.write_text('__webpack_require__.u=e=>e+".development.js";n.e(692);')
+            with self.assertRaisesRegex(ValueError, 'closure differs'):
+                assets.verify_production_closure(root, lock)
 
     def test_lock_rejects_untrusted_archive_and_unsafe_or_ambiguous_paths(self):
         _, lock = self.fixture()
