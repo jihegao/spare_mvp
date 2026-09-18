@@ -19575,7 +19575,7 @@ function renderFormalProjectionBody(formalProjection) {
     const maxShortage = rows.reduce((maxValue, row) => Math.max(maxValue, row.shortage || row.shortageProbability || 0), 1);
     return `
       <div class="toolbar-row"><label>机型 <select data-spare-aircraft-filter><option value="">全部已建模机型</option>${aircraftModels.map((model) => `<option value="${htmlEscape(model)}" ${spareAircraftFilter === model ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}</select></label></div><div class="table-wrap">
-        <table>
+        <table data-paginate="formal-analysis-details">
           <thead><tr><th>机型</th><th>产品</th><th>${renderSpareShortfallSortHeading("需求数量", "demand")}</th><th>${renderSpareShortfallSortHeading("满足率", "fillRate")}</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
@@ -19593,7 +19593,7 @@ function renderFormalProjectionBody(formalProjection) {
     const maxCarryQuantity = rows.reduce((maxValue, row) => Math.max(maxValue, row.qty || 0), 1);
     return `
       <div class="toolbar-row"><label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求量为 0</label><span>满足率下限：${fixed(rows[0]?.minimumSatisfactionRate || 0.9, 2)}；满足约束后利用率越高越优</span></div><div class="table-wrap">
-        <table>
+        <table data-paginate="formal-analysis-details">
           <thead><tr><th>机型</th><th>备件</th><th>需求</th><th>推荐携行倍率</th><th>备件满足率</th><th>数量</th><th>备件利用率</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
@@ -19623,7 +19623,7 @@ function renderFormalProjectionBody(formalProjection) {
         <div class="factor-column"><h4>结果来源</h4><div class="factor-list"><div class="factor-item"><span>正式分析投影</span><span>停机因素结果</span></div></div></div>
       </div>
       <div class="table-wrap">
-        <table>
+        <table data-paginate="formal-analysis-details">
           <thead><tr><th>停机因素</th><th>事件次数</th><th>累计停机时长(h)</th><th>时长贡献度</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${row.count}</td><td>${fixed(row.downtimeHours, 2)}</td><td>${pct(row.durationContribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), row.durationContribution >= 0.35 ? "red" : "blue")}</td></tr>`).join("")}</tbody>
         </table>
@@ -19632,7 +19632,7 @@ function renderFormalProjectionBody(formalProjection) {
         <button type="button" data-downtime-snapshot-export ${snapshots.length ? "" : "disabled"}>导出异常快照</button>
       </div>
       <div class="table-wrap">
-        <table>
+        <table data-paginate="formal-analysis-details">
           <thead><tr><th>序号</th><th>时间</th><th>事件</th><th>结果</th><th>保障活动状态</th><th>作业</th><th>状态</th><th>采样位置</th><th>快照动作</th></tr></thead>
           <tbody>${snapshots.map((snapshot, index) => `
             <tr>
