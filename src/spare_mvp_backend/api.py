@@ -848,8 +848,11 @@ class BackendApi:
         self.repository.upsert_modeling_snapshot(snapshot)
         return snapshot
 
-    def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
-        return self._upsert_experiment_plan(project_id, config)
+    def create_experiment_plan(self, project_id: str, config: dict[str, Any], *, actor_user_id: str | None = None) -> dict[str, Any]:
+        if actor_user_id is not None:
+            self._require_role(actor_user_id, {"系统管理员", "数据管理员", "普通用户"},
+                               action="experiment_plans.create", resource_type="project", resource_id=project_id)
+        return self._upsert_experiment_plan(project_id, config, actor_user_id=actor_user_id)
 
     def update_experiment_plan(
         self,
@@ -885,6 +888,7 @@ class BackendApi:
             config,
             experiment_plan_id=experiment_plan_id,
             status=existing.get("status", "draft"),
+            actor_user_id=existing.get("created_by"),
         )
 
     def _upsert_experiment_plan(
@@ -894,6 +898,7 @@ class BackendApi:
         *,
         experiment_plan_id: str | None = None,
         status: str = "draft",
+        actor_user_id: str | None = None,
     ) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
         try:
@@ -916,6 +921,8 @@ class BackendApi:
         if snapshot is None:
             snapshot = self.create_modeling_snapshot(project_id)
         plan_key = {"config": plan_config, "modeling_snapshot_id": snapshot["snapshot_id"]}
+        if actor_user_id is not None:
+            plan_key["created_by"] = actor_user_id
         plan = {
             "experiment_plan_id": experiment_plan_id or f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
             "project_id": project_id,
@@ -923,6 +930,7 @@ class BackendApi:
             "schema_version": "experiment-plan-v0",
             "project_version": project["project_version"],
             "status": status,
+            "created_by": actor_user_id,
             "config": plan_config,
         }
         try:
@@ -1051,6 +1059,23 @@ class BackendApi:
             ) from exc
         return frozen
 
+    def unfreeze_experiment_plan(self, project_id: str, experiment_plan_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        self._require_role(actor_user_id, {"系统管理员", "数据管理员", "普通用户"},
+                           action="experiment_plans.unfreeze", resource_type="experiment_plan", resource_id=experiment_plan_id)
+        plan = self.repository.get_experiment_plan(experiment_plan_id)
+        if plan.get("project_id") != project_id:
+            raise BackendApiError("experiment_plan_project_mismatch", "ExperimentPlan does not belong to project")
+        if plan.get("status") != "frozen":
+            return plan
+        draft = {**plan, "status": "draft"}
+        draft.pop("canonical_fingerprint", None)
+        draft.pop("frozen_at", None)
+        try:
+            self.repository.compare_and_swap_unfreeze_experiment_plan(plan, draft)
+        except ValueError as exc:
+            raise BackendApiError("experiment_plan_version_conflict", str(exc)) from exc
+        return draft
+
     def list_experiment_plans(self, project_id: str) -> dict[str, Any]:
         return {
             "project_id": project_id,
@@ -1064,13 +1089,12 @@ class BackendApi:
         actor_user_id: str | None = None,
     ) -> dict[str, Any]:
         actor_user_id = _require_m7_actor(actor_user_id)
-        self._require_role(
-            actor_user_id,
-            {"系统管理员", "数据管理员"},
-            action="experiment_plans.delete",
-            resource_type="experiment_plan",
-            resource_id=experiment_plan_id,
-        )
+        plan = self.repository.get_experiment_plan(experiment_plan_id)
+        allowed_roles = {"系统管理员", "数据管理员"}
+        if plan.get("created_by") == actor_user_id:
+            allowed_roles.add("普通用户")
+        self._require_role(actor_user_id, allowed_roles, action="experiment_plans.delete",
+                           resource_type="experiment_plan", resource_id=experiment_plan_id)
         try:
             with self.visualization_session_lifecycle_lock:
                 deleted = self.run_service.delete_experiment_plan(
@@ -2138,7 +2162,7 @@ class BackendApi:
             user = self.repository.get_user(actor_user_id)
         except KeyError as exc:
             self.repository.insert_audit_event(
-                actor_user_id=actor_user_id,
+                actor_user_id=None,
                 action=action,
                 resource_type=resource_type,
                 resource_id=resource_id,

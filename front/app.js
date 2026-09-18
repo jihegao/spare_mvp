@@ -2265,6 +2265,12 @@ function bindEvents() {
       return;
     }
 
+    const experimentPlanUnfreezeButton = event.target.closest("[data-experiment-plan-unfreeze]");
+    if (experimentPlanUnfreezeButton) {
+      unfreezeExperimentPlanFromList(experimentPlanUnfreezeButton.dataset.experimentPlanUnfreeze || "").finally(() => render());
+      return;
+    }
+
     const experimentPlanFreezeButton = event.target.closest("[data-experiment-plan-freeze]");
     if (experimentPlanFreezeButton) {
       freezeExperimentPlanFromList(experimentPlanFreezeButton.dataset.experimentPlanFreeze || "").finally(() => render());
@@ -12192,11 +12198,11 @@ function renderExperimentPlanList(page) {
               <td>${htmlEscape(plan.run_count ?? 0)}</td>
               <td><span class="badge">${htmlEscape(plan.status)}</span></td>
               <td class="table-action-cell">
-                ${String(plan.status || "").toLowerCase() === "frozen"
-                  ? `<span class="badge">已冻结，不可编辑</span>`
+                ${String(plan.plan_status || plan.status || "").toLowerCase() === "frozen"
+                  ? `<span class="badge">已冻结，不可编辑</span><button type="button" class="btn-secondary" data-experiment-plan-unfreeze="${htmlEscape(plan.experiment_plan_id)}">取消冻结实验</button>`
                   : `<button type="button" class="inline-action" data-experiment-plan-edit="${htmlEscape(plan.experiment_plan_id)}" data-experiment-plan-name="${htmlEscape(plan.name)}">编辑</button>
                     <button type="button" class="btn-secondary" data-experiment-plan-freeze="${htmlEscape(plan.experiment_plan_id)}">冻结</button>`}
-                <button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>
+                ${canDeleteExperimentPlan(plan) ? `<button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>` : ""}
               </td>
             </tr>
           `).join("") : `<tr><td colspan="8">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
@@ -12212,6 +12218,8 @@ function experimentPlanRowFromBackend(plan, page) {
   const latestRun = Array.isArray(plan.runs) && plan.runs.length ? plan.runs[0] : null;
   return {
     experiment_plan_id: plan.experiment_plan_id || "",
+    created_by: plan.created_by || null,
+    plan_status: plan.status || "draft",
     selectionKey: experimentPlanSelectionKey(plan),
     name: config.name || projectJson.experiment?.name || plan.experiment_plan_id || "未命名方案",
     module: page.module,
@@ -13037,6 +13045,7 @@ async function handleLogin() {
     backendAuthToken = session.session.token;
     localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
     currentUser = {
+      user_id: session.user.user_id,
       username: session.user.username,
       role: session.user.role
     };
@@ -13063,6 +13072,7 @@ async function restoreStoredBackendSessionOnBoot() {
     const session = await backendApi.getSession();
     const user = session?.user || {};
     currentUser = {
+      user_id: user.user_id,
       username: user.username || currentUser.username,
       role: user.role || currentUser.role
     };
@@ -13661,7 +13671,7 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     experimentPlanListStatus = "当前方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
     return;
   }
-  if (!canManageM7Lifecycle()) {
+  if (!canDeleteExperimentPlan(backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId))) {
     experimentPlanListStatus = `当前角色 ${currentUser.role || "未知"} 无权删除仿真实验方案`;
     return;
   }
@@ -13685,6 +13695,24 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     await refreshM7RunArtifactPanel();
   } catch (err) {
     experimentPlanListStatus = `删除方案失败：${formatBackendError(err)}`;
+  }
+}
+
+function canDeleteExperimentPlan(plan) {
+  return canManageM7Lifecycle() || Boolean(plan?.created_by && plan.created_by === currentUser?.user_id);
+}
+
+async function unfreezeExperimentPlanFromList(experimentPlanId) {
+  if (!experimentPlanId) return;
+  try {
+    await backendApi.unfreezeExperimentPlan(currentBackendProjectId(), experimentPlanId);
+    experimentPlanListStatus = `方案 ${experimentPlanId} 已取消冻结。`;
+    await refreshExperimentPlanList(currentBackendProjectId(), { force: true });
+    if (experimentPlan?.experiment_plan_id === experimentPlanId) {
+      experimentPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId) || null;
+    }
+  } catch (err) {
+    experimentPlanListStatus = `取消冻结失败：${formatBackendError(err)}`;
   }
 }
 

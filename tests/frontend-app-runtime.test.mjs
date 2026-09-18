@@ -7485,6 +7485,28 @@ test("run context defaults to current Project and excludes unsaved or invalid ex
   }
 });
 
+test("restored ordinary user can delete owned plans but not other or unowned plans", async () => {
+  const projectJson = createRuntimeProjectJson();
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    sessionUser: { user_id: "user-basic", username: "user", role: "普通用户" },
+    projectJson,
+    experimentPlans: [
+      { experiment_plan_id: "own-plan", created_by: "user-basic", runs: [{ run_id: "completed-run", status: "succeeded" }] },
+      { experiment_plan_id: "other-plan", created_by: "user-data" },
+      { experiment_plan_id: "legacy-plan" }
+    ].map((plan) => ({ ...plan, status: "frozen", config: { name: plan.experiment_plan_id, projectJson } }))
+  });
+  try {
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-delete="own-plan"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-delete="(?:other|legacy)-plan"/);
+    for (const id of ["own-plan", "other-plan", "legacy-plan"]) {
+      assert.ok(runtime.appNode.innerHTML.includes(`data-experiment-plan-unfreeze="${id}"`));
+    }
+  } finally { runtime.restore(); }
+});
+
 test("experiment plan list selection editing and saving do not change the run context", async () => {
   const planProjectJson = createRuntimeProjectJson({
     project_id: "project-management-plan",
