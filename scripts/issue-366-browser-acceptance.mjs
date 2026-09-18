@@ -105,7 +105,7 @@ try {
         const body = await cdp.send('Network.getResponseBody', { requestId: event.requestId });
         const payload = JSON.parse(body.base64Encoded ? Buffer.from(body.body, 'base64').toString('utf8') : body.body);
         entry.status = ['session_complete', 'blocked'].includes(payload?.status) ? payload.status : 'unexpected';
-        entry.issue_codes = [...(payload?.issues || []), ...(payload?.errors || [])].map(item => item?.code).filter(code => /^[a-z0-9_]+$/.test(code || '')); 
+        entry.issue_codes = [...(payload?.issues || []), ...(payload?.errors || [])].map(item => item?.code).filter(code => /^[a-z0-9_]+$/.test(code || ''));
         entry.completed = number(payload?.completed_sample_count ?? payload?.sample_count);
         entry.failed = number(payload?.failed_sample_count ?? payload?.failed_samples?.length ?? 0);
         entry.session_id = /^analysis-session-[a-f0-9]+$/.test(payload?.analysis_session_id || '') ? payload.analysis_session_id : null;
