@@ -756,10 +756,10 @@ class SimulationAdapter:
         )
         support_node_aliases = self._support_node_reference_aliases(project)
         basic_missions = copy.deepcopy(self._basic_missions(project))
-        for mission in basic_missions:
-            mission["operations_plan_group_id"] = self._operations_plan_group(project, mission)
         composite_tasks = copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks")))
         self._normalize_mission_task_field_ownership(basic_missions, composite_tasks)
+        for target, effective_mission, _path in self._operations_plan_targets(basic_missions, composite_tasks):
+            target["operations_plan_group_id"] = self._operations_plan_group(project, effective_mission)
         periodic_plan = self._compile_periodic_profile_plan(mission_profile, composite_tasks)
         duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
         stop_policy = self._runtime_stop_policy_config(project, runtime_config, duration_minutes)
@@ -1665,6 +1665,31 @@ class SimulationAdapter:
             compiled["plan_group_id"] = str(activity["planGroupId"])
         return compiled
 
+    def _operations_plan_targets(
+        self, basic_missions: list[dict[str, Any]], composite_tasks: list[dict[str, Any]],
+    ) -> list[tuple[dict[str, Any], dict[str, Any], str]]:
+        """Bind each task item using its effective aircraft type, preserving basic references."""
+        by_reference: dict[str, dict[str, Any]] = {}
+        for index, mission in enumerate(basic_missions):
+            mission_id = str(mission.get("id") or mission.get("missionId") or mission.get("taskNo") or f"basic-{index + 1}")
+            by_reference[mission_id] = mission
+            for alias in (mission.get("name"), mission.get("basicTaskName"), mission.get("missionId"), mission.get("taskNo")):
+                if str(alias or "").strip():
+                    by_reference.setdefault(str(alias).strip(), mission)
+        targets = []
+        referenced: set[int] = set()
+        for composite_index, composite in enumerate(composite_tasks):
+            for item_index, item in enumerate(self._dict_list(composite.get("taskItems"))):
+                basic = next((by_reference[str(item[key]).strip()] for key in ("basicMissionId", "basicTaskName")
+                              if str(item.get(key) or "").strip() in by_reference), basic_missions[0] if basic_missions else {})
+                referenced.add(id(basic))
+                effective = {**basic, "equipmentType": item.get("equipmentType") or basic.get("equipmentType") or ""}
+                path = f"missionProfile.compositeTasks[{composite_index}].taskItems[{item_index}].equipmentType"
+                targets.append((item, effective, path))
+        targets.extend((basic, basic, f"basicMissions[{index}].supportActivityName")
+                       for index, basic in enumerate(basic_missions) if id(basic) not in referenced)
+        return targets
+
     def _operations_plan_group(self, project: dict[str, Any], mission: dict[str, Any]) -> str:
         from src.spare_mvp_abm.aircraft_support_v1.component_index import aircraft_type_tokens
 
@@ -1674,8 +1699,12 @@ class SimulationAdapter:
             return ""
         reference = str(mission.get("supportActivityName") or "").strip()
         models = aircraft_type_tokens(mission.get("equipmentType"))
-        compatible = [row for row in activities if not models or not aircraft_type_tokens(row.get("aircraftModel"))
-                      or models & aircraft_type_tokens(row.get("aircraftModel"))]
+        if not models:
+            profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
+            models = frozenset(token for value in self._aircraft_support_v1_aircraft_summary(project, profile)["models"]
+                               for token in aircraft_type_tokens(value))
+        compatible = [row for row in activities if not aircraft_type_tokens(row.get("aircraftModel"))
+                      or models <= aircraft_type_tokens(row.get("aircraftModel"))]
         if reference:
             compatible = [row for row in compatible if row.get("activityName") == reference]
         groups = {str(row.get("planGroupId") or "") for row in compatible} - {""}
@@ -1687,7 +1716,7 @@ class SimulationAdapter:
             if len(stage) != 1:
                 raise ValueError("operations plan group must contain exactly one of each phase")
             stage_models = aircraft_type_tokens(stage[0].get("aircraftModel"))
-            if models and stage_models and not models & stage_models:
+            if stage_models and not models <= stage_models:
                 raise ValueError("all operations plan phases must apply to the task aircraft type")
         return group
 
@@ -2063,11 +2092,13 @@ class SimulationAdapter:
 
         issues.extend(self._periodic_profile_compile_issues(project))
         issues.extend(self._aircraft_pre_life_compile_issues(project))
-        for index, mission in enumerate(self._basic_missions(project)):
+        for _target, mission, path in self._operations_plan_targets(
+            self._basic_missions(project), self._dict_list(mission_profile.get("compositeTasks"))
+        ):
             try:
                 self._operations_plan_group(project, mission)
             except ValueError as error:
-                issues.append(self._compile_issue("invalid_operations_plan_reference", f"basicMissions[{index}].supportActivityName", str(error), "任务建模"))
+                issues.append(self._compile_issue("invalid_operations_plan_reference", path, str(error), "任务建模"))
 
         organization_graph = self._aircraft_support_v1_organization_graph(project)
         if organization_graph["runtime_mode"] in {"vertical", "vertical_lateral"}:

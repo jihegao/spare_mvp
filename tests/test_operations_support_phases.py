@@ -211,3 +211,81 @@ class OperationsSupportPhasesTest(unittest.TestCase):
         model.run()
         self.assertEqual([(job.operations_phase, job.plan_group_id) for job in model.jobs],
                          [("preflight", "ops"), ("relaunch", "other"), ("postflight", "other")])
+
+    def test_effective_composite_aircraft_override_is_rejected_at_compile_gate(self):
+        project = self.project()
+        project["missionProfile"]["compositeTasks"][0]["taskItems"][0]["equipmentType"] = "J-35"
+        project["combatUnit"]["members"][0]["model"] = "J-35"
+        project["components"][0]["aircraftModel"] = "J-35"
+        clean = ProjectJsonExporter(repo_root=ROOT).export(project)
+        result = SimulationAdapter(ROOT).compile_scenario_with_gate(clean)
+        self.assertEqual(result["status"], "blocked")
+        issue = next(issue for issue in result["issues"] if issue["code"] == "invalid_operations_plan_reference")
+        self.assertIn("taskItems[0].equipmentType", issue["field_path"])
+
+    def test_effective_override_selects_compatible_group_without_requiring_unused_basic_type(self):
+        project = self.project()
+        project["missionProfile"]["compositeTasks"][0]["taskItems"][0]["equipmentType"] = "J-35"
+        project["combatUnit"]["members"][0]["model"] = "J-35"
+        project["components"][0]["aircraftModel"] = "J-35"
+        for activity in project["supportActivities"]:
+            activity["aircraftModel"] = "J-35"
+            activity["planGroupId"] = "ops-j35"
+        for task in project["supportActivityJobs"]:
+            task["applicableAircraft"] = "J-35"
+        model = self.model(project)
+        self.assertEqual({mission.required_aircraft_type for mission in model.missions}, {"J-35"})
+        self.assertEqual({mission.operations_plan_group_id for mission in model.missions}, {"ops-j35"})
+        model.run()
+        self.assertEqual(model.completed_sorties, 2)
+        self.assertEqual({job.plan_group_id for job in model.jobs}, {"ops-j35"})
+
+    def test_one_basic_mission_can_bind_different_groups_for_each_item_aircraft(self):
+        project = self.project()
+        project["basicMissions"][0]["supportActivityName"] = ""
+        alternate = copy.deepcopy(project["supportActivities"])
+        for activity in alternate:
+            activity["id"] += "-j35"
+            activity["activityName"] += " J35"
+            activity["aircraftModel"] = "J-35"
+            activity["planGroupId"] = "ops-j35"
+            activity["activityCodes"] = []
+            activity["predecessors"] = {}
+        project["supportActivities"].extend(alternate)
+        member = copy.deepcopy(project["combatUnit"]["members"][0])
+        member.update(aircraftNo="J35-001", model="J-35")
+        project["combatUnit"]["members"].append(member)
+        component = copy.deepcopy(project["components"][0])
+        component.update(id="whole-j35", aircraftModel="J-35")
+        project["components"].append(component)
+        item = copy.deepcopy(project["missionProfile"]["compositeTasks"][0]["taskItems"][0])
+        item["equipmentType"] = "J-35"
+        project["missionProfile"]["compositeTasks"][0]["taskItems"].append(item)
+        model = self.model(project)
+        self.assertEqual({(mission.required_aircraft_type, mission.operations_plan_group_id) for mission in model.missions},
+                         {("J-15", "ops"), ("J-35", "ops-j35")})
+        model.run()
+        self.assertEqual(model.completed_sorties, 4)
+
+    def test_multitype_task_requires_every_phase_to_cover_every_selectable_model(self):
+        project = self.project()
+        project["missionProfile"]["compositeTasks"][0]["taskItems"][0]["equipmentType"] = "J-15 / J-35"
+        project["combatUnit"]["members"][0]["model"] = "J-35"
+        project["components"][0]["aircraftModel"] = "J-35"
+        adapter = SimulationAdapter(ROOT)
+        clean = ProjectJsonExporter(repo_root=ROOT).export(project)
+        self.assertEqual(adapter.compile_scenario_with_gate(clean)["status"], "blocked")
+        for stage in project["supportActivities"]:
+            stage["aircraftModel"] = "J-15、J-35"
+            stage["activityCodes"] = []
+            stage["predecessors"] = {}
+        model = self.model(project)
+        model.run()
+        self.assertEqual(model.completed_sorties, 2)
+        project["supportActivities"][-1]["aircraftModel"] = "J-15"
+        self.assertEqual(adapter.compile_scenario_with_gate(ProjectJsonExporter(repo_root=ROOT).export(project))["status"], "blocked")
+        for stage in project["supportActivities"]:
+            stage["aircraftModel"] = ""
+        model = self.model(project)
+        model.run()
+        self.assertEqual(model.completed_sorties, 2)

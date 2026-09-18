@@ -50,7 +50,7 @@
         "name": { "type": "string" },
         "duration_minutes": { "type": "integer", "minimum": 1 },
         "basic_missions": { "type": "array", "items": { "type": "object", "additionalProperties": true, "properties": { "operations_plan_group_id": { "type": "string" } } } },
-        "composite_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "composite_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true, "properties": { "taskItems": { "type": "array", "items": { "type": "object", "additionalProperties": true, "properties": { "operations_plan_group_id": { "type": "string" } } } } } } },
         "mission_calendar": {
           "type": "array",
           "items": {

@@ -702,7 +702,7 @@ class ModelBuilderMixin:
                                 basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
                                 required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
                                 support_activity_name=str(basic.get("supportActivityName") or ""),
-                                operations_plan_group_id=str(basic.get("operations_plan_group_id") or ""),
+                                operations_plan_group_id=str(item.get("operations_plan_group_id", basic.get("operations_plan_group_id")) or ""),
                                 group_name=str(item.get("groupName") or ""),
                                 wave_index=wave_index,
                                 day_index=day_index,
