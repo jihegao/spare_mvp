@@ -3365,6 +3365,194 @@ test("project list rename persists and survives creating another project from th
   }
 });
 
+test("modeling pagination keeps phase indexes and selects only the visible page before batch deletion", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-basic-mission",
+    projectJson: createRuntimeProjectJson({ basicMissions: [{
+      id: "paged-basic", name: "分页基本任务", equipmentType: "J-15", taskDurationMinutes: 90,
+      missionPhases: Array.from({ length: 21 }, (_, i) => ({ name: `阶段${i}`, phaseRatio: i === 0 ? 1 : 0 }))
+    }] })
+  });
+  try {
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-mission-phase-select="20"/);
+    await runtime.change("[data-basic-mission-phase-select-all]", {}, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "mission-phases", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="basicMissions\.0\.missionPhases\.20\.name"/);
+    await runtime.change("[data-basic-mission-phase-select-all]", {}, { checked: true });
+    await runtime.click("[data-basic-mission-phase-batch-delete]");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="mission-phases"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-mission-phase-select="/g) || []).length, 20);
+    assert.match(runtime.appNode.innerHTML, /value="阶段19"/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination keeps three operations stage lists independent and bulk selection page scoped", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivityJobs = Array.from({ length: 21 }, (_, i) => ({ activityCode: `JOB-${i}`, workName: `工作${i}`, durationMinutes: 1 }));
+  projectJson.supportActivities = ["直接准备方案", "再次出动准备方案", "飞行后检查方案"].map((planType, i) => ({
+    id: `ops-${i}`, activityType: "使用保障活动", planType, planGroupId: "ops-many",
+    activityName: "分页保障方案", aircraftModel: "J-15", activityCodes: projectJson.supportActivityJobs.map(x => x.activityCode)
+  }));
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-operations-support-activity", projectJson });
+  try {
+    await runtime.change("[data-support-activity-job-select-all]", { supportActivityJobSelectAll: "ops_preflight" }, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "support-jobs:ops_preflight", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-job="ops_preflight-20"/);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
+    assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-job="ops_postflight-20"/);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "直接准备方案" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页/);
+    await runtime.change("[data-support-activity-job-select-all]", { supportActivityJobSelectAll: "ops_preflight" }, { checked: true });
+    await runtime.click("[data-support-activity-job-batch-delete]", { supportActivityJobBatchDelete: "ops_preflight" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="support-jobs:ops_preflight"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-support-activity-job="ops_preflight-/g) || []).length, 20);
+    await runtime.click("[data-ops-support-plan-type]", { opsSupportPlanType: "飞行后检查方案" });
+    assert.match(runtime.appNode.innerHTML, /共 21 条/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination scopes basic activity select all and retains dialog resource original indexes", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivityJobs = Array.from({ length: 21 }, (_, i) => ({
+    activityCode: `BA-PAGE-${i}`, workName: `分页活动${i}`, durationMinutes: 1,
+    personnel: Array.from({ length: 21 }, (_, j) => ({ professional: `专业${j}`, quantity: 1 }))
+  }));
+  projectJson.supportActivities[0].activityCodes = projectJson.supportActivityJobs.map(x => x.activityCode);
+  projectJson.supportActivities[0].predecessors = {};
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-basic-support-activity", projectJson });
+  try {
+    await waitForRuntimeHtml(runtime, /分页活动0/, "expected paged library to hydrate");
+    await runtime.change("[data-basic-activity-select-all]", {}, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "basic-activity-library", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /共 21 条/);
+    const key = runtime.appNode.innerHTML.match(/data-basic-activity-edit="([^"]+)"/)[1];
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: key });
+    await runtime.click("[data-basic-activity-resource-dialog-open]", { basicActivityKey: key, basicActivityResourceDialogOpen: "personnel" });
+    await runtime.click("[data-pagination-key]", { paginationKey: "basic-activity-requirements:personnel", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-index="20"/);
+    const dialog = runtime.appNode.innerHTML.split('class="basic-activity-resource-config-table"')[1];
+    assert.doesNotMatch(dialog, /data-basic-activity-resource-index="0"/);
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click("[data-basic-activity-dialog-close]");
+    await runtime.change("[data-basic-activity-select-all]", {}, { checked: true });
+    await runtime.click("[data-basic-activity-batch-delete]");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="basic-activity-library"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-edit="/g) || []).length, 20);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination separates composite list items and timeline while preserving original edit paths", async () => {
+  const projectJson = createRuntimeProjectJson({ missionProfile: {
+    compositeTasks: Array.from({ length: 21 }, (_, i) => ({ id: `composite-page-${i}`, name: `复合${i}`,
+      taskItems: Array.from({ length: 21 }, (_, j) => ({ basicMissionId: "basic-runtime", groupName: `组${j}`, firstWaveTime: "08:00", dailyRepeatCount: 1, intervalHours: 1 }))
+    }))
+  } });
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-composite-task", projectJson });
+  try {
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-list", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-select-composite-task="composite-page-20"/);
+    await runtime.click("[data-select-composite-task]", { selectCompositeTask: "composite-page-20" });
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-items", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.20\.taskItems\.20\.groupName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.20\.taskItems\.0\.groupName"/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-timeline", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /<td>21<\/td>/);
+    await runtime.click("[data-pagination-key]", { paginationKey: "composite-list", paginationDelta: "-1" });
+    await runtime.click("[data-select-composite-task]", { selectCompositeTask: "composite-page-0" });
+    assert.match(runtime.appNode.innerHTML, /data-path="missionProfile\.compositeTasks\.0\.taskItems\.0\.groupName"/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination limits resource selection to the current page", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-support-personnel",
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: { tree: { id: "org-root", name: "保障组织", children: [{ id: "relay-1", name: "中继1", children: [] }] } },
+      supportNodes: [{ id: "relay-1", name: "中继1" }],
+      supportResources: Array.from({ length: 21 }, (_, i) => ({ id: `crew-${i}`, organizationNodeId: "relay-1", supportNodeName: "中继1", type: "personnel", name: `专业${i}`, model: `专业${i}`, quantity: 1 }))
+    })
+  });
+  try {
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "relay-1" });
+    await runtime.change("[data-support-resource-select-all]", { supportResourceSelectAll: "保障人员" }, { checked: true });
+    await runtime.click("[data-pagination-key]", { paginationKey: "support-resources:保障人员", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+    assert.match(runtime.appNode.innerHTML, /<td>21<\/td>/);
+    await runtime.change("[data-support-resource-select-all]", { supportResourceSelectAll: "保障人员" }, { checked: true });
+    await runtime.click("[data-support-resource-batch-delete]", { supportResourceBatchDelete: "保障人员" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-pagination-key="support-resources:保障人员"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-support-resource-select="/g) || []).length, 20);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination covers aircraft transport and profile lists without slicing fixed calendar editors", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-combat-unit",
+    projectJson: createRuntimeProjectJson({
+      combatUnit: { members: Array.from({ length: 21 }, (_, i) => ({ aircraftNo: `AC-${i}`, model: "J-15", airport: "甲板" })) },
+      transportPolicies: Array.from({ length: 21 }, (_, i) => ({ id: `transport-${i}`, name: `运输${i}`, fromSupportNodeName: `基地${i}`, toSupportNodeName: "甲板", transportTimeHours: 1 })),
+      missionProfile: {
+        periodicTasks: Array.from({ length: 21 }, (_, i) => ({ id: `week-${i}`, name: `周${i}`, compositeTasks: [] })),
+        periodicProfileLists: {
+          month: Array.from({ length: 21 }, (_, i) => ({ id: `month-${i}`, name: `月${i}`, weekProfileIds: ["week-0", "", "", ""] })),
+          year: Array.from({ length: 21 }, (_, i) => ({ id: `year-${i}`, name: `年${i}`, monthProfileIds: ["month-0", ...Array(11).fill("")] }))
+        }
+      }
+    })
+  });
+  try {
+    await runtime.click("[data-pagination-key]", { paginationKey: "combat-members", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-combat-unit-index="20"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-combat-unit-index="0"/);
+    await runtime.setHash("feature=spare-planning-logistics-support-activity");
+    await runtime.click("[data-pagination-key]", { paginationKey: "transport-policies", paginationDelta: "1" });
+    assert.match(runtime.appNode.innerHTML, /data-path="transportPolicies\.20\.name"/);
+    await runtime.setHash("feature=spare-planning-periodic-task");
+    for (const kind of ["week", "month", "year"]) {
+      await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: kind });
+      await runtime.click("[data-pagination-key]", { paginationKey: `periodic-profiles:${kind}`, paginationDelta: "1" });
+      assert.match(runtime.appNode.innerHTML, /第 2 \/ 2 页 · 共 21 条/);
+      assert.ok(runtime.appNode.innerHTML.includes(`data-periodic-profile-select="${kind}-20"`));
+    }
+    assert.equal((runtime.appNode.innerHTML.match(/data-periodic-composition-index="/g) || []).length, 12);
+    assert.match(runtime.appNode.innerHTML, /第 21 年/);
+  } finally { runtime.restore(); }
+});
+
+test("modeling pagination keeps the entire RBD SVG while node and edge detail pages move independently", async () => {
+  const components = Array.from({ length: 22 }, (_, index) => ({
+    id: `rbd-page-${index}`, name: `分页RBD节点${index}`, aircraftModel: "J-15",
+    parentId: "rbd-parent", quantity: 1, productType: "LRU"
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-reliability-block-diagram",
+    projectJson: createRuntimeProjectJson({ components: [{ id: "rbd-parent", name: "RBD父系统", aircraftModel: "J-15", parentId: "aircraft-root", quantity: 1 }, ...components], reliabilityBlockDiagram: {
+      nodes: [{ id: "rbd-parent", name: "RBD父系统", parentId: "aircraft-root", type: "component" }, ...components.map((component) => ({ ...component, type: "component" }))],
+      edges: components.slice(1).map((component, index) => ({ from: `rbd-page-${index}`, to: component.id, type: "series" }))
+    } })
+  });
+  const svg = () => runtime.appNode.innerHTML.match(/<svg class="rbd-diagram"[\s\S]*?<\/svg>/)?.[0];
+  const tableBodies = () => [...runtime.appNode.innerHTML.matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)].map(match => match[1]);
+  try {
+    await runtime.click("[data-select-rbd-equipment-component]", { selectRbdEquipmentComponent: "rbd-parent" });
+    const fullSvg = svg();
+    assert.ok(fullSvg, runtime.appNode.innerHTML);
+    assert.equal((fullSvg.match(/<g class="rbd-node /g) || []).length, 22);
+    assert.match(fullSvg, /分页RBD节点21/);
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [20, 20]);
+    await runtime.click("[data-pagination-key]", { paginationKey: "rbd-nodes", paginationDelta: "1" });
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [2, 20]);
+    assert.match(tableBodies()[0], /分页RBD节点21/);
+    assert.equal(svg(), fullSvg);
+    await runtime.click("[data-pagination-key]", { paginationKey: "rbd-edges", paginationDelta: "1" });
+    assert.deepEqual(tableBodies().map(body => (body.match(/<tr>/g) || []).length), [2, 1]);
+    assert.match(tableBodies()[1], /rbd-page-21/);
+    assert.equal(svg(), fullSvg);
+  } finally { runtime.restore(); }
+});
+
 test("equipment pagination renders twenty rows, retains original edit indexes and exports every row", async () => {
   const components = Array.from({ length: 41 }, (_, index) => ({
     id: `paged-part-${index}`, name: `分页组件${index}`, aircraftModel: "J-15",

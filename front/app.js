@@ -1,6 +1,7 @@
 import "./browser-compat.mjs";
 import { createPaginationState, renderPagination } from "./pagination.mjs";
 const tablePagination = createPaginationState();
+const modelingPageViews = new Map();
 import { ANALYSIS_SUITE_TYPES, analysisSuiteRows } from "./analysis-suite.mjs";
 
 import {
@@ -1136,6 +1137,7 @@ function bindEvents() {
   app.addEventListener("click", (event) => {
     const paginationButton = event.target.closest("[data-pagination-key]");
     if (paginationButton) {
+      clearModelingPageSelection(paginationButton.dataset.paginationKey);
       tablePagination.move(paginationButton.dataset.paginationKey, Number(paginationButton.dataset.paginationDelta));
       render();
       return;
@@ -2636,10 +2638,12 @@ function bindEvents() {
 
     const basicMissionPhaseSelectAll = event.target.closest("[data-basic-mission-phase-select-all]");
     if (basicMissionPhaseSelectAll) {
-      const phases = selectedBasicMissionPhases();
-      selectedBasicMissionPhaseIndexes = basicMissionPhaseSelectAll.checked
-        ? new Set(phases.map((_, index) => String(index)))
-        : new Set();
+      const next = new Set(selectedBasicMissionPhaseIndexes);
+      for (const { index } of modelingPageEntries("mission-phases")) {
+        if (basicMissionPhaseSelectAll.checked) next.add(String(index));
+        else next.delete(String(index));
+      }
+      selectedBasicMissionPhaseIndexes = next;
       render();
       return;
     }
@@ -5893,8 +5897,32 @@ function renderBuiltInScenario(page) {
   `;
 }
 
+function clearModelingPageSelection(key) {
+  if (key === "mission-phases") selectedBasicMissionPhaseIndexes = new Set();
+  if (key === "basic-activity-library") selectedBasicActivityKeys = new Set();
+  if (key.startsWith("support-resources:")) selectedSupportResourceKeys = new Set();
+  if (key === "transport-policies") selectedLogisticsTransportStrategyIndexes = new Set();
+  if (key.startsWith("support-jobs:")) {
+    const tabKey = key.slice("support-jobs:".length);
+    selectedSupportActivityJobKeys = new Set([...selectedSupportActivityJobKeys].filter((item) => !item.startsWith(`${tabKey}:`)));
+  }
+}
+
+function modelingPage(key, rows, context = "") {
+  const contextKey = JSON.stringify([currentBackendProjectId(), context]);
+  if (modelingPageViews.get(key)?.context !== contextKey) clearModelingPageSelection(key);
+  const view = tablePagination.slice(key, rows.map((value, index) => ({ value, index })), contextKey);
+  modelingPageViews.set(key, view);
+  return view;
+}
+
+function modelingPageEntries(key) {
+  return modelingPageViews.get(key)?.rows || [];
+}
+
 function renderCombatUnitModeling(page) {
   const members = scenario.combatUnit.members || [];
+  const memberPage = modelingPage("combat-members", members);
   const boundedSelectedIndex = clamp(selectedCombatUnitMemberIndex, 0, Math.max(members.length - 1, 0));
   selectedCombatUnitMemberIndex = boundedSelectedIndex;
   return `
@@ -5903,7 +5931,7 @@ function renderCombatUnitModeling(page) {
           <h4>飞机列表</h4>
         <div class="toolbar-row" style="margin-bottom:0;">
           <button type="button" class="btn-primary" data-combat-unit-add>新增</button>
-          <button type="button" class="btn-danger" data-combat-unit-delete>删除</button>
+          <button type="button" class="btn-danger" data-combat-unit-delete ${memberPage.rows.some(({ index }) => index === boundedSelectedIndex) ? "" : "disabled"}>删除</button>
         </div>
       </div>
       <div class="table-wrap unframed-table">
@@ -5913,7 +5941,7 @@ function renderCombatUnitModeling(page) {
             <tr><th class="combat-unit-prelife-column">已用日历天数</th><th class="combat-unit-prelife-column">累计飞行小时</th><th class="combat-unit-prelife-column">累计起落次数</th></tr>
           </thead>
           <tbody>
-            ${members.map((member, index) => `
+            ${memberPage.rows.map(({ value: member, index }) => `
               <tr class="${index === boundedSelectedIndex ? "selected-table-row" : ""}">
                 <td class="combat-unit-select-col"><input type="checkbox" data-select-combat-unit-member="${index}" ${index === boundedSelectedIndex ? "checked" : ""} aria-label="选择${htmlEscape(member.aircraftNo || `第${index + 1}架飞机`)}"></td>
                 <td>${combatUnitMemberInput(index, "aircraftNo", member.aircraftNo)}</td>
@@ -5927,6 +5955,7 @@ function renderCombatUnitModeling(page) {
           </tbody>
         </table>
       </div>
+      ${renderPagination("combat-members", memberPage)}
     </div>
   `;
 }
@@ -6033,8 +6062,9 @@ function renderBasicMissionModeling(page) {
   const selectedMission = resolveSelectedBasicMission();
   const missionPath = selectedMission.path || "basicMissions.0";
   const phases = selectedBasicMissionPhases();
+  const phasePage = modelingPage("mission-phases", phases, missionPath);
   selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(phases);
-  const allPhasesSelected = phases.length > 0 && phases.every((_, index) => selectedBasicMissionPhaseIndexes.has(String(index)));
+  const allPhasesSelected = phasePage.rows.length > 0 && phasePage.rows.every(({ index }) => selectedBasicMissionPhaseIndexes.has(String(index)));
   const phaseRatioTotal = missionPhaseRatioTotal(phases);
   const phaseRatioValid = phases.length === 0 || Math.abs(phaseRatioTotal - 1) < 0.001;
   return `
@@ -6081,7 +6111,7 @@ function renderBasicMissionModeling(page) {
             <table>
               <thead><tr><th><input type="checkbox" data-basic-mission-phase-select-all aria-label="全选任务阶段" ${allPhasesSelected ? "checked" : ""}></th><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>删除</th></tr></thead>
               <tbody>
-                ${phases.map((phase, index) => `
+                ${phasePage.rows.map(({ value: phase, index }) => `
                   <tr class="${selectedBasicMissionPhaseIndexes.has(String(index)) ? "selected-table-row" : ""}">
                     <td><input type="checkbox" data-basic-mission-phase-select="${index}" aria-label="选择任务阶段${index + 1}" ${selectedBasicMissionPhaseIndexes.has(String(index)) ? "checked" : ""}></td>
                     <td>${index + 1}</td>
@@ -6093,6 +6123,7 @@ function renderBasicMissionModeling(page) {
               </tbody>
             </table>
           </div>
+          ${renderPagination("mission-phases", phasePage)}
           <div class="table-wrap">
             <table>
               <tbody>
@@ -6164,6 +6195,9 @@ function renderCompositeTaskModeling(page) {
   const composite = selected.task || { name: "", taskItems: [] };
   const compositePath = selected.path;
   const timelineRows = buildCompositeTimelineRows(composite);
+  const listPage = modelingPage("composite-list", compositeTasks);
+  const itemPage = modelingPage("composite-items", composite.taskItems || [], compositePath);
+  const timelinePage = modelingPage("composite-timeline", timelineRows, compositePath);
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
@@ -6181,7 +6215,7 @@ function renderCompositeTaskModeling(page) {
           <table>
             <thead><tr><th>复合任务名称</th></tr></thead>
             <tbody>
-              ${compositeTasks.map((task, index) => `
+              ${listPage.rows.map(({ value: task, index }) => `
                 <tr class="clickable-table-row ${index === selected.index ? "selected-table-row" : ""}" data-select-composite-task="${htmlEscape(task.id || index)}" tabindex="0" aria-selected="${index === selected.index ? "true" : "false"}">
                   <td>${htmlEscape(task.name)}</td>
                 </tr>
@@ -6189,6 +6223,7 @@ function renderCompositeTaskModeling(page) {
             </tbody>
           </table>
         </div>
+        ${renderPagination("composite-list", listPage)}
       </div>
       <div class="detail-panel">
         <div class="detail-card">
@@ -6207,7 +6242,7 @@ function renderCompositeTaskModeling(page) {
               <table>
                 <thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量（继承）</th><th>删除</th></tr></thead>
                 <tbody>
-                  ${(composite.taskItems || []).map((item, index) => {
+                  ${itemPage.rows.map(({ value: item, index }) => {
                     const basicTask = findBasicMissionForTaskItem(item);
                     const inherited = compositeTaskInheritedBasicFields(item, basicTask);
                     return `
@@ -6227,6 +6262,7 @@ function renderCompositeTaskModeling(page) {
                 </tbody>
               </table>
             </div>
+          ${renderPagination("composite-items", itemPage)}
           ` : `<div class="alert warn">请先新增复合任务。</div>`}
         </div>
         <div class="detail-card network-card">
@@ -6235,7 +6271,7 @@ function renderCompositeTaskModeling(page) {
             <table>
               <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>出动时刻</th></tr></thead>
               <tbody>
-                ${timelineRows.map((row) => `
+                ${timelinePage.rows.map(({ value: row }) => `
                   <tr>
                     <td>${row.sequence}</td>
                     <td>${htmlEscape(row.basicTaskName)}</td>
@@ -6246,6 +6282,7 @@ function renderCompositeTaskModeling(page) {
               </tbody>
             </table>
           </div>
+          ${renderPagination("composite-timeline", timelinePage)}
           <h4>典型组合任务时序图</h4>
           ${renderCompositeTimelineChart(timelineRows)}
         </div>
@@ -6277,6 +6314,8 @@ function renderPeriodicTaskModeling(page) {
     ...compositeTasks.map((task) => ({ value: task.id, label: task.name }))
   ];
   const activeProfiles = profiles[periodicActiveProfile];
+  const profilePageKey = `periodic-profiles:${periodicActiveProfile}`;
+  const profilePage = modelingPage(profilePageKey, activeProfiles);
   const selectedProfileId = selectedPeriodicProfileIds[periodicActiveProfile];
   const selectedProfile = activeProfiles.find((item) => item.id === selectedProfileId) || activeProfiles[0];
   const profileLabels = { week: "周", month: "月", year: "年" };
@@ -6284,7 +6323,7 @@ function renderPeriodicTaskModeling(page) {
   const activeProfileList = `
     <div class="periodic-profile-list" aria-label="${activeLabel}剖面列表">
       <div class="periodic-list-head"><strong>${activeLabel}剖面列表</strong><button type="button" data-periodic-profile-add="${periodicActiveProfile}" title="新增${activeLabel}剖面">＋ 新增</button></div>
-      ${activeProfiles.length ? activeProfiles.map((item, itemIndex) => {
+      ${activeProfiles.length ? profilePage.rows.map(({ value: item, index: itemIndex }) => {
         const isSelected = item.id === selectedProfile?.id;
         const isRenaming = periodicProfileRenameState?.id === String(item.id) && periodicProfileRenameState?.type === periodicActiveProfile;
         const renameErrorId = `periodic-profile-rename-error-${periodicActiveProfile}-${itemIndex}`;
@@ -6311,6 +6350,7 @@ function renderPeriodicTaskModeling(page) {
           </div>
         `;
       }).join("") : `<div class="muted periodic-list-empty">暂无${activeLabel}剖面，请新增。</div>`}
+      ${renderPagination(profilePageKey, profilePage)}
     </div>
   `;
   const profileTabs = ["week", "month", "year"].map((type) => {
@@ -7896,6 +7936,8 @@ function renderReliabilityBlockDiagram() {
   const nodes = layout.nodes;
   const tableNodes = Array.isArray(layout.logicalNodes) ? layout.logicalNodes : nodes;
   const diagramEdges = Array.isArray(rbdProject.reliabilityBlockDiagram?.edges) ? rbdProject.reliabilityBlockDiagram.edges : [];
+  const nodePage = modelingPage("rbd-nodes", tableNodes, selectedEquipmentNodeKey);
+  const edgePage = modelingPage("rbd-edges", diagramEdges, selectedEquipmentNodeKey);
   const detailContent = nodes.length ? `
           <div class="section-head">
             <h3>装备可靠性框图</h3>
@@ -7905,15 +7947,17 @@ function renderReliabilityBlockDiagram() {
           <div class="table-wrap compact-table">
             <table>
               <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>n中取k / k-out-of-n</th></tr></thead>
-              <tbody>${tableNodes.map((node) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(reliabilityNodeTypeLabel(node))}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
+              <tbody>${nodePage.rows.map(({ value: node }) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(reliabilityNodeTypeLabel(node))}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
             </table>
           </div>
+          ${renderPagination("rbd-nodes", nodePage)}
           <div class="table-wrap compact-table">
             <table>
               <thead><tr><th>起点</th><th>终点</th><th>串联/并联/备用/k-out-of-n</th><th>权重</th></tr></thead>
-              <tbody>${diagramEdges.map((edge) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
+              <tbody>${edgePage.rows.map(({ value: edge }) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
             </table>
           </div>
+          ${renderPagination("rbd-edges", edgePage)}
   ` : importedDataEmptyState("装备可靠性框图");
   return `
     <div class="organization-layout equipment-layout rbd-layout">
@@ -8075,10 +8119,12 @@ function renderSupportOrganizationWorkbench(page) {
     selectedSupportOrgNode,
     resourceSelection ? { orgNodes: resourceSelection.resourceOrgNodes } : undefined
   ).filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const resourcePageKey = `support-resources:${activeResourceType}`;
+  const resourcePage = modelingPage(resourcePageKey, visibleResourceRows, selectedSupportOrgNode?.id);
   const supportResourceConflictMessage = visibleResourceRows.some((row) => row.conflict)
     ? "检测到同一组织和产品的多条备件记录；为防止覆盖，冲突行已禁用，请先清理重复记录。"
     : "";
-  const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
+  const allResourceRowsSelected = resourcePage.rows.length > 0 && resourcePage.rows.every(({ value: row }) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
   const resourceColumns = supportResourceDataColumns(activeResourceType);
   const resourceControlsDisabled = locked || !selectedIsEditableNode;
@@ -8123,11 +8169,12 @@ function renderSupportOrganizationWorkbench(page) {
               <div class="table-wrap">
                 <table>
                   <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${resourceControlsDisabledAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
-                  <tbody>${visibleResourceRows.map((row, index) => `
+                  <tbody>${resourcePage.rows.map(({ value: row, index }) => `
                     <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${resourceControlsDisabledAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, resourceControlsDisabled)}</td>`).join("")}</tr>
                   `).join("") || `<tr><td colspan="${resourceColumns.length + 3}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
+              ${renderPagination(resourcePageKey, resourcePage)}
             `}
           </div>
         </section>
@@ -8678,11 +8725,7 @@ function activateSupportResourceEdit(key) {
 }
 
 function toggleAllSupportResourceSelection(activeResourceType, checked) {
-  const orgTree = supportOrganizationTree();
-  const selectedOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
-  const keys = buildSupportResourceRows(activeResourceType, selectedOrgNode)
-    .filter((row) => !supportResourceDeletedKeySet().has(row.key))
-    .map((row) => row.key);
+  const keys = modelingPageEntries(`support-resources:${activeResourceType}`).map(({ value }) => value.key);
   const next = new Set(selectedSupportResourceKeys);
   for (const key of keys) {
     if (checked) next.add(key);
@@ -9526,8 +9569,7 @@ function remapSupportActivityJobPredecessors(jobs, oldCode, newCode) {
 }
 
 function toggleAllSupportActivityJobSelection(tabKey, checked) {
-  const activity = findSupportActivityByJobTabKey(tabKey);
-  const keys = supportActivityJobs(activity || {}).map((_, index) => supportActivityJobKey(tabKey, index));
+  const keys = modelingPageEntries(`support-jobs:${tabKey}`).map(({ index }) => supportActivityJobKey(tabKey, index));
   const next = new Set(selectedSupportActivityJobKeys);
   for (const key of keys) {
     if (checked) next.add(key);
@@ -9671,10 +9713,10 @@ function describeDurationProfile(profile, fallbackMinutes) {
   return `${profile.distributionType || "固定值"} ${profile.value ?? fallbackMinutes ?? ""}min`.trim();
 }
 
-function renderSupportActivityJobRows(activity, tabKey) {
+function renderSupportActivityJobRows(activity, tabKey, jobPage) {
   const jobs = supportActivityJobs(activity);
   const lockedAttr = modelingLockDisabledAttr();
-  return jobs.map((job, index) => {
+  return jobPage.rows.map(({ value: job, index }) => {
     const key = supportActivityJobKey(tabKey, index);
     return `
       <tr class="${selectedSupportActivityJobKeys.has(key) ? "selected-table-row" : ""}">
@@ -9719,13 +9761,15 @@ function supportActivityPredecessorValue(job, index) {
 
 function renderSupportActivityJobTable(activity, tabKey) {
   const jobs = supportActivityJobs(activity);
-  const selectedCount = jobs.filter((_, index) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
-  const allSelected = jobs.length > 0 && selectedCount === jobs.length;
+  const jobPageKey = `support-jobs:${tabKey}`;
+  const jobPage = modelingPage(jobPageKey, jobs, activity.id || (scenario.supportActivities || []).indexOf(activity));
+  const selectedCount = jobPage.rows.filter(({ index }) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
+  const allSelected = jobPage.rows.length > 0 && selectedCount === jobPage.rows.length;
   const dialogJob = supportActivityJobByKey(supportActivityJobDialogKey);
   const predecessorDialogJob = supportActivityJobByKey(supportActivityPredecessorDialogKey);
   const lockedAttr = modelingLockDisabledAttr();
   const body = jobs.length
-    ? renderSupportActivityJobRows(activity, tabKey)
+    ? renderSupportActivityJobRows(activity, tabKey, jobPage)
     : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
@@ -9737,6 +9781,7 @@ function renderSupportActivityJobTable(activity, tabKey) {
         <tbody>${body}</tbody>
       </table>
     </div>
+    ${renderPagination(jobPageKey, jobPage)}
     ${dialogJob?.tabKey === tabKey ? renderSupportActivityJobDialog(dialogJob) : ""}
     ${predecessorDialogJob?.tabKey === tabKey ? renderSupportActivityPredecessorDialog(predecessorDialogJob) : ""}
     ${renderSupportActivityGanttChart(activity, tabKey)}
@@ -10016,7 +10061,8 @@ function supportActivityJobBasicActivitySelect(selectedJob) {
 
 function renderBasicActivityLibrary() {
   const rows = filteredBasicActivityLibraryRows();
-  const allSelected = rows.length > 0 && rows.every((row) => selectedBasicActivityKeys.has(row.key));
+  const libraryPage = modelingPage("basic-activity-library", rows, [basicActivityQuery, selectedBasicActivityImportType]);
+  const allSelected = libraryPage.rows.length > 0 && libraryPage.rows.every(({ value: row }) => selectedBasicActivityKeys.has(row.key));
   const dialogRow = basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY
     ? basicActivityDraft
     : basicActivityLibraryRows().find((row) => row.key === basicActivityDialogKey);
@@ -10049,7 +10095,7 @@ function renderBasicActivityLibrary() {
               <th>编辑</th>
             </tr>
           </thead>
-          <tbody>${rows.map((row, index) => `
+          <tbody>${libraryPage.rows.map(({ value: row, index }) => `
             <tr>
               <td><input type="checkbox" data-basic-activity-select="${htmlEscape(row.key)}" ${selectedBasicActivityKeys.has(row.key) ? "checked" : ""} aria-label="选择${htmlEscape(row.workName || `基本保障活动${index + 1}`)}"${lockedAttr}></td>
               <td>${index + 1}</td>
@@ -10063,6 +10109,7 @@ function renderBasicActivityLibrary() {
           `).join("")}</tbody>
         </table>
       </div>
+      ${renderPagination("basic-activity-library", libraryPage)}
       ${dialogRow ? renderBasicActivityEditor(dialogRow, basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY) : ""}
     </div>
   `;
@@ -10175,12 +10222,14 @@ function renderBasicActivityResourceSectionHead(row, resourceKind, label) {
 }
 
 function renderBasicActivityResourceSummaryTable(requirements, resourceKind) {
+  const summaryKey = `basic-activity-summary:${resourceKind}`;
+  const summaryPage = modelingPage(summaryKey, requirements, basicActivityDialogKey);
   if (!requirements.length) return `<div class="muted">暂无配置，点击新增配置多条${basicActivityResourceKindLabel(resourceKind)}需求</div>`;
   return `
     <div class="basic-activity-resource-summary">
       <table>
         <thead><tr><th>${resourceKind === "personnel" ? "专业" : "名称"}</th><th>数量</th></tr></thead>
-        <tbody>${requirements.map((item) => `
+        <tbody>${summaryPage.rows.map(({ value: item }) => `
           <tr>
             <td>${htmlEscape(basicActivityRequirementDisplayName(item, resourceKind))}</td>
             <td>${htmlEscape(item.quantity ?? 1)}</td>
@@ -10188,6 +10237,7 @@ function renderBasicActivityResourceSummaryTable(requirements, resourceKind) {
         `).join("")}</tbody>
       </table>
     </div>
+    ${renderPagination(summaryKey, summaryPage)}
   `;
 }
 
@@ -10203,6 +10253,8 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
   const kind = ["personnel", "equipment", "spare"].includes(resourceKind) ? resourceKind : "personnel";
   const label = basicActivityResourceKindLabel(kind);
   const requirements = normalizeBasicActivityResourceRequirements(row, kind);
+  const requirementPageKey = `basic-activity-requirements:${kind}`;
+  const requirementPage = modelingPage(requirementPageKey, requirements, row.key);
   const lockedAttr = modelingLockDisabledAttr();
   return `
     <div class="activity-job-dialog-backdrop nested-dialog-backdrop">
@@ -10222,10 +10274,11 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
           <table class="basic-activity-resource-config-table">
             <thead>${renderBasicActivityResourceDialogHeader(kind)}</thead>
             <tbody>
-              ${requirements.map((item, index) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="3">暂无配置</td></tr>`}
+              ${requirementPage.rows.map(({ value: item, index }) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="3">暂无配置</td></tr>`}
             </tbody>
           </table>
         </div>
+        ${renderPagination(requirementPageKey, requirementPage)}
         <div class="plan-editor-actions">
           <button type="button" class="btn-primary" data-basic-activity-resource-dialog-close>完成</button>
         </div>
@@ -11217,7 +11270,12 @@ function deleteSelectedBasicActivityJobs() {
 }
 
 function toggleAllBasicActivitySelection(checked) {
-  selectedBasicActivityKeys = checked ? new Set(filteredBasicActivityLibraryRows().map((row) => row.key)) : new Set();
+  const next = new Set(selectedBasicActivityKeys);
+  for (const { value: row } of modelingPageEntries("basic-activity-library")) {
+    if (checked) next.add(row.key);
+    else next.delete(row.key);
+  }
+  selectedBasicActivityKeys = next;
 }
 
 function downloadBasicSupportActivityCsvTemplate() {
@@ -12027,6 +12085,7 @@ function nextTransportPolicyId() {
 
 function renderLogisticsSupportActivity(activePlan, activity) {
   const transportPolicies = ensureTransportPolicies();
+  const transportPage = modelingPage("transport-policies", transportPolicies);
   selectedLogisticsTransportStrategyIndexes = new Set(
     Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportPolicies.length)
   );
@@ -12057,7 +12116,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
       <div class="table-wrap">
         <table>
           <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
-          <tbody>${transportPolicies.map((row, index) => {
+          <tbody>${transportPage.rows.map(({ value: row, index }) => {
             const basePath = `transportPolicies.${index}`;
             const fromSupportNodeOptions = logisticsSupportNodeOptionsWithCurrent(supportNodeOptions, row.fromOrganizationNodeId);
             const toSupportNodeOptions = logisticsSupportNodeOptionsWithCurrent(supportNodeOptions, row.toOrganizationNodeId);
@@ -12079,6 +12138,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
           }).join("") || `<tr><td colspan="8" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
         </table>
       </div>
+      ${renderPagination("transport-policies", transportPage)}
     </div>
   `;
 }
