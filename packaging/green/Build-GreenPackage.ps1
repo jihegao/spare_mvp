@@ -48,7 +48,7 @@ try {
         throw 'Green source manifest is invalid.'
     }
     $manifestNames = @($greenManifest.files.PSObject.Properties.Name | Sort-Object)
-    if ((Compare-Object @($boundFiles | Sort-Object) $manifestNames).Count -ne 0) {
+    if (@(Compare-Object @($boundFiles | Sort-Object) $manifestNames).Count -ne 0) {
         throw 'Green source manifest does not cover the exact reviewed file list.'
     }
     foreach ($name in $boundFiles) {
