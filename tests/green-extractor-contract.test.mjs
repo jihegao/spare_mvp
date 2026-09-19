@@ -36,6 +36,9 @@ test("green package builds a guarded uninstaller into the sealed payload", () =>
   assert.match(uninstaller, /Process\.GetProcessesByName/);
   assert.match(uninstaller, /MainModule\.FileName/);
   assert.match(uninstaller, /Directory\.Delete\(installationRoot, true\)/);
+  assert.match(uninstaller, /FileAttributes\.ReparsePoint/);
+  assert.match(uninstaller, /"Uninstall-SpareMvp\.exe"/);
+  assert.match(uninstaller, /"manifest\.json"/);
   assert.match(uninstaller, /IsOwnedShortcut/);
   assert.match(uninstaller, /ReadShortcutTarget/);
   assert.match(uninstaller, /MessageBoxDefaultButton\.Button2/);

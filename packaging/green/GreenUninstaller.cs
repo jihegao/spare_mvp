@@ -46,8 +46,15 @@ internal static class GreenUninstaller
 
     private static void AssertInstallationRoot(string installationRoot)
     {
+        string volumeRoot = Path.GetPathRoot(installationRoot);
+        if (String.Equals(installationRoot.TrimEnd(Path.DirectorySeparatorChar), volumeRoot.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("拒绝把磁盘根目录作为卸载目标。");
+        if ((new DirectoryInfo(installationRoot).Attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException("安装目录是重解析点，为避免越界删除而拒绝卸载。");
         string[] required = {
             LauncherFileName,
+            "Uninstall-SpareMvp.exe",
+            "manifest.json",
             "green-source-manifest.json",
             Path.Combine("scripts", "stop-portable.ps1"),
             Path.Combine("runtime", "python.exe")
