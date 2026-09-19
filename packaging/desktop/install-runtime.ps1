@@ -48,6 +48,7 @@ function Invoke-CheckedProcess {
 
 function Get-DockerDesktopPath {
     foreach ($candidate in @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\Docker Desktop.exe'),
         (Join-Path $env:LOCALAPPDATA 'Programs\Docker\Docker\Docker Desktop.exe'),
         (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe')
     )) {

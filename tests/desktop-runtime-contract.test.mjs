@@ -67,6 +67,7 @@ test("desktop compose and installer preserve security and restart boundaries", a
   assert.match(installer, /RunOnce/);
   assert.match(installer, /Write-State -Status 'starting'/);
   assert.match(installer, /Write-State -Status 'failed'/);
+  assert.match(installer, /LOCALAPPDATA 'Programs\\DockerDesktop\\Docker Desktop\.exe'/);
   assert.match(installer, /ProgramFiles 'Docker\\Docker\\Docker Desktop\.exe'/);
   assert.doesNotMatch(installer, /shutdown\.exe/);
   assert.doesNotMatch(installer, /--accept-license/);
