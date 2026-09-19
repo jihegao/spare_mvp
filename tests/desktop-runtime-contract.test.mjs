@@ -57,4 +57,6 @@ test("Electron windows disable Node integration and isolate the launcher bridge"
   assert.match(extractor, /FolderBrowserDialog/);
   assert.match(extractor, /VerifyPayload/);
   assert.match(extractor, /tar\.exe/);
+  assert.match(extractor, /--extract-to/);
+  assert.match(extractor, /--no-launch/);
 });

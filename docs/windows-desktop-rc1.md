@@ -34,6 +34,8 @@ npx electron-builder --win dir --x64 -c.win.signAndEditExecutable=false
 
 自解压器要求 Windows 自带 `tar.exe`，解压前校验内置 payload 的 SHA-256；目标目录存在且非空时拒绝覆盖。发布仍需单独记录整个 EXE 的 SHA-256，因为内置哈希只用于传输损坏检测，不替代代码签名或外部发布校验。
 
+默认交付方式是双击并选择目录。自动化验收可运行 `spare-mvp-2.0-green.exe --extract-to <父目录> --no-launch`；它仍执行同一 payload 哈希校验和解压逻辑，只省略交互窗口与自动启动。失败时在父目录写入 `spare-mvp-green-extract-error.log` 并返回非零退出码。
+
 ## 验收
 
 正式验收必须在 4700-4 的新目录进行，不能覆盖已有 Docker 版或便携版，也不能复用已修改的 SQLite。至少验证：无管理员弹窗、未调用 Docker/WSL、中文和空格路径、端口冲突回退、完整性失败阻断、异常启动日志、桌面窗口真实业务流程、停止后的进程和端口清理，以及解压前后 EXE/manifest 哈希留证。浏览器/API/静态资源通过不等于完整业务验收。
