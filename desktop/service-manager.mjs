@@ -50,7 +50,10 @@ export async function runCommand(command, args, options = {}) {
     child.stdout.on("data", (chunk) => { stdout += chunk; onStdout(String(chunk)); });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.once("error", (error) => finish(error));
-    child.once("close", (code) => {
+    // PowerShell starts package-owned detached services whose inherited pipe
+    // handles can outlive PowerShell. Completion is the invoked process exit,
+    // not closure of every descendant-held stdio handle.
+    child.once("exit", (code) => {
       if (code === 0) finish(null, { stdout, stderr });
       else finish(new Error(`${command} 执行失败（${code}）：${stderr.trim() || stdout.trim()}`));
     });
