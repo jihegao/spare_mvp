@@ -133,10 +133,11 @@ internal static class GreenExtractor
 
             ProcessStartInfo info = new ProcessStartInfo(
                 "tar.exe",
-                "-xf \"" + temporaryPayload.Replace("\"", "\\\"") + "\" -C \"" + destination.Replace("\"", "\\\"") + "\"")
+                "-xf \"" + temporaryPayload.Replace("\"", "\\\"") + "\"")
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                WorkingDirectory = destination,
                 RedirectStandardError = true
             };
             using (Process tar = Process.Start(info))
