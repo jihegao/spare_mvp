@@ -112,31 +112,44 @@ internal static class GreenExtractor
 
     private static void ExtractPayload(string executable, long payloadLength, string destination, Action pulse)
     {
-        ProcessStartInfo info = new ProcessStartInfo("tar.exe", "-xf - -C \"" + destination.Replace("\"", "\\\"") + "\"")
+        string temporaryPayload = Path.Combine(Path.GetTempPath(), "spare-mvp-" + Guid.NewGuid().ToString("N") + ".tar");
+        try
         {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-            RedirectStandardError = true
-        };
-        using (Process tar = Process.Start(info))
-        using (FileStream source = File.OpenRead(executable))
-        {
-            source.Position = source.Length - FooterSize - payloadLength;
-            byte[] buffer = new byte[1024 * 1024];
-            long remaining = payloadLength;
-            while (remaining > 0)
+            using (FileStream source = File.OpenRead(executable))
+            using (FileStream payload = new FileStream(temporaryPayload, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                int read = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
-                if (read <= 0) throw new EndOfStreamException("安装包数据不完整。");
-                tar.StandardInput.BaseStream.Write(buffer, 0, read);
-                remaining -= read;
-                pulse();
+                source.Position = source.Length - FooterSize - payloadLength;
+                byte[] buffer = new byte[1024 * 1024];
+                long remaining = payloadLength;
+                while (remaining > 0)
+                {
+                    int read = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+                    if (read <= 0) throw new EndOfStreamException("安装包数据不完整。");
+                    payload.Write(buffer, 0, read);
+                    remaining -= read;
+                    pulse();
+                }
             }
-            tar.StandardInput.Close();
-            string error = tar.StandardError.ReadToEnd();
-            tar.WaitForExit();
-            if (tar.ExitCode != 0) throw new InvalidOperationException("系统解压程序失败：" + error.Trim());
+
+            ProcessStartInfo info = new ProcessStartInfo(
+                "tar.exe",
+                "-xf \"" + temporaryPayload.Replace("\"", "\\\"") + "\" -C \"" + destination.Replace("\"", "\\\"") + "\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true
+            };
+            using (Process tar = Process.Start(info))
+            {
+                string error = tar.StandardError.ReadToEnd();
+                tar.WaitForExit();
+                if (tar.ExitCode != 0) throw new InvalidOperationException("系统解压程序失败：" + error.Trim());
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(temporaryPayload)) File.Delete(temporaryPayload); }
+            catch { }
         }
     }
 
