@@ -65,6 +65,9 @@ test("desktop compose and installer preserve security and restart boundaries", a
   assert.match(installer, /Microsoft-Windows-Subsystem-Linux/);
   assert.match(installer, /VirtualMachinePlatform/);
   assert.match(installer, /RunOnce/);
+  assert.match(installer, /Write-State -Status 'starting'/);
+  assert.match(installer, /Write-State -Status 'failed'/);
+  assert.match(installer, /ProgramFiles 'Docker\\Docker\\Docker Desktop\.exe'/);
   assert.doesNotMatch(installer, /--accept-license/);
 });
 
@@ -78,6 +81,10 @@ test("Electron windows disable Node integration and isolate the launcher bridge"
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /sandbox: true/);
   assert.match(main, /preload\.cjs/);
+  assert.match(main, /EncodedCommand/);
+  assert.match(main, /-PassThru/);
+  assert.match(main, /exit \$process\.ExitCode/);
+  assert.match(main, /install-state\.json/);
   assert.match(main, /startsWith\("file:\/\/"\)/);
   assert.match(preload, /require\("electron"\)/);
   assert.doesNotMatch(preload, /\bimport\s/);
@@ -85,6 +92,7 @@ test("Electron windows disable Node integration and isolate the launcher bridge"
   assert.ok(!packageJson.build.files.includes("preload.mjs"));
   assert.match(renderer, /桌面启动桥接加载失败/);
   assert.match(renderer, /if \(window\.spareDesktop\)/);
+  assert.match(renderer, /status\.installState\?\.status === "reboot_required"/);
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /connect-src 'none'/);
 });

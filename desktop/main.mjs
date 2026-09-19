@@ -127,12 +127,29 @@ async function startRuntime() {
 async function installRuntime() {
   const runtimePathsValue = paths();
   if (!existsSync(runtimePathsValue.runtimeInstaller)) throw new Error("运行环境安装脚本缺失");
+  const invocation = `& '${runtimePathsValue.runtimeInstaller.replaceAll("'", "''")}' -AppExecutable '${process.execPath.replaceAll("'", "''")}'`;
+  const encodedInvocation = Buffer.from(invocation, "utf16le").toString("base64");
   const command = [
-    "Start-Process", "powershell.exe", "-Verb", "RunAs", "-Wait", "-ArgumentList",
-    `'-NoProfile','-ExecutionPolicy','Bypass','-File','${runtimePathsValue.runtimeInstaller.replaceAll("'", "''")}','-AppExecutable','${process.execPath.replaceAll("'", "''")}'`,
+    "$process = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList",
+    `@('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${encodedInvocation}');`,
+    "exit $process.ExitCode",
   ].join(" ");
-  await runCommand("powershell.exe", ["-NoProfile", "-Command", command]);
-  return currentStatus();
+  try {
+    await runCommand("powershell.exe", ["-NoProfile", "-Command", command]);
+  } catch (error) {
+    const installState = await readInstallState();
+    throw new Error(installState?.message || error.message);
+  }
+  return { ...await currentStatus(), installState: await readInstallState() };
+}
+
+async function readInstallState() {
+  const programData = process.env.ProgramData || "C:\\ProgramData";
+  try {
+    return JSON.parse(await readFile(path.join(programData, "SpareMvpDesktop", "install-state.json"), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 app.whenReady().then(async () => {

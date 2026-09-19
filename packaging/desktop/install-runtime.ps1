@@ -23,11 +23,17 @@ function Write-State {
     } | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding UTF8
 }
 
+trap {
+    try { Write-State -Status 'failed' -Message $_.Exception.Message } catch {}
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}
+
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw '运行环境安装必须获得管理员授权。'
+        throw 'Runtime installation requires administrator approval.'
     }
 }
 
@@ -35,9 +41,19 @@ function Invoke-CheckedProcess {
     param([string]$FilePath, [string[]]$Arguments, [int[]]$AllowedExitCodes = @(0, 3010))
     $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -Wait -PassThru
     if ($process.ExitCode -notin $AllowedExitCodes) {
-        throw "$FilePath 安装失败，退出码 $($process.ExitCode)。"
+        throw "$FilePath failed with exit code $($process.ExitCode)."
     }
     return $process.ExitCode
+}
+
+function Get-DockerDesktopPath {
+    foreach ($candidate in @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Docker\Docker\Docker Desktop.exe'),
+        (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe')
+    )) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    return $null
 }
 
 function Set-ResumeAfterLogon {
@@ -55,35 +71,36 @@ function Test-RebootPending {
     return Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
 }
 
+Write-State -Status 'starting' -Message 'Runtime installer started.'
 Assert-Administrator
 foreach ($required in @($DockerInstaller, $WslInstaller, $AppExecutable)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "安装资源缺失：$required"
+        throw "Required installation resource is missing: $required"
     }
 }
 
-Write-State -Status 'enabling_windows_features' -Message '正在启用 WSL2 所需系统组件。'
+Write-State -Status 'enabling_windows_features' -Message 'Enabling Windows features required by WSL2.'
 $wslFeatureExit = Invoke-CheckedProcess -FilePath 'dism.exe' -Arguments @('/online','/enable-feature','/featurename:Microsoft-Windows-Subsystem-Linux','/all','/norestart')
 $vmFeatureExit = Invoke-CheckedProcess -FilePath 'dism.exe' -Arguments @('/online','/enable-feature','/featurename:VirtualMachinePlatform','/all','/norestart')
 
-Write-State -Status 'installing_wsl' -Message '正在安装离线 WSL 运行时。'
+Write-State -Status 'installing_wsl' -Message 'Installing the offline WSL runtime.'
 $wslExit = Invoke-CheckedProcess -FilePath 'msiexec.exe' -Arguments @('/i', $WslInstaller, '/qn', '/norestart')
 
 if ((3010 -in @($wslFeatureExit, $vmFeatureExit, $wslExit)) -or (Test-RebootPending)) {
     Set-ResumeAfterLogon
-    Write-State -Status 'reboot_required' -Message '系统组件已启用，重新登录后将继续安装。'
-    shutdown.exe /r /t 60 /c 'spare_mvp Desktop 运行环境安装需要重新启动。'
+    Write-State -Status 'reboot_required' -Message 'Windows must restart before runtime installation can continue.'
+    shutdown.exe /r /t 60 /c 'spare_mvp Desktop runtime installation requires a restart.'
     exit 0
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'Programs\Docker\Docker\Docker Desktop.exe'))) {
-    Write-State -Status 'installing_docker' -Message '正在安装 Docker Desktop。'
+if (-not (Get-DockerDesktopPath)) {
+    Write-State -Status 'installing_docker' -Message 'Installing Docker Desktop.'
     # Docker's license acceptance remains an explicit first-start user action.
     Invoke-CheckedProcess -FilePath $DockerInstaller -Arguments @('install','--user','--backend=wsl-2','--no-windows-containers') -AllowedExitCodes @(0, 3010) | Out-Null
 }
 
-Write-State -Status 'docker_first_start_required' -Message '请启动 Docker Desktop 并完成首次许可确认。'
-$dockerDesktop = Join-Path $env:LOCALAPPDATA 'Programs\Docker\Docker\Docker Desktop.exe'
-if (Test-Path -LiteralPath $dockerDesktop) {
+Write-State -Status 'docker_first_start_required' -Message 'Start Docker Desktop and complete its first-run license confirmation.'
+$dockerDesktop = Get-DockerDesktopPath
+if ($dockerDesktop) {
     Start-Process -FilePath $dockerDesktop
 }

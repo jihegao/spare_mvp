@@ -65,7 +65,12 @@ async function installRuntime() {
   try {
     const status = await desktopBridge().installRuntime();
     if (status.docker) await start();
-    else showError(new Error("请完成 Docker Desktop 首次启动和许可确认后重试"), "重新检查", start);
+    else if (status.installState?.status === "reboot_required") {
+      detail.textContent = "Windows 组件已启用，机器将在提示后重启；重新登录后安装会继续。";
+      showError(new Error("运行环境安装需要重新启动 Windows"), "重新检查", start);
+    } else {
+      showError(new Error(status.installState?.message || "请完成 Docker Desktop 首次启动和许可确认后重试"), "重新检查", start);
+    }
   } catch (error) {
     showError(error, "重试安装", installRuntime);
   } finally {
