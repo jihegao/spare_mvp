@@ -61,6 +61,8 @@ test("Electron windows disable Node integration and isolate the launcher bridge"
   assert.match(extractor, /--no-launch/);
   const portablePackager = await readFile(new URL("../scripts/portable-package.py", import.meta.url), "utf8");
   assert.match(portablePackager, /VERIFY_PROGRESS/);
+  assert.match(portablePackager, /verify-cached/);
+  assert.match(portablePackager, /integrity-cache\.json/);
   assert.match(main, /assertPortableIntegrity\(runtimePathsValue, sendProgress\)/);
   const serviceManager = await readFile(new URL("../desktop/service-manager.mjs", import.meta.url), "utf8");
   assert.match(serviceManager, /child\.once\("exit"/);

@@ -107,6 +107,7 @@ class PortableRuntimeManifestTest(unittest.TestCase):
             runtime = self.bundle(bundle)
             shutil.copytree(bundle, output / 'dependencies')
             shutil.rmtree(output / 'dependencies/runtime')
+            shutil.rmtree(output / 'dependencies/downloads')
             shutil.copytree(runtime, output / 'runtime')
             (output / 'source-manifest.json').write_text(json.dumps({'source_commit': 'a' * 40}))
             # This fixture isolates runtime provenance; frontend cache has its own tests.
@@ -117,6 +118,16 @@ class PortableRuntimeManifestTest(unittest.TestCase):
             (output / 'runtime/Lib/site-packages/example.py').write_text('changed after copy')
             with self.assertRaisesRegex(ValueError, 'Runtime content differs'):
                 package.seal(output)
+
+    def test_slim_release_verification_keeps_provenance_without_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp)
+            runtime = self.bundle(bundle)
+            shutil.rmtree(bundle / 'downloads')
+            package.verify_runtime_manifest(bundle, runtime, require_archive=False)
+            (bundle / 'requirements-windows.lock').write_text('changed lock')
+            with self.assertRaisesRegex(ValueError, 'archive or dependency lock'):
+                package.verify_runtime_manifest(bundle, runtime, require_archive=False)
 
     def test_dependency_check_binds_its_interpreter_to_requested_runtime_source(self):
         with tempfile.TemporaryDirectory() as tmp:

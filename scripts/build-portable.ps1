@@ -45,10 +45,11 @@ New-Item -ItemType Directory -Path (Join-Path $destinationPath 'assets') | Out-N
 Copy-Item -LiteralPath (Join-Path $repo 'packaging\solara-assets.lock.json') -Destination (Join-Path $destinationPath 'assets\solara-assets.lock.json')
 & $python -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --destination (Join-Path $destinationPath 'assets\solara-cdn') --offline-source $frontend
 if ($LASTEXITCODE -ne 0) { throw 'Offline Solara asset copying failed.' }
-# Copy verified content unchanged; seal rechecks it against the prepared manifest.
+# The build environment retains wheels and the CPython archive. The user package
+# keeps only provenance records needed to bind the installed runtime.
 New-Item -ItemType Directory -Path (Join-Path $destinationPath 'dependencies') | Out-Null
-foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','runtime-manifest.json','wheelhouse','downloads')) {
-    Copy-Item -LiteralPath (Join-Path $bundle $name) -Destination (Join-Path $destinationPath 'dependencies') -Recurse
+foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','runtime-manifest.json')) {
+    Copy-Item -LiteralPath (Join-Path $bundle $name) -Destination (Join-Path $destinationPath 'dependencies')
 }
 $caseArguments = @()
 if ($ProjectFile) { $caseArguments += @('--project', (Resolve-Path -LiteralPath $ProjectFile).Path) }

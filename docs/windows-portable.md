@@ -49,7 +49,9 @@ python scripts/portable-package.py source-manifest --root /tmp/spare-source-mani
 ./dist/SPARE/scripts/verify-portable-package.ps1 -PackageRoot './dist/SPARE'
 ```
 
-`-DependencyBundle` 默认取 runtime 的父目录；必须具有匹配受审锁的 wheels、CPython 归档、依赖版本清单及 `runtime-manifest.json`。构建逐文件验证实际 `-RuntimeSource`，不能用 B bundle 的校验替代 A runtime 的内容检查；新增字节码、修改或缺少文件都会阻断。runtime 清单随包保留在 `dependencies/`，封包前再次核对复制后的 runtime。包包含应用、完整 runtime、wheelhouse/归档、启动停止脚本、说明、源码指纹及所有不可变文件的 SHA-256。`data/` 是可变运行状态，不参与后续静态完整性核对；验证脚本在启动前核对应用和 runtime 文件。
+`-DependencyBundle` 默认取 runtime 的父目录；构建环境必须具有匹配受审锁的 wheels、CPython 归档、依赖版本清单及 `runtime-manifest.json`。构建逐文件验证实际 `-RuntimeSource`，不能用 B bundle 的校验替代 A runtime 的内容检查；新增字节码、修改或缺少文件都会阻断。最终用户包的 `dependencies/` 只保留 `windows-runtime.json`、`requirements-windows.lock`、`installed-distributions.json` 和 `runtime-manifest.json`；`wheelhouse/` 与 `downloads/` 留在受控构建环境，不重复进入发行包。封包时用保留的规格、锁和 runtime manifest 重新核对复制后的 runtime。
+
+首次桌面启动对所有不可变文件执行 SHA-256，并在 `data/integrity-cache.json` 记录 manifest 哈希以及每个文件的路径、大小和 mtime。后续启动先逐项比对元数据，并始终重新哈希 `app/`、`assets/`、`scripts/`、Electron `resources/`、桌面主程序、源码清单和 Python 核心可执行/DLL；缓存缺失、损坏或任一元数据变化都会退回完整 SHA-256，校验失败则阻断启动。`data/` 是本机可变状态，不纳入发布 manifest；完整性缓存也不替代外部 EXE 哈希或代码签名。
 
 默认发布包只使用受审 fixtures。既有 `-ProjectFile 'D:\private\project.json' -ExperimentConfig 'D:\private\experiment.json'` 保留给明确授权的本地案例包；通过现有 BackendApi / ContractRepository 初始化独立数据库，并非把原文件放进源码。Project 应先经过 `ProjectJsonExporter` clean 边界，实验配置单独保存。这类包含案例数据的本地包不能冒充默认公开基线。
 

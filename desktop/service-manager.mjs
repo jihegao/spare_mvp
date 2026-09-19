@@ -88,7 +88,7 @@ export async function assertPortableIntegrity(paths, onProgress = () => {}, run 
     throw new Error(`绿色版文件不完整：${missing.join("；")}`);
   }
   let buffered = "";
-  await run(paths.python, ["-I", "-B", paths.verifier, "verify", "--root", paths.packageRoot, "--progress"], {
+  await run(paths.python, ["-I", "-B", paths.verifier, "verify-cached", "--root", paths.packageRoot, "--progress"], {
     cwd: paths.packageRoot,
     timeoutMs: 600_000,
     env: { ...process.env, PYTHONNOUSERSITE: "1", PYTHONDONTWRITEBYTECODE: "1" },
@@ -97,6 +97,10 @@ export async function assertPortableIntegrity(paths, onProgress = () => {}, run 
       const lines = buffered.split(/\r?\n/);
       buffered = lines.pop() || "";
       for (const line of lines) {
+        if (line.startsWith("Integrity cache valid")) {
+          onProgress("完整性缓存有效", 45);
+          continue;
+        }
         const match = line.match(/^VERIFY_PROGRESS (\d+) (\d+)$/);
         if (!match) continue;
         const checked = Number(match[1]);
