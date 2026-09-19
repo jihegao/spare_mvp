@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("../packaging/green/GreenExtractor.cs", import.meta.url), "utf8");
+const uninstaller = await readFile(new URL("../packaging/green/GreenUninstaller.cs", import.meta.url), "utf8");
+const builder = await readFile(new URL("../packaging/green/Build-GreenPackage.ps1", import.meta.url), "utf8");
+const portablePackager = await readFile(new URL("../scripts/portable-package.py", import.meta.url), "utf8");
 
 test("green extractor stages the embedded tar before invoking Windows tar", () => {
   assert.match(source, /Path\.GetTempPath\(\)/);
@@ -22,4 +25,19 @@ test("green extractor creates a current-user desktop shortcut for the extracted 
   assert.match(source, /TargetPath/);
   assert.match(source, /SpareMvpDesktop\.exe/);
   assert.match(source, /CreateDesktopShortcut\(launcher, destination\)/);
+});
+
+test("green package builds a guarded uninstaller into the sealed payload", () => {
+  assert.match(builder, /GreenUninstaller\.cs/);
+  assert.match(builder, /Uninstall-SpareMvp\.exe/);
+  assert.match(builder, /Green uninstaller compilation failed/);
+  assert.match(uninstaller, /stop-portable\.ps1/);
+  assert.match(uninstaller, /WaitForExit\(60000\)/);
+  assert.match(uninstaller, /Process\.GetProcessesByName/);
+  assert.match(uninstaller, /MainModule\.FileName/);
+  assert.match(uninstaller, /Directory\.Delete\(installationRoot, true\)/);
+  assert.match(uninstaller, /IsOwnedShortcut/);
+  assert.match(uninstaller, /ReadShortcutTarget/);
+  assert.match(uninstaller, /MessageBoxDefaultButton\.Button2/);
+  assert.match(portablePackager, /'Uninstall-SpareMvp\.exe'/);
 });

@@ -163,7 +163,7 @@ def immutable_metadata(root: Path) -> dict[str, list[int]]:
 
 def critical_runtime_file(name: str) -> bool:
     return (name.startswith(('app/', 'assets/', 'scripts/', 'resources/'))
-            or name in {'SpareMvpDesktop.exe', 'source-manifest.json', 'green-source-manifest.json'}
+            or name in {'SpareMvpDesktop.exe', 'Uninstall-SpareMvp.exe', 'source-manifest.json', 'green-source-manifest.json'}
             or (name.startswith('runtime/') and Path(name).name.lower() in {
                 'python.exe', 'pythonw.exe', 'python3.dll', 'python313.dll',
                 'vcruntime140.dll', 'vcruntime140_1.dll',

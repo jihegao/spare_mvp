@@ -8,6 +8,7 @@ desktop/renderer/styles.css
 desktop/package.json
 desktop/package-lock.json
 packaging/green/GreenExtractor.cs
+packaging/green/GreenUninstaller.cs
 packaging/green/Build-GreenPackage.ps1
 packaging/green/green-source-manifest.py
 packaging/green/source-files.txt

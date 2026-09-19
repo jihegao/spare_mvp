@@ -27,6 +27,7 @@ $working = Join-Path ([IO.Path]::GetTempPath()) ('spare-green-' + [Guid]::NewGui
 $staging = Join-Path $working 'staging'
 $payload = Join-Path $working 'payload.tar'
 $stub = Join-Path $working 'green-stub.exe'
+$compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 try {
     New-Item -ItemType Directory -Path $staging | Out-Null
     Copy-Item -Path (Join-Path $portable '*') -Destination $staging -Recurse
@@ -59,6 +60,12 @@ try {
     }
     $greenManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $staging 'green-source-manifest.json') -Encoding UTF8
 
+    if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) { throw "C# compiler is unavailable: $compiler" }
+    $uninstallerSource = Join-Path $PSScriptRoot 'GreenUninstaller.cs'
+    $uninstaller = Join-Path $staging 'Uninstall-SpareMvp.exe'
+    & $compiler /nologo /target:winexe /optimize+ /reference:System.Windows.Forms.dll /out:$uninstaller $uninstallerSource
+    if ($LASTEXITCODE -ne 0) { throw 'Green uninstaller compilation failed.' }
+
     & (Join-Path $staging 'runtime\python.exe') -I -B (Join-Path $staging 'scripts\portable-package.py') seal --root $staging
     if ($LASTEXITCODE -ne 0) { throw 'Green package sealing failed.' }
     & (Join-Path $staging 'runtime\python.exe') -I -B (Join-Path $staging 'scripts\portable-package.py') verify --root $staging
@@ -66,8 +73,6 @@ try {
 
     & tar.exe -cf $payload -C $staging .
     if ($LASTEXITCODE -ne 0) { throw 'Payload archive creation failed.' }
-    $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-    if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) { throw "C# compiler is unavailable: $compiler" }
     $source = Join-Path $PSScriptRoot 'GreenExtractor.cs'
     & $compiler /nologo /target:winexe /optimize+ /reference:System.Windows.Forms.dll /out:$stub $source
     if ($LASTEXITCODE -ne 0) { throw 'Green extractor compilation failed.' }
