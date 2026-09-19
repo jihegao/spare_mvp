@@ -66,8 +66,8 @@ async function installRuntime() {
     const status = await desktopBridge().installRuntime();
     if (status.docker) await start();
     else if (status.installState?.status === "reboot_required") {
-      detail.textContent = "Windows 组件已启用，机器将在提示后重启；重新登录后安装会继续。";
-      showError(new Error("运行环境安装需要重新启动 Windows"), "重新检查", start);
+      detail.textContent = "Windows 组件已启用。请先保存所有工作；点击下方按钮并确认后，Windows 将在 60 秒内重启，重新登录后继续安装。";
+      showError(new Error("继续安装前必须重新启动 Windows"), "保存工作并重启 Windows", restartComputer);
     } else {
       showError(new Error(status.installState?.message || "请完成 Docker Desktop 首次启动和许可确认后重试"), "重新检查", start);
     }
@@ -75,6 +75,20 @@ async function installRuntime() {
     showError(error, "重试安装", installRuntime);
   } finally {
     primary.disabled = false;
+  }
+}
+
+async function restartComputer() {
+  const confirmed = window.confirm("即将安排 Windows 在 60 秒内重启。请确认所有工作均已保存。是否继续？");
+  if (!confirmed) return;
+  primary.disabled = true;
+  primary.textContent = "Windows 将在 60 秒内重启";
+  detail.textContent = "重启命令已提交。重新登录后，运行环境安装会自动继续。";
+  try {
+    await desktopBridge().restartComputer();
+  } catch (error) {
+    primary.disabled = false;
+    showError(error, "重试安排重启", restartComputer);
   }
 }
 

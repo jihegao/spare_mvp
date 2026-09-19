@@ -88,8 +88,7 @@ $wslExit = Invoke-CheckedProcess -FilePath 'msiexec.exe' -Arguments @('/i', $Wsl
 
 if ((3010 -in @($wslFeatureExit, $vmFeatureExit, $wslExit)) -or (Test-RebootPending)) {
     Set-ResumeAfterLogon
-    Write-State -Status 'reboot_required' -Message 'Windows must restart before runtime installation can continue.'
-    shutdown.exe /r /t 60 /c 'spare_mvp Desktop runtime installation requires a restart.'
+    Write-State -Status 'reboot_required' -Message 'Save your work, then use the desktop client to restart Windows and continue installation.'
     exit 0
 }
 

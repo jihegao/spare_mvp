@@ -152,6 +152,14 @@ async function readInstallState() {
   }
 }
 
+async function restartComputer() {
+  await runCommand("shutdown.exe", [
+    "/r", "/t", "60", "/c",
+    "spare_mvp Desktop runtime installation will restart Windows in 60 seconds.",
+  ]);
+  return { scheduled: true, delaySeconds: 60 };
+}
+
 app.whenReady().then(async () => {
   await mkdir(paths().stateRoot, { recursive: true });
   createLauncherWindow();
@@ -161,6 +169,7 @@ app.whenReady().then(async () => {
 ipcMain.handle("runtime:get-status", async (event) => { assertLauncherSender(event); return currentStatus(); });
 ipcMain.handle("runtime:start", async (event) => { assertLauncherSender(event); return startRuntime(); });
 ipcMain.handle("runtime:install", async (event) => { assertLauncherSender(event); return installRuntime(); });
+ipcMain.handle("runtime:restart", async (event) => { assertLauncherSender(event); return restartComputer(); });
 ipcMain.handle("runtime:diagnostics", async (event) => {
   assertLauncherSender(event);
   if (!activeRuntime) throw new Error("服务尚未启动");

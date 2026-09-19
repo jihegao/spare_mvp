@@ -4,7 +4,7 @@ Desktop RC1 将现有 Web 界面和 Python 仿真服务封装为 Electron 客户
 
 ## 用户路径
 
-用户双击 `spare-mvp-2.0-desktop-rc1-setup.exe` 安装客户端。首次启动时，客户端先校验发布清单和离线容器镜像，再检查 Docker Desktop。运行环境缺失时，用户可在启动页选择安装；系统会请求管理员授权、启用 WSL2 所需 Windows 功能、安装包内 WSL MSI 和 Docker Desktop。需要重启时，安装器写入当前用户 `RunOnce`，重新登录后继续。Docker Desktop 的许可确认由用户在首次启动时显式完成，脚本不代替用户接受许可。
+用户双击 `spare-mvp-2.0-desktop-rc1-setup.exe` 安装客户端。首次启动时，客户端先校验发布清单和离线容器镜像，再检查 Docker Desktop。运行环境缺失时，用户可在启动页选择安装；系统会请求管理员授权、启用 WSL2 所需 Windows 功能、安装包内 WSL MSI 和 Docker Desktop。需要重启时，安装器写入当前用户 `RunOnce`，但不自动重启；客户端明确显示“保存工作并重启 Windows”，用户再次确认后才安排 60 秒倒计时，重新登录后继续。Docker Desktop 的许可确认由用户在首次启动时显式完成，脚本不代替用户接受许可。
 
 Docker 就绪后，客户端只启动 Compose project `spare-mvp-desktop-rc1`，动态选择本机端口并仅绑定 `127.0.0.1`。关闭窗口可选择后台继续，或只停止本产品容器；不得关闭整机 Docker。业务数据保存在命名卷 `spare-mvp-desktop-rc1-data`，导出和诊断文件保存在用户 AppData 的 `spare-mvp-desktop` 目录。卸载客户端默认保留这些运行数据。
 
