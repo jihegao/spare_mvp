@@ -1,10 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { exportDiagnostics } from "./diagnostics.mjs";
-import { assertReleaseIntegrity, dockerAvailable, loadManifest, runtimePaths, runCommand, startServices, stopServices } from "./service-manager.mjs";
+import { assertPortableIntegrity, portableResourcesReady, runtimePaths, runningState, startServices, stopServices } from "./service-manager.mjs";
 
 const desktopRoot = path.dirname(fileURLToPath(import.meta.url));
 let launcherWindow;
@@ -24,8 +22,8 @@ app.on("second-instance", () => {
 });
 
 function paths() {
-  const resourcesPath = app.isPackaged ? process.resourcesPath : path.resolve(desktopRoot, "../dist");
-  return runtimePaths(resourcesPath, app.getPath("appData"));
+  const packageRoot = app.isPackaged ? path.dirname(process.resourcesPath) : path.resolve(desktopRoot, "..");
+  return runtimePaths(packageRoot);
 }
 
 function sendProgress(message, percent) {
@@ -74,7 +72,7 @@ function createBusinessWindow(frontendUrl) {
       type: "question",
       title: "关闭平台",
       message: "如何处理本机仿真服务？",
-      detail: "后台继续可保留正在运行的任务；停止服务不会关闭整台机器的 Docker。",
+      detail: "后台继续可保留正在运行的任务；停止服务只会结束本绿色版启动的内置 Python 进程。",
       buttons: ["后台继续", "停止服务并退出", "取消"],
       defaultId: 0,
       cancelId: 2,
@@ -82,7 +80,7 @@ function createBusinessWindow(frontendUrl) {
     if (result.response === 0) businessWindow.hide();
     if (result.response === 1) {
       try {
-        await stopServices(paths(), activeRuntime.manifest, activeRuntime.state);
+        await stopServices(paths());
       } catch (error) {
         await dialog.showErrorBox("停止服务失败", error.message);
         return;
@@ -102,78 +100,34 @@ function assertLauncherSender(event) {
 
 async function currentStatus() {
   const runtimePathsValue = paths();
-  const docker = await dockerAvailable();
+  const running = await runningState(runtimePathsValue);
   return {
-    docker,
     packaged: app.isPackaged,
-    resourcesReady: existsSync(runtimePathsValue.manifestFile),
-    resumeInstall: process.argv.includes("--resume-install"),
-    status: docker ? "ready" : "runtime_missing",
+    resourcesReady: portableResourcesReady(runtimePathsValue),
+    running: Boolean(running),
+    status: running ? "running" : "ready",
   };
 }
 
 async function startRuntime() {
   const runtimePathsValue = paths();
-  sendProgress("正在校验发布包", 15);
-  const manifest = await loadManifest(runtimePathsValue);
-  await assertReleaseIntegrity(runtimePathsValue, manifest);
-  if (!(await dockerAvailable())) throw new Error("Docker Desktop 尚未就绪，请先安装运行环境");
-  activeRuntime = await startServices(runtimePathsValue, manifest, sendProgress);
-  activeRuntime.manifest = manifest;
+  sendProgress("正在校验内置运行环境", 15);
+  await assertPortableIntegrity(runtimePathsValue);
+  activeRuntime = await startServices(runtimePathsValue, sendProgress);
   createBusinessWindow(activeRuntime.state.frontendUrl);
   return activeRuntime.state;
 }
 
-async function installRuntime() {
-  const runtimePathsValue = paths();
-  if (!existsSync(runtimePathsValue.runtimeInstaller)) throw new Error("运行环境安装脚本缺失");
-  const invocation = `& '${runtimePathsValue.runtimeInstaller.replaceAll("'", "''")}' -AppExecutable '${process.execPath.replaceAll("'", "''")}'`;
-  const encodedInvocation = Buffer.from(invocation, "utf16le").toString("base64");
-  const command = [
-    "$process = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList",
-    `@('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${encodedInvocation}');`,
-    "exit $process.ExitCode",
-  ].join(" ");
-  try {
-    await runCommand("powershell.exe", ["-NoProfile", "-Command", command]);
-  } catch (error) {
-    const installState = await readInstallState();
-    throw new Error(installState?.message || error.message);
-  }
-  return { ...await currentStatus(), installState: await readInstallState() };
-}
-
-async function readInstallState() {
-  const programData = process.env.ProgramData || "C:\\ProgramData";
-  try {
-    return JSON.parse(await readFile(path.join(programData, "SpareMvpDesktop", "install-state.json"), "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-async function restartComputer() {
-  await runCommand("shutdown.exe", [
-    "/r", "/t", "60", "/c",
-    "spare_mvp Desktop runtime installation will restart Windows in 60 seconds.",
-  ]);
-  return { scheduled: true, delaySeconds: 60 };
-}
-
 app.whenReady().then(async () => {
-  await mkdir(paths().stateRoot, { recursive: true });
   createLauncherWindow();
-  if (process.argv.includes("--resume-install")) sendProgress("正在继续安装", 10);
 });
 
 ipcMain.handle("runtime:get-status", async (event) => { assertLauncherSender(event); return currentStatus(); });
 ipcMain.handle("runtime:start", async (event) => { assertLauncherSender(event); return startRuntime(); });
-ipcMain.handle("runtime:install", async (event) => { assertLauncherSender(event); return installRuntime(); });
-ipcMain.handle("runtime:restart", async (event) => { assertLauncherSender(event); return restartComputer(); });
 ipcMain.handle("runtime:diagnostics", async (event) => {
   assertLauncherSender(event);
   if (!activeRuntime) throw new Error("服务尚未启动");
-  return exportDiagnostics(paths(), activeRuntime.manifest, activeRuntime.state);
+  return exportDiagnostics(paths(), activeRuntime.state);
 });
 ipcMain.handle("runtime:open-diagnostics", async (event) => {
   assertLauncherSender(event);

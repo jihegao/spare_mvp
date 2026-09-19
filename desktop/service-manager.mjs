@@ -1,96 +1,31 @@
-import { createHash } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import net from "node:net";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-export const COMPOSE_PROJECT_NAME = "spare-mvp-desktop-rc1";
-
-export function runtimePaths(resourcesPath, appDataPath) {
-  const resourceRoot = path.join(resourcesPath, "desktop-resources");
-  const stateRoot = path.join(appDataPath, "spare-mvp-desktop");
+export function runtimePaths(packageRoot) {
+  const dataRoot = path.join(packageRoot, "data");
   return {
-    resourceRoot,
-    composeFile: path.join(resourceRoot, "runtime", "compose.yaml"),
-    imageTar: path.join(resourceRoot, "runtime", "spare-mvp-image.tar"),
-    manifestFile: path.join(resourceRoot, "release-manifest.json"),
-    runtimeInstaller: path.join(resourceRoot, "prerequisites", "install-runtime.ps1"),
-    dockerInstaller: path.join(resourceRoot, "prerequisites", "Docker Desktop Installer.exe"),
-    wslInstaller: path.join(resourceRoot, "prerequisites", "wsl.msi"),
-    stateRoot,
-    stateFile: path.join(stateRoot, "active-state.json"),
-    exportDir: path.join(stateRoot, "exports"),
-    diagnosticsDir: path.join(stateRoot, "diagnostics"),
+    packageRoot,
+    python: path.join(packageRoot, "runtime", "python.exe"),
+    applicationRoot: path.join(packageRoot, "app"),
+    manifestFile: path.join(packageRoot, "manifest.json"),
+    startScript: path.join(packageRoot, "scripts", "start-portable.ps1"),
+    stopScript: path.join(packageRoot, "scripts", "stop-portable.ps1"),
+    verifier: path.join(packageRoot, "scripts", "portable-package.py"),
+    dataRoot,
+    stateFile: path.join(dataRoot, "active-ports.json"),
+    logsDir: path.join(dataRoot, "logs"),
+    diagnosticsDir: path.join(dataRoot, "diagnostics"),
   };
 }
 
-export function composeEnvironment({ image, backendPort, solaraPort, exportDir }) {
-  return {
-    ...process.env,
-    COMPOSE_PROJECT_NAME,
-    SPARE_IMAGE: image,
-    SPARE_BACKEND_PORT: String(backendPort),
-    SPARE_SOLARA_PORT: String(solaraPort),
-    SPARE_EXPORT_DIR: exportDir,
-    NO_PROXY: "127.0.0.1,localhost,::1",
-    no_proxy: "127.0.0.1,localhost,::1",
-  };
+export function requiredRuntimeFiles(paths) {
+  return [paths.python, paths.applicationRoot, paths.manifestFile, paths.startScript, paths.stopScript, paths.verifier];
 }
 
-export function composeArguments(composeFile, ...args) {
-  return ["compose", "--project-name", COMPOSE_PROJECT_NAME, "--file", composeFile, ...args];
-}
-
-export async function findFreePort(preferred, excluded = new Set(), probe = canListen) {
-  for (let candidate = preferred; candidate <= Math.min(65535, preferred + 200); candidate += 1) {
-    if (excluded.has(candidate)) continue;
-    if (await probe(candidate)) return candidate;
-  }
-  throw new Error(`无法在 ${preferred} 附近找到可用端口`);
-}
-
-function canListen(port) {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once("error", () => resolve(false));
-    server.listen({ host: "127.0.0.1", port, exclusive: true }, () => {
-      server.close(() => resolve(true));
-    });
-  });
-}
-
-export async function sha256File(filePath) {
-  const hash = createHash("sha256");
-  await new Promise((resolve, reject) => {
-    const stream = createReadStream(filePath);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.on("error", reject);
-    stream.on("end", resolve);
-  });
-  return hash.digest("hex");
-}
-
-export async function loadManifest(paths) {
-  const manifest = JSON.parse(await readFile(paths.manifestFile, "utf8"));
-  if (manifest.format_version !== 1 || !manifest.image?.tag || !manifest.image?.tar_sha256) {
-    throw new Error("发布清单无效");
-  }
-  return manifest;
-}
-
-export async function assertReleaseIntegrity(paths, manifest) {
-  for (const required of [paths.composeFile, paths.imageTar, paths.runtimeInstaller, paths.dockerInstaller, paths.wslInstaller]) {
-    if (!existsSync(required)) throw new Error(`安装资源缺失：${required}`);
-  }
-  const checks = [
-    [paths.imageTar, manifest.image.tar_sha256, "容器镜像"],
-    [paths.dockerInstaller, manifest.prerequisites?.docker_desktop?.sha256, "Docker Desktop 安装器"],
-    [paths.wslInstaller, manifest.prerequisites?.wsl?.sha256, "WSL 安装器"],
-  ];
-  for (const [filePath, expected, label] of checks) {
-    if (!expected || await sha256File(filePath) !== expected) throw new Error(`${label}校验失败`);
-  }
+export function portableResourcesReady(paths) {
+  return requiredRuntimeFiles(paths).every((filePath) => existsSync(filePath));
 }
 
 export async function runCommand(command, args, options = {}) {
@@ -128,24 +63,6 @@ export async function runCommand(command, args, options = {}) {
   });
 }
 
-export async function dockerAvailable(run = runCommand) {
-  try {
-    await run("docker.exe", ["info", "--format", "{{.ServerVersion}}"], { timeoutMs: 15_000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function imageAvailable(tag, run = runCommand) {
-  try {
-    await run("docker.exe", ["image", "inspect", tag]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function waitForHttp(url, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
@@ -162,35 +79,67 @@ export async function waitForHttp(url, timeoutMs = 120_000) {
   throw new Error(`服务健康检查超时：${lastError?.message || "unknown"}`);
 }
 
-export async function startServices(paths, manifest, onProgress = () => {}, run = runCommand) {
-  await mkdir(paths.stateRoot, { recursive: true });
-  await mkdir(paths.exportDir, { recursive: true });
-  const backendPort = await findFreePort(4173);
-  const solaraPort = await findFreePort(8765, new Set([backendPort]));
-  const env = composeEnvironment({ image: manifest.image.tag, backendPort, solaraPort, exportDir: paths.exportDir });
-
-  if (!(await imageAvailable(manifest.image.tag, run))) {
-    onProgress("正在导入离线容器镜像", 45);
-    await run("docker.exe", ["load", "--input", paths.imageTar], { env });
+export async function assertPortableIntegrity(paths, run = runCommand) {
+  if (!portableResourcesReady(paths)) {
+    const missing = requiredRuntimeFiles(paths).filter((filePath) => !existsSync(filePath));
+    throw new Error(`绿色版文件不完整：${missing.join("；")}`);
   }
-  onProgress("正在启动仿真服务", 70);
-  await run("docker.exe", composeArguments(paths.composeFile, "up", "-d", "--wait", "--no-build"), { env });
-  const solaraUrl = `http://127.0.0.1:${solaraPort}`;
-  const frontendUrl = `http://127.0.0.1:${backendPort}/front/?solaraUrl=${encodeURIComponent(solaraUrl)}`;
-  await waitForHttp(`http://127.0.0.1:${backendPort}/_spare_mvp/health`);
-  await waitForHttp(`${solaraUrl}/`);
-  const state = { backendPort, solaraPort, frontendUrl, solaraUrl, image: manifest.image.tag, updatedAt: new Date().toISOString() };
-  await writeFile(paths.stateFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
-  onProgress("正在加载工作区", 100);
-  return { state, env };
+  await run(paths.python, ["-I", "-B", paths.verifier, "verify", "--root", paths.packageRoot], {
+    cwd: paths.packageRoot,
+    timeoutMs: 180_000,
+    env: { ...process.env, PYTHONNOUSERSITE: "1", PYTHONDONTWRITEBYTECODE: "1" },
+  });
 }
 
-export async function stopServices(paths, manifest, state, run = runCommand) {
-  const env = composeEnvironment({
-    image: manifest.image.tag,
-    backendPort: state.backendPort,
-    solaraPort: state.solaraPort,
-    exportDir: paths.exportDir,
-  });
-  await run("docker.exe", composeArguments(paths.composeFile, "down"), { env });
+export async function readActiveState(paths) {
+  const raw = await readFile(paths.stateFile, "utf8");
+  const state = JSON.parse(raw.replace(/^\uFEFF/, ""));
+  if (!Number.isInteger(state.backend_port) || !Number.isInteger(state.solara_port)) {
+    throw new Error("本机运行状态文件无效");
+  }
+  return {
+    backendPort: state.backend_port,
+    solaraPort: state.solara_port,
+    backendPid: state.backend_pid,
+    solaraPid: state.solara_pid,
+    frontendUrl: state.frontend_url,
+    solaraUrl: state.solara_url,
+  };
+}
+
+export async function runningState(paths) {
+  if (!existsSync(paths.stateFile)) return null;
+  try {
+    const state = await readActiveState(paths);
+    const response = await fetch(`http://127.0.0.1:${state.backendPort}/_spare_mvp/health`, {
+      signal: AbortSignal.timeout(2500),
+    });
+    return response.ok ? state : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function startServices(paths, onProgress = () => {}, run = runCommand) {
+  const existing = await runningState(paths);
+  if (existing) {
+    onProgress("正在加载已运行的工作区", 100);
+    return { state: existing, startedHere: false };
+  }
+  onProgress("正在启动内置 Python 服务", 55);
+  await run("powershell.exe", [
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", paths.startScript,
+    "-AutoSelectPorts", "-NoBrowser",
+  ], { cwd: paths.packageRoot, timeoutMs: 180_000 });
+  const state = await readActiveState(paths);
+  await waitForHttp(`http://127.0.0.1:${state.backendPort}/_spare_mvp/health`, 15_000);
+  await waitForHttp(`${state.solaraUrl}/`, 15_000);
+  onProgress("正在加载工作区", 100);
+  return { state, startedHere: true };
+}
+
+export async function stopServices(paths, run = runCommand) {
+  await run("powershell.exe", [
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", paths.stopScript,
+  ], { cwd: paths.packageRoot, timeoutMs: 60_000 });
 }

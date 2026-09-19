@@ -1,76 +1,27 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { composeArguments, composeEnvironment, dockerAvailable, findFreePort, runtimePaths } from "../desktop/service-manager.mjs";
+import { assertPortableIntegrity, portableResourcesReady, runtimePaths } from "../desktop/service-manager.mjs";
 
-test("desktop runtime paths keep immutable resources separate from user state", () => {
-  const paths = runtimePaths("C:\\Program Files\\SPARE\\resources", "C:\\Users\\user\\AppData\\Roaming");
-  assert.match(paths.imageTar, /desktop-resources[\\/]runtime[\\/]spare-mvp-image\.tar$/);
-  assert.match(paths.dockerInstaller, /prerequisites[\\/]Docker Desktop Installer\.exe$/);
-  assert.match(paths.wslInstaller, /prerequisites[\\/]wsl\.msi$/);
-  assert.match(paths.stateFile, /spare-mvp-desktop[\\/]active-state\.json$/);
-  assert.doesNotMatch(paths.stateFile, /desktop-resources/);
+test("desktop runtime paths use the extracted green package", () => {
+  const paths = runtimePaths("C:\\Models\\spare-mvp-2.0-green");
+  assert.match(paths.python, /runtime[\\/]python\.exe$/);
+  assert.match(paths.applicationRoot, /[\\/]app$/);
+  assert.match(paths.startScript, /scripts[\\/]start-portable\.ps1$/);
+  assert.match(paths.stopScript, /scripts[\\/]stop-portable\.ps1$/);
+  assert.match(paths.stateFile, /data[\\/]active-ports\.json$/);
 });
 
-test("compose invocation is scoped to the product project and fixed compose file", () => {
-  assert.deepEqual(composeArguments("C:\\SPARE\\compose.yaml", "down"), [
-    "compose", "--project-name", "spare-mvp-desktop-rc1", "--file", "C:\\SPARE\\compose.yaml", "down",
-  ]);
+test("green package readiness is entirely package-local", () => {
+  const paths = runtimePaths("Z:\\missing-green-package");
+  assert.equal(portableResourcesReady(paths), false);
 });
 
-test("compose environment binds selected ports and does not use latest", () => {
-  const env = composeEnvironment({ image: "spare-mvp:2.0-rc1-abc123", backendPort: 18473, solaraPort: 18475, exportDir: "C:\\SPARE Data" });
-  assert.equal(env.SPARE_BACKEND_PORT, "18473");
-  assert.equal(env.SPARE_SOLARA_PORT, "18475");
-  assert.equal(env.SPARE_IMAGE, "spare-mvp:2.0-rc1-abc123");
-  assert.doesNotMatch(env.SPARE_IMAGE, /latest/);
-});
-
-test("dynamic port selection skips occupied ports", async () => {
-  const observed = [];
-  const port = await findFreePort(23000, new Set([23001]), async (candidate) => {
-    observed.push(candidate);
-    return candidate === 23002;
-  });
-  assert.equal(port, 23002);
-  assert.deepEqual(observed, [23000, 23002]);
-});
-
-test("Docker readiness check has a finite timeout", async () => {
-  let invocation;
-  const available = await dockerAvailable(async (...args) => {
-    invocation = args;
-    throw new Error("not ready");
-  });
-  assert.equal(available, false);
-  assert.deepEqual(invocation, [
-    "docker.exe",
-    ["info", "--format", "{{.ServerVersion}}"],
-    { timeoutMs: 15_000 },
-  ]);
-});
-
-test("desktop compose and installer preserve security and restart boundaries", async () => {
-  const compose = await readFile(new URL("../deploy/desktop/compose.yaml", import.meta.url), "utf8");
-  assert.match(compose, /127\.0\.0\.1:\$\{SPARE_BACKEND_PORT/);
-  assert.match(compose, /127\.0\.0\.1:\$\{SPARE_SOLARA_PORT/);
-  assert.match(compose, /SPARE_IMAGE:\?SPARE_IMAGE is required/);
-  assert.doesNotMatch(compose, /latest/);
-  assert.match(compose, /name: spare-mvp-desktop-rc1/);
-  assert.match(compose, /restart: unless-stopped/);
-  assert.match(compose, /condition: service_completed_successfully/);
-  assert.match(compose, /--if-missing/);
-
-  const installer = await readFile(new URL("../packaging/desktop/install-runtime.ps1", import.meta.url), "utf8");
-  assert.match(installer, /Microsoft-Windows-Subsystem-Linux/);
-  assert.match(installer, /VirtualMachinePlatform/);
-  assert.match(installer, /RunOnce/);
-  assert.match(installer, /Write-State -Status 'starting'/);
-  assert.match(installer, /Write-State -Status 'failed'/);
-  assert.match(installer, /LOCALAPPDATA 'Programs\\DockerDesktop\\Docker Desktop\.exe'/);
-  assert.match(installer, /ProgramFiles 'Docker\\Docker\\Docker Desktop\.exe'/);
-  assert.doesNotMatch(installer, /shutdown\.exe/);
-  assert.doesNotMatch(installer, /--accept-license/);
+test("portable integrity invokes only the bundled Python verifier", async () => {
+  const paths = runtimePaths(process.cwd());
+  const calls = [];
+  await assert.rejects(assertPortableIntegrity(paths, async (...args) => calls.push(args)), /绿色版文件不完整/);
+  assert.deepEqual(calls, []);
 });
 
 test("Electron windows disable Node integration and isolate the launcher bridge", async () => {
@@ -79,27 +30,31 @@ test("Electron windows disable Node integration and isolate the launcher bridge"
   const renderer = await readFile(new URL("../desktop/renderer/app.mjs", import.meta.url), "utf8");
   const packageJson = JSON.parse(await readFile(new URL("../desktop/package.json", import.meta.url), "utf8"));
   const html = await readFile(new URL("../desktop/renderer/index.html", import.meta.url), "utf8");
+  const greenBuilder = await readFile(new URL("../packaging/green/Build-GreenPackage.ps1", import.meta.url), "utf8");
+  const extractor = await readFile(new URL("../packaging/green/GreenExtractor.cs", import.meta.url), "utf8");
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /sandbox: true/);
   assert.match(main, /preload\.cjs/);
-  assert.match(main, /EncodedCommand/);
-  assert.match(main, /-PassThru/);
-  assert.match(main, /exit \$process\.ExitCode/);
-  assert.match(main, /install-state\.json/);
-  assert.match(main, /ipcMain\.handle\("runtime:restart"/);
-  assert.match(main, /runCommand\("shutdown\.exe"/);
-  assert.match(main, /"\/r", "\/t", "60"/);
+  assert.match(main, /assertPortableIntegrity/);
+  assert.match(main, /portableResourcesReady/);
+  assert.doesNotMatch(main, /Docker|WSL|shutdown\.exe|runtime:install|runtime:restart/);
   assert.match(main, /startsWith\("file:\/\/"\)/);
   assert.match(preload, /require\("electron"\)/);
   assert.doesNotMatch(preload, /\bimport\s/);
   assert.ok(packageJson.build.files.includes("preload.cjs"));
   assert.ok(!packageJson.build.files.includes("preload.mjs"));
+  assert.deepEqual(packageJson.build.win.target, ["dir"]);
+  assert.equal(packageJson.build.extraResources, undefined);
   assert.match(renderer, /桌面启动桥接加载失败/);
   assert.match(renderer, /if \(window\.spareDesktop\)/);
-  assert.match(renderer, /status\.installState\?\.status === "reboot_required"/);
-  assert.match(renderer, /保存工作并重启 Windows/);
-  assert.match(renderer, /window\.confirm\("即将安排 Windows 在 60 秒内重启/);
+  assert.match(renderer, /无需 Docker、WSL 或管理员权限/);
+  assert.doesNotMatch(renderer, /installRuntime|restartComputer|重新启动 Windows/);
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /connect-src 'none'/);
+  assert.match(greenBuilder, /portable-package\.py'\) seal --root \$staging/);
+  assert.match(greenBuilder, /Destination already exists/);
+  assert.match(extractor, /FolderBrowserDialog/);
+  assert.match(extractor, /VerifyPayload/);
+  assert.match(extractor, /tar\.exe/);
 });

@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "main": "main.mjs",
-  "description": "spare_mvp 2.0 Desktop RC1 launcher",
+  "description": "spare_mvp 2.0 Windows native green launcher",
   "author": "spare_mvp",
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win nsis --x64"
+    "dist:win": "electron-builder --win dir --x64"
   },
   "dependencies": {
     "archiver": "7.0.1"
@@ -20,7 +20,7 @@
   "build": {
     "appId": "cn.sparemvp.desktop",
     "productName": "备件规划与任务可靠度验证评估平台",
-    "artifactName": "spare-mvp-2.0-desktop-rc1-setup.${ext}",
+    "artifactName": "spare-mvp-2.0-green.${ext}",
     "directories": {
       "output": "../dist/desktop-installer"
     },
@@ -32,22 +32,8 @@
       "renderer/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "../dist/desktop-resources",
-        "to": "desktop-resources"
-      }
-    ],
     "win": {
-      "target": ["nsis"]
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "runAfterFinish": true,
-      "deleteAppDataOnUninstall": false
+      "target": ["dir"]
     }
   }
 }
