@@ -1,0 +1,12 @@
+.git
+.abm-mesa-test-env
+node_modules
+desktop/node_modules
+runs
+dist
+reports
+experiments
+tests
+docs/archive
+**/__pycache__
+**/*.pyc

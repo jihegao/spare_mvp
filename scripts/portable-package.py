@@ -120,7 +120,7 @@ def seal(root: Path) -> None:
         if digest(root / package_destination(name)) != expected:
             raise ValueError(f'Staged source differs from candidate: {name}')
     if (root / 'runtime').exists():
-        verify_runtime_manifest(root / 'dependencies', root / 'runtime')
+        verify_runtime_manifest(root / 'dependencies', root / 'runtime', require_archive=False)
         verify_frontend_assets(root, source)
     manifest = {'format_version': 1, 'source_commit': source['source_commit'],
                 'files': {name: digest(path) for name, path in immutable_files(root)}}
@@ -138,14 +138,66 @@ def verify_frontend_assets(root: Path, source: dict) -> None:
     module.verify(root / 'assets' / 'solara-cdn', module.read_lock(lock_path))
 
 
-def verify(root: Path) -> None:
+def verify(root: Path, progress: bool = False) -> None:
     manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
-    actual = {name: digest(path) for name, path in immutable_files(root)}
+    actual = {}
+    total = len(manifest['files'])
+    for checked, (name, path) in enumerate(immutable_files(root), 1):
+        actual[name] = digest(path)
+        if progress and (checked == total or checked % 250 == 0):
+            print(f'VERIFY_PROGRESS {checked} {total}', flush=True)
     if actual != manifest['files']:
         differing = sorted(name for name in actual.keys() | manifest['files'].keys()
                            if actual.get(name) != manifest['files'].get(name))
         raise ValueError(f'Package integrity mismatch: {differing[:10]}')
     print(f'Verified {len(actual)} immutable files; source {manifest["source_commit"]}')
+
+
+def immutable_metadata(root: Path) -> dict[str, list[int]]:
+    result = {}
+    for name, path in immutable_files(root):
+        stat = path.stat()
+        result[name] = [stat.st_size, stat.st_mtime_ns]
+    return result
+
+
+def critical_runtime_file(name: str) -> bool:
+    return (name.startswith(('app/', 'assets/', 'scripts/', 'resources/'))
+            or name in {'SpareMvpDesktop.exe', 'Uninstall-SpareMvp.exe', 'source-manifest.json', 'green-source-manifest.json'}
+            or (name.startswith('runtime/') and Path(name).name.lower() in {
+                'python.exe', 'pythonw.exe', 'python3.dll', 'python313.dll',
+                'vcruntime140.dll', 'vcruntime140_1.dll',
+            }))
+
+
+def verify_cached(root: Path, progress: bool = False) -> None:
+    manifest_path = root / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    manifest_sha256 = digest(manifest_path)
+    metadata = immutable_metadata(root)
+    cache_path = root / 'data' / 'integrity-cache.json'
+    try:
+        cache = json.loads(cache_path.read_text(encoding='utf-8'))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        cache = None
+    cache_valid = (isinstance(cache, dict) and cache.get('format_version') == 1
+                   and cache.get('manifest_sha256') == manifest_sha256
+                   and cache.get('files') == metadata)
+    if cache_valid:
+        for name, path in immutable_files(root):
+            if critical_runtime_file(name) and digest(path) != manifest['files'].get(name):
+                raise ValueError(f'Critical runtime file differs from manifest: {name}')
+        print(f'Integrity cache valid for {len(metadata)} immutable files', flush=True)
+        return
+    verify(root, progress=progress)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = cache_path.with_suffix('.tmp')
+    temporary.write_text(json.dumps({
+        'format_version': 1,
+        'manifest_sha256': manifest_sha256,
+        'files': metadata,
+    }, separators=(',', ':')) + '\n', encoding='utf-8')
+    temporary.replace(cache_path)
 
 
 
@@ -202,23 +254,25 @@ def runtime_file_hashes(runtime_source: Path) -> dict[str, str]:
     return files
 
 
-def runtime_bindings(bundle: Path) -> dict:
+def runtime_bindings(bundle: Path, require_archive: bool = True) -> dict:
     spec = json.loads((bundle / 'windows-runtime.json').read_text(encoding='utf-8'))
+    archive_path = bundle / 'downloads' / spec['archive']
+    archive_sha256 = digest(archive_path) if require_archive else spec['sha256']
     return {
         'format_version': 1,
         'runtime_spec_sha256': digest(bundle / 'windows-runtime.json'),
         'requirements_sha256': digest(bundle / 'requirements-windows.lock'),
         'archive': spec['archive'],
-        'archive_sha256': digest(bundle / 'downloads' / spec['archive']),
+        'archive_sha256': archive_sha256,
     }
 
 
-def verify_runtime_manifest(bundle: Path, runtime_source: Path) -> None:
+def verify_runtime_manifest(bundle: Path, runtime_source: Path, require_archive: bool = True) -> None:
     manifest_path = bundle / 'runtime-manifest.json'
     if not manifest_path.is_file():
         raise ValueError('Missing runtime-manifest.json; prepare a fresh runtime from locked archive and wheels')
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-    bindings = runtime_bindings(bundle)
+    bindings = runtime_bindings(bundle, require_archive=require_archive)
     if {key: manifest.get(key) for key in bindings} != bindings:
         raise ValueError('Runtime manifest differs from archive or dependency lock')
     actual = runtime_file_hashes(runtime_source)
@@ -249,11 +303,12 @@ def verify_runtime(bundle: Path, runtime_source: Path | None = None) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['source-manifest', 'stage', 'seal', 'verify', 'verify-runtime', 'finalize-runtime'])
+    parser.add_argument('command', choices=['source-manifest', 'stage', 'seal', 'verify', 'verify-cached', 'verify-runtime', 'finalize-runtime'])
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--source-manifest', type=Path)
     parser.add_argument('--runtime-source', type=Path)
+    parser.add_argument('--progress', action='store_true')
     args = parser.parse_args()
     if args.command == 'source-manifest':
         args.root.write_text(json.dumps(source_manifest(args.repo), indent=2) + '\n', encoding='utf-8')
@@ -267,8 +322,10 @@ def main():
         finalize_prepared_runtime(args.root)
     elif args.command == 'verify-runtime':
         verify_runtime(args.root, args.runtime_source)
+    elif args.command == 'verify-cached':
+        verify_cached(args.root, progress=args.progress)
     else:
-        verify(args.root)
+        verify(args.root, progress=args.progress)
 
 
 if __name__ == '__main__':

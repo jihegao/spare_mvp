@@ -1,0 +1,15 @@
+desktop/main.mjs
+desktop/preload.cjs
+desktop/service-manager.mjs
+desktop/diagnostics.mjs
+desktop/renderer/app.mjs
+desktop/renderer/index.html
+desktop/renderer/styles.css
+desktop/package.json
+desktop/package-lock.json
+packaging/green/GreenExtractor.cs
+packaging/green/GreenUninstaller.cs
+packaging/green/Build-GreenPackage.ps1
+packaging/green/green-source-manifest.py
+packaging/green/source-files.txt
+docs/windows-desktop-rc1.md

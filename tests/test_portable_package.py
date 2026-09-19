@@ -132,6 +132,22 @@ class PortablePackageTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 package.verify(root)
 
+    def test_cached_verification_reuses_unchanged_metadata_and_fails_closed_on_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'source-manifest.json').write_text(json.dumps({'source_commit': 'a' * 40}))
+            (root / 'app').mkdir()
+            critical = root / 'app' / 'module.py'
+            critical.write_text('original')
+            package.seal(root)
+            package.verify_cached(root)
+            cache = root / 'data' / 'integrity-cache.json'
+            self.assertTrue(cache.is_file())
+            package.verify_cached(root)
+            critical.write_text('modified')
+            with self.assertRaisesRegex(ValueError, 'mismatch|differs'):
+                package.verify_cached(root)
+
     def test_staging_rejects_invalid_or_changed_manifest_before_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
