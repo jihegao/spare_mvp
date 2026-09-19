@@ -95,26 +95,42 @@ export async function assertReleaseIntegrity(paths, manifest) {
 
 export async function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    const { timeoutMs = 0, ...spawnOptions } = options;
     const child = spawn(command, args, {
       windowsHide: true,
-      ...options,
+      ...spawnOptions,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let timeout;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      if (error) reject(error);
+      else resolve(result);
+    };
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.once("error", reject);
+    child.once("error", (error) => finish(error));
     child.once("close", (code) => {
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${command} 执行失败（${code}）：${stderr.trim() || stdout.trim()}`));
+      if (code === 0) finish(null, { stdout, stderr });
+      else finish(new Error(`${command} 执行失败（${code}）：${stderr.trim() || stdout.trim()}`));
     });
+    if (timeoutMs > 0) {
+      timeout = setTimeout(() => {
+        child.kill();
+        finish(new Error(`${command} 执行超时（${timeoutMs}ms）`));
+      }, timeoutMs);
+    }
   });
 }
 
 export async function dockerAvailable(run = runCommand) {
   try {
-    await run("docker.exe", ["info", "--format", "{{.ServerVersion}}"]);
+    await run("docker.exe", ["info", "--format", "{{.ServerVersion}}"], { timeoutMs: 15_000 });
     return true;
   } catch {
     return false;

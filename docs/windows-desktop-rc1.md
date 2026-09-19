@@ -19,6 +19,8 @@ Electron 的 `extraResources/desktop-resources` 必须包含：
 - `prerequisites/wsl.msi`；
 - `release-manifest.json`，固定源码提交、镜像 tag、镜像 tar SHA-256 和先决条件版本/哈希。
 
+启动窗口保持 `sandbox: true` 和 `contextIsolation: true`，其 IPC 桥接必须使用沙箱支持的 CommonJS `preload.cjs`。桥接未加载时，启动页必须显示可见错误，不能停留在静态“正在检查运行环境”状态；Docker 就绪检查必须有有限超时。
+
 Python 镜像从固定 digest 的 `python:3.13.15-slim` 构建，并通过 `packaging/requirements-linux.lock` 的哈希锁安装依赖。数据库初始化只在命名卷中数据库不存在时执行；已存在数据库先做 `PRAGMA quick_check`，不会被基线 fixture 覆盖。
 
 ## 安全与兼容边界

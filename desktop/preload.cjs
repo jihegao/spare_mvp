@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("spareDesktop", Object.freeze({
   getStatus: () => ipcRenderer.invoke("runtime:get-status"),

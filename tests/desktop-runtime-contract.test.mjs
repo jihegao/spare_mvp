@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { composeArguments, composeEnvironment, findFreePort, runtimePaths } from "../desktop/service-manager.mjs";
+import { composeArguments, composeEnvironment, dockerAvailable, findFreePort, runtimePaths } from "../desktop/service-manager.mjs";
 
 test("desktop runtime paths keep immutable resources separate from user state", () => {
   const paths = runtimePaths("C:\\Program Files\\SPARE\\resources", "C:\\Users\\user\\AppData\\Roaming");
@@ -36,6 +36,20 @@ test("dynamic port selection skips occupied ports", async () => {
   assert.deepEqual(observed, [23000, 23002]);
 });
 
+test("Docker readiness check has a finite timeout", async () => {
+  let invocation;
+  const available = await dockerAvailable(async (...args) => {
+    invocation = args;
+    throw new Error("not ready");
+  });
+  assert.equal(available, false);
+  assert.deepEqual(invocation, [
+    "docker.exe",
+    ["info", "--format", "{{.ServerVersion}}"],
+    { timeoutMs: 15_000 },
+  ]);
+});
+
 test("desktop compose and installer preserve security and restart boundaries", async () => {
   const compose = await readFile(new URL("../deploy/desktop/compose.yaml", import.meta.url), "utf8");
   assert.match(compose, /127\.0\.0\.1:\$\{SPARE_BACKEND_PORT/);
@@ -56,11 +70,21 @@ test("desktop compose and installer preserve security and restart boundaries", a
 
 test("Electron windows disable Node integration and isolate the launcher bridge", async () => {
   const main = await readFile(new URL("../desktop/main.mjs", import.meta.url), "utf8");
+  const preload = await readFile(new URL("../desktop/preload.cjs", import.meta.url), "utf8");
+  const renderer = await readFile(new URL("../desktop/renderer/app.mjs", import.meta.url), "utf8");
+  const packageJson = JSON.parse(await readFile(new URL("../desktop/package.json", import.meta.url), "utf8"));
   const html = await readFile(new URL("../desktop/renderer/index.html", import.meta.url), "utf8");
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /sandbox: true/);
+  assert.match(main, /preload\.cjs/);
   assert.match(main, /startsWith\("file:\/\/"\)/);
+  assert.match(preload, /require\("electron"\)/);
+  assert.doesNotMatch(preload, /\bimport\s/);
+  assert.ok(packageJson.build.files.includes("preload.cjs"));
+  assert.ok(!packageJson.build.files.includes("preload.mjs"));
+  assert.match(renderer, /桌面启动桥接加载失败/);
+  assert.match(renderer, /if \(window\.spareDesktop\)/);
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /connect-src 'none'/);
 });

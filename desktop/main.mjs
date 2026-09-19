@@ -42,7 +42,7 @@ function createLauncherWindow() {
     autoHideMenuBar: true,
     backgroundColor: "#eef4f8",
     webPreferences: {
-      preload: path.join(desktopRoot, "preload.mjs"),
+      preload: path.join(desktopRoot, "preload.cjs"),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
