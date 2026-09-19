@@ -1,0 +1,2 @@
+# Experiment only; install into the existing Python >=3.12 project environment.
+simpy==4.1.1

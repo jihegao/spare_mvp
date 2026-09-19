@@ -1,0 +1,7 @@
+{
+  "serial_comparisons": 117,
+  "dag_scheduler_comparisons": 2,
+  "invariant_checks": 2447,
+  "invalid_graph_rejections": 3,
+  "cancelled_reservation_wakeup_checks": 6
+}

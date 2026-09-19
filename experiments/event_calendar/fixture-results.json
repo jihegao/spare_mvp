@@ -1,0 +1,326 @@
+{
+  "commit": "1091c98eeca25b99566df1f3143e1f3d183da33c",
+  "python": "3.12.13 (main, May 10 2026, 19:30:01) [Clang 22.1.3 ]",
+  "platform": "Linux-6.8.0-124-generic-x86_64-with-glibc2.35",
+  "simpy": "4.1.1",
+  "runtime_sha256": "65e1eb702d337eea9a7b4ebae107806dedb5146014e8ce53b17662d93bc04b46",
+  "timing_scope": "in-process model initialization + run; excludes Project export/Adapter and file I/O",
+  "cases": [
+    {
+      "project_id": "project-aircraft-support-contract-001",
+      "project_sha256": "9012fdafeacf9b2d3f95ff3778edefdc783d94812537e3ae4d7a5e49ddc9bb73",
+      "inputs_sha256": "c4daf1f2412ef754c21a24e4556b1170dfa78cbeb8121aa2a8ab882378dc78f3",
+      "compile_seconds": 0.09897986799478531,
+      "all_exact_equal": true,
+      "rows": [
+        {
+          "seed": 0,
+          "repeat": 0,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002751790452748537,
+          "run_seconds": 0.008091978961601853,
+          "total_seconds": 0.008367158006876707,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 0,
+          "repeat": 0,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002761608920991421,
+          "run_seconds": 0.0003833870869129896,
+          "total_seconds": 0.0006595479790121317,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 0,
+          "repeat": 0,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00027548009529709816,
+          "run_seconds": 0.0004401959013193846,
+          "total_seconds": 0.0007156759966164827,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 0,
+          "repeat": 1,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002770430874079466,
+          "run_seconds": 0.00036646402440965176,
+          "total_seconds": 0.0006435071118175983,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 0,
+          "repeat": 1,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00028246291913092136,
+          "run_seconds": 0.00045691803097724915,
+          "total_seconds": 0.0007393809501081705,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 0,
+          "repeat": 1,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00026340619660913944,
+          "run_seconds": 0.007757726823911071,
+          "total_seconds": 0.00802113302052021,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 0,
+          "repeat": 2,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00027088006027042866,
+          "run_seconds": 0.0004495740868151188,
+          "total_seconds": 0.0007204541470855474,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 0,
+          "repeat": 2,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002594089601188898,
+          "run_seconds": 0.007876284886151552,
+          "total_seconds": 0.008135693846270442,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 0,
+          "repeat": 2,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00027036014944314957,
+          "run_seconds": 0.0003932348918169737,
+          "total_seconds": 0.0006635950412601233,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 1,
+          "repeat": 0,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00026280502788722515,
+          "run_seconds": 0.00786907086148858,
+          "total_seconds": 0.008131875889375806,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 1,
+          "repeat": 0,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002560319844633341,
+          "run_seconds": 0.0003675560001283884,
+          "total_seconds": 0.0006235879845917225,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 1,
+          "repeat": 0,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002675838768482208,
+          "run_seconds": 0.00043913419358432293,
+          "total_seconds": 0.0007067180704325438,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 1,
+          "repeat": 1,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002630359958857298,
+          "run_seconds": 0.0003778159152716398,
+          "total_seconds": 0.0006408519111573696,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 1,
+          "repeat": 1,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002642180770635605,
+          "run_seconds": 0.00044665788300335407,
+          "total_seconds": 0.0007108759600669146,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 1,
+          "repeat": 1,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002613021060824394,
+          "run_seconds": 0.007900882977992296,
+          "total_seconds": 0.008162185084074736,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 1,
+          "repeat": 2,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00026724301278591156,
+          "run_seconds": 0.0004427710082381964,
+          "total_seconds": 0.0007100140210241079,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 1,
+          "repeat": 2,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00025353790260851383,
+          "run_seconds": 0.007899129064753652,
+          "total_seconds": 0.008152666967362165,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 1,
+          "repeat": 2,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002599798608571291,
+          "run_seconds": 0.00037565198726952076,
+          "total_seconds": 0.0006356318481266499,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 7,
+          "repeat": 0,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002692269627004862,
+          "run_seconds": 0.008115996140986681,
+          "total_seconds": 0.008385223103687167,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 7,
+          "repeat": 0,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002596690319478512,
+          "run_seconds": 0.00038179405964910984,
+          "total_seconds": 0.000641463091596961,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 7,
+          "repeat": 0,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002640469465404749,
+          "run_seconds": 0.0004456068854779005,
+          "total_seconds": 0.0007096538320183754,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 7,
+          "repeat": 1,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00027026887983083725,
+          "run_seconds": 0.00036460114642977715,
+          "total_seconds": 0.0006348700262606144,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 7,
+          "repeat": 1,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00026617199182510376,
+          "run_seconds": 0.0004386331420391798,
+          "total_seconds": 0.0007048051338642836,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 7,
+          "repeat": 1,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.000260109081864357,
+          "run_seconds": 0.007832580944523215,
+          "total_seconds": 0.008092690026387572,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 7,
+          "repeat": 2,
+          "engine": "SimpyCalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.00027081998996436596,
+          "run_seconds": 0.000454312888905406,
+          "total_seconds": 0.000725132878869772,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        },
+        {
+          "seed": 7,
+          "repeat": 2,
+          "engine": "AircraftSupportV1Model",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002539579290896654,
+          "run_seconds": 0.007879831129685044,
+          "total_seconds": 0.00813378905877471,
+          "executed_ticks": 1440,
+          "skipped_ticks": 0
+        },
+        {
+          "seed": 7,
+          "repeat": 2,
+          "engine": "CalendarModel",
+          "result_sha256": "34f6b7d258de7f51d715e1c4ccd45e7eba652c1591aa0a7032c6c8d5b4953850",
+          "init_seconds": 0.0002565830945968628,
+          "run_seconds": 0.00039338599890470505,
+          "total_seconds": 0.0006499690935015678,
+          "executed_ticks": 25,
+          "skipped_ticks": 1415
+        }
+      ],
+      "median_total_seconds": {
+        "AircraftSupportV1Model": 0.008135693846270442,
+        "CalendarModel": 0.000641463091596961,
+        "SimpyCalendarModel": 0.0007108759600669146
+      },
+      "speedup": {
+        "AircraftSupportV1Model": 1.0,
+        "CalendarModel": 12.683027212081901,
+        "SimpyCalendarModel": 11.444603986192798
+      }
+    }
+  ]
+}
