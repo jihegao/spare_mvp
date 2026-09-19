@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$PortablePackage,
     [Parameter(Mandatory=$true)][string]$DesktopDirectory,
-    [Parameter(Mandatory=$true)][string]$Destination
+    [Parameter(Mandatory=$true)][string]$Destination,
+    [string]$GreenSourceManifest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,13 +12,8 @@ $portable = (Resolve-Path -LiteralPath $PortablePackage).Path
 $desktop = (Resolve-Path -LiteralPath $DesktopDirectory).Path
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$boundFiles = @(
-    'desktop/main.mjs', 'desktop/preload.cjs', 'desktop/service-manager.mjs',
-    'desktop/diagnostics.mjs', 'desktop/renderer/app.mjs', 'desktop/renderer/index.html',
-    'desktop/renderer/styles.css', 'desktop/package.json', 'desktop/package-lock.json',
-    'packaging/green/GreenExtractor.cs', 'packaging/green/Build-GreenPackage.ps1',
-    'docs/windows-desktop-rc1.md'
-)
+$boundFiles = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'source-files.txt') |
+    ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
 if (Test-Path -LiteralPath $destinationPath) { throw "Destination already exists: $destinationPath" }
 foreach ($required in @(
     (Join-Path $portable 'runtime\python.exe'),
@@ -40,21 +36,28 @@ try {
     if ($null -eq $desktopExecutable) { throw 'Desktop executable was not found.' }
     Move-Item -LiteralPath $desktopExecutable.FullName -Destination (Join-Path $staging 'SpareMvpDesktop.exe') -Force
 
-    & git -C $repo diff --quiet HEAD -- @boundFiles
-    if ($LASTEXITCODE -ne 0) { throw 'Green desktop source differs from HEAD; commit the candidate before packaging.' }
-    $sourceCommit = (& git -C $repo rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Could not determine the green desktop source commit.' }
-    $sourceHashes = [ordered]@{}
+    if ($GreenSourceManifest) {
+        $greenManifest = Get-Content -LiteralPath (Resolve-Path -LiteralPath $GreenSourceManifest).Path -Raw | ConvertFrom-Json
+    } else {
+        $generatedManifest = Join-Path $working 'green-source-manifest.json'
+        & (Join-Path $portable 'runtime\python.exe') -I -B (Join-Path $repo 'packaging\green\green-source-manifest.py') --repo $repo --root $generatedManifest
+        if ($LASTEXITCODE -ne 0) { throw 'Green source manifest generation failed.' }
+        $greenManifest = Get-Content -LiteralPath $generatedManifest -Raw | ConvertFrom-Json
+    }
+    if ($greenManifest.format_version -ne 1 -or $greenManifest.source_commit -notmatch '^[a-f0-9]{40}$') {
+        throw 'Green source manifest is invalid.'
+    }
+    $manifestNames = @($greenManifest.files.PSObject.Properties.Name | Sort-Object)
+    if ((Compare-Object @($boundFiles | Sort-Object) $manifestNames).Count -ne 0) {
+        throw 'Green source manifest does not cover the exact reviewed file list.'
+    }
     foreach ($name in $boundFiles) {
         $sourcePath = Join-Path $repo $name
         if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Bound green source is missing: $name" }
-        $sourceHashes[$name.Replace('\', '/')] = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $actualHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualHash -ne $greenManifest.files.$name) { throw "Green source differs from its manifest: $name" }
     }
-    [ordered]@{
-        format_version = 1
-        source_commit = $sourceCommit
-        files = $sourceHashes
-    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $staging 'green-source-manifest.json') -Encoding UTF8
+    $greenManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $staging 'green-source-manifest.json') -Encoding UTF8
 
     & (Join-Path $staging 'runtime\python.exe') -I -B (Join-Path $staging 'scripts\portable-package.py') seal --root $staging
     if ($LASTEXITCODE -ne 0) { throw 'Green package sealing failed.' }

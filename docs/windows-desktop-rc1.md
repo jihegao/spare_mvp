@@ -28,6 +28,8 @@ npx electron-builder --win dir --x64 -c.win.signAndEditExecutable=false
   -Destination '.\dist\spare-mvp-2.0-green.exe'
 ```
 
+从无 `.git` 的受控源码归档构建时，先在原 checkout 运行 `green-source-manifest.py --root <文件>`，再向封装命令传入 `-GreenSourceManifest <文件>`；封装器会核对受审文件集合和逐文件 SHA-256。
+
 封装脚本在临时目录合并便携包和桌面目录，重新生成并验证 `manifest.json`，然后创建单文件自解压包及相邻的 `.manifest.json`。目标文件存在时构建失败，不覆盖既有候选。
 
 自解压器要求 Windows 自带 `tar.exe`，解压前校验内置 payload 的 SHA-256；目标目录存在且非空时拒绝覆盖。发布仍需单独记录整个 EXE 的 SHA-256，因为内置哈希只用于传输损坏检测，不替代代码签名或外部发布校验。
