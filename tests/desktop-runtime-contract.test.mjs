@@ -20,7 +20,7 @@ test("green package readiness is entirely package-local", () => {
 test("portable integrity invokes only the bundled Python verifier", async () => {
   const paths = runtimePaths(process.cwd());
   const calls = [];
-  await assert.rejects(assertPortableIntegrity(paths, async (...args) => calls.push(args)), /绿色版文件不完整/);
+  await assert.rejects(assertPortableIntegrity(paths, () => {}, async (...args) => calls.push(args)), /绿色版文件不完整/);
   assert.deepEqual(calls, []);
 });
 
@@ -59,4 +59,7 @@ test("Electron windows disable Node integration and isolate the launcher bridge"
   assert.match(extractor, /tar\.exe/);
   assert.match(extractor, /--extract-to/);
   assert.match(extractor, /--no-launch/);
+  const portablePackager = await readFile(new URL("../scripts/portable-package.py", import.meta.url), "utf8");
+  assert.match(portablePackager, /VERIFY_PROGRESS/);
+  assert.match(main, /assertPortableIntegrity\(runtimePathsValue, sendProgress\)/);
 });

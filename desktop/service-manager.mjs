@@ -30,7 +30,7 @@ export function portableResourcesReady(paths) {
 
 export async function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const { timeoutMs = 0, ...spawnOptions } = options;
+    const { timeoutMs = 0, onStdout = () => {}, ...spawnOptions } = options;
     const child = spawn(command, args, {
       windowsHide: true,
       ...spawnOptions,
@@ -47,7 +47,7 @@ export async function runCommand(command, args, options = {}) {
       if (error) reject(error);
       else resolve(result);
     };
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stdout.on("data", (chunk) => { stdout += chunk; onStdout(String(chunk)); });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.once("error", (error) => finish(error));
     child.once("close", (code) => {
@@ -79,15 +79,29 @@ export async function waitForHttp(url, timeoutMs = 120_000) {
   throw new Error(`服务健康检查超时：${lastError?.message || "unknown"}`);
 }
 
-export async function assertPortableIntegrity(paths, run = runCommand) {
+export async function assertPortableIntegrity(paths, onProgress = () => {}, run = runCommand) {
   if (!portableResourcesReady(paths)) {
     const missing = requiredRuntimeFiles(paths).filter((filePath) => !existsSync(filePath));
     throw new Error(`绿色版文件不完整：${missing.join("；")}`);
   }
-  await run(paths.python, ["-I", "-B", paths.verifier, "verify", "--root", paths.packageRoot], {
+  let buffered = "";
+  await run(paths.python, ["-I", "-B", paths.verifier, "verify", "--root", paths.packageRoot, "--progress"], {
     cwd: paths.packageRoot,
-    timeoutMs: 180_000,
+    timeoutMs: 600_000,
     env: { ...process.env, PYTHONNOUSERSITE: "1", PYTHONDONTWRITEBYTECODE: "1" },
+    onStdout(chunk) {
+      buffered += chunk;
+      const lines = buffered.split(/\r?\n/);
+      buffered = lines.pop() || "";
+      for (const line of lines) {
+        const match = line.match(/^VERIFY_PROGRESS (\d+) (\d+)$/);
+        if (!match) continue;
+        const checked = Number(match[1]);
+        const total = Number(match[2]);
+        const percent = 15 + Math.floor(30 * checked / total);
+        onProgress(`正在校验内置运行环境（${checked} / ${total}）`, percent);
+      }
+    },
   });
 }
 

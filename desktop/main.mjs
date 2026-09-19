@@ -112,7 +112,7 @@ async function currentStatus() {
 async function startRuntime() {
   const runtimePathsValue = paths();
   sendProgress("正在校验内置运行环境", 15);
-  await assertPortableIntegrity(runtimePathsValue);
+  await assertPortableIntegrity(runtimePathsValue, sendProgress);
   activeRuntime = await startServices(runtimePathsValue, sendProgress);
   createBusinessWindow(activeRuntime.state.frontendUrl);
   return activeRuntime.state;

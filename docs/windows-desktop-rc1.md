@@ -14,7 +14,7 @@
 
 桌面启动器不得复制第二套业务启动逻辑。它调用包内 `start-portable.ps1 -AutoSelectPorts -NoBrowser`，读取 `data/active-ports.json`，在后端和 Solara 健康检查通过后打开内置业务窗口。退出时只允许停止通过解释器路径、创建时间、服务命令和实例标识共同确认属于当前绿色包的 Python 进程。
 
-桌面程序启动前使用包内 Python 执行 `portable-package.py verify`。`manifest.json` 覆盖应用、运行时、桌面二进制和离线资源；`data/` 是本机可变状态，不参与静态哈希。诊断包只收集发布清单、活动端口和 `data/logs/*.log`，不得收集账号凭据或项目正文。
+桌面程序启动前使用包内 Python 执行 `portable-package.py verify --progress`。`manifest.json` 覆盖应用、运行时、桌面二进制和离线资源；`data/` 是本机可变状态，不参与静态哈希。启动页显示已校验文件数，完整性进程最多允许 10 分钟，不能因固定 180 秒超时误杀较慢磁盘上的正常校验。诊断包只收集发布清单、活动端口和 `data/logs/*.log`，不得收集账号凭据或项目正文。
 
 ## 构建
 

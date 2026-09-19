@@ -138,9 +138,14 @@ def verify_frontend_assets(root: Path, source: dict) -> None:
     module.verify(root / 'assets' / 'solara-cdn', module.read_lock(lock_path))
 
 
-def verify(root: Path) -> None:
+def verify(root: Path, progress: bool = False) -> None:
     manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
-    actual = {name: digest(path) for name, path in immutable_files(root)}
+    actual = {}
+    total = len(manifest['files'])
+    for checked, (name, path) in enumerate(immutable_files(root), 1):
+        actual[name] = digest(path)
+        if progress and (checked == total or checked % 250 == 0):
+            print(f'VERIFY_PROGRESS {checked} {total}', flush=True)
     if actual != manifest['files']:
         differing = sorted(name for name in actual.keys() | manifest['files'].keys()
                            if actual.get(name) != manifest['files'].get(name))
@@ -254,6 +259,7 @@ def main():
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--source-manifest', type=Path)
     parser.add_argument('--runtime-source', type=Path)
+    parser.add_argument('--progress', action='store_true')
     args = parser.parse_args()
     if args.command == 'source-manifest':
         args.root.write_text(json.dumps(source_manifest(args.repo), indent=2) + '\n', encoding='utf-8')
@@ -268,7 +274,7 @@ def main():
     elif args.command == 'verify-runtime':
         verify_runtime(args.root, args.runtime_source)
     else:
-        verify(args.root)
+        verify(args.root, progress=args.progress)
 
 
 if __name__ == '__main__':
