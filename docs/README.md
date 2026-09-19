@@ -45,6 +45,7 @@
 | --- | --- |
 | [`../README.md`](../README.md) | 仓库概览、运行方式、能力范围和边界。 |
 | [`product-roadmap.md`](product-roadmap.md) | 总路线图：产品里程碑、阶段依赖、主干运行路径和验收口径。 |
+| [`windows-desktop-rc1.md`](windows-desktop-rc1.md) | Windows Desktop RC1：离线安装向导、Electron 客户端、本机 Docker 服务和验收边界。 |
 | [`spare_mvp_rms_allocation_design.md`](spare_mvp_rms_allocation_design.md) | 当前 RMS 指标分配工作台的实现说明、算法口径、UI 边界和非目标。 |
 | [`basic-support-activity-csv-import-design.md`](basic-support-activity-csv-import-design.md) | 基本保障活动统一 CSV 模板、引用校验、原子落地和兼容策略。 |
 | [`support-organization-contract.md`](support-organization-contract.md) | 保障组织树、横向关系、资源归属、作用域、运输策略与 Scenario 图编译契约。 |

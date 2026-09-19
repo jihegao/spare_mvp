@@ -18,10 +18,18 @@ def main():
     parser.add_argument('--database', type=Path, required=True)
     parser.add_argument('--project', type=Path, help='Optional local clean Project JSON')
     parser.add_argument('--experiment-config', type=Path, help='Optional local experiment settings for --project')
+    parser.add_argument('--if-missing', action='store_true', help='Validate and keep an existing database instead of overwriting it')
     args = parser.parse_args()
     if args.experiment_config and not args.project:
         parser.error('--experiment-config requires --project')
     if args.database.exists():
+        if args.if_missing:
+            with sqlite3.connect(args.database) as connection:
+                result = connection.execute('PRAGMA quick_check').fetchone()[0]
+            if result != 'ok':
+                parser.error(f'Existing database failed quick_check: {result}')
+            print('Existing database is healthy; initialization skipped.')
+            return
         parser.error('Database already exists; refusing to overwrite local state')
     args.database.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(args.database) as connection:
