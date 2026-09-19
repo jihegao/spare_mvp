@@ -14,3 +14,12 @@ test("green extractor stages the embedded tar before invoking Windows tar", () =
   assert.doesNotMatch(source, /RedirectStandardInput/);
   assert.doesNotMatch(source, /StandardInput\.BaseStream\.Write/);
 });
+
+test("green extractor creates a current-user desktop shortcut for the extracted launcher", () => {
+  assert.match(source, /Environment\.SpecialFolder\.DesktopDirectory/);
+  assert.match(source, /Type\.GetTypeFromProgID\("WScript\.Shell"\)/);
+  assert.match(source, /CreateShortcut/);
+  assert.match(source, /TargetPath/);
+  assert.match(source, /SpareMvpDesktop\.exe/);
+  assert.match(source, /CreateDesktopShortcut\(launcher, destination\)/);
+});

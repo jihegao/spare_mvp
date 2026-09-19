@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows.Forms;
@@ -9,6 +11,7 @@ internal static class GreenExtractor
 {
     private const string Magic = "SPAREPKG";
     private const int FooterSize = 48;
+    private const string ShortcutFileName = "spare_mvp 2.0.lnk";
 
     [STAThread]
     private static int Main(string[] args)
@@ -72,8 +75,9 @@ internal static class GreenExtractor
             }
             string launcher = Path.Combine(destination, "SpareMvpDesktop.exe");
             if (!File.Exists(launcher)) throw new FileNotFoundException("解压后未找到桌面启动器。", launcher);
+            CreateDesktopShortcut(launcher, destination);
             if (!noLaunch) Process.Start(new ProcessStartInfo(launcher) { WorkingDirectory = destination, UseShellExecute = true });
-            if (!unattended) MessageBox.Show("绿色版已解压到：\r\n" + destination + "\r\n\r\n平台正在启动。", "spare_mvp 2.0", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (!unattended) MessageBox.Show("绿色版已解压到：\r\n" + destination + "\r\n\r\n桌面快捷方式已创建，平台正在启动。", "spare_mvp 2.0", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return 0;
         }
         catch (Exception error)
@@ -85,6 +89,34 @@ internal static class GreenExtractor
             }
             else MessageBox.Show(error.Message, "绿色版解压失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
+        }
+    }
+
+    private static void CreateDesktopShortcut(string launcher, string destination)
+    {
+        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        if (String.IsNullOrWhiteSpace(desktop) || !Directory.Exists(desktop))
+            throw new DirectoryNotFoundException("无法找到当前用户的桌面目录。");
+        string shortcutPath = Path.Combine(desktop, ShortcutFileName);
+        Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+        if (shellType == null) throw new PlatformNotSupportedException("Windows Script Host 不可用，无法创建桌面快捷方式。");
+        object shell = null;
+        object shortcut = null;
+        try
+        {
+            shell = Activator.CreateInstance(shellType);
+            shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
+            Type shortcutType = shortcut.GetType();
+            shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { launcher });
+            shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { destination });
+            shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { "spare_mvp 2.0 绿色桌面版" });
+            shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { launcher + ",0" });
+            shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
+        }
+        finally
+        {
+            if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut);
+            if (shell != null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
         }
     }
 
