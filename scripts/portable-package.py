@@ -21,7 +21,7 @@ APP_FILES = {
 SCRIPT_FILES = {
     'start-portable.ps1', 'stop-portable.ps1', 'test-frontend-modules.ps1', 'initialize-case-database.py',
     'test-port-selection.ps1', 'verify-portable-package.ps1', 'portable-package.py', 'portable-process.ps1',
-    'prepare-solara-assets.py',
+    'portable-paths.py', 'prepare-solara-assets.py',
 }
 ENTRYPOINTS = {'Start-Platform.cmd', 'Start-Platform.vbs', 'Stop-Platform.cmd'}
 PACKAGE_SUPPORT_FILES = {f'scripts/{name}' for name in SCRIPT_FILES} | ENTRYPOINTS | {'docs/windows-portable.md'}
@@ -30,6 +30,10 @@ BUILD_INPUTS = {
     'scripts/initialize-case-database.py', 'packaging/windows-runtime.json',
     'packaging/requirements-windows.lock',
     'packaging/solara-assets.lock.json',
+}
+RELEASE_DEPENDENCY_FILES = {
+    'installed-distributions.json', 'requirements-windows.lock',
+    'runtime-manifest.json', 'windows-runtime.json',
 }
 
 
@@ -120,6 +124,7 @@ def seal(root: Path) -> None:
         if digest(root / package_destination(name)) != expected:
             raise ValueError(f'Staged source differs from candidate: {name}')
     if (root / 'runtime').exists():
+        verify_release_dependencies(root)
         verify_runtime_manifest(root / 'dependencies', root / 'runtime', require_archive=False)
         verify_frontend_assets(root, source)
     manifest = {'format_version': 1, 'source_commit': source['source_commit'],
@@ -138,11 +143,34 @@ def verify_frontend_assets(root: Path, source: dict) -> None:
     module.verify(root / 'assets' / 'solara-cdn', module.read_lock(lock_path))
 
 
-def verify(root: Path, progress: bool = False) -> None:
+def verify_release_dependencies(root: Path) -> None:
+    dependencies = root / 'dependencies'
+    if dependencies.is_symlink() or not dependencies.is_dir():
+        raise ValueError('Release dependencies directory is missing or invalid')
+    actual = set()
+    for path in dependencies.rglob('*'):
+        relative = path.relative_to(dependencies).as_posix()
+        if path.is_symlink():
+            raise ValueError(f'Release dependency symlink is not allowed: {relative}')
+        if path.is_dir():
+            raise ValueError(f'Release dependencies differ from provenance allowlist; unexpected directory={relative}')
+        actual.add(relative)
+    if actual != RELEASE_DEPENDENCY_FILES:
+        unexpected = sorted(actual - RELEASE_DEPENDENCY_FILES)
+        missing = sorted(RELEASE_DEPENDENCY_FILES - actual)
+        raise ValueError(f'Release dependencies differ from provenance allowlist; missing={missing}, unexpected={unexpected[:10]}')
+
+
+def verify(root: Path, progress: bool = False) -> dict[str, list[int]]:
+    if (root / 'runtime').exists():
+        verify_release_dependencies(root)
     manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
     actual = {}
+    metadata = {}
     total = len(manifest['files'])
     for checked, (name, path) in enumerate(immutable_files(root), 1):
+        stat = path.stat()
+        metadata[name] = [stat.st_size, stat.st_mtime_ns]
         actual[name] = digest(path)
         if progress and (checked == total or checked % 250 == 0):
             print(f'VERIFY_PROGRESS {checked} {total}', flush=True)
@@ -151,13 +179,16 @@ def verify(root: Path, progress: bool = False) -> None:
                            if actual.get(name) != manifest['files'].get(name))
         raise ValueError(f'Package integrity mismatch: {differing[:10]}')
     print(f'Verified {len(actual)} immutable files; source {manifest["source_commit"]}')
+    return metadata
 
 
-def immutable_metadata(root: Path) -> dict[str, list[int]]:
+def verify_cached_content(root: Path, manifest: dict) -> dict[str, list[int]]:
     result = {}
     for name, path in immutable_files(root):
         stat = path.stat()
         result[name] = [stat.st_size, stat.st_mtime_ns]
+        if critical_runtime_file(name) and digest(path) != manifest['files'].get(name):
+            raise ValueError(f'Critical runtime file differs from manifest: {name}')
     return result
 
 
@@ -165,31 +196,31 @@ def critical_runtime_file(name: str) -> bool:
     suffix = Path(name).suffix.lower()
     return (name.startswith(('app/', 'assets/', 'scripts/', 'resources/'))
             or name in {'SpareMvpDesktop.exe', 'Uninstall-SpareMvp.exe', 'source-manifest.json', 'green-source-manifest.json'}
-            or suffix in {'.exe', '.dll', '.node', '.cmd', '.bat', '.vbs', '.ps1'}
+            or suffix in {'.exe', '.dll', '.node', '.bin', '.pak', '.dat', '.cmd', '.bat', '.vbs', '.ps1'}
             or (name.startswith('runtime/') and suffix in {
-                '.py', '.pyw', '.pyd', '.pth', '.zip',
+                '.py', '.pyw', '.pyc', '.pyo', '.pyd', '.so', '.pth', '._pth', '.zip',
             }))
 
 
 def verify_cached(root: Path, cache_path: Path, progress: bool = False) -> None:
+    if (root / 'runtime').exists():
+        verify_release_dependencies(root)
     manifest_path = root / 'manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
     manifest_sha256 = digest(manifest_path)
-    metadata = immutable_metadata(root)
     try:
         cache = json.loads(cache_path.read_text(encoding='utf-8'))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         cache = None
-    cache_valid = (isinstance(cache, dict) and cache.get('format_version') == 1
-                   and cache.get('manifest_sha256') == manifest_sha256
-                   and cache.get('files') == metadata)
-    if cache_valid:
-        for name, path in immutable_files(root):
-            if critical_runtime_file(name) and digest(path) != manifest['files'].get(name):
-                raise ValueError(f'Critical runtime file differs from manifest: {name}')
-        print(f'Integrity cache valid for {len(metadata)} immutable files', flush=True)
-        return
-    verify(root, progress=progress)
+    cache_candidate = (isinstance(cache, dict) and cache.get('format_version') == 1
+                       and cache.get('manifest_sha256') == manifest_sha256
+                       and isinstance(cache.get('files'), dict))
+    if cache_candidate:
+        metadata = verify_cached_content(root, manifest)
+        if cache['files'] == metadata:
+            print(f'Integrity cache valid for {len(metadata)} immutable files', flush=True)
+            return
+    metadata = verify(root, progress=progress)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = cache_path.with_suffix('.tmp')
     temporary.write_text(json.dumps({

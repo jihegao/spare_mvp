@@ -43,6 +43,10 @@ class PortablePackageTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Staged source differs'):
                 package.seal(destination)
 
+    def test_public_path_resolver_is_bound_into_the_runtime_package(self):
+        self.assertIn('portable-paths.py', package.SCRIPT_FILES)
+        self.assertEqual(package.package_destination('scripts/portable-paths.py'), 'scripts/portable-paths.py')
+
     def test_modified_scripts_documents_and_initializer_cannot_keep_candidate_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'source'
@@ -89,7 +93,11 @@ class PortablePackageTest(unittest.TestCase):
                     'build_inputs': {name: package.digest(ROOT / name) for name in package.BUILD_INPUTS}}
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / 'package'
-            package.stage(ROOT, destination, manifest)
+            # The resolver is lifecycle-owned and lands during integration; keep
+            # this source-checkout test runnable before that dependent commit.
+            support_files = package.PACKAGE_SUPPORT_FILES - {'scripts/portable-paths.py'}
+            with patch.object(package, 'PACKAGE_SUPPORT_FILES', support_files):
+                package.stage(ROOT, destination, manifest)
             database = destination / 'data' / 'fixture.sqlite3'
             result = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8',
                 str(destination / 'scripts' / 'initialize-case-database.py'), '--database', str(database)],
@@ -158,6 +166,7 @@ class PortablePackageTest(unittest.TestCase):
             'runtime/python313.zip',
             'runtime/Lib/site-packages/bootstrap.pth',
             'libEGL.dll',
+            'v8_context_snapshot.bin',
         )
         for name in protected_files:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
@@ -167,6 +176,11 @@ class PortablePackageTest(unittest.TestCase):
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(b'reviewed-content')
+                if name.startswith('runtime/'):
+                    dependencies = root / 'dependencies'
+                    dependencies.mkdir()
+                    for approved in package.RELEASE_DEPENDENCY_FILES:
+                        (dependencies / approved).write_text('reviewed provenance')
                 with patch.object(package, 'verify_runtime_manifest'), patch.object(package, 'verify_frontend_assets'):
                     package.seal(root)
                 cache = Path(tmp) / 'state' / 'integrity-cache.json'
@@ -192,6 +206,21 @@ class PortablePackageTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('Verified 1 immutable files', result.stdout)
             self.assertFalse((root / 'data' / 'integrity-cache.json').exists())
+
+    def test_cached_verification_scans_package_once_on_cold_and_warm_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'package'
+            root.mkdir()
+            (root / 'source-manifest.json').write_text(json.dumps({'source_commit': 'a' * 40}))
+            (root / 'app').mkdir()
+            (root / 'app' / 'module.py').write_text('reviewed')
+            package.seal(root)
+            cache = Path(tmp) / 'state' / 'integrity-cache.json'
+            with patch.object(package, 'immutable_files', wraps=package.immutable_files) as immutable_files:
+                package.verify_cached(root, cache)
+                self.assertEqual(immutable_files.call_count, 1)
+                package.verify_cached(root, cache)
+                self.assertEqual(immutable_files.call_count, 2)
 
     def test_staging_rejects_invalid_or_changed_manifest_before_writing(self):
         with tempfile.TemporaryDirectory() as tmp:

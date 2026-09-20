@@ -23,6 +23,7 @@ class PortableRuntimeManifestTest(unittest.TestCase):
             'sha256': package.digest(root / 'downloads/python.zip'),
         }))
         (root / 'requirements-windows.lock').write_text('reviewed dependency lock')
+        (root / 'installed-distributions.json').write_text('[]')
         runtime = root / 'runtime'
         (runtime / 'Lib/site-packages').mkdir(parents=True)
         (runtime / 'python.exe').write_bytes(b'prepared interpreter')
@@ -128,6 +129,32 @@ class PortableRuntimeManifestTest(unittest.TestCase):
             (bundle / 'requirements-windows.lock').write_text('changed lock')
             with self.assertRaisesRegex(ValueError, 'archive or dependency lock'):
                 package.verify_runtime_manifest(bundle, runtime, require_archive=False)
+
+    def test_release_dependency_layout_rejects_build_only_materials(self):
+        additions = ('wheelhouse/example.whl', 'downloads/python.zip', 'unreviewed.json')
+        for name in additions:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / 'package'
+                dependencies = root / 'dependencies'
+                dependencies.mkdir(parents=True)
+                for approved in package.RELEASE_DEPENDENCY_FILES:
+                    (dependencies / approved).write_text('reviewed provenance')
+                package.verify_release_dependencies(root)
+                extra = dependencies / name
+                extra.parent.mkdir(parents=True, exist_ok=True)
+                extra.write_text('build-only material')
+                with self.assertRaisesRegex(ValueError, 'provenance allowlist'):
+                    package.verify_release_dependencies(root)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'package'
+            dependencies = root / 'dependencies'
+            dependencies.mkdir(parents=True)
+            for approved in package.RELEASE_DEPENDENCY_FILES:
+                (dependencies / approved).write_text('reviewed provenance')
+            (dependencies / 'wheelhouse').mkdir()
+            with self.assertRaisesRegex(ValueError, 'provenance allowlist'):
+                package.verify_release_dependencies(root)
 
     def test_dependency_check_binds_its_interpreter_to_requested_runtime_source(self):
         with tempfile.TemporaryDirectory() as tmp:
