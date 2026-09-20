@@ -2,6 +2,7 @@ desktop/main.mjs
 desktop/preload.cjs
 desktop/service-manager.mjs
 desktop/diagnostics.mjs
+desktop/scripts/patch-electron-builder-collector.mjs
 desktop/renderer/app.mjs
 desktop/renderer/index.html
 desktop/renderer/styles.css
