@@ -27,12 +27,13 @@ PowerShell 主进程退出即代表启动脚本完成；不能等待所有后代
 
 先按 [`windows-portable.md`](windows-portable.md) 生成一个全新的原生便携包；不得把已经运行并产生用户数据的验收目录直接作为发布输入。再生成 Electron Windows 目录包，并在 Windows 上封装绿色自解压文件：
 
-当前 Linux 交叉构建必须将 Electron zip 缓存与 electron-builder 工具缓存分开，并且不得设置 `ELECTRON_BUILDER_CACHE`：锁定的 `app-builder-lib 26.0.20` 会把该变量的值拼入 artifact 名称，导致内置 `winCodeSign` 元数据无法匹配。使用任务独占的 `XDG_CACHE_HOME`，其中预置并验证 `electron-builder/winCodeSign/winCodeSign-2.6.0/`；其官方归档 `winCodeSign-2.6.0.7z` 为 5,635,384 bytes，SHA-256 为 `cdaec7154dda7cc31f88d886e2489379a0625a737d610b5ae7f62a12f16743a4`，并匹配锁定 app-builder 内置的 SHA-512 `6LQI2d9BPC3Xs0ZoTQe1o3tPiA28c7+PY69Q9i/pD8lY45psMtHuLwv3vRckiVr3Zx1cbNyLlBR8STwCdcHwtA==`。`ELECTRON_CACHE` 只指向另一个任务独占的 Electron zip 缓存。
+当前 Linux 交叉构建必须将 Electron zip 缓存与 electron-builder 工具缓存分开，并且不得设置 `ELECTRON_BUILDER_CACHE`：锁定的 `app-builder-lib 26.0.20` 会把该变量的值拼入 artifact 名称，导致内置 `winCodeSign` 元数据无法匹配。使用任务独占的 `XDG_CACHE_HOME`，其中预置并验证 `electron-builder/winCodeSign/winCodeSign-2.6.0/`；其官方归档 `winCodeSign-2.6.0.7z` 为 5,635,384 bytes，SHA-256 为 `cdaec7154dda7cc31f88d886e2489379a0625a737d610b5ae7f62a12f16743a4`，并匹配锁定 app-builder 内置的 SHA-512 `6LQI2d9BPC3Xs0ZoTQe1o3tPiA28c7+PY69Q9i/pD8lY45psMtHuLwv3vRckiVr3Zx1cbNyLlBR8STwCdcHwtA==`。`electron_config_cache` 与 `ELECTRON_CACHE` 同时指向另一个任务独占的 Electron zip 缓存：前者供 `electron@38.1.2` 的 npm lifecycle 读取构建主机 zip，后者供 electron-builder 读取 Windows 目标 zip。
 
 ```bash
 unset ELECTRON_BUILDER_CACHE
 export XDG_CACHE_HOME=/path/to/task-owned/xdg-cache
 export ELECTRON_CACHE=/path/to/task-owned/electron-cache
+export electron_config_cache=/path/to/task-owned/electron-cache
 cd desktop
 npm run dist:win
 cd ..
