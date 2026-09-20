@@ -93,6 +93,13 @@ test("running state requires backend and Solara health for the same installation
   assert.equal(urls.length, 2);
 });
 
+test("portable startup migrates durable legacy files only when they exist", async () => {
+  const startScript = await readFile(new URL("../scripts/start-portable.ps1", import.meta.url), "utf8");
+  assert.match(startScript, /\$legacyHasUserState = \$null -ne \(Get-ChildItem/);
+  assert.match(startScript, /'active-ports\.json', 'integrity-cache\.json', 'pids', 'logs', 'matplotlib', 'diagnostics'/);
+  assert.match(startScript, /if \(-not \[bool\]\$Paths\.binding_matches_selected -and \$legacyHasUserState\) \{[\s\S]{0,300}migrate-files/);
+});
+
 test("Electron windows disable Node integration and isolate the launcher bridge", async () => {
   const main = await readFile(new URL("../desktop/main.mjs", import.meta.url), "utf8");
   const preload = await readFile(new URL("../desktop/preload.cjs", import.meta.url), "utf8");

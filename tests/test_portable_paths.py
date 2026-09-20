@@ -367,6 +367,60 @@ class PortableDataMigrationTest(unittest.TestCase):
             self.assertFalse((destination / "logs").exists())
             self.assertTrue((legacy / "outputs" / "run-1" / "result.json").is_file())
 
+    def test_clean_reinstall_reuses_shared_database_and_outputs_without_file_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "package" / "data"
+            shared = root / "shared"
+            source_database = legacy / "spare_mvp.sqlite3"
+            destination_database = shared / "spare_mvp.sqlite3"
+            self.create_database(source_database, ["baseline"])
+            self.create_database(destination_database, ["retained-user-project"])
+            (shared / "outputs").mkdir()
+            (shared / "outputs" / "retained.json").write_text("retained")
+
+            legacy_has_user_state = bool(data_module.durable_file_manifest(legacy))
+            database_result = data_module.prepare_database(
+                source_database, destination_database, allow_existing=not legacy_has_user_state
+            )
+            if legacy_has_user_state:
+                data_module.migrate_durable_files(legacy, shared, status_file=root / "files.json")
+
+            self.assertFalse(legacy_has_user_state)
+            self.assertEqual(database_result["action"], "reused-existing")
+            self.assertEqual((shared / "outputs" / "retained.json").read_text(), "retained")
+            with sqlite3.connect(destination_database) as connection:
+                self.assertEqual(
+                    connection.execute("select name from projects").fetchone()[0],
+                    "retained-user-project",
+                )
+
+    def test_legacy_outputs_run_database_then_durable_file_migration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "package" / "data"
+            shared = root / "shared"
+            source_database = legacy / "spare_mvp.sqlite3"
+            destination_database = shared / "spare_mvp.sqlite3"
+            self.create_database(source_database, ["legacy-user-project"])
+            (legacy / "outputs").mkdir()
+            (legacy / "outputs" / "legacy.json").write_text("legacy-output")
+
+            legacy_has_user_state = bool(data_module.durable_file_manifest(legacy))
+            database_result = data_module.prepare_database(
+                source_database, destination_database, allow_existing=not legacy_has_user_state
+            )
+            file_result = None
+            if legacy_has_user_state:
+                file_result = data_module.migrate_durable_files(
+                    legacy, shared, status_file=root / "files.json"
+                )
+
+            self.assertTrue(legacy_has_user_state)
+            self.assertEqual(database_result["action"], "sqlite-backup")
+            self.assertEqual(file_result["action"], "migrated-files")
+            self.assertEqual((shared / "outputs" / "legacy.json").read_text(), "legacy-output")
+
     def test_durable_file_migration_resumes_only_its_matching_partial_promotion(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

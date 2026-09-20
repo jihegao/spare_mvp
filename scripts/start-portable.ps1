@@ -262,7 +262,10 @@ try {
 
     $sharedDataMutex = Acquire-SharedDataMutex -MutexName ([string]$Paths.data_mutex)
     $legacyHasUserState = $null -ne (Get-ChildItem -LiteralPath $LegacyDataRoot -Force |
-        Where-Object { $_.Name -notin @('spare_mvp.sqlite3', 'spare_mvp.sqlite3-wal', 'spare_mvp.sqlite3-shm') } |
+        Where-Object { $_.Name -notin @(
+            'spare_mvp.sqlite3', 'spare_mvp.sqlite3-wal', 'spare_mvp.sqlite3-shm',
+            'active-ports.json', 'integrity-cache.json', 'pids', 'logs', 'matplotlib', 'diagnostics'
+        ) } |
         Select-Object -First 1)
     $migrationArguments = @(
         '-I', '-B', $DataManager, 'migrate',
@@ -274,7 +277,7 @@ try {
     if ([bool]$Paths.binding_matches_selected -or -not $legacyHasUserState) { $migrationArguments += '--allow-existing' }
     & $Python @migrationArguments
     if ($LASTEXITCODE -ne 0) { throw 'Portable user database migration or validation failed.' }
-    if (-not [bool]$Paths.binding_matches_selected) {
+    if (-not [bool]$Paths.binding_matches_selected -and $legacyHasUserState) {
         & $Python -I -B $DataManager migrate-files `
             --source-root $LegacyDataRoot `
             --destination-root $DataRoot `
