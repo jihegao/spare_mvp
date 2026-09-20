@@ -175,6 +175,7 @@ def resolve_paths(
         "state_file": str(instance_root / "active-ports.json"),
         "pid_root": str(instance_root / "pids"),
         "logs_dir": str(instance_root / "logs"),
+        "evidence_dir": str(instance_root / "evidence"),
         "diagnostics_dir": str(instance_root / "diagnostics"),
         "integrity_cache": str(instance_root / "integrity-cache.json"),
         "output_root": str(data_root / "outputs"),

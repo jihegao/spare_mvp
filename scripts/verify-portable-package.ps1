@@ -15,28 +15,36 @@ $PackageRoot = (Resolve-Path $PackageRoot).Path
 $startScript = Join-Path $PackageRoot 'scripts\start-portable.ps1'
 $stopScript = Join-Path $PackageRoot 'scripts\stop-portable.ps1'
 $moduleTestScript = Join-Path $PackageRoot 'scripts\test-frontend-modules.ps1'
+$python = Join-Path $PackageRoot 'runtime\python.exe'
+$verifier = Join-Path $PackageRoot 'scripts\portable-package.py'
+$pathResolver = Join-Path $PackageRoot 'scripts\portable-paths.py'
 if (
     -not (Test-Path -LiteralPath $startScript) -or
     -not (Test-Path -LiteralPath $stopScript) -or
-    -not (Test-Path -LiteralPath $moduleTestScript)
+    -not (Test-Path -LiteralPath $moduleTestScript) -or
+    -not (Test-Path -LiteralPath $python) -or
+    -not (Test-Path -LiteralPath $verifier) -or
+    -not (Test-Path -LiteralPath $pathResolver)
 ) {
     throw "Not a valid portable package: $PackageRoot"
 }
 
-$python = Join-Path $PackageRoot 'runtime\python.exe'
-$verifier = Join-Path $PackageRoot 'scripts\portable-package.py'
 & $python -I -B $verifier verify --root $PackageRoot
 if ($LASTEXITCODE -ne 0) { throw 'Package integrity verification failed before startup.' }
 & $python -I -B -m pip --isolated check
 if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency closure failed.' }
 $env:NO_PROXY = '127.0.0.1,localhost'
-$evidenceRoot = Join-Path $PackageRoot 'data\evidence'
+$pathJson = & $python -I -B $pathResolver --package-root $PackageRoot
+if ($LASTEXITCODE -ne 0) { throw 'Portable path resolution failed before startup verification.' }
+$Paths = $pathJson | ConvertFrom-Json
+$pidRoot = [string]$Paths.pid_root
+$evidenceRoot = [string]$Paths.evidence_dir
 New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
 $started = $false
 try {
     & $startScript -BackendPort $BackendPort -SolaraPort $SolaraPort -NoBrowser
     $started = $true
-    $backendPid = [int](Get-Content -LiteralPath (Join-Path $PackageRoot 'data\pids\backend.pid') -Raw)
+    $backendPid = [int](Get-Content -LiteralPath (Join-Path $pidRoot 'backend.pid') -Raw)
     & $moduleTestScript -PackageRoot $PackageRoot -BackendPort $BackendPort -ExpectedBackendPid $backendPid
     foreach ($uri in @(
         "http://127.0.0.1:$BackendPort/_spare_mvp/health",
