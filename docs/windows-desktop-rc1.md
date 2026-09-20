@@ -1,6 +1,6 @@
 # Windows 绿色桌面版
 
-> **当前交付状态**：本页原有构建与卸载说明描述 PR #380 初始实现；其中安装目录内 `data/`、整目录删除用户数据和元数据缓存说明尚不满足 #381/#379。下列 G0 契约是本轮实现与验收的约束，不代表功能或原生 Windows 验收已经完成。正式合并、发布和切换不在当前授权内。
+> **当前交付状态（2026-09-20）**：G1 数据生命周期与完整性修复、G2 的 #382 清理已通过下文记录的 Linux 代码门；#366 仍有阻塞与待验项。尚未生成并验收本轮最终 Electron 候选，原生 Windows 验收全部未完成；这不是可发布结论。正式合并、发布和切换不在当前授权内。
 
 最终离线交付文件为 `spare-mvp-2.0-green.exe`。它是普通用户权限运行的自解压包：用户选择目录后，程序解压完整平台并启动 `SpareMvpDesktop.exe`。该路线不安装或调用 Docker Desktop、WSL，不启用 Windows 可选功能，不接受第三方许可，也不安排 Windows 重启。
 
@@ -9,7 +9,7 @@
 - `SpareMvpDesktop.exe` 及 Electron/Chromium 桌面资源；
 - `runtime/python.exe` 和锁定的 Windows x64 Python 依赖；
 - `app/` 中的后端、前端、模型和契约；
-- `data/spare_mvp.sqlite3` 基线数据库及后续本机状态；
+- `data/spare_mvp.sqlite3` 作为首次初始化或旧版迁移的来源，业务库切换到安装目录之外；
 - `assets/` 中经哈希锁定的 Solara 离线资源；
 - `scripts/start-portable.ps1`、`stop-portable.ps1`、进程所有权校验、端口选择和完整性校验脚本；
 - `Uninstall-SpareMvp.exe` 卸载程序；
@@ -17,11 +17,11 @@
 
 解压成功后，自解压器自动在当前用户桌面创建 `spare_mvp 2.0.lnk`，目标为当前解压目录中的 `SpareMvpDesktop.exe`，工作目录也绑定到该解压目录。再次把另一套绿色版解压到其他位置时，新安装会接管同名桌面快捷方式，不复制第二套启动逻辑。
 
-桌面启动器不得复制第二套业务启动逻辑。它调用包内 `start-portable.ps1 -AutoSelectPorts -NoBrowser`，读取 `data/active-ports.json`，在后端和 Solara 健康检查通过后打开内置业务窗口。退出时只允许停止通过解释器路径、创建时间、服务命令和实例标识共同确认属于当前绿色包的 Python 进程。
+桌面启动器不得复制第二套业务启动逻辑。它调用包内 `start-portable.ps1 -AutoSelectPorts -NoBrowser`，通过公共路径解析器读取本安装实例的 `active-ports.json`，在后端和 Solara 健康检查通过后打开内置业务窗口。退出时只允许停止通过解释器路径、创建时间、服务命令和实例标识共同确认属于当前绿色包的 Python 进程。
 
 PowerShell 主进程退出即代表启动脚本完成；不能等待所有后代继承的 stdout/stderr 管道关闭，因为后端和 Solara 会作为受管后台进程继续运行。桌面启动器随后按活动状态文件和 HTTP 健康检查确认服务，而不是把管道关闭误当成服务生命周期。
 
-桌面程序启动前使用包内 Python 执行 `portable-package.py verify-cached --progress`。首次启动完整校验 `manifest.json` 覆盖的应用、运行时、桌面二进制和离线资源；后续启动使用 fail-closed 元数据缓存并重新哈希关键运行文件，任何清单、路径、大小或 mtime 变化都会回退完整 SHA-256。`data/` 是本机可变状态，不参与静态发布哈希。启动页显示已校验文件数，完整性进程最多允许 10 分钟，不能因固定 180 秒超时误杀较慢磁盘上的正常校验。诊断包只收集发布清单、活动端口和 `data/logs/*.log`，不得收集账号凭据或项目正文。
+桌面程序启动前使用包内 Python 执行 `portable-package.py verify-cached --progress --cache-path <实例缓存路径>`。首次启动完整校验 `manifest.json` 覆盖的应用、运行时、桌面二进制和离线资源；后续启动扫描清单并重新哈希可执行、可导入内容、应用/离线动态资源和发行来源证据，即使大小及 mtime 不变也不能跳过这些内容。清单或元数据变化触发完整 SHA-256；未提供缓存路径时执行完整校验。业务数据及实例运行态不参与静态发布哈希。启动页显示已校验文件数，完整性进程最多允许 10 分钟。诊断包生成接口保留，收集发布清单、活动状态和实例日志；“打开诊断目录”入口及专属调用链已经移除，诊断不得收集账号凭据或项目正文。
 
 ## 构建
 
@@ -45,13 +45,15 @@ npx electron-builder --win dir --x64 -c.win.signAndEditExecutable=false
 
 ## 卸载
 
-运行解压目录根部的 `Uninstall-SpareMvp.exe`。确认窗口默认选择“否”，并明确提示卸载会永久删除整个绿色版目录，包括 `data/` 中的项目、数据库、日志和其他本机状态。确认后，卸载器先调用受管的 `stop-portable.ps1`；服务无法按进程所有权规则安全停止时拒绝删除。随后只关闭可执行路径精确位于当前安装目录的 `SpareMvpDesktop.exe` 进程，再由临时工作副本删除原安装目录。
+运行解压目录根部的 `Uninstall-SpareMvp.exe`。默认卸载保留安装外的业务数据库、结果及迁移备份，只删除本安装程序和实例临时状态。永久删除用户数据需要单独选择及最终二次确认，显示绝对路径和不可恢复提示，默认取消；共享数据仍被其他安装绑定或占用时拒绝永久删除。旧安装目录尚有未证明已迁移的数据且没有绑定时，卸载失败关闭，须先完成迁移。
+
+卸载器调用受管的 `stop-portable.ps1`；服务无法按进程所有权规则安全停止时拒绝删除。随后只关闭可执行路径精确位于当前安装目录的 `SpareMvpDesktop.exe` 进程，再由临时工作副本删除本安装目录。
 
 桌面快捷方式仅在其目标仍精确指向本次安装的 `SpareMvpDesktop.exe` 时删除。如果同名快捷方式已被用户修改或被另一套绿色版接管，卸载器保留该快捷方式并在完成消息中说明。卸载器不扫描或删除其他目录、其他安装、用户桌面文件或非本包拥有的进程。
 
 ## 验收
 
-正式验收必须在 4700-4 的新目录进行，不能覆盖已有 Docker 版或便携版，也不能复用已修改的 SQLite。至少验证：无管理员弹窗、未调用 Docker/WSL、中文和空格路径、桌面快捷方式目标与工作目录、端口冲突回退、完整性失败阻断、异常启动日志、桌面窗口真实业务流程、停止后的进程和端口清理，以及解压前后 EXE/manifest 哈希留证。卸载验收需要先写入可识别的临时 `data/` 文件，确认取消卸载不改变目录，再确认正式卸载删除整个目录和本安装拥有的快捷方式，同时不影响另一目录及其进程。浏览器/API/静态资源通过不等于完整业务验收。
+正式验收必须在 4700-4 的新目录进行，不能覆盖已有 Docker 版或便携版，也不能复用已修改的 SQLite。至少验证：无管理员弹窗、未调用 Docker/WSL、中文和空格路径、桌面快捷方式目标与工作目录、端口冲突回退、完整性失败阻断、异常启动日志、桌面窗口真实业务流程、停止后的进程和端口清理，以及解压前后 EXE/manifest 哈希留证。卸载验收需要先向独立业务数据根写入可识别的临时记录和结果，确认取消卸载不改变目录、默认卸载保留用户数据、重装仍可发现原数据；另测显式永久删除的二次确认，以及其他安装绑定/占用和相邻路径保护。浏览器/API/静态资源通过不等于完整业务验收。
 
 
 ## 安全交付技术契约（G0）
@@ -65,13 +67,13 @@ npx electron-builder --win dir --x64 -c.win.signAndEditExecutable=false
 - 唯一解析入口为 `scripts/portable-paths.py`：`--package-root` 必填，`--data-root` 可选；数据根选择顺序为显式参数、`SPARE_MVP_DATA_ROOT`、当前安装已绑定的数据根、生产默认值。覆盖路径必须为绝对路径。启动、停止、桌面、备份恢复与诊断消费该入口，不各自推导用户目录。
 - 解析结果以 JSON 输出 `package_root`、`installation_id`、`data_root`、`database`、`instance_root`、`state_file`、`pid_root`、`logs_dir`、`diagnostics_dir`、`integrity_cache`。安装身份由规范化真实安装路径稳定派生；实例状态根位于 `%LOCALAPPDATA%\spare_mvp\instances\<installation_id>`。路径规范化及越界校验只在公共入口实现。
 - 当前安装的数据根绑定随实例元数据保留，保证无环境变量的停止及卸载仍定位同一数据。端口、PID、启动锁、日志、诊断与校验缓存按安装实例隔离；不得通过另一实例的活动端口文件复用或停止其服务。
-- **共享写锁**以规范化业务数据根为键，位于共同协调路径或使用当前用户 named mutex；须覆盖初始化、迁移、恢复及后端运行整个写入期。实例局部启动锁只防止本安装重复启动，不替代跨安装写互斥。其他安装占用时失败关闭，不终止对方。
+- **共享写锁**以规范化业务数据根为键，使用以规范化数据根派生的 `Global\SpareMvpData_<hash>` named mutex；须覆盖初始化、迁移、恢复及后端运行整个写入期。实例局部启动锁只防止本安装重复启动，不替代跨安装写互斥。其他安装占用时失败关闭，不终止对方。
 - 用户导出位置由用户选择，永不纳入卸载删除范围。诊断排除凭据和项目正文。
 
 ### 迁移、运行与卸载
 
 - 旧安装 `data/` 迁移必须先停止可证明属于旧实例的写入者，取得共享写权，使用 SQLite backup 生成一致副本，验证 `quick_check` 和关键业务表记录一致，成功后才切换绑定。WAL/SHM 不通过复制活跃主库绕过；旧副本保留可恢复。
-- 目标已有业务库且旧库也存在时禁止覆盖或自动合并；报告两个路径并保留原状。迁移中断不切换绑定；重试不能把半成品当成功库。全新数据库使用仓库既有初始化/fixture 边界，不把运行数据库提交或封入制品。
+- 目标已有业务库时禁止覆盖或自动合并。未绑定安装的源库与目标库先经 SQLite backup 比较一致快照：相同快照直接复用且不保留冗余备份；不同快照必须先将源库保存在共享 `migration-backups`，校验并写入摘要/journal。旧安装有使用痕迹时随后返回非零，保持目标库与绑定不变，等待人工解决冲突；洁净新包可在源库备份成功后复用现有共享库。备份失败不绑定。迁移中断不切换绑定；重试不能把半成品当成功库。全新数据库使用仓库既有初始化/fixture 边界，不把运行数据库提交或封入制品。
 - 复用运行状态须同时验证后端、Solara 和实例身份。部分服务失效时仅受控停止本实例拥有的残余服务并重启；所有权无法证明时保留记录并报错。
 - 解压失败只清理本次创建并拥有的半成品目标及临时 payload；既有安装、已有空目录所有权之外内容和业务数据不得删除。随后可在同一父目录重试。
 - 默认卸载只删除本安装程序、实例临时状态及仍归本安装的快捷方式，保留业务数据。永久删除用户数据为独立二次确认，显示绝对路径和不可恢复说明，默认取消；数据仍被其他安装绑定或占用时禁止永久删除。不得停止另一安装或删除其状态、其他用户数据或用户导出。
@@ -96,7 +98,7 @@ lifecycle 组先交公共解析接口和测试；integrity 组按上述 JSON/cac
 
 ### 验收证据索引
 
-以下全部为**待验证**，只在证据绑定最终候选源码 SHA、包/清单 SHA-256、目标主机、实际路径、运行时版本和执行时间后更新。证据写入 `docs/evidence/desktop-safe-delivery/`；不得保存凭据、用户项目正文或完整运行数据库。
+以下原生候选证据文件全部**待生成、待验证**；下文 Linux 代码门不替代它们。只在证据绑定最终候选源码 SHA、包/清单 SHA-256、目标主机、实际路径、运行时版本和执行时间后更新。证据写入 `docs/evidence/desktop-safe-delivery/`；不得保存凭据、用户项目正文或完整运行数据库。
 
 | 证据文件 | 最低内容与关闭条件 |
 | --- | --- |
@@ -109,16 +111,37 @@ lifecycle 组先交公共解析接口和测试；integrity 组按上述 JSON/cac
 
 原生验收使用 4700-4 新目录及独立数据根；保留现有 V2 安装、数据库与服务。最终综合验收绑定同一个候选；静态测试、Linux 测试、历史 Edge 数字不能替代该包验收。
 
-本地契约检查入口（尚未因本契约新增而执行）：
+本地契约检查入口（执行结果见下文，不能替代 Windows 验收）：
 
 ```bash
 node --test tests/green-extractor-contract.test.mjs tests/desktop-runtime-contract.test.mjs
-python -m unittest tests.test_portable_package tests.test_portable_runtime_manifest tests.test_desktop_database_initializer -v
+python -m unittest tests.test_portable_paths tests.test_portable_package tests.test_portable_runtime_manifest tests.test_desktop_database_initializer -v
 npm test
 git diff --check
 ```
 
 Python 使用仓库 Python ≥3.12 的测试环境；原生目标使用包内锁定 Python。Windows 进程所有权检查为 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test_portable_process.ps1`。原生迁移、卸载及 Electron 交互另按上表执行，不以源码正则契约测试代替。
+
+### G1/G2 本机代码门记录（2026-09-20）
+
+集成分支为 `codex/desktop-safe-delivery`。下表仅记录 Linux checkout 的代码检查和测试，不代表原生运行结果；#366 的本机条件通过由专项验收汇总，不能自动关闭 issue。
+
+| 代码门 | 绑定提交与结果 |
+| --- | --- |
+| G1 数据生命周期、完整性和发行接线 | `6d6ec205f6eb90cd5fb7df4c4320162077de968d`：上述 4 个 Python unittest 模块 **53/53 通过**；桌面与解压 Node 契约 **2 个文件通过**；`git diff HEAD^ HEAD --check` 通过。Tech lead 给予 Linux 技术签字。 |
+| G1 独立故障复现 | 在上述提交独立用 CLI 验证 WAL 已提交行进入一致性备份；旧库冲突备份后非零、目标 SHA 不变；静态确认 PowerShell 非零分支位于写 binding 之前。另验证备份失败阻断、洁净复用、已有备份复用及相同快照不保留冗余备份。更早轮次签字不作为当前最终结论。 |
+| G1 来源清单 | `portable-paths.py`、`portable-data.py`、`portable-data-guard.py` 均进入发行 allowlist，真实 staging 测试和 `source_manifest()` 逐文件内容 SHA 校验通过；未据此生成候选包。 |
+| G2 / #382 | 作者提交 `cc2819c0354a34c4ff651c30ce2a4a7d791fcbaa` 集成为 `4c9e29b7c169f3b30f2ecedb09a3c77d45d3109e`。删除按钮、专属 renderer/bridge/IPC/样式/错误引导；`exportDiagnostics` 和诊断实现保持不变。桌面契约单独通过，Tech lead 给予代码与 Linux 测试技术签字。 |
+| G2 Node 回归 | 在 `4c9e29b` 执行 `npm test`，**38/39 个文件通过**；唯一失败文件 `e2e-contract-flow.test.mjs` 因沙箱 `spawnSync Python EPERM` 未完成。用仓库 `.abm-mesa-test-env/bin/python` 在允许子进程的环境单独复跑，该文件 **3/3 用例通过**。全部 39 个文件有通过证据，但不是单次 `npm test` 全绿。`diff-check` 通过。 |
+
+| #366 条目 | G2 本机专项状态 | 最终候选关闭条件 |
+| --- | --- | --- |
+| 1 / 2 / 5 / 11 | 本机条件通过；未在最终 Electron 包验收。 | 在同一候选逐页复核交互、实际数据及首末页边界，并保留证据。 |
+| 3 默认数据库长名称 | 阻塞：尚缺默认数据库专项验证。 | 使用候选默认数据库确认长名称可见性。 |
+| 4 树宽调整 | 有约 4px 裁切风险，待候选确认。 | 在候选实际窗口/缩放下复现；如不符合则修复并复验。 |
+| 9 创建实验 | 功能回归通过；分段性能及同案例前后对照未验。 | 分别记录点击、请求处理、数据库、响应和页面可操作耗时；不套用第 13 项 60 秒阈值。 |
+
+**原生 Windows 项目全部未验证**：包含共享 mutex 全运行期与多安装互斥、PowerShell 迁移/恢复/停止、.NET 解压与卸载、相邻绑定保护、离线业务、包体及启动前后数据、最终 Electron 五入口性能和 #366 最终矩阵。未构建本轮最终候选，未执行发布或切换；下一门必须绑定同一候选完成隔离验收。
 
 ### 后续任务边界
 
