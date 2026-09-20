@@ -84,3 +84,5 @@ http://127.0.0.1:4173/front/
 5. 删除旧 UI、迁移入口、移除路由、改变结果来源或替换可视化承载位置时，必须用旧文案和新文案搜索 `README.md`、`docs/`、`AGENTS.md`，同步更新当前状态文档；归档文档保留原始语境时必须位于 `archive/deprecated/`。
 
 - [Project Excel 标准模板](project-excel-template.md)：schema 驱动四域子表、字段说明、旧格式兼容、导入编译门槛及完整往返验证。
+
+- [Windows 绿色桌面版安全交付契约与证据索引](windows-desktop-rc1.md#安全交付技术契约g0)：当前 G0 约束及待验证条件，不代表原生验收完成。
