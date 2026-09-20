@@ -162,20 +162,20 @@ def immutable_metadata(root: Path) -> dict[str, list[int]]:
 
 
 def critical_runtime_file(name: str) -> bool:
+    suffix = Path(name).suffix.lower()
     return (name.startswith(('app/', 'assets/', 'scripts/', 'resources/'))
             or name in {'SpareMvpDesktop.exe', 'Uninstall-SpareMvp.exe', 'source-manifest.json', 'green-source-manifest.json'}
-            or (name.startswith('runtime/') and Path(name).name.lower() in {
-                'python.exe', 'pythonw.exe', 'python3.dll', 'python313.dll',
-                'vcruntime140.dll', 'vcruntime140_1.dll',
+            or suffix in {'.exe', '.dll', '.node', '.cmd', '.bat', '.vbs', '.ps1'}
+            or (name.startswith('runtime/') and suffix in {
+                '.py', '.pyw', '.pyd', '.pth', '.zip',
             }))
 
 
-def verify_cached(root: Path, progress: bool = False) -> None:
+def verify_cached(root: Path, cache_path: Path, progress: bool = False) -> None:
     manifest_path = root / 'manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
     manifest_sha256 = digest(manifest_path)
     metadata = immutable_metadata(root)
-    cache_path = root / 'data' / 'integrity-cache.json'
     try:
         cache = json.loads(cache_path.read_text(encoding='utf-8'))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
@@ -308,6 +308,7 @@ def main():
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--source-manifest', type=Path)
     parser.add_argument('--runtime-source', type=Path)
+    parser.add_argument('--cache-path', type=Path)
     parser.add_argument('--progress', action='store_true')
     args = parser.parse_args()
     if args.command == 'source-manifest':
@@ -323,7 +324,10 @@ def main():
     elif args.command == 'verify-runtime':
         verify_runtime(args.root, args.runtime_source)
     elif args.command == 'verify-cached':
-        verify_cached(args.root, progress=args.progress)
+        if args.cache_path is None:
+            verify(args.root, progress=args.progress)
+        else:
+            verify_cached(args.root, args.cache_path, progress=args.progress)
     else:
         verify(args.root, progress=args.progress)
 
