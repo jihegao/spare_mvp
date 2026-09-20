@@ -28,12 +28,16 @@ PowerShell 主进程退出即代表启动脚本完成；不能等待所有后代
 先按 [`windows-portable.md`](windows-portable.md) 生成一个全新的原生便携包；不得把已经运行并产生用户数据的验收目录直接作为发布输入。再生成 Electron Windows 目录包，并在 Windows 上封装绿色自解压文件：
 
 ```powershell
-npx electron-builder --win dir --x64 -c.win.signAndEditExecutable=false
+cd desktop
+npm run dist:win -- -c.win.signAndEditExecutable=false
+cd ..
 ./packaging/green/Build-GreenPackage.ps1 `
   -PortablePackage 'D:\build\spare-portable' `
   -DesktopDirectory '.\dist\desktop-installer\win-unpacked' `
   -Destination '.\dist\spare-mvp-2.0-green.exe'
 ```
+
+`npm run dist:win` 是受审的唯一 Electron 目录包构建入口。它在调用锁定的 `electron-builder 26.0.20` 前，先校验 `app-builder-lib` 依赖收集器的版本、完整文件 SHA-256 和预期源码片段，再幂等应用仅等待 stdout 写流完成的本地补丁；任一内容漂移都会失败关闭。该步骤不改变依赖收集命令、生产依赖闭包、ASAR 配置或重试行为，构建不得用直接调用 `electron-builder` 绕过。
 
 从无 `.git` 的受控源码归档构建时，先在原 checkout 运行 `green-source-manifest.py --root <文件>`，再向封装命令传入 `-GreenSourceManifest <文件>`；封装器会核对受审文件集合和逐文件 SHA-256。
 
