@@ -216,25 +216,39 @@ async function backendHealthMatchesState(response, state) {
   }
 }
 
+async function assertManagedServices(paths, state, run = runCommand) {
+  await run("powershell.exe", [
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", paths.stopScript, "-CheckOwnershipOnly",
+    "-ExpectedBackendPid", String(state.backendPid),
+    "-ExpectedBackendPort", String(state.backendPort),
+    "-ExpectedSolaraPid", String(state.solaraPid),
+    "-ExpectedSolaraPort", String(state.solaraPort),
+  ], { cwd: paths.packageRoot, timeoutMs: 30_000 });
+  const [backend, solara] = await Promise.all([
+    fetch(state.backendHealthUrl, { signal: AbortSignal.timeout(2500) }),
+    fetch(`${state.solaraUrl}/`, { signal: AbortSignal.timeout(2500) }),
+  ]);
+  if (!await backendHealthMatchesState(backend, state)) {
+    throw new Error("后端 health 身份与本次启动的服务不一致");
+  }
+  if (!solara.ok) {
+    throw new Error(`Solara 服务不可用（HTTP ${solara.status}）`);
+  }
+}
+
 export async function runningState(paths, run = runCommand) {
   if (!existsSync(paths.stateFile)) return null;
   try {
     const state = await readActiveState(paths);
-    await run("powershell.exe", [
-      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", paths.stopScript, "-CheckOwnershipOnly",
-    ], { cwd: paths.packageRoot, timeoutMs: 30_000 });
-    const [backend, solara] = await Promise.all([
-      fetch(state.backendHealthUrl, { signal: AbortSignal.timeout(2500) }),
-      fetch(`${state.solaraUrl}/`, { signal: AbortSignal.timeout(2500) }),
-    ]);
-    return solara.ok && await backendHealthMatchesState(backend, state) ? state : null;
+    await assertManagedServices(paths, state, run);
+    return state;
   } catch {
     return null;
   }
 }
 
 export async function startServices(paths, onProgress = () => {}, run = runCommand) {
-  const existing = await runningState(paths);
+  const existing = await runningState(paths, run);
   if (existing) {
     onProgress("正在加载已运行的工作区", 100);
     return { state: existing, startedHere: false };
@@ -251,9 +265,21 @@ export async function startServices(paths, onProgress = () => {}, run = runComma
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", paths.startScript,
     "-AutoSelectPorts", "-NoBrowser",
   ], { cwd: paths.packageRoot, timeoutMs: 180_000 });
-  const state = await readActiveState(paths);
-  await waitForHttp(state.backendHealthUrl, 15_000);
-  await waitForHttp(`${state.solaraUrl}/`, 15_000);
+  let state;
+  try {
+    state = await readActiveState(paths);
+    await assertManagedServices(paths, state, run);
+  } catch (verificationError) {
+    try {
+      await stopServices(paths, run);
+    } catch (stopError) {
+      throw new Error(
+        `服务启动后验证失败：${verificationError.message}；清理未完成：${stopError.message}`,
+        { cause: verificationError },
+      );
+    }
+    throw new Error(`服务启动后验证失败：${verificationError.message}`, { cause: verificationError });
+  }
   onProgress("正在加载工作区", 100);
   return { state, startedHere: true };
 }

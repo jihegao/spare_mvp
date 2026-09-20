@@ -13,6 +13,8 @@ $started = [DateTime]::Parse('2026-09-18T01:02:03Z').ToUniversalTime()
 $script:fakeProcess = [pscustomobject]@{ Id = 12345; StartTime = $started }
 $script:fakeDetails = $null
 $script:inspectionFails = $false
+$script:fakeListeners = @()
+$script:listenerInspectionFails = $false
 $assertions = 0
 $actualSelf = Microsoft.PowerShell.Management\Get-Process -Id $PID
 Write-PortableProcessRecord -Process $actualSelf -Name backend -Python $python -PidPath $pidPath -InstanceToken $token
@@ -39,6 +41,11 @@ function Get-CimInstance { [CmdletBinding()]param([string]$ClassName, [string]$F
     if ($script:inspectionFails) { throw 'simulated access denied' }
     return $script:fakeDetails
 }
+function Get-NetTCPConnection {
+    [CmdletBinding()]param([string]$State, [string]$LocalAddress, [int]$LocalPort)
+    if ($script:listenerInspectionFails) { throw 'simulated listener inspection denied' }
+    return $script:fakeListeners
+}
 try {
     Set-TestRecord
     Assert-True ($null -ne (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath)) 'Owned service was rejected'
@@ -46,6 +53,9 @@ try {
     Assert-True ($null -ne (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath -InstallationId $installationId)) 'Matching installation identity was rejected'
     Set-TestRecord
     Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath -InstallationId ('2' * 24))) 'Different installation identity was accepted'
+    Set-TestRecord
+    Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath -InstallationId ('2' * 24) -PreserveRecordOnMismatch)) 'Different installation identity was accepted in check-only mode'
+    Assert-True (Test-Path $pidPath) 'Check-only ownership mismatch removed the PID record'
     Set-TestRecord
     $script:fakeDetails.CommandLine = '"C:\portable\runtime\python.exe" "C:\other\unrelated.py"'
     Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath)) 'Same-runtime unrelated command was accepted'
@@ -74,10 +84,29 @@ try {
     Assert-True (-not (Test-PortableServiceCommand -Name backend -CommandLine $solara -InstanceToken $token)) 'Solara command accepted as backend'
     $guardedBackend = '"C:\portable\runtime\python.exe" "-X" "spare_mvp_instance=' + $token + '" "C:\portable\scripts\portable-data-guard.py" "--mutex-name" "Local\SpareMvpData_test" "--module" "src.spare_mvp_backend.http_server"'
     Assert-True (Test-PortableServiceCommand -Name backend -CommandLine $guardedBackend -InstanceToken $token) 'Guarded backend command rejected'
+    $script:fakeListeners = @([pscustomobject]@{ OwningProcess = 12345 })
+    Assert-PortableTcpListenerOwnership -Name backend -Port 4173 -ExpectedPid 12345
+    $assertions++
+    $script:fakeListeners = @([pscustomobject]@{ OwningProcess = 99999 })
+    $rejected = $false
+    try { Assert-PortableTcpListenerOwnership -Name backend -Port 4173 -ExpectedPid 12345 } catch { $rejected = $true }
+    Assert-True $rejected 'Foreign listener owner was accepted'
+    $script:fakeListeners = @()
+    $rejected = $false
+    try { Assert-PortableTcpListenerOwnership -Name solara -Port 8765 -ExpectedPid 12345 } catch { $rejected = $true }
+    Assert-True $rejected 'Missing listener was accepted'
+    $script:listenerInspectionFails = $true
+    $rejected = $false
+    try { Assert-PortableTcpListenerOwnership -Name solara -Port 8765 -ExpectedPid 12345 } catch { $rejected = $true }
+    Assert-True $rejected 'Listener inspection failure did not fail closed'
+    $script:listenerInspectionFails = $false
     Set-TestRecord
     $script:fakeProcess = $null
     Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath)) 'Exited PID was retained as live'
     Assert-True (-not (Test-Path "$pidPath.json")) 'Exited process metadata was retained'
+    Set-TestRecord
+    Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath -PreserveRecordOnMismatch)) 'Exited PID was accepted in check-only mode'
+    Assert-True (Test-Path $pidPath) 'Check-only exited-process mismatch removed the PID record'
     Write-Output "Portable ownership tests passed: $assertions assertions. No real processes were stopped."
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force

@@ -10,6 +10,7 @@ import {
   readActiveState,
   runningState,
   runtimePaths,
+  startServices,
 } from "../desktop/service-manager.mjs";
 
 function pathContract(packageRoot, root = packageRoot) {
@@ -25,6 +26,23 @@ function pathContract(packageRoot, root = packageRoot) {
     diagnostics_dir: path.join(root, "instance", "diagnostics"),
     integrity_cache: path.join(root, "instance", "integrity-cache.json"),
   };
+}
+
+async function writeActiveState(paths, overrides = {}) {
+  await mkdir(path.dirname(paths.stateFile), { recursive: true });
+  await writeFile(paths.stateFile, JSON.stringify({
+    format_version: 2,
+    installation_id: paths.installationId,
+    package_root: paths.packageRoot,
+    data_root: paths.dataRoot,
+    backend_port: 4173,
+    solara_port: 8765,
+    backend_pid: 1001,
+    solara_pid: 1002,
+    frontend_url: "http://127.0.0.1:4173/front/?solaraUrl=http%3A%2F%2F127.0.0.1%3A8765",
+    solara_url: "http://127.0.0.1:8765",
+    ...overrides,
+  }));
 }
 
 test("desktop runtime paths use the extracted green package", () => {
@@ -174,6 +192,114 @@ test("running state rejects a healthy backend response owned by a different PID"
     ? { ok: true, json: async () => ({ service: "spare-mvp-backend", status: "ok", pid: 1001 }) }
     : { ok: true };
   assert.equal((await runningState(paths, async () => {}))?.backendPid, 1001);
+});
+
+test("fresh desktop startup rejects arbitrary HTTP 200 responses without backend identity", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "spare-start-identity-contract-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const paths = runtimePaths(root, { pathContract: pathContract(root, root) });
+  const calls = [];
+  const run = async (...args) => {
+    calls.push(args);
+    if (args[1].includes("-AutoSelectPorts")) await writeActiveState(paths);
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200 });
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  await assert.rejects(startServices(paths, () => {}, run), /身份|health|后端|服务/);
+  assert.equal(calls.filter(([, args]) => args.includes("-AutoSelectPorts")).length, 1);
+});
+
+test("fresh desktop startup rejects wrong backend service, status, or PID", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  for (const health of [
+    { service: "other-service", status: "ok", pid: 1001 },
+    { service: "spare-mvp-backend", status: "starting", pid: 1001 },
+    { service: "spare-mvp-backend", status: "ok", pid: 9999 },
+  ]) {
+    const root = await mkdtemp(path.join(tmpdir(), "spare-start-backend-contract-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const paths = runtimePaths(root, { pathContract: pathContract(root, root) });
+    const run = async (...args) => {
+      if (args[1].includes("-AutoSelectPorts")) await writeActiveState(paths);
+    };
+    globalThis.fetch = async (url) => String(url).includes("_spare_mvp/health")
+      ? { ok: true, json: async () => health }
+      : { ok: true };
+    await assert.rejects(startServices(paths, () => {}, run), /身份|health|后端|服务/);
+  }
+});
+
+test("fresh desktop startup cleans up once when the returned active state is missing or damaged", async (t) => {
+  for (const stateContents of [null, "{not-json"]) {
+    const root = await mkdtemp(path.join(tmpdir(), "spare-start-state-contract-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const paths = runtimePaths(root, { pathContract: pathContract(root, root) });
+    const calls = [];
+    const run = async (...args) => {
+      calls.push(args);
+      if (args[1].includes("-AutoSelectPorts") && stateContents !== null) {
+        await mkdir(path.dirname(paths.stateFile), { recursive: true });
+        await writeFile(paths.stateFile, stateContents);
+      }
+    };
+
+    await assert.rejects(startServices(paths, () => {}, run), /状态|state|JSON|ENOENT/);
+    assert.equal(calls.filter(([, args]) => args.includes("-AutoSelectPorts")).length, 1, "startup must not retry");
+    assert.equal(calls.filter(([, args]) => args.includes("-File") && !args.includes("-CheckOwnershipOnly") && !args.includes("-AutoSelectPorts")).length, 1, "failed startup must clean up once");
+  }
+});
+
+test("fresh desktop startup fails closed when ownership or listener verification fails", async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes("_spare_mvp/health")
+    ? { ok: true, json: async () => ({ service: "spare-mvp-backend", status: "ok", pid: 1001 }) }
+    : { ok: true };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  for (const verificationFailure of [
+    "backend service ownership could not be verified after process exit",
+    "backend PID record owns PID 2001, not state PID 1001 after restart",
+    "solara TCP port 8765 belongs to PID 9999",
+    "service ownership belongs to an adjacent installation",
+  ]) {
+    const root = await mkdtemp(path.join(tmpdir(), "spare-start-owner-contract-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const paths = runtimePaths(root, { pathContract: pathContract(root, root) });
+    const calls = [];
+    const run = async (...args) => {
+      calls.push(args);
+      const arguments_ = args[1];
+      if (arguments_.includes("-AutoSelectPorts")) {
+        await writeActiveState(paths);
+        return;
+      }
+      if (arguments_.includes("-CheckOwnershipOnly")) throw new Error(verificationFailure);
+    };
+
+    await assert.rejects(startServices(paths, () => {}, run), /ownership|listener|所有权|端口|PID|process/);
+    const ownershipCall = calls.find(([, args]) => args.includes("-CheckOwnershipOnly"));
+    assert.ok(ownershipCall);
+    for (const expected of ["-ExpectedBackendPid", "1001", "-ExpectedBackendPort", "4173", "-ExpectedSolaraPid", "1002", "-ExpectedSolaraPort", "8765"]) {
+      assert.ok(ownershipCall[1].includes(expected), `missing ownership argument ${expected}`);
+    }
+    assert.equal(calls.filter(([, args]) => args.includes("-File") && !args.includes("-CheckOwnershipOnly") && !args.includes("-AutoSelectPorts")).length, 1);
+  }
+});
+
+test("PowerShell ownership check binds active state PIDs to listener owner PIDs", async () => {
+  const stopScript = await readFile(new URL("../scripts/stop-portable.ps1", import.meta.url), "utf8");
+  const processHelper = await readFile(new URL("../scripts/portable-process.ps1", import.meta.url), "utf8");
+  assert.match(stopScript, /ExpectedBackendPid/);
+  assert.match(stopScript, /ExpectedSolaraPid/);
+  assert.match(stopScript, /ExpectedBackendPort/);
+  assert.match(stopScript, /ExpectedSolaraPort/);
+  assert.match(stopScript, /state_file/);
+  assert.match(stopScript, /Assert-PortableTcpListenerOwnership/);
+  assert.match(processHelper, /Get-NetTCPConnection/);
+  assert.match(processHelper, /OwningProcess/);
+  assert.match(processHelper, /PreserveRecordOnMismatch/);
 });
 
 test("portable startup migrates durable legacy files only when they exist", async () => {

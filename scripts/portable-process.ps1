@@ -36,7 +36,8 @@ function Remove-PortableProcessRecord {
 }
 
 function Get-OwnedPortableProcess {
-    param([string]$Name, [string]$Python, [string]$PidPath, [string]$InstallationId = '')
+    param([string]$Name, [string]$Python, [string]$PidPath, [string]$InstallationId = '',
+          [switch]$PreserveRecordOnMismatch)
     if (-not (Test-Path -LiteralPath $PidPath)) { return $null }
     $pidValue = 0
     if (-not [int]::TryParse((Get-Content -LiteralPath $PidPath -Raw).Trim(), [ref]$pidValue)) {
@@ -44,7 +45,7 @@ function Get-OwnedPortableProcess {
     }
     $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
     if ($null -eq $process) {
-        Remove-PortableProcessRecord -PidPath $PidPath
+        if (-not $PreserveRecordOnMismatch) { Remove-PortableProcessRecord -PidPath $PidPath }
         return $null
     }
     if (-not (Test-Path -LiteralPath "$PidPath.json")) {
@@ -63,10 +64,27 @@ function Get-OwnedPortableProcess {
         (Test-PortableServiceCommand -Name $Name -CommandLine $details.CommandLine -InstanceToken $record.instance_token)
     if (-not $ownershipMatches) {
         Write-Warning "Stale $Name record does not own PID $pidValue; process left untouched."
-        Remove-PortableProcessRecord -PidPath $PidPath
+        if (-not $PreserveRecordOnMismatch) { Remove-PortableProcessRecord -PidPath $PidPath }
         return $null
     }
     return $process
+}
+
+function Assert-PortableTcpListenerOwnership {
+    param([string]$Name, [int]$Port, [int]$ExpectedPid)
+    if ($Port -lt 1024 -or $Port -gt 65535 -or $ExpectedPid -le 0) {
+        throw "$Name listener expectation is invalid."
+    }
+    # Both managed services bind only to loopback. Fail closed if inspection is
+    # unavailable, no listener exists, or any listener belongs to another PID.
+    $listeners = @(Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $Port -ErrorAction Stop)
+    if ($listeners.Count -eq 0) {
+        throw "$Name has no loopback listener on TCP port $Port."
+    }
+    $ownerPids = @($listeners | ForEach-Object { [int]$_.OwningProcess } | Sort-Object -Unique)
+    if ($ownerPids.Count -ne 1 -or $ownerPids[0] -ne $ExpectedPid) {
+        throw "$Name TCP port $Port belongs to PID(s) $($ownerPids -join ', '), not expected PID $ExpectedPid."
+    }
 }
 
 function Acquire-SharedDataMutex {

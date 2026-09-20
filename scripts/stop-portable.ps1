@@ -2,6 +2,10 @@
 param(
     [string]$DataRoot = '',
     [switch]$CheckOwnershipOnly,
+    [int]$ExpectedBackendPid = 0,
+    [int]$ExpectedBackendPort = 0,
+    [int]$ExpectedSolaraPid = 0,
+    [int]$ExpectedSolaraPort = 0,
     [switch]$RemoveInstanceState,
     [switch]$DeleteSharedData
 )
@@ -21,13 +25,48 @@ $PidRoot = [string]$Paths.pid_root
 $stoppingFailed = $false
 
 if ($CheckOwnershipOnly) {
-    foreach ($name in @('backend', 'solara')) {
+    foreach ($value in @($ExpectedBackendPid, $ExpectedSolaraPid)) {
+        if ($value -le 0) { throw 'Expected service PIDs are required for ownership verification.' }
+    }
+    foreach ($value in @($ExpectedBackendPort, $ExpectedSolaraPort)) {
+        if ($value -lt 1024 -or $value -gt 65535) {
+            throw 'Expected managed ports must be between 1024 and 65535.'
+        }
+    }
+    if ($ExpectedBackendPort -eq $ExpectedSolaraPort) {
+        throw 'Expected backend and Solara ports must be distinct.'
+    }
+    if (-not (Test-Path -LiteralPath ([string]$Paths.state_file) -PathType Leaf)) {
+        throw 'Active service state is missing; ownership cannot be verified.'
+    }
+    $state = Get-Content -LiteralPath ([string]$Paths.state_file) -Raw | ConvertFrom-Json
+    $statePackageRoot = [IO.Path]::GetFullPath([string]$state.package_root)
+    $stateDataRoot = [IO.Path]::GetFullPath([string]$state.data_root)
+    $selectedDataRoot = [IO.Path]::GetFullPath([string]$Paths.data_root)
+    if ([int]$state.format_version -ne 2 -or
+        [string]$state.installation_id -ne [string]$Paths.installation_id -or
+        $statePackageRoot -ine $PackageRoot -or $stateDataRoot -ine $selectedDataRoot) {
+        throw 'Active service state does not belong to this installation and data root.'
+    }
+    $expectedServices = @(
+        [pscustomobject]@{ Name = 'backend'; Pid = $ExpectedBackendPid; Port = $ExpectedBackendPort; StatePid = [int]$state.backend_pid; StatePort = [int]$state.backend_port },
+        [pscustomobject]@{ Name = 'solara'; Pid = $ExpectedSolaraPid; Port = $ExpectedSolaraPort; StatePid = [int]$state.solara_pid; StatePort = [int]$state.solara_port }
+    )
+    foreach ($expected in $expectedServices) {
+        $name = [string]$expected.Name
+        if ($expected.StatePid -ne $expected.Pid -or $expected.StatePort -ne $expected.Port) {
+            throw "$name state changed before ownership verification; no process or record was changed."
+        }
         $pidPath = Join-Path $PidRoot "$name.pid"
         $process = Get-OwnedPortableProcess -Name $name -Python $Python -PidPath $pidPath `
-            -InstallationId ([string]$Paths.installation_id)
+            -InstallationId ([string]$Paths.installation_id) -PreserveRecordOnMismatch
         if ($null -eq $process) { throw "$name service ownership could not be verified." }
+        if ($process.Id -ne $expected.Pid) {
+            throw "$name PID record owns PID $($process.Id), not state PID $($expected.Pid); the record was retained."
+        }
+        Assert-PortableTcpListenerOwnership -Name $name -Port $expected.Port -ExpectedPid $expected.Pid
     }
-    Write-Output 'Both portable services belong to this installation.'
+    Write-Output 'Both portable services and listener ports belong to this installation state.'
     return
 }
 
