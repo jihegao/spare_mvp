@@ -32,15 +32,19 @@ def acquire_windows_mutex(name: str):
     return kernel32, handle
 
 
-def main() -> None:
+def parse_arguments(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mutex-name", required=True)
     parser.add_argument("--module", required=True)
-    parser.add_argument("arguments", nargs=argparse.REMAINDER)
-    args = parser.parse_args()
+    args, arguments = parser.parse_known_args(argv)
+    return args, arguments
+
+
+def main() -> None:
+    args, arguments = parse_arguments()
     kernel32, handle = acquire_windows_mutex(args.mutex_name)
     try:
-        sys.argv = [args.module, *args.arguments]
+        sys.argv = [args.module, *arguments]
         runpy.run_module(args.module, run_name="__main__")
     finally:
         kernel32.ReleaseMutex(handle)

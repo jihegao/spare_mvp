@@ -46,6 +46,17 @@ internal static class GreenUninstaller
                 MessageBoxDefaultButton.Button3);
             if (dataAnswer == DialogResult.Cancel) return 0;
             bool deleteUserData = dataAnswer == DialogResult.Yes;
+            if (deleteUserData)
+            {
+                DialogResult permanentDeleteAnswer = MessageBox.Show(
+                    "最终确认永久删除用户数据：\r\n\r\n" + lifecycle.DataRoot +
+                    "\r\n\r\n此操作无法恢复。是否确认永久删除？",
+                    "最终确认删除用户数据",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2);
+                deleteUserData = permanentDeleteAnswer == DialogResult.Yes;
+            }
 
             RunStopScript(installationRoot, lifecycle.DataRoot, false, false);
             CloseDesktopProcesses(installationRoot);
@@ -151,14 +162,12 @@ internal static class GreenUninstaller
     private static bool HasLegacyUserState(string installationRoot)
     {
         string legacy = Path.Combine(installationRoot, "data");
-        string[] markers = {
-            "active-ports.json", "integrity-cache.json", "pids", "logs", "outputs"
-        };
-        foreach (string marker in markers)
-        {
-            if (File.Exists(Path.Combine(legacy, marker)) || Directory.Exists(Path.Combine(legacy, marker))) return true;
-        }
-        return false;
+        if (!Directory.Exists(legacy)) return false;
+        // Without a binding there is no durable proof that any package-local
+        // database, output, or configuration was migrated. Fail closed even
+        // for an otherwise fresh package; starting once performs and records
+        // the verified migration before uninstall is allowed.
+        return Directory.GetFileSystemEntries(legacy).Length != 0;
     }
 
     private static void CloseDesktopProcesses(string installationRoot)

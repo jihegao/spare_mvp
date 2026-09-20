@@ -261,14 +261,9 @@ try {
     }
 
     $sharedDataMutex = Acquire-SharedDataMutex -MutexName ([string]$Paths.data_mutex)
-    $legacyMarkers = @(
-        (Join-Path $LegacyDataRoot 'active-ports.json'),
-        (Join-Path $LegacyDataRoot 'integrity-cache.json'),
-        (Join-Path $LegacyDataRoot 'pids'),
-        (Join-Path $LegacyDataRoot 'logs'),
-        (Join-Path $LegacyDataRoot 'outputs')
-    )
-    $legacyHasUserState = $null -ne ($legacyMarkers | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+    $legacyHasUserState = $null -ne (Get-ChildItem -LiteralPath $LegacyDataRoot -Force |
+        Where-Object { $_.Name -notin @('spare_mvp.sqlite3', 'spare_mvp.sqlite3-wal', 'spare_mvp.sqlite3-shm') } |
+        Select-Object -First 1)
     $migrationArguments = @(
         '-I', '-B', $DataManager, 'migrate',
         '--source', $LegacyDatabase,
@@ -279,6 +274,13 @@ try {
     if ([bool]$Paths.binding_matches_selected -or -not $legacyHasUserState) { $migrationArguments += '--allow-existing' }
     & $Python @migrationArguments
     if ($LASTEXITCODE -ne 0) { throw 'Portable user database migration or validation failed.' }
+    if (-not [bool]$Paths.binding_matches_selected) {
+        & $Python -I -B $DataManager migrate-files `
+            --source-root $LegacyDataRoot `
+            --destination-root $DataRoot `
+            --status-file (Join-Path $InstanceRoot 'durable-files-migration.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Portable outputs or user-configuration migration failed.' }
+    }
     New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
     $bindingArguments = @('-I', '-B', $PathResolver, '--package-root', $PackageRoot, '--data-root', $DataRoot, '--write-binding')
     $pathJson = & $Python @bindingArguments

@@ -33,6 +33,10 @@ def _overlaps(left: Path, right: Path) -> bool:
     return left_key == right_key or left_key.startswith(right_key + "/") or right_key.startswith(left_key + "/")
 
 
+def _strictly_overlaps(left: Path, right: Path) -> bool:
+    return _overlaps(left, right) and _normalized_key(left) != _normalized_key(right)
+
+
 def _read_binding(binding_file: Path) -> Path | None:
     if not binding_file.exists():
         return None
@@ -104,6 +108,10 @@ def resolve_paths(
         raise ValueError("Instance state root must be outside the installation directory")
     if _overlaps(data_root, instance_root):
         raise ValueError("Persistent data and instance state roots must not overlap")
+    if bound_data_root is not None and _strictly_overlaps(bound_data_root, data_root):
+        raise ValueError(
+            f"Persistent data root {data_root} is nested with the current binding {bound_data_root}"
+        )
     if data_root == Path(data_root.anchor) or data_root in {local_app_data, product_root}:
         raise ValueError("Persistent data root is too broad for safe lifecycle management")
     data_text = str(data_root)
@@ -111,10 +119,11 @@ def resolve_paths(
         raise ValueError("Persistent data root must use a local non-device path")
 
     data_key = _normalized_key(data_root)
-    lock_key = hashlib.sha256((data_key + "\0" + _normalized_key(local_app_data)).encode("utf-8")).hexdigest()[:32]
+    lock_key = hashlib.sha256(("spare-mvp-data-v1\0" + data_key).encode("utf-8")).hexdigest()[:32]
     data_lock = product_root / "locks" / (lock_key + ".json")
-    data_mutex = "Local\\SpareMvpData_" + lock_key
+    data_mutex = "Global\\SpareMvpData_" + lock_key
     other_bindings: list[dict[str, str]] = []
+    conflicting_bindings: list[dict[str, str]] = []
     binding_scan_errors: list[str] = []
     instances_root = product_root / "instances"
     if instances_root.exists():
@@ -128,8 +137,21 @@ def resolve_paths(
                         "installation_id": candidate.parent.name,
                         "binding_file": str(candidate.resolve(strict=False)),
                     })
+                elif candidate_root is not None and _strictly_overlaps(candidate_root, data_root):
+                    conflicting_bindings.append({
+                        "installation_id": candidate.parent.name,
+                        "binding_file": str(candidate.resolve(strict=False)),
+                        "data_root": str(candidate_root),
+                    })
             except (OSError, ValueError, json.JSONDecodeError) as error:
                 binding_scan_errors.append(f"{candidate}: {error}")
+
+    if conflicting_bindings:
+        conflict = conflicting_bindings[0]
+        raise ValueError(
+            "Persistent data roots must not be nested across installations: "
+            f"{data_root} conflicts with {conflict['data_root']}"
+        )
 
     if write_binding:
         _write_binding(binding_file, installation_id, package_root, data_root)
@@ -161,6 +183,7 @@ def resolve_paths(
         "binding_matches_selected": binding_matches_selected,
         "data_root_source": data_source,
         "other_bindings": other_bindings,
+        "conflicting_bindings": conflicting_bindings,
         "binding_scan_errors": binding_scan_errors,
     }
 

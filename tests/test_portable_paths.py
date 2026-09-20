@@ -18,6 +18,7 @@ def load_script(name):
 
 paths_module = load_script("portable-paths.py")
 data_module = load_script("portable-data.py")
+guard_module = load_script("portable-data-guard.py")
 
 
 class PortablePathsTest(unittest.TestCase):
@@ -103,13 +104,57 @@ class PortablePathsTest(unittest.TestCase):
             second_package = root / "second"
             first_package.mkdir()
             second_package.mkdir()
-            paths_module.resolve_paths(
+            first = paths_module.resolve_paths(
                 str(first_package), explicit_data_root=str(shared), environment=environment, write_binding=True
             )
             second = paths_module.resolve_paths(
                 str(second_package), explicit_data_root=str(shared), environment=environment
             )
             self.assertEqual(len(second["other_bindings"]), 1)
+            self.assertEqual(second["data_mutex"], first["data_mutex"])
+
+    def test_shared_data_mutex_depends_only_on_normalized_data_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "install"
+            package.mkdir()
+            shared = root / "shared"
+            first = paths_module.resolve_paths(
+                str(package), explicit_data_root=str(shared), environment={"LOCALAPPDATA": str(root / "session-a")}
+            )
+            second = paths_module.resolve_paths(
+                str(package), explicit_data_root=str(shared), environment={"LOCALAPPDATA": str(root / "session-b")}
+            )
+            self.assertEqual(first["data_mutex"], second["data_mutex"])
+            self.assertTrue(first["data_mutex"].startswith("Global\\"))
+            self.assertNotEqual(first["instance_root"], second["instance_root"])
+
+    def test_nested_data_roots_are_rejected_across_installations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = {"LOCALAPPDATA": str(root / "local")}
+            first_package = root / "first"
+            second_package = root / "second"
+            first_package.mkdir()
+            second_package.mkdir()
+            parent = root / "shared"
+            paths_module.resolve_paths(
+                str(first_package), explicit_data_root=str(parent), environment=environment, write_binding=True
+            )
+            with self.assertRaisesRegex(ValueError, "must not be nested"):
+                paths_module.resolve_paths(
+                    str(second_package), explicit_data_root=str(parent / "child"), environment=environment
+                )
+
+            reverse_environment = {"LOCALAPPDATA": str(root / "reverse-local")}
+            paths_module.resolve_paths(
+                str(first_package), explicit_data_root=str(parent / "child"),
+                environment=reverse_environment, write_binding=True
+            )
+            with self.assertRaisesRegex(ValueError, "must not be nested"):
+                paths_module.resolve_paths(
+                    str(second_package), explicit_data_root=str(parent), environment=reverse_environment
+                )
 
 
 class PortableDataMigrationTest(unittest.TestCase):
@@ -173,12 +218,156 @@ class PortableDataMigrationTest(unittest.TestCase):
                 "source": str(source.resolve()),
                 "destination": str(destination.resolve()),
                 "table_counts": {"projects": 2},
+                "database_sha256": data_module._digest(destination),
             }))
             result = data_module.prepare_database(
                 source, destination, allow_existing=False, status_file=status, recovery_backup_root=recovery
             )
             self.assertEqual(result["action"], "recovered-promoted")
             self.assertTrue(Path(result["recovery_backup"]).is_file())
+
+    def test_complete_database_journal_recovers_binding_gap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "legacy.sqlite3"
+            destination = root / "shared" / "spare_mvp.sqlite3"
+            status = root / "state" / "migration.json"
+            recovery = root / "shared" / "migration-backups"
+            self.create_database(source, ["one"])
+            first = data_module.prepare_database(
+                source, destination, allow_existing=False, status_file=status, recovery_backup_root=recovery
+            )
+            second = data_module.prepare_database(
+                source, destination, allow_existing=False, status_file=status, recovery_backup_root=recovery
+            )
+            self.assertEqual(first["phase"], "complete")
+            self.assertEqual(second["action"], "recovered-promoted")
+            self.assertEqual(second["migration_id"], first["migration_id"])
+
+    def test_backing_up_journal_never_adopts_equal_count_different_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "legacy.sqlite3"
+            destination = root / "shared" / "spare_mvp.sqlite3"
+            status = root / "state" / "migration.json"
+            self.create_database(source, ["legacy"])
+            self.create_database(destination, ["unrelated"])
+            status.parent.mkdir(parents=True)
+            status.write_text(json.dumps({
+                "format_version": 1,
+                "migration_id": "e" * 32,
+                "phase": "backing-up",
+                "source": str(source.resolve()),
+                "destination": str(destination.resolve()),
+                "table_counts": {"projects": 1},
+                "database_sha256": data_module._digest(destination),
+            }))
+            with self.assertRaisesRegex(FileExistsError, "Refusing to overwrite"):
+                data_module.prepare_database(source, destination, allow_existing=False, status_file=status)
+            with sqlite3.connect(destination) as connection:
+                self.assertEqual(connection.execute("select name from projects").fetchone()[0], "unrelated")
+
+    def test_sqlite_backup_supports_hash_character_in_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "contains#hash"
+            source = root / "legacy" / "spare_mvp.sqlite3"
+            destination = root / "shared" / "spare_mvp.sqlite3"
+            self.create_database(source, ["one"])
+            result = data_module.prepare_database(source, destination, allow_existing=False)
+            self.assertEqual(result["action"], "sqlite-backup")
+            with sqlite3.connect(destination) as connection:
+                self.assertEqual(connection.execute("select name from projects").fetchone()[0], "one")
+
+    def test_promoted_journal_rejects_same_count_database_with_wrong_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "legacy.sqlite3"
+            destination = root / "shared" / "spare_mvp.sqlite3"
+            status = root / "state" / "migration.json"
+            self.create_database(source, ["legacy"])
+            self.create_database(destination, ["unrelated"])
+            status.parent.mkdir(parents=True)
+            status.write_text(json.dumps({
+                "format_version": 1,
+                "migration_id": "d" * 32,
+                "phase": "promoted",
+                "source": str(source.resolve()),
+                "destination": str(destination.resolve()),
+                "table_counts": {"projects": 1},
+                "database_sha256": "0" * 64,
+            }))
+            with self.assertRaisesRegex(FileExistsError, "does not prove ownership"):
+                data_module.prepare_database(source, destination, allow_existing=False, status_file=status)
+
+    def test_outputs_and_configuration_migrate_while_runtime_state_is_excluded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "legacy"
+            destination = root / "shared"
+            status = root / "state" / "files.json"
+            (legacy / "outputs" / "run-1").mkdir(parents=True)
+            (legacy / "outputs" / "run-1" / "result.json").write_text('{"ok": true}')
+            (legacy / "user-settings.json").write_text('{"theme": "dark"}')
+            (legacy / "logs").mkdir()
+            (legacy / "logs" / "backend.log").write_text("runtime only")
+            (legacy / "active-ports.json").write_text("runtime only")
+            first = data_module.migrate_durable_files(legacy, destination, status_file=status)
+            second = data_module.migrate_durable_files(legacy, destination, status_file=status)
+            self.assertEqual(first["action"], "migrated-files")
+            self.assertEqual(second["action"], "recovered-files")
+            self.assertEqual((destination / "outputs" / "run-1" / "result.json").read_text(), '{"ok": true}')
+            self.assertEqual((destination / "user-settings.json").read_text(), '{"theme": "dark"}')
+            self.assertFalse((destination / "logs").exists())
+            self.assertTrue((legacy / "outputs" / "run-1" / "result.json").is_file())
+
+    def test_durable_file_migration_resumes_only_its_matching_partial_promotion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "legacy"
+            destination = root / "shared"
+            status = root / "state" / "files.json"
+            (legacy / "outputs").mkdir(parents=True)
+            (legacy / "outputs" / "first.json").write_text("first")
+            (legacy / "outputs" / "second.json").write_text("second")
+            manifest = data_module.durable_file_manifest(legacy)
+            (destination / "outputs").mkdir(parents=True)
+            (destination / "outputs" / "first.json").write_text("first")
+            status.parent.mkdir(parents=True)
+            status.write_text(json.dumps({
+                "format_version": 1,
+                "migration_id": "c" * 32,
+                "phase": "promoting",
+                "source_root": str(legacy.resolve()),
+                "destination_root": str(destination.resolve()),
+                "files": manifest,
+            }))
+            result = data_module.migrate_durable_files(legacy, destination, status_file=status)
+            self.assertEqual(result["action"], "recovered-files")
+            self.assertEqual((destination / "outputs" / "second.json").read_text(), "second")
+            self.assertEqual(result["migration_id"], "c" * 32)
+
+    def test_durable_file_migration_refuses_unjournaled_existing_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "legacy"
+            destination = root / "shared"
+            (legacy / "outputs").mkdir(parents=True)
+            (destination / "outputs").mkdir(parents=True)
+            (legacy / "outputs" / "result.json").write_text("legacy")
+            (destination / "outputs" / "result.json").write_text("different")
+            with self.assertRaisesRegex(FileExistsError, "Refusing to overwrite"):
+                data_module.migrate_durable_files(legacy, destination, status_file=root / "state.json")
+
+
+class PortableDataGuardTest(unittest.TestCase):
+    def test_backend_options_are_forwarded_instead_of_rejected_by_guard_parser(self):
+        args, forwarded = guard_module.parse_arguments([
+            "--mutex-name", "Global\\SpareMvpData_test",
+            "--module", "src.spare_mvp_backend.http_server",
+            "--host", "127.0.0.1", "--port", "4173",
+        ])
+        self.assertEqual(args.module, "src.spare_mvp_backend.http_server")
+        self.assertEqual(forwarded, ["--host", "127.0.0.1", "--port", "4173"])
 
 
 if __name__ == "__main__":

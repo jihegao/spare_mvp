@@ -21,6 +21,7 @@ internal static class GreenExtractor
         bool noLaunch = Array.IndexOf(args, "--no-launch") >= 0;
         string unattendedParent = unattended ? args[1] : null;
         string ownedStaging = null;
+        string ownedDestination = null;
         try
         {
             string executable = Application.ExecutablePath;
@@ -78,10 +79,14 @@ internal static class GreenExtractor
             string stagedLauncher = Path.Combine(ownedStaging, "SpareMvpDesktop.exe");
             if (!File.Exists(stagedLauncher)) throw new FileNotFoundException("解压后未找到桌面启动器。", stagedLauncher);
             Directory.Move(ownedStaging, destination);
+            ownedDestination = destination;
             ownedStaging = null;
             string launcher = Path.Combine(destination, "SpareMvpDesktop.exe");
             if (!File.Exists(launcher)) throw new FileNotFoundException("解压后未找到桌面启动器。", launcher);
             CreateDesktopShortcut(launcher, destination);
+            // Shortcut creation completes the owned extraction transaction.
+            // A later launch failure leaves the complete package for manual use.
+            ownedDestination = null;
             if (!noLaunch) Process.Start(new ProcessStartInfo(launcher) { WorkingDirectory = destination, UseShellExecute = true });
             if (!unattended) MessageBox.Show("绿色版已解压到：\r\n" + destination + "\r\n\r\n桌面快捷方式已创建，平台正在启动。", "spare_mvp 2.0", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return 0;
@@ -91,6 +96,11 @@ internal static class GreenExtractor
             if (!String.IsNullOrWhiteSpace(ownedStaging))
             {
                 try { if (Directory.Exists(ownedStaging)) Directory.Delete(ownedStaging, true); }
+                catch { }
+            }
+            if (!String.IsNullOrWhiteSpace(ownedDestination))
+            {
+                try { if (Directory.Exists(ownedDestination)) Directory.Delete(ownedDestination, true); }
                 catch { }
             }
             if (unattended)
