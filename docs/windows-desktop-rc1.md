@@ -65,8 +65,8 @@ npx electron-builder --win dir --x64 -c.win.signAndEditExecutable=false
 - 程序、Electron、Python、应用和离线资源留在安装目录，静态清单不包含业务数据及运行态。
 - 生产业务数据默认位于 `%LOCALAPPDATA%\spare_mvp\data`，当前用户的多个安装默认共用；数据库、应保留配置及迁移备份在此生命周期内管理。隔离验收显式指定独立数据根。
 - 唯一解析入口为 `scripts/portable-paths.py`：`--package-root` 必填，`--data-root` 可选；数据根选择顺序为显式参数、`SPARE_MVP_DATA_ROOT`、当前安装已绑定的数据根、生产默认值。覆盖路径必须为绝对路径。启动、停止、桌面、备份恢复与诊断消费该入口，不各自推导用户目录。
-- 解析结果以 JSON 输出 `package_root`、`installation_id`、`data_root`、`database`、`instance_root`、`state_file`、`pid_root`、`logs_dir`、`diagnostics_dir`、`integrity_cache`。安装身份由规范化真实安装路径稳定派生；实例状态根位于 `%LOCALAPPDATA%\spare_mvp\instances\<installation_id>`。路径规范化及越界校验只在公共入口实现。
-- 当前安装的数据根绑定随实例元数据保留，保证无环境变量的停止及卸载仍定位同一数据。端口、PID、启动锁、日志、诊断与校验缓存按安装实例隔离；不得通过另一实例的活动端口文件复用或停止其服务。
+- 解析结果以 JSON 输出 `package_root`、`installation_id`、`data_root`、`database`、`instance_root`、`state_file`、`pid_root`、`logs_dir`、`evidence_dir`、`diagnostics_dir`、`integrity_cache`、`output_root`、`matplotlib_root`、`startup_lock`、`startup_mutex`、`data_lock`、`data_mutex`、`binding_file`、`binding_exists`、`binding_matches_selected`、`data_root_source`、`other_bindings`、`conflicting_bindings` 和 `binding_scan_errors`。安装身份由规范化真实安装路径稳定派生；实例状态根位于 `%LOCALAPPDATA%\spare_mvp\instances\<installation_id>`。路径规范化及越界校验只在公共入口实现。
+- 当前安装的数据根绑定随实例元数据保留，保证无环境变量的停止及卸载仍定位同一数据。端口、PID、启动锁、日志、验收证据、诊断与校验缓存按安装实例隔离；不得通过另一实例的活动端口文件复用或停止其服务。
 - **共享写锁**以规范化业务数据根为键，使用以规范化数据根派生的 `Global\SpareMvpData_<hash>` named mutex；须覆盖初始化、迁移、恢复及后端运行整个写入期。实例局部启动锁只防止本安装重复启动，不替代跨安装写互斥。其他安装占用时失败关闭，不终止对方。
 - 用户导出位置由用户选择，永不纳入卸载删除范围。诊断排除凭据和项目正文。
 
