@@ -27,17 +27,25 @@ PowerShell 主进程退出即代表启动脚本完成；不能等待所有后代
 
 先按 [`windows-portable.md`](windows-portable.md) 生成一个全新的原生便携包；不得把已经运行并产生用户数据的验收目录直接作为发布输入。再生成 Electron Windows 目录包，并在 Windows 上封装绿色自解压文件：
 
-```powershell
+当前 Linux 交叉构建必须将 Electron zip 缓存与 electron-builder 工具缓存分开，并且不得设置 `ELECTRON_BUILDER_CACHE`：锁定的 `app-builder-lib 26.0.20` 会把该变量的值拼入 artifact 名称，导致内置 `winCodeSign` 元数据无法匹配。使用任务独占的 `XDG_CACHE_HOME`，其中预置并验证 `electron-builder/winCodeSign/winCodeSign-2.6.0/`；其官方归档 `winCodeSign-2.6.0.7z` 为 5,635,384 bytes，SHA-256 为 `cdaec7154dda7cc31f88d886e2489379a0625a737d610b5ae7f62a12f16743a4`，并匹配锁定 app-builder 内置的 SHA-512 `6LQI2d9BPC3Xs0ZoTQe1o3tPiA28c7+PY69Q9i/pD8lY45psMtHuLwv3vRckiVr3Zx1cbNyLlBR8STwCdcHwtA==`。`ELECTRON_CACHE` 只指向另一个任务独占的 Electron zip 缓存。
+
+```bash
+unset ELECTRON_BUILDER_CACHE
+export XDG_CACHE_HOME=/path/to/task-owned/xdg-cache
+export ELECTRON_CACHE=/path/to/task-owned/electron-cache
 cd desktop
-npm run dist:win -- -c.win.signAndEditExecutable=false
+npm run dist:win
 cd ..
+```
+
+```powershell
 ./packaging/green/Build-GreenPackage.ps1 `
   -PortablePackage 'D:\build\spare-portable' `
   -DesktopDirectory '.\dist\desktop-installer\win-unpacked' `
   -Destination '.\dist\spare-mvp-2.0-green.exe'
 ```
 
-`npm run dist:win` 是受审的唯一 Electron 目录包构建入口。它在调用锁定的 `electron-builder 26.0.20` 前，先校验 `app-builder-lib` 依赖收集器的版本、完整文件 SHA-256 和预期源码片段，再幂等应用仅等待 stdout 写流完成的本地补丁；任一内容漂移都会失败关闭。该步骤不改变依赖收集命令、生产依赖闭包、ASAR 配置或重试行为，构建不得用直接调用 `electron-builder` 绕过。
+`npm run dist:win` 是受审的唯一 Electron 目录包构建入口。它在调用锁定的 `electron-builder 26.0.20` 前，先校验 `app-builder-lib` 依赖收集器的版本、完整文件 SHA-256 和预期源码片段，再幂等应用仅等待 stdout 写流完成的本地补丁；任一内容漂移都会失败关闭。该步骤不改变依赖收集命令、生产依赖闭包、ASAR 配置、Windows 可执行文件资源编辑或重试行为，构建不得用直接调用 `electron-builder` 或关闭 `signAndEditExecutable` 绕过。
 
 从无 `.git` 的受控源码归档构建时，先在原 checkout 运行 `green-source-manifest.py --root <文件>`，再向封装命令传入 `-GreenSourceManifest <文件>`；封装器会核对受审文件集合和逐文件 SHA-256。
 
