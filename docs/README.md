@@ -85,4 +85,4 @@ http://127.0.0.1:4173/front/
 
 - [Project Excel 标准模板](project-excel-template.md)：schema 驱动四域子表、字段说明、旧格式兼容、导入编译门槛及完整往返验证。
 
-- [Windows 绿色桌面版安全交付契约与证据索引](windows-desktop-rc1.md#安全交付技术契约g0)：G0 约束、G1/G2 Linux 代码门及 #366 待验矩阵；原生 Windows 验收尚未完成。
+- [Windows 绿色桌面版安全交付契约与证据索引](windows-desktop-rc1.md#安全交付技术契约g0)：G0 约束、G1/G2 Linux 代码门、#366 待验矩阵及 G3 原生候选失败记录；原生综合验收尚未通过。
