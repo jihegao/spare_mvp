@@ -135,14 +135,13 @@ def _preserve_source_before_existing_reuse(
 ) -> dict[str, object] | None:
     if not source.is_file():
         return None
-    if status_file is None:
-        raise ValueError("A migration journal is required before preserving a legacy database")
-    if recovery_backup_root is None:
-        raise ValueError("A recovery backup root is required before reusing a different existing database")
-
-    recovery_backup_root = recovery_backup_root.resolve(strict=False)
-    recovery_backup_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".compare-", dir=recovery_backup_root) as comparison_name:
+    comparison_root_parent = (
+        recovery_backup_root.resolve(strict=False)
+        if recovery_backup_root is not None
+        else destination.parent.resolve(strict=False)
+    )
+    comparison_root_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".compare-", dir=comparison_root_parent) as comparison_name:
         comparison_root = Path(comparison_name)
         source_snapshot = comparison_root / "source.sqlite3"
         target_snapshot = comparison_root / "target.sqlite3"
@@ -150,6 +149,11 @@ def _preserve_source_before_existing_reuse(
         _, target_identity = _backup_database(destination, target_snapshot)
         if source_identity == target_identity:
             return None
+
+        if status_file is None:
+            raise ValueError("A migration journal is required before preserving a legacy database")
+        if recovery_backup_root is None:
+            raise ValueError("A recovery backup root is required before reusing a different existing database")
 
         existing = _read_status(status_file)
         existing_record = existing.get("reuse_source_backup") if isinstance(existing, dict) else None
@@ -237,17 +241,27 @@ def prepare_database(
                 raise FileExistsError(
                     f"Refusing to overwrite or merge existing database {destination}; legacy source remains at {source}"
                 )
-            with closing(sqlite3.connect(_sqlite_read_only_uri(source), uri=True)) as original:
-                source_summary = checked_summary(original, label="source")
             with closing(sqlite3.connect(_sqlite_read_only_uri(destination), uri=True)) as existing:
                 destination_summary = checked_summary(existing, label="promoted destination")
             if (
-                destination_summary != source_summary
-                or journal.get("table_counts") != source_summary
+                journal.get("table_counts") != destination_summary
                 or journal.get("database_sha256") != _digest(destination)
             ):
                 raise FileExistsError(
                     f"Migration journal does not prove ownership of existing destination {destination}; both databases were retained"
+                )
+            changed_source_backup = _preserve_source_before_existing_reuse(
+                source,
+                destination,
+                status_file=status_file,
+                recovery_backup_root=recovery_backup_root,
+            )
+            if changed_source_backup is not None:
+                raise FileExistsError(
+                    "Legacy source changed after the recoverable destination was published. "
+                    "The current source snapshot was preserved at "
+                    + str(changed_source_backup["path"])
+                    + "; source and destination were retained and binding was not permitted."
                 )
             allow_existing = True
         if allow_existing and preserve_source_before_reuse:

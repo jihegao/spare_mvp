@@ -186,6 +186,38 @@ class PortableDataMigrationTest(unittest.TestCase):
             connection.executemany("insert into projects(name) values (?)", [(value,) for value in values])
             connection.commit()
 
+    def create_recoverable_migration(self, root, *, phase):
+        source = root / "legacy.sqlite3"
+        destination = root / "shared" / "spare_mvp.sqlite3"
+        status = root / "state" / "migration.json"
+        recovery = root / "shared" / "migration-backups"
+        self.create_database(source, ["before"])
+        destination.parent.mkdir(parents=True)
+        summary, database_sha256 = data_module._backup_database(source, destination)
+        status.parent.mkdir(parents=True)
+        status.write_text(json.dumps({
+            "format_version": 1,
+            "migration_id": "f" * 32,
+            "phase": phase,
+            "source": str(source.resolve()),
+            "destination": str(destination.resolve()),
+            "table_counts": summary,
+            "database_sha256": database_sha256,
+        }))
+        return source, destination, status, recovery
+
+    def assert_source_change_was_preserved(self, source, destination, status, expected_value):
+        with closing(sqlite3.connect(source)) as connection:
+            self.assertEqual(connection.execute("select name from projects").fetchone()[0], expected_value)
+        with closing(sqlite3.connect(destination)) as connection:
+            self.assertEqual(connection.execute("select name from projects").fetchone()[0], "before")
+        journal = json.loads(status.read_text())
+        self.assertEqual(journal["phase"], "source-preserved-before-reuse")
+        backup_path = Path(journal["reuse_source_backup"]["path"])
+        self.assertTrue(backup_path.is_file())
+        with closing(sqlite3.connect(backup_path)) as connection:
+            self.assertEqual(connection.execute("select name from projects").fetchone()[0], expected_value)
+
     def test_sqlite_backup_preserves_records_and_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -368,6 +400,51 @@ class PortableDataMigrationTest(unittest.TestCase):
             )
             self.assertEqual(recovered["action"], "recovered-promoted")
             self.assertEqual(recovered["phase"], "complete")
+
+    def test_recovery_rejects_same_count_source_content_change_for_every_recoverable_phase(self):
+        for phase in ("ready", "promoted", "complete"):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, destination, status, recovery = self.create_recoverable_migration(root, phase=phase)
+                destination_sha256 = data_module._digest(destination)
+                with closing(sqlite3.connect(source)) as connection:
+                    connection.execute("update projects set name = 'after'")
+                    connection.commit()
+
+                with self.assertRaisesRegex(FileExistsError, "source changed after|source snapshot changed"):
+                    data_module.prepare_database(
+                        source,
+                        destination,
+                        allow_existing=False,
+                        status_file=status,
+                        recovery_backup_root=recovery,
+                    )
+
+                self.assertEqual(data_module._digest(destination), destination_sha256)
+                self.assert_source_change_was_preserved(source, destination, status, "after")
+
+    def test_recovery_rejects_committed_wal_change_and_preserves_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, destination, status, recovery = self.create_recoverable_migration(root, phase="promoted")
+            destination_sha256 = data_module._digest(destination)
+            with closing(sqlite3.connect(source)) as writer:
+                self.assertEqual(writer.execute("pragma journal_mode=wal").fetchone()[0], "wal")
+                writer.execute("update projects set name = 'after-wal'")
+                writer.commit()
+                self.assertTrue(source.with_name(source.name + "-wal").is_file())
+
+                with self.assertRaisesRegex(FileExistsError, "source changed after|source snapshot changed"):
+                    data_module.prepare_database(
+                        source,
+                        destination,
+                        allow_existing=False,
+                        status_file=status,
+                        recovery_backup_root=recovery,
+                    )
+
+            self.assertEqual(data_module._digest(destination), destination_sha256)
+            self.assert_source_change_was_preserved(source, destination, status, "after-wal")
 
     def test_backing_up_journal_never_adopts_equal_count_different_content(self):
         with tempfile.TemporaryDirectory() as tmp:
