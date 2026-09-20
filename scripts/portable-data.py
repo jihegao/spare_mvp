@@ -238,16 +238,6 @@ def migrate_durable_files(source_root: Path, destination_root: Path, *, status_f
     source_root = source_root.resolve(strict=False)
     destination_root = destination_root.resolve(strict=False)
     manifest = durable_file_manifest(source_root)
-    if not manifest:
-        return {
-            "format_version": 1,
-            "phase": "complete",
-            "action": "no-durable-files",
-            "source_root": str(source_root),
-            "destination_root": str(destination_root),
-            "files": {},
-            "completed_at_utc": datetime.now(timezone.utc).isoformat(),
-        }
     existing_journal = _read_status(status_file)
     journal_owned = (
         isinstance(existing_journal, dict)
@@ -266,6 +256,16 @@ def migrate_durable_files(source_root: Path, destination_root: Path, *, status_f
             "Refusing to merge persistent data with target-only files: "
             + ", ".join(unexpected_target_files)
         )
+    if not manifest:
+        return {
+            "format_version": 1,
+            "phase": "complete",
+            "action": "no-durable-files",
+            "source_root": str(source_root),
+            "destination_root": str(destination_root),
+            "files": {},
+            "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
     existing_files = []
     for relative, expected in manifest.items():
         target = destination_root / Path(relative)

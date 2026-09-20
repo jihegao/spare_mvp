@@ -418,6 +418,17 @@ class PortableDataMigrationTest(unittest.TestCase):
                 data_module.migrate_durable_files(legacy, destination, status_file=root / "state.json")
             self.assertFalse((destination / "outputs" / "new.json").exists())
 
+    def test_empty_source_still_refuses_target_only_persistent_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "legacy"
+            destination = root / "shared"
+            legacy.mkdir()
+            destination.mkdir()
+            (destination / "unrelated.json").write_text("unrelated")
+            with self.assertRaisesRegex(FileExistsError, "target-only files"):
+                data_module.migrate_durable_files(legacy, destination, status_file=root / "state.json")
+
 
 class PortableDataGuardTest(unittest.TestCase):
     def test_backend_options_are_forwarded_instead_of_rejected_by_guard_parser(self):
