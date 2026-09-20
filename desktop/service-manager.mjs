@@ -163,12 +163,27 @@ export async function assertPortableIntegrity(paths, onProgress = () => {}, run 
   });
 }
 
+export function managedRuntimeUrls(backendPort, solaraPort) {
+  for (const [name, value] of [["backend", backendPort], ["Solara", solaraPort]]) {
+    if (!Number.isInteger(value) || value < 1024 || value > 65535) {
+      throw new Error(`本机运行状态包含无效的 ${name} 端口`);
+    }
+  }
+  if (backendPort === solaraPort) throw new Error("本机运行状态中的服务端口不能相同");
+  const solaraUrl = `http://127.0.0.1:${solaraPort}`;
+  return {
+    backendHealthUrl: `http://127.0.0.1:${backendPort}/_spare_mvp/health`,
+    frontendUrl: `http://127.0.0.1:${backendPort}/front/?solaraUrl=${encodeURIComponent(solaraUrl)}`,
+    solaraUrl,
+  };
+}
+
 export async function readActiveState(paths) {
   const raw = await readFile(paths.stateFile, "utf8");
   const state = JSON.parse(raw.replace(/^\uFEFF/, ""));
   if (
-    state.format_version !== 2 || !Number.isInteger(state.backend_port) || !Number.isInteger(state.solara_port)
-    || !Number.isInteger(state.backend_pid) || !Number.isInteger(state.solara_pid)
+    state.format_version !== 2 || !Number.isInteger(state.backend_pid) || state.backend_pid <= 0
+    || !Number.isInteger(state.solara_pid) || state.solara_pid <= 0
   ) {
     throw new Error("本机运行状态文件无效");
   }
@@ -178,14 +193,27 @@ export async function readActiveState(paths) {
   if (resolvedPath(state.data_root || "") !== resolvedPath(paths.dataRoot)) {
     throw new Error("本机运行状态绑定了不同的用户数据目录");
   }
+  const urls = managedRuntimeUrls(state.backend_port, state.solara_port);
+  if (state.frontend_url !== urls.frontendUrl || state.solara_url !== urls.solaraUrl) {
+    throw new Error("本机运行状态中的服务地址与受管端口不一致");
+  }
   return {
     backendPort: state.backend_port,
     solaraPort: state.solara_port,
     backendPid: state.backend_pid,
     solaraPid: state.solara_pid,
-    frontendUrl: state.frontend_url,
-    solaraUrl: state.solara_url,
+    ...urls,
   };
+}
+
+async function backendHealthMatchesState(response, state) {
+  if (!response.ok) return false;
+  try {
+    const health = await response.json();
+    return health?.service === "spare-mvp-backend" && health?.status === "ok" && health?.pid === state.backendPid;
+  } catch {
+    return false;
+  }
 }
 
 export async function runningState(paths, run = runCommand) {
@@ -196,10 +224,10 @@ export async function runningState(paths, run = runCommand) {
       "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", paths.stopScript, "-CheckOwnershipOnly",
     ], { cwd: paths.packageRoot, timeoutMs: 30_000 });
     const [backend, solara] = await Promise.all([
-      fetch(`http://127.0.0.1:${state.backendPort}/_spare_mvp/health`, { signal: AbortSignal.timeout(2500) }),
+      fetch(state.backendHealthUrl, { signal: AbortSignal.timeout(2500) }),
       fetch(`${state.solaraUrl}/`, { signal: AbortSignal.timeout(2500) }),
     ]);
-    return backend.ok && solara.ok ? state : null;
+    return solara.ok && await backendHealthMatchesState(backend, state) ? state : null;
   } catch {
     return null;
   }
@@ -224,7 +252,7 @@ export async function startServices(paths, onProgress = () => {}, run = runComma
     "-AutoSelectPorts", "-NoBrowser",
   ], { cwd: paths.packageRoot, timeoutMs: 180_000 });
   const state = await readActiveState(paths);
-  await waitForHttp(`http://127.0.0.1:${state.backendPort}/_spare_mvp/health`, 15_000);
+  await waitForHttp(state.backendHealthUrl, 15_000);
   await waitForHttp(`${state.solaraUrl}/`, 15_000);
   onProgress("正在加载工作区", 100);
   return { state, startedHere: true };

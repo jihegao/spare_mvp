@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { exportDiagnostics } from "./diagnostics.mjs";
-import { assertPortableIntegrity, portableResourcesReady, runtimePaths, runningState, startServices, stopServices } from "./service-manager.mjs";
+import { assertPortableIntegrity, managedRuntimeUrls, portableResourcesReady, runtimePaths, runningState, startServices, stopServices } from "./service-manager.mjs";
 
 const desktopRoot = path.dirname(fileURLToPath(import.meta.url));
 let launcherWindow;
@@ -50,7 +50,11 @@ function createLauncherWindow() {
   launcherWindow.once("ready-to-show", () => launcherWindow.show());
 }
 
-function createBusinessWindow(frontendUrl) {
+function createBusinessWindow(runtimeState) {
+  const urls = managedRuntimeUrls(runtimeState.backendPort, runtimeState.solaraPort);
+  if (runtimeState.frontendUrl !== urls.frontendUrl || runtimeState.solaraUrl !== urls.solaraUrl) {
+    throw new Error("拒绝加载与受管本机服务不一致的工作区地址");
+  }
   businessWindow = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -89,7 +93,7 @@ function createBusinessWindow(frontendUrl) {
       app.quit();
     }
   });
-  businessWindow.loadURL(frontendUrl);
+  businessWindow.loadURL(urls.frontendUrl);
   launcherWindow?.hide();
 }
 
@@ -114,7 +118,7 @@ async function startRuntime() {
   sendProgress("正在校验内置运行环境", 15);
   await assertPortableIntegrity(runtimePathsValue, sendProgress);
   activeRuntime = await startServices(runtimePathsValue, sendProgress);
-  createBusinessWindow(activeRuntime.state.frontendUrl);
+  createBusinessWindow(activeRuntime.state);
   return activeRuntime.state;
 }
 
