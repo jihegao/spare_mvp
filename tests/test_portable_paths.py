@@ -3,6 +3,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
@@ -180,9 +181,10 @@ class PortablePathsTest(unittest.TestCase):
 class PortableDataMigrationTest(unittest.TestCase):
     def create_database(self, path, values):
         path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection:
             connection.execute("create table projects (id integer primary key, name text)")
             connection.executemany("insert into projects(name) values (?)", [(value,) for value in values])
+            connection.commit()
 
     def test_sqlite_backup_preserves_records_and_source(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -194,10 +196,86 @@ class PortableDataMigrationTest(unittest.TestCase):
             result = data_module.prepare_database(source, destination, allow_existing=False, status_file=status)
             self.assertEqual(result["action"], "sqlite-backup")
             self.assertTrue(source.is_file())
-            with sqlite3.connect(destination) as connection:
+            with closing(sqlite3.connect(destination)) as connection:
                 self.assertEqual(connection.execute("select count(*) from projects").fetchone()[0], 2)
                 self.assertEqual(connection.execute("pragma quick_check").fetchone()[0], "ok")
             self.assertEqual(json.loads(status.read_text())["table_counts"]["projects"], 2)
+
+    def test_backup_closes_all_connections_before_publish_and_on_failure(self):
+        class Cursor:
+            def __init__(self, *, one=None, many=None):
+                self.one = one
+                self.many = [] if many is None else many
+
+            def fetchone(self):
+                return self.one
+
+            def fetchall(self):
+                return self.many
+
+            def __iter__(self):
+                return iter(self.many)
+
+        class Connection:
+            def __init__(self, name, *, backup_error=None):
+                self.name = name
+                self.backup_error = backup_error
+                self.closed = False
+
+            def execute(self, sql):
+                self.assert_open()
+                if sql == "pragma quick_check":
+                    return Cursor(one=("ok",))
+                if sql == "pragma foreign_key_check":
+                    return Cursor(many=[])
+                if sql.startswith("select name from sqlite_master"):
+                    return Cursor(many=[])
+                raise AssertionError(f"unexpected SQL: {sql}")
+
+            def backup(self, target):
+                self.assert_open()
+                target.assert_open()
+                if self.backup_error is not None:
+                    raise self.backup_error
+
+            def commit(self):
+                self.assert_open()
+
+            def close(self):
+                self.closed = True
+
+            def assert_open(self):
+                if self.closed:
+                    raise AssertionError(f"{self.name} connection was already closed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.sqlite3"
+            destination = root / "destination.sqlite3"
+            original_link = data_module.os.link
+            connections = [Connection("source"), Connection("backup")]
+
+            def link_only_after_close(temporary, published):
+                self.assertTrue(all(connection.closed for connection in connections))
+                original_link(temporary, published)
+
+            def ready_only_after_close(_summary, _digest):
+                self.assertTrue(all(connection.closed for connection in connections))
+
+            with mock.patch.object(data_module.sqlite3, "connect", side_effect=connections), \
+                    mock.patch.object(data_module.os, "link", side_effect=link_only_after_close):
+                data_module._backup_database(source, destination, on_ready=ready_only_after_close)
+            self.assertTrue(all(connection.closed for connection in connections))
+
+            failed_connections = [
+                Connection("failing-source", backup_error=RuntimeError("injected backup failure")),
+                Connection("failed-backup"),
+            ]
+            with mock.patch.object(data_module.sqlite3, "connect", side_effect=failed_connections):
+                with self.assertRaisesRegex(RuntimeError, "injected backup failure"):
+                    data_module._backup_database(source, root / "failed.sqlite3")
+            self.assertTrue(all(connection.closed for connection in failed_connections))
+            self.assertEqual(list(root.glob("failed.sqlite3.migrating-*.sqlite3")), [])
 
     def test_existing_target_is_never_overwritten_without_binding(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -208,7 +286,7 @@ class PortableDataMigrationTest(unittest.TestCase):
             self.create_database(destination, ["existing", "preserved"])
             with self.assertRaisesRegex(FileExistsError, "Refusing to overwrite"):
                 data_module.prepare_database(source, destination, allow_existing=False)
-            with sqlite3.connect(destination) as connection:
+            with closing(sqlite3.connect(destination)) as connection:
                 self.assertEqual(connection.execute("select count(*) from projects").fetchone()[0], 2)
 
     def test_existing_bound_target_is_validated_and_reused(self):
@@ -311,7 +389,7 @@ class PortableDataMigrationTest(unittest.TestCase):
             }))
             with self.assertRaisesRegex(FileExistsError, "Refusing to overwrite"):
                 data_module.prepare_database(source, destination, allow_existing=False, status_file=status)
-            with sqlite3.connect(destination) as connection:
+            with closing(sqlite3.connect(destination)) as connection:
                 self.assertEqual(connection.execute("select name from projects").fetchone()[0], "unrelated")
 
     def test_sqlite_backup_supports_hash_character_in_path(self):
@@ -322,7 +400,7 @@ class PortableDataMigrationTest(unittest.TestCase):
             self.create_database(source, ["one"])
             result = data_module.prepare_database(source, destination, allow_existing=False)
             self.assertEqual(result["action"], "sqlite-backup")
-            with sqlite3.connect(destination) as connection:
+            with closing(sqlite3.connect(destination)) as connection:
                 self.assertEqual(connection.execute("select name from projects").fetchone()[0], "one")
 
     def test_promoted_journal_rejects_same_count_database_with_wrong_digest(self):
@@ -397,7 +475,7 @@ class PortableDataMigrationTest(unittest.TestCase):
             self.assertEqual(database_result["action"], "reused-existing")
             self.assertTrue(Path(database_result["reuse_source_backup"]["path"]).is_file())
             self.assertEqual((shared / "outputs" / "retained.json").read_text(), "retained")
-            with sqlite3.connect(destination_database) as connection:
+            with closing(sqlite3.connect(destination_database)) as connection:
                 self.assertEqual(
                     connection.execute("select name from projects").fetchone()[0],
                     "retained-user-project",
@@ -423,7 +501,7 @@ class PortableDataMigrationTest(unittest.TestCase):
             status = Path(paths["instance_root"]) / "data-migration.json"
             recovery = shared / "migration-backups"
 
-            with sqlite3.connect(source_database) as source_connection:
+            with closing(sqlite3.connect(source_database)) as source_connection:
                 source_connection.execute("pragma journal_mode=wal")
                 source_connection.execute("pragma wal_autocheckpoint=0")
                 source_connection.execute("insert into projects(name) values ('legacy-wal')")
@@ -443,13 +521,13 @@ class PortableDataMigrationTest(unittest.TestCase):
             backup_path = Path(journal["reuse_source_backup"]["path"])
             self.assertTrue(backup_path.is_file())
             self.assertEqual(journal["reuse_source_backup"]["backup_sha256"], data_module._digest(backup_path))
-            with sqlite3.connect(backup_path) as backup:
+            with closing(sqlite3.connect(backup_path)) as backup:
                 self.assertEqual(
                     [row[0] for row in backup.execute("select name from projects order by id")],
                     ["legacy-main", "legacy-wal"],
                 )
             self.assertFalse(Path(paths["binding_file"]).exists())
-            with sqlite3.connect(destination_database) as target:
+            with closing(sqlite3.connect(destination_database)) as target:
                 self.assertEqual(target.execute("select name from projects").fetchone()[0], "shared-user")
 
     def test_source_backup_failure_prevents_binding(self):

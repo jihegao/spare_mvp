@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import tempfile
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -101,9 +102,9 @@ def _backup_database(source: Path, destination: Path, *, on_ready=None) -> tuple
     os.close(descriptor)
     temporary = Path(temporary_name)
     try:
-        with sqlite3.connect(_sqlite_read_only_uri(source), uri=True) as original:
+        with closing(sqlite3.connect(_sqlite_read_only_uri(source), uri=True)) as original:
             source_summary = checked_summary(original, label="source")
-            with sqlite3.connect(temporary) as migrated:
+            with closing(sqlite3.connect(temporary)) as migrated:
                 original.backup(migrated)
                 migrated.commit()
                 destination_summary = checked_summary(migrated, label="backup")
@@ -167,7 +168,7 @@ def _preserve_source_before_existing_reuse(
                 and existing_record.get("backup_sha256") == _digest(backup_path)
             )
             if matches:
-                with sqlite3.connect(_sqlite_read_only_uri(backup_path), uri=True) as backup:
+                with closing(sqlite3.connect(_sqlite_read_only_uri(backup_path), uri=True)) as backup:
                     if checked_summary(backup, label="existing recovery backup") != source_summary:
                         raise ValueError("Existing recovery backup no longer matches the legacy source")
                 return existing_record
@@ -179,7 +180,7 @@ def _preserve_source_before_existing_reuse(
         try:
             os.link(source_snapshot, backup_path)
             backup_sha256 = _digest(backup_path)
-            with sqlite3.connect(_sqlite_read_only_uri(backup_path), uri=True) as backup:
+            with closing(sqlite3.connect(_sqlite_read_only_uri(backup_path), uri=True)) as backup:
                 if checked_summary(backup, label="recovery backup") != source_summary:
                     raise ValueError("Recovery backup does not match the legacy source")
             record = {
@@ -236,9 +237,9 @@ def prepare_database(
                 raise FileExistsError(
                     f"Refusing to overwrite or merge existing database {destination}; legacy source remains at {source}"
                 )
-            with sqlite3.connect(_sqlite_read_only_uri(source), uri=True) as original:
+            with closing(sqlite3.connect(_sqlite_read_only_uri(source), uri=True)) as original:
                 source_summary = checked_summary(original, label="source")
-            with sqlite3.connect(_sqlite_read_only_uri(destination), uri=True) as existing:
+            with closing(sqlite3.connect(_sqlite_read_only_uri(destination), uri=True)) as existing:
                 destination_summary = checked_summary(existing, label="promoted destination")
             if (
                 destination_summary != source_summary
@@ -262,7 +263,7 @@ def prepare_database(
                     + str(reuse_source_backup["path"])
                     + "; resolve the conflict before binding this installation."
                 )
-        with sqlite3.connect(_sqlite_read_only_uri(destination), uri=True) as existing:
+        with closing(sqlite3.connect(_sqlite_read_only_uri(destination), uri=True)) as existing:
             summary = checked_summary(existing, label="existing destination")
         recovery_backup = None
         if recoverable and recovery_backup_root is not None:
@@ -290,7 +291,7 @@ def prepare_database(
         raise FileNotFoundError(f"Portable baseline or legacy database is missing: {source}")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(_sqlite_read_only_uri(source), uri=True) as original:
+    with closing(sqlite3.connect(_sqlite_read_only_uri(source), uri=True)) as original:
         source_summary = checked_summary(original, label="source")
     journal = {
         "format_version": 1,
