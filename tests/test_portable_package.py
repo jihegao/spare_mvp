@@ -44,8 +44,10 @@ class PortablePackageTest(unittest.TestCase):
                 package.seal(destination)
 
     def test_public_path_resolver_is_bound_into_the_runtime_package(self):
-        self.assertIn('portable-paths.py', package.SCRIPT_FILES)
-        self.assertEqual(package.package_destination('scripts/portable-paths.py'), 'scripts/portable-paths.py')
+        for name in ('portable-paths.py', 'portable-data.py', 'portable-data-guard.py'):
+            with self.subTest(name=name):
+                self.assertIn(name, package.SCRIPT_FILES)
+                self.assertEqual(package.package_destination(f'scripts/{name}'), f'scripts/{name}')
 
     def test_modified_scripts_documents_and_initializer_cannot_keep_candidate_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -93,15 +95,12 @@ class PortablePackageTest(unittest.TestCase):
                     'build_inputs': {name: package.digest(ROOT / name) for name in package.BUILD_INPUTS}}
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / 'package'
-            if (ROOT / 'scripts' / 'portable-paths.py').is_file():
-                package.stage(ROOT, destination, manifest)
-                self.assertTrue((destination / 'scripts' / 'portable-paths.py').is_file())
-            else:
-                # The resolver is lifecycle-owned and lands during integration;
-                # keep this branch-local test runnable before that dependent commit.
-                support_files = package.PACKAGE_SUPPORT_FILES - {'scripts/portable-paths.py'}
-                with patch.object(package, 'PACKAGE_SUPPORT_FILES', support_files):
-                    package.stage(ROOT, destination, manifest)
+            package.stage(ROOT, destination, manifest)
+            for name in ('portable-paths.py', 'portable-data.py', 'portable-data-guard.py'):
+                self.assertEqual(
+                    (destination / 'scripts' / name).read_bytes(),
+                    (ROOT / 'scripts' / name).read_bytes(),
+                )
             database = destination / 'data' / 'fixture.sqlite3'
             result = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8',
                 str(destination / 'scripts' / 'initialize-case-database.py'), '--database', str(database)],

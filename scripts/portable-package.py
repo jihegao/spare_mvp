@@ -21,7 +21,7 @@ APP_FILES = {
 SCRIPT_FILES = {
     'start-portable.ps1', 'stop-portable.ps1', 'test-frontend-modules.ps1', 'initialize-case-database.py',
     'test-port-selection.ps1', 'verify-portable-package.ps1', 'portable-package.py', 'portable-process.ps1',
-    'portable-paths.py', 'prepare-solara-assets.py',
+    'portable-paths.py', 'portable-data.py', 'portable-data-guard.py', 'prepare-solara-assets.py',
 }
 ENTRYPOINTS = {'Start-Platform.cmd', 'Start-Platform.vbs', 'Stop-Platform.cmd'}
 PACKAGE_SUPPORT_FILES = {f'scripts/{name}' for name in SCRIPT_FILES} | ENTRYPOINTS | {'docs/windows-portable.md'}
