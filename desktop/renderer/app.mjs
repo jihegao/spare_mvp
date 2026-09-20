@@ -3,7 +3,6 @@ const detail = document.querySelector("#status-detail");
 const progress = document.querySelector(".progress");
 const progressBar = document.querySelector("#progress-bar");
 const primary = document.querySelector("#primary-action");
-const diagnostics = document.querySelector("#diagnostics-action");
 const errorMessage = document.querySelector("#error-message");
 
 function updateProgress(message, percent) {
@@ -47,15 +46,12 @@ async function start() {
       : "无需 Docker、WSL 或管理员权限，正在启动包内服务。";
     await desktopBridge().start();
   } catch (error) {
-    detail.textContent = "本机服务未能启动。可重试或打开诊断目录查看日志。";
+    detail.textContent = "本机服务未能启动，请重试。";
     showError(error);
   }
 }
 
 if (window.spareDesktop) {
   window.spareDesktop.onProgress(({ message, percent }) => updateProgress(message, percent));
-  diagnostics.addEventListener("click", () => window.spareDesktop.openDiagnostics());
-} else {
-  diagnostics.disabled = true;
 }
 start();

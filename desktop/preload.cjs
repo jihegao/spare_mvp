@@ -4,7 +4,6 @@ contextBridge.exposeInMainWorld("spareDesktop", Object.freeze({
   getStatus: () => ipcRenderer.invoke("runtime:get-status"),
   start: () => ipcRenderer.invoke("runtime:start"),
   exportDiagnostics: () => ipcRenderer.invoke("runtime:diagnostics"),
-  openDiagnostics: () => ipcRenderer.invoke("runtime:open-diagnostics"),
   onProgress: (listener) => {
     const handler = (_event, payload) => listener(payload);
     ipcRenderer.on("runtime:progress", handler);

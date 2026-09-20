@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { exportDiagnostics } from "./diagnostics.mjs";
@@ -128,10 +128,6 @@ ipcMain.handle("runtime:diagnostics", async (event) => {
   assertLauncherSender(event);
   if (!activeRuntime) throw new Error("服务尚未启动");
   return exportDiagnostics(paths(), activeRuntime.state);
-});
-ipcMain.handle("runtime:open-diagnostics", async (event) => {
-  assertLauncherSender(event);
-  await shell.openPath(paths().diagnosticsDir);
 });
 
 app.on("activate", () => {

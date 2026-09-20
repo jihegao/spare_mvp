@@ -131,6 +131,12 @@ test("Electron windows disable Node integration and isolate the launcher bridge"
   assert.match(renderer, /if \(window\.spareDesktop\)/);
   assert.match(renderer, /无需 Docker、WSL 或管理员权限/);
   assert.doesNotMatch(renderer, /installRuntime|restartComputer|重新启动 Windows/);
+  assert.match(main, /runtime:diagnostics/);
+  assert.match(preload, /exportDiagnostics/);
+  assert.doesNotMatch(main, /runtime:open-diagnostics|shell\.openPath/);
+  assert.doesNotMatch(preload, /openDiagnostics|runtime:open-diagnostics/);
+  assert.doesNotMatch(renderer, /diagnostics-action|openDiagnostics|打开诊断目录/);
+  assert.doesNotMatch(html, /diagnostics-action|打开诊断目录/);
   assert.match(html, /Content-Security-Policy/);
   assert.match(html, /connect-src 'none'/);
   assert.match(greenBuilder, /portable-package\.py'\) seal --root \$staging/);
