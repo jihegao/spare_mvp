@@ -146,6 +146,11 @@ def resolve_paths(
             except (OSError, ValueError, json.JSONDecodeError) as error:
                 binding_scan_errors.append(f"{candidate}: {error}")
 
+    if binding_scan_errors:
+        raise ValueError(
+            "Cannot safely inventory portable data bindings: " + binding_scan_errors[0]
+        )
+
     if conflicting_bindings:
         conflict = conflicting_bindings[0]
         raise ValueError(

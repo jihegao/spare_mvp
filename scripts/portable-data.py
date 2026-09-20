@@ -40,13 +40,17 @@ def _sqlite_read_only_uri(path: Path) -> str:
     return path.resolve(strict=False).as_uri() + "?mode=ro"
 
 
-def durable_file_manifest(root: Path) -> dict[str, str]:
+def durable_file_manifest(root: Path, *, additional_excluded_entries: frozenset[str] = frozenset()) -> dict[str, str]:
     if not root.exists():
         return {}
     result: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
-        if relative.parts[0] in EPHEMERAL_LEGACY_ENTRIES or relative.as_posix() in DATABASE_ENTRIES:
+        if (
+            relative.parts[0] in EPHEMERAL_LEGACY_ENTRIES
+            or relative.parts[0] in additional_excluded_entries
+            or relative.as_posix() in DATABASE_ENTRIES
+        ):
             continue
         if path.is_symlink():
             raise ValueError(f"Legacy persistent data contains a symbolic link: {path}")
@@ -90,7 +94,7 @@ def _read_status(status_file: Path | None) -> dict[str, object] | None:
     return json.loads(status_file.read_text(encoding="utf-8-sig"))
 
 
-def _backup_database(source: Path, destination: Path) -> tuple[dict[str, int], str]:
+def _backup_database(source: Path, destination: Path, *, on_ready=None) -> tuple[dict[str, int], str]:
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=destination.name + ".migrating-", suffix=".sqlite3", dir=destination.parent
     )
@@ -105,9 +109,15 @@ def _backup_database(source: Path, destination: Path) -> tuple[dict[str, int], s
                 destination_summary = checked_summary(migrated, label="backup")
         if destination_summary != source_summary:
             raise ValueError("SQLite backup table counts differ from the source database")
+        database_sha256 = _digest(temporary)
+        if on_ready is not None:
+            # Persist the exact content proof before publishing the destination.
+            # If the process dies after os.link(), the ready journal can safely
+            # identify and recover only this prepared backup.
+            on_ready(destination_summary, database_sha256)
         os.link(temporary, destination)
         temporary.unlink()
-        return destination_summary, _digest(destination)
+        return destination_summary, database_sha256
     finally:
         try:
             temporary.unlink()
@@ -133,7 +143,7 @@ def prepare_database(
             recoverable = (
                 isinstance(journal, dict)
                 and journal.get("format_version") == 1
-                and journal.get("phase") in {"promoted", "complete"}
+                and journal.get("phase") in {"ready", "promoted", "complete"}
                 and journal.get("source") == str(source)
                 and journal.get("destination") == str(destination)
                 and isinstance(journal.get("migration_id"), str)
@@ -195,7 +205,13 @@ def prepare_database(
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     _write_status(status_file, journal)
-    destination_summary, database_sha256 = _backup_database(source, destination)
+    def record_ready(destination_summary: dict[str, int], database_sha256: str) -> None:
+        journal["phase"] = "ready"
+        journal["table_counts"] = destination_summary
+        journal["database_sha256"] = database_sha256
+        _write_status(status_file, journal)
+
+    destination_summary, database_sha256 = _backup_database(source, destination, on_ready=record_ready)
     journal["phase"] = "promoted"
     journal["database_sha256"] = database_sha256
     _write_status(status_file, journal)
@@ -222,6 +238,16 @@ def migrate_durable_files(source_root: Path, destination_root: Path, *, status_f
     source_root = source_root.resolve(strict=False)
     destination_root = destination_root.resolve(strict=False)
     manifest = durable_file_manifest(source_root)
+    if not manifest:
+        return {
+            "format_version": 1,
+            "phase": "complete",
+            "action": "no-durable-files",
+            "source_root": str(source_root),
+            "destination_root": str(destination_root),
+            "files": {},
+            "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
     existing_journal = _read_status(status_file)
     journal_owned = (
         isinstance(existing_journal, dict)
@@ -231,6 +257,15 @@ def migrate_durable_files(source_root: Path, destination_root: Path, *, status_f
         and existing_journal.get("destination_root") == str(destination_root)
         and existing_journal.get("files") == manifest
     )
+    target_manifest = durable_file_manifest(
+        destination_root, additional_excluded_entries=frozenset({"migration-backups"})
+    )
+    unexpected_target_files = sorted(set(target_manifest) - set(manifest))
+    if unexpected_target_files:
+        raise FileExistsError(
+            "Refusing to merge persistent data with target-only files: "
+            + ", ".join(unexpected_target_files)
+        )
     existing_files = []
     for relative, expected in manifest.items():
         target = destination_root / Path(relative)

@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,6 +95,25 @@ class PortablePathsTest(unittest.TestCase):
             Path(first["binding_file"]).write_text("{}")
             with self.assertRaisesRegex(ValueError, "Invalid portable data binding"):
                 paths_module.resolve_paths(str(package), environment=environment)
+
+    def test_corrupt_other_binding_blocks_selection_and_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = {"LOCALAPPDATA": str(root / "local")}
+            first_package = root / "first"
+            second_package = root / "second"
+            first_package.mkdir()
+            second_package.mkdir()
+            first = paths_module.resolve_paths(
+                str(first_package), explicit_data_root=str(root / "shared"),
+                environment=environment, write_binding=True
+            )
+            Path(first["binding_file"]).write_text("{}")
+            with self.assertRaisesRegex(ValueError, "Cannot safely inventory"):
+                paths_module.resolve_paths(
+                    str(second_package), explicit_data_root=str(root / "shared" / "child"),
+                    environment=environment, write_binding=True
+                )
 
     def test_other_installation_binding_is_reported_for_delete_guard(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -244,6 +264,33 @@ class PortableDataMigrationTest(unittest.TestCase):
             self.assertEqual(second["action"], "recovered-promoted")
             self.assertEqual(second["migration_id"], first["migration_id"])
 
+    def test_ready_journal_recovers_crash_after_destination_publish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "legacy.sqlite3"
+            destination = root / "shared" / "spare_mvp.sqlite3"
+            status = root / "state" / "migration.json"
+            self.create_database(source, ["one"])
+            original_write_status = data_module._write_status
+
+            def fail_before_promoted_write(status_path, payload):
+                if payload.get("phase") == "promoted":
+                    raise RuntimeError("injected crash after destination publish")
+                original_write_status(status_path, payload)
+
+            with mock.patch.object(data_module, "_write_status", side_effect=fail_before_promoted_write):
+                with self.assertRaisesRegex(RuntimeError, "injected crash"):
+                    data_module.prepare_database(
+                        source, destination, allow_existing=False, status_file=status
+                    )
+            self.assertTrue(destination.is_file())
+            self.assertEqual(json.loads(status.read_text())["phase"], "ready")
+            recovered = data_module.prepare_database(
+                source, destination, allow_existing=False, status_file=status
+            )
+            self.assertEqual(recovered["action"], "recovered-promoted")
+            self.assertEqual(recovered["phase"], "complete")
+
     def test_backing_up_journal_never_adopts_equal_count_different_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -357,6 +404,19 @@ class PortableDataMigrationTest(unittest.TestCase):
             (destination / "outputs" / "result.json").write_text("different")
             with self.assertRaisesRegex(FileExistsError, "Refusing to overwrite"):
                 data_module.migrate_durable_files(legacy, destination, status_file=root / "state.json")
+
+    def test_durable_file_migration_refuses_target_only_persistent_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "legacy"
+            destination = root / "shared"
+            (legacy / "outputs").mkdir(parents=True)
+            (legacy / "outputs" / "new.json").write_text("new")
+            destination.mkdir()
+            (destination / "user-settings.json").write_text("unrelated")
+            with self.assertRaisesRegex(FileExistsError, "target-only files"):
+                data_module.migrate_durable_files(legacy, destination, status_file=root / "state.json")
+            self.assertFalse((destination / "outputs" / "new.json").exists())
 
 
 class PortableDataGuardTest(unittest.TestCase):
