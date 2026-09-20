@@ -95,9 +95,14 @@ test("running state requires backend and Solara health for the same installation
 
 test("portable startup migrates durable legacy files only when they exist", async () => {
   const startScript = await readFile(new URL("../scripts/start-portable.ps1", import.meta.url), "utf8");
-  assert.match(startScript, /\$legacyHasUserState = \$null -ne \(Get-ChildItem/);
+  assert.match(startScript, /\$legacyEntries = @\(Get-ChildItem/);
+  assert.match(startScript, /\$legacyWasUsed = \$null -ne \(\$legacyEntries/);
+  assert.match(startScript, /\$legacyHasDurableFiles = \$null -ne \(\$legacyEntries/);
+  assert.ok(startScript.indexOf("$legacyWasUsed") < startScript.indexOf("Remove-Item -LiteralPath (Join-Path $LegacyDataRoot 'active-ports.json')"));
   assert.match(startScript, /'active-ports\.json', 'integrity-cache\.json', 'pids', 'logs', 'matplotlib', 'diagnostics'/);
-  assert.match(startScript, /if \(-not \[bool\]\$Paths\.binding_matches_selected -and \$legacyHasUserState\) \{[\s\S]{0,300}migrate-files/);
+  assert.match(startScript, /--preserve-source-before-reuse/);
+  assert.match(startScript, /if \(\$legacyWasUsed\) \{ \$migrationArguments \+= '--conflict-after-source-backup' \}/);
+  assert.match(startScript, /if \(-not \[bool\]\$Paths\.binding_matches_selected -and \$legacyHasDurableFiles\) \{[\s\S]{0,300}migrate-files/);
 });
 
 test("Electron windows disable Node integration and isolate the launcher bridge", async () => {

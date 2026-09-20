@@ -242,6 +242,16 @@ try {
         $null -ne (Get-OwnedPortableProcess -Name 'solara' -Python $Python -PidPath $solaraPidPath -InstallationId ([string]$Paths.installation_id))) {
         throw 'The portable platform is already running. Run Stop-Platform.cmd before starting it again.'
     }
+    $legacyEntries = @(Get-ChildItem -LiteralPath $LegacyDataRoot -Force)
+    $legacyWasUsed = $null -ne ($legacyEntries |
+        Where-Object { $_.Name -notin @('spare_mvp.sqlite3', 'spare_mvp.sqlite3-wal', 'spare_mvp.sqlite3-shm') } |
+        Select-Object -First 1)
+    $legacyHasDurableFiles = $null -ne ($legacyEntries |
+        Where-Object { $_.Name -notin @(
+            'spare_mvp.sqlite3', 'spare_mvp.sqlite3-wal', 'spare_mvp.sqlite3-shm',
+            'active-ports.json', 'integrity-cache.json', 'pids', 'logs', 'matplotlib', 'diagnostics'
+        ) } |
+        Select-Object -First 1)
     # A pre-#381 instance used package-local PID records. Stop only processes
     # proven to belong to this package before backing up its SQLite database.
     $legacyPidRoot = Join-Path $LegacyDataRoot 'pids'
@@ -261,12 +271,6 @@ try {
     }
 
     $sharedDataMutex = Acquire-SharedDataMutex -MutexName ([string]$Paths.data_mutex)
-    $legacyHasUserState = $null -ne (Get-ChildItem -LiteralPath $LegacyDataRoot -Force |
-        Where-Object { $_.Name -notin @(
-            'spare_mvp.sqlite3', 'spare_mvp.sqlite3-wal', 'spare_mvp.sqlite3-shm',
-            'active-ports.json', 'integrity-cache.json', 'pids', 'logs', 'matplotlib', 'diagnostics'
-        ) } |
-        Select-Object -First 1)
     $migrationArguments = @(
         '-I', '-B', $DataManager, 'migrate',
         '--source', $LegacyDatabase,
@@ -274,10 +278,15 @@ try {
         '--status-file', (Join-Path $InstanceRoot 'data-migration.json'),
         '--recovery-backup-root', (Join-Path $DataRoot 'migration-backups')
     )
-    if ([bool]$Paths.binding_matches_selected -or -not $legacyHasUserState) { $migrationArguments += '--allow-existing' }
+    if ([bool]$Paths.binding_matches_selected) {
+        $migrationArguments += '--allow-existing'
+    } elseif (Test-Path -LiteralPath $Database -PathType Leaf) {
+        $migrationArguments += @('--allow-existing', '--preserve-source-before-reuse')
+        if ($legacyWasUsed) { $migrationArguments += '--conflict-after-source-backup' }
+    }
     & $Python @migrationArguments
     if ($LASTEXITCODE -ne 0) { throw 'Portable user database migration or validation failed.' }
-    if (-not [bool]$Paths.binding_matches_selected -and $legacyHasUserState) {
+    if (-not [bool]$Paths.binding_matches_selected -and $legacyHasDurableFiles) {
         & $Python -I -B $DataManager migrate-files `
             --source-root $LegacyDataRoot `
             --destination-root $DataRoot `

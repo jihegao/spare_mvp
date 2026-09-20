@@ -378,22 +378,128 @@ class PortableDataMigrationTest(unittest.TestCase):
             self.create_database(destination_database, ["retained-user-project"])
             (shared / "outputs").mkdir()
             (shared / "outputs" / "retained.json").write_text("retained")
+            status = root / "instance" / "data-migration.json"
+            recovery = shared / "migration-backups"
 
             legacy_has_user_state = bool(data_module.durable_file_manifest(legacy))
             database_result = data_module.prepare_database(
-                source_database, destination_database, allow_existing=not legacy_has_user_state
+                source_database,
+                destination_database,
+                allow_existing=not legacy_has_user_state,
+                status_file=status,
+                recovery_backup_root=recovery,
+                preserve_source_before_reuse=True,
             )
             if legacy_has_user_state:
                 data_module.migrate_durable_files(legacy, shared, status_file=root / "files.json")
 
             self.assertFalse(legacy_has_user_state)
             self.assertEqual(database_result["action"], "reused-existing")
+            self.assertTrue(Path(database_result["reuse_source_backup"]["path"]).is_file())
             self.assertEqual((shared / "outputs" / "retained.json").read_text(), "retained")
             with sqlite3.connect(destination_database) as connection:
                 self.assertEqual(
                     connection.execute("select name from projects").fetchone()[0],
                     "retained-user-project",
                 )
+
+    def test_used_legacy_wal_database_is_backed_up_then_blocks_binding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "package"
+            legacy = package / "data"
+            shared = root / "shared"
+            source_database = legacy / "spare_mvp.sqlite3"
+            destination_database = shared / "spare_mvp.sqlite3"
+            package.mkdir()
+            self.create_database(source_database, ["legacy-main"])
+            self.create_database(destination_database, ["shared-user"])
+            (legacy / "logs").mkdir()
+            (legacy / "logs" / "backend.log").write_text("used")
+            environment = {"LOCALAPPDATA": str(root / "local")}
+            paths = paths_module.resolve_paths(
+                str(package), explicit_data_root=str(shared), environment=environment
+            )
+            status = Path(paths["instance_root"]) / "data-migration.json"
+            recovery = shared / "migration-backups"
+
+            with sqlite3.connect(source_database) as source_connection:
+                source_connection.execute("pragma journal_mode=wal")
+                source_connection.execute("pragma wal_autocheckpoint=0")
+                source_connection.execute("insert into projects(name) values ('legacy-wal')")
+                source_connection.commit()
+                with self.assertRaisesRegex(FileExistsError, "preserved at"):
+                    data_module.prepare_database(
+                        source_database,
+                        destination_database,
+                        allow_existing=True,
+                        status_file=status,
+                        recovery_backup_root=recovery,
+                        preserve_source_before_reuse=True,
+                        conflict_after_source_backup=True,
+                    )
+
+            journal = json.loads(status.read_text())
+            backup_path = Path(journal["reuse_source_backup"]["path"])
+            self.assertTrue(backup_path.is_file())
+            self.assertEqual(journal["reuse_source_backup"]["backup_sha256"], data_module._digest(backup_path))
+            with sqlite3.connect(backup_path) as backup:
+                self.assertEqual(
+                    [row[0] for row in backup.execute("select name from projects order by id")],
+                    ["legacy-main", "legacy-wal"],
+                )
+            self.assertFalse(Path(paths["binding_file"]).exists())
+            with sqlite3.connect(destination_database) as target:
+                self.assertEqual(target.execute("select name from projects").fetchone()[0], "shared-user")
+
+    def test_source_backup_failure_prevents_binding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "package"
+            legacy = package / "data"
+            shared = root / "shared"
+            package.mkdir()
+            source_database = legacy / "spare_mvp.sqlite3"
+            destination_database = shared / "spare_mvp.sqlite3"
+            self.create_database(source_database, ["legacy"])
+            self.create_database(destination_database, ["shared"])
+            paths = paths_module.resolve_paths(
+                str(package), explicit_data_root=str(shared),
+                environment={"LOCALAPPDATA": str(root / "local")}
+            )
+            with mock.patch.object(data_module, "_backup_database", side_effect=RuntimeError("injected backup failure")):
+                with self.assertRaisesRegex(RuntimeError, "injected backup failure"):
+                    data_module.prepare_database(
+                        source_database,
+                        destination_database,
+                        allow_existing=True,
+                        status_file=Path(paths["instance_root"]) / "data-migration.json",
+                        recovery_backup_root=shared / "migration-backups",
+                        preserve_source_before_reuse=True,
+                    )
+            self.assertFalse(Path(paths["binding_file"]).exists())
+
+    def test_same_database_snapshot_reuses_without_recovery_backup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "legacy" / "spare_mvp.sqlite3"
+            destination = root / "shared" / "spare_mvp.sqlite3"
+            recovery = root / "shared" / "migration-backups"
+            status = root / "instance" / "data-migration.json"
+            self.create_database(source, ["same"])
+            destination.parent.mkdir(parents=True)
+            data_module._backup_database(source, destination)
+            result = data_module.prepare_database(
+                source,
+                destination,
+                allow_existing=True,
+                status_file=status,
+                recovery_backup_root=recovery,
+                preserve_source_before_reuse=True,
+            )
+            self.assertEqual(result["action"], "reused-existing")
+            self.assertIsNone(result["reuse_source_backup"])
+            self.assertEqual(list(recovery.rglob("*.sqlite3")), [])
 
     def test_legacy_outputs_run_database_then_durable_file_migration(self):
         with tempfile.TemporaryDirectory() as tmp:

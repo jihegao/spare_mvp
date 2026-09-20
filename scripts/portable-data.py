@@ -125,6 +125,86 @@ def _backup_database(source: Path, destination: Path, *, on_ready=None) -> tuple
             pass
 
 
+def _preserve_source_before_existing_reuse(
+    source: Path,
+    destination: Path,
+    *,
+    status_file: Path | None,
+    recovery_backup_root: Path | None,
+) -> dict[str, object] | None:
+    if not source.is_file():
+        return None
+    if status_file is None:
+        raise ValueError("A migration journal is required before preserving a legacy database")
+    if recovery_backup_root is None:
+        raise ValueError("A recovery backup root is required before reusing a different existing database")
+
+    recovery_backup_root = recovery_backup_root.resolve(strict=False)
+    recovery_backup_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".compare-", dir=recovery_backup_root) as comparison_name:
+        comparison_root = Path(comparison_name)
+        source_snapshot = comparison_root / "source.sqlite3"
+        target_snapshot = comparison_root / "target.sqlite3"
+        source_summary, source_identity = _backup_database(source, source_snapshot)
+        _, target_identity = _backup_database(destination, target_snapshot)
+        if source_identity == target_identity:
+            return None
+
+        existing = _read_status(status_file)
+        existing_record = existing.get("reuse_source_backup") if isinstance(existing, dict) else None
+        if isinstance(existing_record, dict):
+            backup_path_value = existing_record.get("path")
+            backup_path = Path(backup_path_value).resolve(strict=False) if isinstance(backup_path_value, str) else None
+            matches = (
+                existing_record.get("source") == str(source)
+                and existing_record.get("destination") == str(destination)
+                and existing_record.get("source_snapshot_sha256") == source_identity
+                and existing_record.get("target_snapshot_sha256") == target_identity
+                and backup_path is not None
+                and backup_path.name == "legacy.sqlite3"
+                and backup_path.parent.parent == recovery_backup_root
+                and backup_path.is_file()
+                and existing_record.get("backup_sha256") == _digest(backup_path)
+            )
+            if matches:
+                with sqlite3.connect(_sqlite_read_only_uri(backup_path), uri=True) as backup:
+                    if checked_summary(backup, label="existing recovery backup") != source_summary:
+                        raise ValueError("Existing recovery backup no longer matches the legacy source")
+                return existing_record
+
+        migration_id = uuid.uuid4().hex
+        backup_directory = recovery_backup_root / migration_id
+        backup_path = backup_directory / "legacy.sqlite3"
+        backup_directory.mkdir(parents=False, exist_ok=False)
+        try:
+            os.link(source_snapshot, backup_path)
+            backup_sha256 = _digest(backup_path)
+            with sqlite3.connect(_sqlite_read_only_uri(backup_path), uri=True) as backup:
+                if checked_summary(backup, label="recovery backup") != source_summary:
+                    raise ValueError("Recovery backup does not match the legacy source")
+            record = {
+                "migration_id": migration_id,
+                "source": str(source),
+                "destination": str(destination),
+                "source_snapshot_sha256": source_identity,
+                "target_snapshot_sha256": target_identity,
+                "path": str(backup_path),
+                "backup_sha256": backup_sha256,
+                "table_counts": source_summary,
+            }
+            _write_status(status_file, {
+                "format_version": 1,
+                "phase": "source-preserved-before-reuse",
+                "source": str(source),
+                "destination": str(destination),
+                "reuse_source_backup": record,
+            })
+            return record
+        except Exception:
+            shutil.rmtree(backup_directory, ignore_errors=True)
+            raise
+
+
 def prepare_database(
     source: Path,
     destination: Path,
@@ -132,12 +212,15 @@ def prepare_database(
     allow_existing: bool,
     status_file: Path | None = None,
     recovery_backup_root: Path | None = None,
+    preserve_source_before_reuse: bool = False,
+    conflict_after_source_backup: bool = False,
 ) -> dict[str, object]:
     source = source.resolve(strict=False)
     destination = destination.resolve(strict=False)
     if destination.exists():
         journal = None
         recoverable = False
+        reuse_source_backup = None
         if not allow_existing:
             journal = _read_status(status_file)
             recoverable = (
@@ -166,6 +249,19 @@ def prepare_database(
                     f"Migration journal does not prove ownership of existing destination {destination}; both databases were retained"
                 )
             allow_existing = True
+        if allow_existing and preserve_source_before_reuse:
+            reuse_source_backup = _preserve_source_before_existing_reuse(
+                source,
+                destination,
+                status_file=status_file,
+                recovery_backup_root=recovery_backup_root,
+            )
+            if reuse_source_backup is not None and conflict_after_source_backup:
+                raise FileExistsError(
+                    "Legacy and shared databases differ. The legacy database was preserved at "
+                    + str(reuse_source_backup["path"])
+                    + "; resolve the conflict before binding this installation."
+                )
         with sqlite3.connect(_sqlite_read_only_uri(destination), uri=True) as existing:
             summary = checked_summary(existing, label="existing destination")
         recovery_backup = None
@@ -185,6 +281,7 @@ def prepare_database(
             "quick_check": "ok",
             "table_counts": summary,
             "recovery_backup": str(recovery_backup) if recovery_backup else None,
+            "reuse_source_backup": reuse_source_backup,
             "completed_at_utc": datetime.now(timezone.utc).isoformat(),
         }
         _write_status(status_file, result)
@@ -330,6 +427,8 @@ def main() -> None:
     migrate.add_argument("--status-file", type=Path)
     migrate.add_argument("--allow-existing", action="store_true")
     migrate.add_argument("--recovery-backup-root", type=Path)
+    migrate.add_argument("--preserve-source-before-reuse", action="store_true")
+    migrate.add_argument("--conflict-after-source-backup", action="store_true")
     migrate_files = subparsers.add_parser("migrate-files")
     migrate_files.add_argument("--source-root", type=Path, required=True)
     migrate_files.add_argument("--destination-root", type=Path, required=True)
@@ -342,6 +441,8 @@ def main() -> None:
             allow_existing=args.allow_existing,
             status_file=args.status_file,
             recovery_backup_root=args.recovery_backup_root,
+            preserve_source_before_reuse=args.preserve_source_before_reuse,
+            conflict_after_source_backup=args.conflict_after_source_backup,
         )
         print(json.dumps(result, ensure_ascii=False))
     elif args.command == "migrate-files":
