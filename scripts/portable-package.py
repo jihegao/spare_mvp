@@ -194,7 +194,7 @@ def verify_cached_content(root: Path, manifest: dict) -> dict[str, list[int]]:
 
 def critical_runtime_file(name: str) -> bool:
     suffix = Path(name).suffix.lower()
-    return (name.startswith(('app/', 'assets/', 'scripts/', 'resources/'))
+    return (name.startswith(('app/', 'assets/', 'scripts/', 'resources/', 'dependencies/'))
             or name in {'SpareMvpDesktop.exe', 'Uninstall-SpareMvp.exe', 'source-manifest.json', 'green-source-manifest.json'}
             or suffix in {'.exe', '.dll', '.node', '.bin', '.pak', '.dat', '.cmd', '.bat', '.vbs', '.ps1'}
             or (name.startswith('runtime/') and suffix in {

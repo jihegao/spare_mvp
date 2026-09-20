@@ -93,11 +93,15 @@ class PortablePackageTest(unittest.TestCase):
                     'build_inputs': {name: package.digest(ROOT / name) for name in package.BUILD_INPUTS}}
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / 'package'
-            # The resolver is lifecycle-owned and lands during integration; keep
-            # this source-checkout test runnable before that dependent commit.
-            support_files = package.PACKAGE_SUPPORT_FILES - {'scripts/portable-paths.py'}
-            with patch.object(package, 'PACKAGE_SUPPORT_FILES', support_files):
+            if (ROOT / 'scripts' / 'portable-paths.py').is_file():
                 package.stage(ROOT, destination, manifest)
+                self.assertTrue((destination / 'scripts' / 'portable-paths.py').is_file())
+            else:
+                # The resolver is lifecycle-owned and lands during integration;
+                # keep this branch-local test runnable before that dependent commit.
+                support_files = package.PACKAGE_SUPPORT_FILES - {'scripts/portable-paths.py'}
+                with patch.object(package, 'PACKAGE_SUPPORT_FILES', support_files):
+                    package.stage(ROOT, destination, manifest)
             database = destination / 'data' / 'fixture.sqlite3'
             result = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8',
                 str(destination / 'scripts' / 'initialize-case-database.py'), '--database', str(database)],
@@ -187,6 +191,32 @@ class PortablePackageTest(unittest.TestCase):
                 package.verify_cached(root, cache)
                 stat = target.stat()
                 target.write_bytes(b'tampered-content')
+                os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+                self.assertEqual(target.stat().st_size, stat.st_size)
+                self.assertEqual(target.stat().st_mtime_ns, stat.st_mtime_ns)
+                with self.assertRaisesRegex(ValueError, 'Critical runtime file differs'):
+                    package.verify_cached(root, cache)
+
+    def test_cached_verification_hashes_all_release_provenance_despite_same_metadata(self):
+        for changed_name in package.RELEASE_DEPENDENCY_FILES:
+            with self.subTest(name=changed_name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / 'package'
+                root.mkdir()
+                (root / 'source-manifest.json').write_text(json.dumps({'source_commit': 'a' * 40}))
+                runtime = root / 'runtime'
+                runtime.mkdir()
+                (runtime / 'python.exe').write_bytes(b'interpreter')
+                dependencies = root / 'dependencies'
+                dependencies.mkdir()
+                for name in package.RELEASE_DEPENDENCY_FILES:
+                    (dependencies / name).write_bytes(b'reviewed')
+                with patch.object(package, 'verify_runtime_manifest'), patch.object(package, 'verify_frontend_assets'):
+                    package.seal(root)
+                cache = Path(tmp) / 'state' / 'integrity-cache.json'
+                package.verify_cached(root, cache)
+                target = dependencies / changed_name
+                stat = target.stat()
+                target.write_bytes(b'tampered')
                 os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
                 self.assertEqual(target.stat().st_size, stat.st_size)
                 self.assertEqual(target.stat().st_mtime_ns, stat.st_mtime_ns)
