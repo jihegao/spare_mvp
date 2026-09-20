@@ -20,6 +20,7 @@ internal static class GreenExtractor
         bool unattended = args.Length >= 2 && args[0] == "--extract-to";
         bool noLaunch = Array.IndexOf(args, "--no-launch") >= 0;
         string unattendedParent = unattended ? args[1] : null;
+        string ownedStaging = null;
         try
         {
             string executable = Application.ExecutablePath;
@@ -52,14 +53,15 @@ internal static class GreenExtractor
             }
             if (String.IsNullOrWhiteSpace(parent)) throw new ArgumentException("解压位置不能为空。");
             string destination = Path.Combine(parent, "spare-mvp-2.0-green");
-            if (Directory.Exists(destination) && Directory.GetFileSystemEntries(destination).Length != 0)
-                throw new IOException("目标目录已存在且不为空：" + destination + "\r\n请选择其他目录，避免覆盖已有数据。");
-            Directory.CreateDirectory(destination);
+            if (Directory.Exists(destination) || File.Exists(destination))
+                throw new IOException("目标目录已存在：" + destination + "\r\n请选择其他目录，避免覆盖或删除已有内容。");
+            ownedStaging = destination + ".extracting-" + Guid.NewGuid().ToString("N");
+            Directory.CreateDirectory(ownedStaging);
 
             if (unattended)
             {
                 VerifyPayload(executable, payloadLength, expectedHash, delegate { });
-                ExtractPayload(executable, payloadLength, destination, delegate { });
+                ExtractPayload(executable, payloadLength, ownedStaging, delegate { });
             }
             else
             {
@@ -69,10 +71,14 @@ internal static class GreenExtractor
                     progress.UpdateState("正在校验安装包…");
                     VerifyPayload(executable, payloadLength, expectedHash, progress.Pulse);
                     progress.UpdateState("正在解压完整运行环境，请勿关闭…");
-                    ExtractPayload(executable, payloadLength, destination, progress.Pulse);
+                    ExtractPayload(executable, payloadLength, ownedStaging, progress.Pulse);
                     progress.Close();
                 }
             }
+            string stagedLauncher = Path.Combine(ownedStaging, "SpareMvpDesktop.exe");
+            if (!File.Exists(stagedLauncher)) throw new FileNotFoundException("解压后未找到桌面启动器。", stagedLauncher);
+            Directory.Move(ownedStaging, destination);
+            ownedStaging = null;
             string launcher = Path.Combine(destination, "SpareMvpDesktop.exe");
             if (!File.Exists(launcher)) throw new FileNotFoundException("解压后未找到桌面启动器。", launcher);
             CreateDesktopShortcut(launcher, destination);
@@ -82,6 +88,11 @@ internal static class GreenExtractor
         }
         catch (Exception error)
         {
+            if (!String.IsNullOrWhiteSpace(ownedStaging))
+            {
+                try { if (Directory.Exists(ownedStaging)) Directory.Delete(ownedStaging, true); }
+                catch { }
+            }
             if (unattended)
             {
                 try { File.WriteAllText(Path.Combine(unattendedParent ?? ".", "spare-mvp-green-extract-error.log"), error.ToString(), Encoding.UTF8); }

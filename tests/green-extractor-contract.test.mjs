@@ -16,6 +16,10 @@ test("green extractor stages the embedded tar before invoking Windows tar", () =
   assert.match(source, /File\.Delete\(temporaryPayload\)/);
   assert.doesNotMatch(source, /RedirectStandardInput/);
   assert.doesNotMatch(source, /StandardInput\.BaseStream\.Write/);
+  assert.match(source, /\.extracting-/);
+  assert.match(source, /Directory\.Move\(ownedStaging, destination\)/);
+  assert.match(source, /Directory\.Delete\(ownedStaging, true\)/);
+  assert.match(source, /Directory\.Exists\(destination\) \|\| File\.Exists\(destination\)/);
 });
 
 test("green extractor creates a current-user desktop shortcut for the extracted launcher", () => {
@@ -40,7 +44,13 @@ test("green package builds a guarded uninstaller into the sealed payload", () =>
   assert.match(uninstaller, /"Uninstall-SpareMvp\.exe"/);
   assert.match(uninstaller, /"manifest\.json"/);
   assert.match(uninstaller, /IsOwnedShortcut/);
-  assert.match(uninstaller, /ReadShortcutTarget/);
+  assert.match(uninstaller, /ReadShortcutDetails/);
+  assert.match(uninstaller, /WorkingDirectory/);
+  assert.match(uninstaller, /Arguments/);
   assert.match(uninstaller, /MessageBoxDefaultButton\.Button2/);
+  assert.match(uninstaller, /MessageBoxDefaultButton\.Button3/);
+  assert.match(uninstaller, /-RemoveInstanceState/);
+  assert.match(uninstaller, /-DeleteSharedData/);
+  assert.match(uninstaller, /项目数据库和用户数据已保留/);
   assert.match(portablePackager, /'Uninstall-SpareMvp\.exe'/);
 });

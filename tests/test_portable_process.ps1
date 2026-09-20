@@ -8,6 +8,7 @@ New-Item -ItemType Directory -Path $root | Out-Null
 $pidPath = Join-Path $root 'backend.pid'
 $python = 'C:\portable\runtime\python.exe'
 $token = 'a' * 32
+$installationId = '1' * 24
 $started = [DateTime]::Parse('2026-09-18T01:02:03Z').ToUniversalTime()
 $script:fakeProcess = [pscustomobject]@{ Id = 12345; StartTime = $started }
 $script:fakeDetails = $null
@@ -25,7 +26,7 @@ function Assert-True([bool]$Condition, [string]$Message) {
     $script:assertions++
 }
 function Set-TestRecord {
-    [ordered]@{pid=12345; service='backend'; executable=$python; started_at_utc=$started.ToString('o'); instance_token=$token} |
+    [ordered]@{pid=12345; service='backend'; executable=$python; started_at_utc=$started.ToString('o'); instance_token=$token; installation_id=$installationId} |
         ConvertTo-Json | Set-Content -LiteralPath "$pidPath.json" -Encoding UTF8
     Set-Content -LiteralPath $pidPath -Value '12345' -Encoding ascii
     $script:fakeDetails = [pscustomobject]@{
@@ -41,6 +42,10 @@ function Get-CimInstance { [CmdletBinding()]param([string]$ClassName, [string]$F
 try {
     Set-TestRecord
     Assert-True ($null -ne (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath)) 'Owned service was rejected'
+    Set-TestRecord
+    Assert-True ($null -ne (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath -InstallationId $installationId)) 'Matching installation identity was rejected'
+    Set-TestRecord
+    Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath -InstallationId ('2' * 24))) 'Different installation identity was accepted'
     Set-TestRecord
     $script:fakeDetails.CommandLine = '"C:\portable\runtime\python.exe" "C:\other\unrelated.py"'
     Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath)) 'Same-runtime unrelated command was accepted'
@@ -67,6 +72,8 @@ try {
     $solara = '"C:\portable\runtime\python.exe" "-X" "spare_mvp_instance=' + $token + '" "-m" "solara" "run" "src.spare_mvp_abm.aircraft_support_v1.solara_app"'
     Assert-True (Test-PortableServiceCommand -Name solara -CommandLine $solara -InstanceToken $token) 'Owned Solara command rejected'
     Assert-True (-not (Test-PortableServiceCommand -Name backend -CommandLine $solara -InstanceToken $token)) 'Solara command accepted as backend'
+    $guardedBackend = '"C:\portable\runtime\python.exe" "-X" "spare_mvp_instance=' + $token + '" "C:\portable\scripts\portable-data-guard.py" "--mutex-name" "Local\SpareMvpData_test" "--module" "src.spare_mvp_backend.http_server"'
+    Assert-True (Test-PortableServiceCommand -Name backend -CommandLine $guardedBackend -InstanceToken $token) 'Guarded backend command rejected'
     Set-TestRecord
     $script:fakeProcess = $null
     Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath)) 'Exited PID was retained as live'

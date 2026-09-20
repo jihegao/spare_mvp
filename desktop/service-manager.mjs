@@ -1,11 +1,15 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
-export function runtimePaths(packageRoot) {
-  const dataRoot = path.join(packageRoot, "data");
-  return {
+function resolvedPath(value) {
+  const result = path.resolve(value);
+  return process.platform === "win32" ? result.toLowerCase() : result;
+}
+
+export function runtimePaths(packageRoot, options = {}) {
+  const base = {
     packageRoot,
     python: path.join(packageRoot, "runtime", "python.exe"),
     applicationRoot: path.join(packageRoot, "app"),
@@ -13,15 +17,58 @@ export function runtimePaths(packageRoot) {
     startScript: path.join(packageRoot, "scripts", "start-portable.ps1"),
     stopScript: path.join(packageRoot, "scripts", "stop-portable.ps1"),
     verifier: path.join(packageRoot, "scripts", "portable-package.py"),
-    dataRoot,
-    stateFile: path.join(dataRoot, "active-ports.json"),
-    logsDir: path.join(dataRoot, "logs"),
-    diagnosticsDir: path.join(dataRoot, "diagnostics"),
+    pathResolver: path.join(packageRoot, "scripts", "portable-paths.py"),
+    dataManager: path.join(packageRoot, "scripts", "portable-data.py"),
+    dataGuard: path.join(packageRoot, "scripts", "portable-data-guard.py"),
+  };
+  let contract = options.pathContract;
+  if (!contract && existsSync(base.python) && existsSync(base.pathResolver)) {
+    const execute = options.spawnSync || spawnSync;
+    const result = execute(base.python, ["-I", "-B", base.pathResolver, "--package-root", packageRoot], {
+      cwd: packageRoot,
+      env: options.env || process.env,
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      throw new Error(`无法解析绿色版数据目录：${String(result.stderr || result.stdout || "unknown error").trim()}`);
+    }
+    try {
+      contract = JSON.parse(result.stdout.replace(/^\uFEFF/, ""));
+    } catch (error) {
+      throw new Error(`绿色版路径解析结果无效：${error.message}`);
+    }
+  }
+  if (!contract) return base;
+  const required = [
+    "package_root", "installation_id", "data_root", "database", "instance_root", "state_file",
+    "pid_root", "logs_dir", "diagnostics_dir", "integrity_cache",
+  ];
+  const missing = required.filter((name) => typeof contract[name] !== "string" || !contract[name]);
+  if (missing.length) throw new Error(`绿色版路径契约缺少字段：${missing.join("、")}`);
+  if (resolvedPath(contract.package_root) !== resolvedPath(packageRoot)) {
+    throw new Error("绿色版路径契约与当前安装目录不一致");
+  }
+  return {
+    ...base,
+    installationId: contract.installation_id,
+    dataRoot: contract.data_root,
+    database: contract.database,
+    instanceRoot: contract.instance_root,
+    stateFile: contract.state_file,
+    pidsDir: contract.pid_root,
+    logsDir: contract.logs_dir,
+    diagnosticsDir: contract.diagnostics_dir,
+    integrityCache: contract.integrity_cache,
   };
 }
 
 export function requiredRuntimeFiles(paths) {
-  return [paths.python, paths.applicationRoot, paths.manifestFile, paths.startScript, paths.stopScript, paths.verifier];
+  return [
+    paths.python, paths.applicationRoot, paths.manifestFile, paths.startScript, paths.stopScript,
+    paths.verifier, paths.pathResolver, paths.dataManager, paths.dataGuard,
+  ];
 }
 
 export function portableResourcesReady(paths) {
@@ -88,7 +135,11 @@ export async function assertPortableIntegrity(paths, onProgress = () => {}, run 
     throw new Error(`绿色版文件不完整：${missing.join("；")}`);
   }
   let buffered = "";
-  await run(paths.python, ["-I", "-B", paths.verifier, "verify-cached", "--root", paths.packageRoot, "--progress"], {
+  if (!paths.integrityCache) throw new Error("绿色版实例校验缓存路径尚未解析");
+  await run(paths.python, [
+    "-I", "-B", paths.verifier, "verify-cached", "--root", paths.packageRoot,
+    "--cache-path", paths.integrityCache, "--progress",
+  ], {
     cwd: paths.packageRoot,
     timeoutMs: 600_000,
     env: { ...process.env, PYTHONNOUSERSITE: "1", PYTHONDONTWRITEBYTECODE: "1" },
@@ -115,8 +166,17 @@ export async function assertPortableIntegrity(paths, onProgress = () => {}, run 
 export async function readActiveState(paths) {
   const raw = await readFile(paths.stateFile, "utf8");
   const state = JSON.parse(raw.replace(/^\uFEFF/, ""));
-  if (!Number.isInteger(state.backend_port) || !Number.isInteger(state.solara_port)) {
+  if (
+    state.format_version !== 2 || !Number.isInteger(state.backend_port) || !Number.isInteger(state.solara_port)
+    || !Number.isInteger(state.backend_pid) || !Number.isInteger(state.solara_pid)
+  ) {
     throw new Error("本机运行状态文件无效");
+  }
+  if (state.installation_id !== paths.installationId || resolvedPath(state.package_root || "") !== resolvedPath(paths.packageRoot)) {
+    throw new Error("本机运行状态不属于当前绿色版安装");
+  }
+  if (resolvedPath(state.data_root || "") !== resolvedPath(paths.dataRoot)) {
+    throw new Error("本机运行状态绑定了不同的用户数据目录");
   }
   return {
     backendPort: state.backend_port,
@@ -128,14 +188,18 @@ export async function readActiveState(paths) {
   };
 }
 
-export async function runningState(paths) {
+export async function runningState(paths, run = runCommand) {
   if (!existsSync(paths.stateFile)) return null;
   try {
     const state = await readActiveState(paths);
-    const response = await fetch(`http://127.0.0.1:${state.backendPort}/_spare_mvp/health`, {
-      signal: AbortSignal.timeout(2500),
-    });
-    return response.ok ? state : null;
+    await run("powershell.exe", [
+      "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", paths.stopScript, "-CheckOwnershipOnly",
+    ], { cwd: paths.packageRoot, timeoutMs: 30_000 });
+    const [backend, solara] = await Promise.all([
+      fetch(`http://127.0.0.1:${state.backendPort}/_spare_mvp/health`, { signal: AbortSignal.timeout(2500) }),
+      fetch(`${state.solaraUrl}/`, { signal: AbortSignal.timeout(2500) }),
+    ]);
+    return backend.ok && solara.ok ? state : null;
   } catch {
     return null;
   }
@@ -146,6 +210,13 @@ export async function startServices(paths, onProgress = () => {}, run = runComma
   if (existing) {
     onProgress("正在加载已运行的工作区", 100);
     return { state: existing, startedHere: false };
+  }
+  // A stale/partial state belongs to this installation's isolated instance
+  // root. Stop only processes that pass the PowerShell ownership checks before
+  // starting the pair again.
+  if (existsSync(paths.stateFile) || existsSync(paths.pidsDir)) {
+    onProgress("正在恢复不完整的本机服务", 50);
+    await stopServices(paths, run);
   }
   onProgress("正在启动内置 Python 服务", 55);
   await run("powershell.exe", [

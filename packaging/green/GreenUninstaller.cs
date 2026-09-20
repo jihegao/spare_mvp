@@ -17,24 +17,40 @@ internal static class GreenUninstaller
     private static int Main(string[] args)
     {
         Application.EnableVisualStyles();
-        if (args.Length == 3 && args[0] == WorkerArgument) return RemoveInstalledFiles(args[1], args[2]);
+        if (args.Length == 4 && args[0] == WorkerArgument) return RemoveInstalledFiles(args[1], args[2], args[3] == "deleted");
 
         try
         {
             string installationRoot = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar));
             AssertInstallationRoot(installationRoot);
+            LifecyclePaths lifecycle = ResolveLifecyclePaths(installationRoot);
+            if (!lifecycle.BindingExists && HasLegacyUserState(installationRoot))
+                throw new InvalidOperationException("检测到尚未安全迁出的安装目录内用户数据。请先启动一次平台完成数据迁移，再执行卸载。");
             DialogResult answer = MessageBox.Show(
-                "将停止 spare_mvp 2.0，并永久删除此安装目录中的程序、项目和本机数据：\r\n\r\n" + installationRoot +
-                "\r\n\r\n同时删除安装程序创建的桌面快捷方式。此操作无法撤销，是否继续？",
+                "将停止 spare_mvp 2.0，并删除当前安装的程序和实例临时状态：\r\n\r\n" + installationRoot +
+                "\r\n\r\n项目数据库和用户数据默认保留在：\r\n" + lifecycle.DataRoot +
+                "\r\n\r\n是否继续卸载程序？",
                 "卸载 spare_mvp 2.0",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return 0;
 
-            StopOwnedServices(installationRoot);
+            DialogResult dataAnswer = MessageBox.Show(
+                "是否同时永久删除以下用户数据？\r\n\r\n" + lifecycle.DataRoot +
+                "\r\n\r\n选择“是”将永久删除项目数据库、运行结果和迁移备份，且无法恢复。" +
+                "\r\n选择“否”将保留用户数据。选择“取消”将取消本次卸载。",
+                "用户数据处理",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button3);
+            if (dataAnswer == DialogResult.Cancel) return 0;
+            bool deleteUserData = dataAnswer == DialogResult.Yes;
+
+            RunStopScript(installationRoot, lifecycle.DataRoot, false, false);
             CloseDesktopProcesses(installationRoot);
-            StartRemovalWorker(installationRoot, DesktopShortcutPath());
+            RunStopScript(installationRoot, lifecycle.DataRoot, true, deleteUserData);
+            StartRemovalWorker(installationRoot, DesktopShortcutPath(), deleteUserData);
             return 0;
         }
         catch (Exception error)
@@ -57,6 +73,9 @@ internal static class GreenUninstaller
             "manifest.json",
             "green-source-manifest.json",
             Path.Combine("scripts", "stop-portable.ps1"),
+            Path.Combine("scripts", "portable-paths.py"),
+            Path.Combine("scripts", "portable-data.py"),
+            Path.Combine("scripts", "portable-data-guard.py"),
             Path.Combine("runtime", "python.exe")
         };
         foreach (string relative in required)
@@ -66,12 +85,16 @@ internal static class GreenUninstaller
         }
     }
 
-    private static void StopOwnedServices(string installationRoot)
+    private static void RunStopScript(string installationRoot, string dataRoot, bool removeInstanceState, bool deleteUserData)
     {
         string stopScript = Path.Combine(installationRoot, "scripts", "stop-portable.ps1");
+        string arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -File " + Quote(stopScript) +
+            " -DataRoot " + Quote(dataRoot);
+        if (removeInstanceState) arguments += " -RemoveInstanceState";
+        if (deleteUserData) arguments += " -DeleteSharedData";
         ProcessStartInfo info = new ProcessStartInfo(
             "powershell.exe",
-            "-NoLogo -NoProfile -ExecutionPolicy Bypass -File " + Quote(stopScript))
+            arguments)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -86,6 +109,56 @@ internal static class GreenUninstaller
             }
             if (process.ExitCode != 0) throw new InvalidOperationException("平台服务未能安全停止，未删除任何安装文件。");
         }
+    }
+
+    private static LifecyclePaths ResolveLifecyclePaths(string installationRoot)
+    {
+        string dataRoot = ResolvePathField(installationRoot, "data_root");
+        string instanceRoot = ResolvePathField(installationRoot, "instance_root");
+        bool bindingExists = String.Equals(ResolvePathField(installationRoot, "binding_exists"), "True", StringComparison.OrdinalIgnoreCase);
+        return new LifecyclePaths(dataRoot, instanceRoot, bindingExists);
+    }
+
+    private static string ResolvePathField(string installationRoot, string field)
+    {
+        string python = Path.Combine(installationRoot, "runtime", "python.exe");
+        string resolver = Path.Combine(installationRoot, "scripts", "portable-paths.py");
+        ProcessStartInfo info = new ProcessStartInfo(
+            python,
+            "-I -B " + Quote(resolver) + " --package-root " + Quote(installationRoot) + " --field " + Quote(field))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = installationRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        using (Process process = Process.Start(info))
+        {
+            string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
+            if (!process.WaitForExit(30000))
+            {
+                try { process.Kill(); } catch { }
+                throw new TimeoutException("解析用户数据目录超时，未删除任何文件。");
+            }
+            if (process.ExitCode != 0 || String.IsNullOrWhiteSpace(output))
+                throw new InvalidOperationException("无法安全解析用户数据目录，未删除任何文件：" + error.Trim());
+            return output.Trim();
+        }
+    }
+
+    private static bool HasLegacyUserState(string installationRoot)
+    {
+        string legacy = Path.Combine(installationRoot, "data");
+        string[] markers = {
+            "active-ports.json", "integrity-cache.json", "pids", "logs", "outputs"
+        };
+        foreach (string marker in markers)
+        {
+            if (File.Exists(Path.Combine(legacy, marker)) || Directory.Exists(Path.Combine(legacy, marker))) return true;
+        }
+        return false;
     }
 
     private static void CloseDesktopProcesses(string installationRoot)
@@ -127,18 +200,19 @@ internal static class GreenUninstaller
         }
     }
 
-    private static void StartRemovalWorker(string installationRoot, string shortcutPath)
+    private static void StartRemovalWorker(string installationRoot, string shortcutPath, bool userDataDeleted)
     {
         string worker = Path.Combine(Path.GetTempPath(), "spare-mvp-uninstall-" + Guid.NewGuid().ToString("N") + ".exe");
         File.Copy(Application.ExecutablePath, worker, false);
-        Process.Start(new ProcessStartInfo(worker, WorkerArgument + " " + Quote(installationRoot) + " " + Quote(shortcutPath))
+        Process.Start(new ProcessStartInfo(worker, WorkerArgument + " " + Quote(installationRoot) + " " + Quote(shortcutPath) +
+            " " + (userDataDeleted ? "deleted" : "preserved"))
         {
             UseShellExecute = true,
             WorkingDirectory = Path.GetTempPath()
         });
     }
 
-    private static int RemoveInstalledFiles(string installationRoot, string shortcutPath)
+    private static int RemoveInstalledFiles(string installationRoot, string shortcutPath, bool userDataDeleted)
     {
         try
         {
@@ -163,9 +237,10 @@ internal static class GreenUninstaller
             if (Directory.Exists(installationRoot))
                 throw new IOException("无法删除安装目录，请关闭仍在使用其中文件的程序后重试。", lastError);
             if (removeShortcut && File.Exists(shortcutPath)) File.Delete(shortcutPath);
+            string dataResult = userDataDeleted ? "已按二次确认永久删除用户数据。" : "项目数据库和用户数据已保留。";
             string result = shortcutExists && !removeShortcut
-                ? "spare_mvp 2.0 安装目录已删除。桌面快捷方式已被修改或指向其他安装，因此予以保留。"
-                : "spare_mvp 2.0 已卸载，安装目录和桌面快捷方式已删除。";
+                ? "spare_mvp 2.0 安装目录已删除。桌面快捷方式已被修改或指向其他安装，因此予以保留。" + dataResult
+                : "spare_mvp 2.0 已卸载，安装目录和本安装拥有的桌面快捷方式已删除。" + dataResult;
             MessageBox.Show(result, "卸载完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
             ScheduleSelfDelete();
             return 0;
@@ -181,9 +256,13 @@ internal static class GreenUninstaller
     {
         try
         {
-            string target = ReadShortcutTarget(shortcutPath);
-            return !String.IsNullOrWhiteSpace(target) &&
-                String.Equals(Path.GetFullPath(target), Path.GetFullPath(expectedLauncher), StringComparison.OrdinalIgnoreCase);
+            string[] details = ReadShortcutDetails(shortcutPath);
+            string expectedWorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(expectedLauncher));
+            return !String.IsNullOrWhiteSpace(details[0]) &&
+                String.Equals(Path.GetFullPath(details[0]), Path.GetFullPath(expectedLauncher), StringComparison.OrdinalIgnoreCase) &&
+                !String.IsNullOrWhiteSpace(details[1]) &&
+                String.Equals(Path.GetFullPath(details[1]), expectedWorkingDirectory, StringComparison.OrdinalIgnoreCase) &&
+                String.IsNullOrWhiteSpace(details[2]);
         }
         catch
         {
@@ -191,7 +270,7 @@ internal static class GreenUninstaller
         }
     }
 
-    private static string ReadShortcutTarget(string shortcutPath)
+    private static string[] ReadShortcutDetails(string shortcutPath)
     {
         Type shellType = Type.GetTypeFromProgID("WScript.Shell");
         if (shellType == null) throw new PlatformNotSupportedException("Windows Script Host 不可用，无法核对桌面快捷方式。");
@@ -201,7 +280,12 @@ internal static class GreenUninstaller
         {
             shell = Activator.CreateInstance(shellType);
             shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
-            return (string)shortcut.GetType().InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null);
+            Type shortcutType = shortcut.GetType();
+            return new string[] {
+                (string)shortcutType.InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null),
+                (string)shortcutType.InvokeMember("WorkingDirectory", BindingFlags.GetProperty, null, shortcut, null),
+                (string)shortcutType.InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null)
+            };
         }
         finally
         {
@@ -226,5 +310,19 @@ internal static class GreenUninstaller
     private static string Quote(string value)
     {
         return "\"" + value.Replace("\"", "\"\"") + "\"";
+    }
+
+    private sealed class LifecyclePaths
+    {
+        internal readonly string DataRoot;
+        internal readonly string InstanceRoot;
+        internal readonly bool BindingExists;
+
+        internal LifecyclePaths(string dataRoot, string instanceRoot, bool bindingExists)
+        {
+            DataRoot = dataRoot;
+            InstanceRoot = instanceRoot;
+            BindingExists = bindingExists;
+        }
     }
 }
