@@ -22,7 +22,7 @@ if (-not $DependencyBundle) { $DependencyBundle = Split-Path -Parent $runtime }
 $bundle = (Resolve-Path -LiteralPath $DependencyBundle).Path
 if (-not $FrontendAssets) { $FrontendAssets = Join-Path $bundle 'solara-cdn' }
 $frontend = (Resolve-Path -LiteralPath $FrontendAssets).Path
-& $python -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --destination $frontend --verify
+& $python -X utf8 -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --destination $frontend --verify
 if ($LASTEXITCODE -ne 0) { throw 'Solara frontend assets differ from the reviewed lock.' }
 foreach ($name in @('windows-runtime.json','requirements-windows.lock','installed-distributions.json','runtime-manifest.json','wheelhouse','downloads')) {
     if (-not (Test-Path -LiteralPath (Join-Path $bundle $name))) { throw "Prepared dependency bundle is missing: $name" }
@@ -32,18 +32,18 @@ foreach ($name in @('windows-runtime.json','requirements-windows.lock')) {
         throw "Dependency bundle does not match the reviewed lock: $name"
     }
 }
-& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $bundle --runtime-source $runtime
+& $python -X utf8 -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify-runtime --root $bundle --runtime-source $runtime
 if ($LASTEXITCODE -ne 0) { throw 'Runtime or wheelhouse differs from the reviewed lock.' }
-& $python -I -B -m pip --isolated check
+& $python -X utf8 -I -B -m pip --isolated check
 if ($LASTEXITCODE -ne 0) { throw 'Runtime dependencies failed pip check.' }
 $sourceArguments = @()
 if ($SourceManifest) { $sourceArguments = @('--source-manifest', (Resolve-Path -LiteralPath $SourceManifest).Path) }
-& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') stage --repo $repo --root $destinationPath @sourceArguments
+& $python -X utf8 -I -B (Join-Path $PSScriptRoot 'portable-package.py') stage --repo $repo --root $destinationPath @sourceArguments
 if ($LASTEXITCODE -ne 0) { throw 'Allowlisted application staging failed.' }
 Copy-Item -LiteralPath $runtime -Destination (Join-Path $destinationPath 'runtime') -Recurse
 New-Item -ItemType Directory -Path (Join-Path $destinationPath 'assets') | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo 'packaging\solara-assets.lock.json') -Destination (Join-Path $destinationPath 'assets\solara-assets.lock.json')
-& $python -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --destination (Join-Path $destinationPath 'assets\solara-cdn') --offline-source $frontend
+& $python -X utf8 -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --destination (Join-Path $destinationPath 'assets\solara-cdn') --offline-source $frontend
 if ($LASTEXITCODE -ne 0) { throw 'Offline Solara asset copying failed.' }
 # The build environment retains wheels and the CPython archive. The user package
 # keeps only provenance records needed to bind the installed runtime.
@@ -54,10 +54,10 @@ foreach ($name in @('windows-runtime.json','requirements-windows.lock','installe
 $caseArguments = @()
 if ($ProjectFile) { $caseArguments += @('--project', (Resolve-Path -LiteralPath $ProjectFile).Path) }
 if ($ExperimentConfig) { $caseArguments += @('--experiment-config', (Resolve-Path -LiteralPath $ExperimentConfig).Path) }
-& (Join-Path $destinationPath 'runtime\python.exe') -I -B -X utf8 (Join-Path $destinationPath 'scripts\initialize-case-database.py') --database (Join-Path $destinationPath 'data/spare_mvp.sqlite3') @caseArguments
+& (Join-Path $destinationPath 'runtime\python.exe') -X utf8 -I -B (Join-Path $destinationPath 'scripts\initialize-case-database.py') --database (Join-Path $destinationPath 'data/spare_mvp.sqlite3') @caseArguments
 if ($LASTEXITCODE -ne 0) { throw 'Fixture database initialization failed.' }
-& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') seal --root $destinationPath
+& $python -X utf8 -I -B (Join-Path $PSScriptRoot 'portable-package.py') seal --root $destinationPath
 if ($LASTEXITCODE -ne 0) { throw 'Package sealing failed.' }
-& $python -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify --root $destinationPath
+& $python -X utf8 -I -B (Join-Path $PSScriptRoot 'portable-package.py') verify --root $destinationPath
 if ($LASTEXITCODE -ne 0) { throw 'Package integrity verification failed.' }
 Write-Output "Built portable package: $destinationPath"

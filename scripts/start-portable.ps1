@@ -21,7 +21,7 @@ $Python = Join-Path $RuntimeRoot 'python.exe'
 $PathResolver = Join-Path $PSScriptRoot 'portable-paths.py'
 $DataManager = Join-Path $PSScriptRoot 'portable-data.py'
 $DataGuard = Join-Path $PSScriptRoot 'portable-data-guard.py'
-$pathArguments = @('-I', '-B', $PathResolver, '--package-root', $PackageRoot)
+$pathArguments = @('-X', 'utf8', '-I', '-B', $PathResolver, '--package-root', $PackageRoot)
 if (-not [string]::IsNullOrWhiteSpace($DataRoot)) { $pathArguments += @('--data-root', $DataRoot) }
 $pathJson = & $Python @pathArguments
 if ($LASTEXITCODE -ne 0) { throw 'Portable path resolution failed.' }
@@ -66,7 +66,7 @@ function Start-PortableProcess {
     $outLog = Join-Path $LogRoot "$Name.stdout.log"
     $errLog = Join-Path $LogRoot "$Name.stderr.log"
     $instanceToken = [Guid]::NewGuid().ToString('N')
-    $ownedArguments = @('-B', '-X', "spare_mvp_instance=$instanceToken") + $Arguments
+    $ownedArguments = @('-X', 'utf8', '-B', '-X', "spare_mvp_instance=$instanceToken") + $Arguments
     $process = Start-Process -FilePath $Python `
         -ArgumentList (Join-ProcessArguments $ownedArguments) `
         -WorkingDirectory $ApplicationRoot `
@@ -217,7 +217,7 @@ function Write-StartupFailureLog {
         if (Test-Path -LiteralPath $serviceLog) {
             $lines.Add('')
             $lines.Add("Last lines from ${serviceLogName}:")
-            foreach ($logLine in @(Get-Content -LiteralPath $serviceLog -Tail 30 -ErrorAction SilentlyContinue)) {
+            foreach ($logLine in @(Get-Content -LiteralPath $serviceLog -Encoding UTF8 -Tail 30 -ErrorAction SilentlyContinue)) {
                 $lines.Add([string]$logLine)
             }
         }
@@ -286,7 +286,7 @@ try {
     $Paths = $LockedPaths
     $sharedDataMutex = Acquire-SharedDataMutex -MutexName ([string]$Paths.data_mutex)
     $migrationArguments = @(
-        '-I', '-B', $DataManager, 'migrate',
+        '-X', 'utf8', '-I', '-B', $DataManager, 'migrate',
         '--source', $LegacyDatabase,
         '--destination', $Database,
         '--status-file', (Join-Path $InstanceRoot 'data-migration.json'),
@@ -301,14 +301,14 @@ try {
     & $Python @migrationArguments
     if ($LASTEXITCODE -ne 0) { throw 'Portable user database migration or validation failed.' }
     if (-not [bool]$Paths.binding_matches_selected -and $legacyHasDurableFiles) {
-        & $Python -I -B $DataManager migrate-files `
+        & $Python -X utf8 -I -B $DataManager migrate-files `
             --source-root $LegacyDataRoot `
             --destination-root $DataRoot `
             --status-file (Join-Path $InstanceRoot 'durable-files-migration.json')
         if ($LASTEXITCODE -ne 0) { throw 'Portable outputs or user-configuration migration failed.' }
     }
     New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
-    $bindingArguments = @('-I', '-B', $PathResolver, '--package-root', $PackageRoot, '--data-root', $DataRoot, '--write-binding')
+    $bindingArguments = @('-X', 'utf8', '-I', '-B', $PathResolver, '--package-root', $PackageRoot, '--data-root', $DataRoot, '--write-binding')
     $pathJson = & $Python @bindingArguments
     if ($LASTEXITCODE -ne 0) { throw 'Portable data-root binding failed after database validation.' }
     $Paths = $pathJson | ConvertFrom-Json
@@ -342,7 +342,7 @@ try {
     $env:PYTHONPATH = $ApplicationRoot
     $env:PATH = "$RuntimeRoot;$RuntimeRoot\Scripts;$env:PATH"
     $env:MPLCONFIGDIR = [string]$Paths.matplotlib_root
-    & $Python -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --lock (Join-Path $PackageRoot 'assets\solara-assets.lock.json') --destination $SolaraAssetCache --verify
+    & $Python -X utf8 -I -B (Join-Path $PSScriptRoot 'prepare-solara-assets.py') --lock (Join-Path $PackageRoot 'assets\solara-assets.lock.json') --destination $SolaraAssetCache --verify
     if ($LASTEXITCODE -ne 0) { throw 'Solara offline frontend cache is missing or changed.' }
     $env:SOLARA_ASSETS_PROXY = 'true'
     $env:SOLARA_ASSETS_PROXY_CACHE_DIR = $SolaraAssetCache

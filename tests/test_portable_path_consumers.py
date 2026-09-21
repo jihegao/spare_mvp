@@ -43,6 +43,10 @@ class PortablePathConsumersTest(unittest.TestCase):
         script = (ROOT / "Start-Platform.vbs").read_text(encoding="utf-8-sig")
         self.assertIn("portable-paths.py", script)
         self.assertIn("--field logs_dir", script)
+        self.assertIn("-X utf8 -I -B", script)
+        self.assertIn("--field-output", script)
+        self.assertIn("OpenTextFile(resolverOutput, 1, False, -1)", script)
+        self.assertNotIn("logRoot = Trim(resolverProcess.StdOut.ReadAll)", script)
         self.assertIsNone(re.search(r"data\\logs", script, re.IGNORECASE))
 
     def test_packaged_windows_readme_documents_external_instance_state_and_extract_refusal(self):

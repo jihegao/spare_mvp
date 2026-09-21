@@ -24,7 +24,7 @@ export function runtimePaths(packageRoot, options = {}) {
   let contract = options.pathContract;
   if (!contract && existsSync(base.python) && existsSync(base.pathResolver)) {
     const execute = options.spawnSync || spawnSync;
-    const result = execute(base.python, ["-I", "-B", base.pathResolver, "--package-root", packageRoot], {
+    const result = execute(base.python, ["-X", "utf8", "-I", "-B", base.pathResolver, "--package-root", packageRoot], {
       cwd: packageRoot,
       env: options.env || process.env,
       encoding: "utf8",
@@ -137,7 +137,7 @@ export async function assertPortableIntegrity(paths, onProgress = () => {}, run 
   let buffered = "";
   if (!paths.integrityCache) throw new Error("绿色版实例校验缓存路径尚未解析");
   await run(paths.python, [
-    "-I", "-B", paths.verifier, "verify-cached", "--root", paths.packageRoot,
+    "-X", "utf8", "-I", "-B", paths.verifier, "verify-cached", "--root", paths.packageRoot,
     "--cache-path", paths.integrityCache, "--progress",
   ], {
     cwd: paths.packageRoot,

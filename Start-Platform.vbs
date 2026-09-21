@@ -9,7 +9,8 @@ exitCode = shell.Run(command, 0, True)
 If exitCode <> 0 Then
     pythonPath = fileSystem.BuildPath(packageRoot, "runtime\python.exe")
     pathResolver = fileSystem.BuildPath(packageRoot, "scripts\portable-paths.py")
-    resolverCommand = """" & pythonPath & """ -I -B """ & pathResolver & """ --package-root """ & packageRoot & """ --field logs_dir"
+    resolverOutput = fileSystem.BuildPath(fileSystem.GetSpecialFolder(2), fileSystem.GetTempName)
+    resolverCommand = """" & pythonPath & """ -X utf8 -I -B """ & pathResolver & """ --package-root """ & packageRoot & """ --field logs_dir --field-output """ & resolverOutput & """"
     On Error Resume Next
     Set resolverProcess = shell.Exec(resolverCommand)
     resolverDetails = Err.Description
@@ -21,10 +22,16 @@ If exitCode <> 0 Then
         Do While resolverProcess.Status = 0
             WScript.Sleep 50
         Loop
-        logRoot = Trim(resolverProcess.StdOut.ReadAll)
+        resolverStdout = resolverProcess.StdOut.ReadAll
         resolverDetails = Trim(resolverProcess.StdErr.ReadAll)
         resolverExitCode = resolverProcess.ExitCode
+        If resolverExitCode = 0 And fileSystem.FileExists(resolverOutput) Then
+            Set resolverStream = fileSystem.OpenTextFile(resolverOutput, 1, False, -1)
+            logRoot = Trim(resolverStream.ReadAll)
+            resolverStream.Close
+        End If
     End If
+    If fileSystem.FileExists(resolverOutput) Then fileSystem.DeleteFile resolverOutput, True
     details = ""
     errorLog = "无法解析"
     If resolverExitCode = 0 And logRoot <> "" Then
