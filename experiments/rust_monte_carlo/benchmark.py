@@ -284,9 +284,23 @@ def run_backend_child(args: argparse.Namespace) -> None:
     result = detail.get("result_summary") or {}
     stored_run = detail.get("run") or run
     finished = time.perf_counter()
+    atomic_write_json(Path(args.child_measurement_output), {
+        "run_service_finished": True,
+        "run_service_end_to_end_seconds": stored_run.get("run_service_end_to_end_seconds"),
+    })
     sample_results = artifact_payload(detail.get("artifact_manifest"), output_dir, "sample_results")
     aggregate_result = artifact_payload(detail.get("artifact_manifest"), output_dir, "aggregate_result")
     semantic = semantic_summary(sample_results, aggregate_result)
+    semantic_failed_samples = semantic.get("failed_samples")
+    semantic_failed_count = semantic.get("failed_sample_count")
+    if semantic_failed_count is None and isinstance(semantic_failed_samples, list):
+        semantic_failed_count = len(semantic_failed_samples)
+    stored_timings = stored_run.get("timings") if isinstance(stored_run.get("timings"), dict) else {}
+    result_timings = result.get("timings") if isinstance(result.get("timings"), dict) else {}
+    timings = {**stored_timings, **result_timings}
+    for timing_source in (stored_run, result):
+        if timing_source.get("run_service_end_to_end_seconds") is not None:
+            timings.setdefault("run_service_end_to_end_seconds", timing_source["run_service_end_to_end_seconds"])
     result_failed_count = failed_count(result)
     payload = {
         "backend": args.child_backend,
@@ -296,15 +310,16 @@ def run_backend_child(args: argparse.Namespace) -> None:
         "result_summary": result,
         "artifact_kinds": artifact_kinds(detail.get("artifact_manifest")),
         "failed_sample_count": result_failed_count if result_failed_count is not None else failed_count(stored_run),
-        "timings": result.get("timings") or stored_run.get("timings") or {},
+        "timings": timings,
         "throughput": result.get("throughput") or stored_run.get("throughput"),
         "cache_status": stored_run.get("plan_cache_status") or result.get("plan_cache_status") or result.get("execution_metadata", {}).get("plan_cache_status") or "not_reported",
         "output_bytes": output_bytes(output_dir),
         "affinity": affinity,
         "wall_seconds": finished - started,
         "cache_dir": str(args.child_cache_dir),
-        "semantic_summary": semantic,
         "semantic_digest": digest(semantic),
+        "semantic_sample_count": len(semantic.get("samples") or []),
+        "semantic_failed_sample_count": semantic_failed_count,
         "system": system_snapshot(),
     }
     atomic_write_json(Path(args.child_output), payload)
@@ -326,14 +341,21 @@ def descendants_rss(process: psutil.Process) -> int:
     return total
 
 
-def run_child(command: list[str], result_path: Path, interval: float) -> dict[str, Any]:
+def run_child(command: list[str], result_path: Path, measurement_marker: Path, interval: float) -> dict[str, Any]:
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     peak = 0
+    measurement_finished = False
     while process.poll() is None:
-        peak = max(peak, descendants_rss(psutil.Process(process.pid)))
+        if measurement_marker.exists():
+            measurement_finished = True
+        if not measurement_finished:
+            peak = max(peak, descendants_rss(psutil.Process(process.pid)))
         time.sleep(interval)
     stdout, stderr = process.communicate()
-    peak = max(peak, descendants_rss(psutil.Process(process.pid))) if psutil.pid_exists(process.pid) else peak
+    if not measurement_finished and measurement_marker.exists():
+        measurement_finished = True
+    if not measurement_finished and psutil.pid_exists(process.pid):
+        peak = max(peak, descendants_rss(psutil.Process(process.pid)))
     if not result_path.exists():
         raise RuntimeError(f"child did not write {result_path}: rc={process.returncode} stderr={stderr[-1000:]}")
     payload = json.loads(result_path.read_text(encoding="utf-8"))
@@ -381,6 +403,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--child-plan-id", help=argparse.SUPPRESS)
     result.add_argument("--child-output-dir", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--child-output", type=Path, help=argparse.SUPPRESS)
+    result.add_argument("--child-measurement-output", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--child-cache-dir", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--child-workers", type=int, help=argparse.SUPPRESS)
     result.add_argument("--child-samples", type=int, help=argparse.SUPPRESS)
@@ -470,18 +493,28 @@ def run_one(args: argparse.Namespace, report: dict[str, Any], base_plan: dict[st
     except FileExistsError:
         pass
     child_output = run_dir / "child.json"
-    command = [sys.executable, str(Path(__file__).resolve()), "--child-backend", backend, "--child-database", str(database), "--child-project-id", args.project_id, "--child-plan-id", plan_id, "--child-output-dir", str(run_dir), "--child-output", str(child_output), "--child-cache-dir", str(cache_dir), "--child-workers", str(workers), "--child-samples", str(samples)]
+    measurement_marker = run_dir / "measurement-marker.json"
+    command = [sys.executable, str(Path(__file__).resolve()), "--child-backend", backend, "--child-database", str(database), "--child-project-id", args.project_id, "--child-plan-id", plan_id, "--child-output-dir", str(run_dir), "--child-output", str(child_output), "--child-measurement-output", str(measurement_marker), "--child-cache-dir", str(cache_dir), "--child-workers", str(workers), "--child-samples", str(samples)]
     before = system_snapshot()
     started = time.perf_counter()
-    payload = run_child(command, child_output, max(0.001, args.rss_interval_ms / 1000))
+    payload = run_child(command, child_output, measurement_marker, max(0.001, args.rss_interval_ms / 1000))
     finished = time.perf_counter()
     after = system_snapshot()
     try:
         database.unlink()
     except OSError:
         pass
+    cleanup_error = None
+    try:
+        if link.is_symlink():
+            link.unlink()
+        shutil.rmtree(run_dir)
+    except OSError as exc:
+        cleanup_error = f"run_dir cleanup failed: {type(exc).__name__}: {exc}"
     payload.update({"row_id": f"{pair_id}:{phase}:{repeat}:{backend}", "pair_id": pair_id, "phase": phase, "repeat": repeat, "order_index": order_index, "samples": samples, "workers": workers, "backend": backend, "wall_seconds_parent": finished - started, "system_before": before, "system_after": after})
     payload["validation_errors"] = validate_core_row(payload, args.compiler_commit)
+    if cleanup_error:
+        payload["validation_errors"].append(cleanup_error)
     return payload
 
 
@@ -493,13 +526,15 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             by_backend: dict[str, Any] = {}
             for backend in BACKENDS:
                 selected = [row for row in rows if row.get("phase") == "measurement" and row.get("samples") == sample_count and row.get("workers") == worker_count and row.get("backend") == backend and row.get("parent_returncode") == 0]
-                walls = [float(row["wall_seconds_parent"]) for row in selected]
+                service_times = [float(row["timings"]["run_service_end_to_end_seconds"]) for row in selected if row.get("timings", {}).get("run_service_end_to_end_seconds") is not None]
+                child_walls = [float(row["wall_seconds"]) for row in selected if row.get("wall_seconds") is not None]
+                parent_walls = [float(row["wall_seconds_parent"]) for row in selected]
                 throughputs = [float(value) for row in selected if (value := row.get("throughput")) is not None]
                 rss = [int(row["parent_peak_rss_bytes"]) for row in selected if row.get("parent_peak_rss_bytes") is not None]
-                by_backend[backend] = {"count": len(selected), "median_wall_seconds": statistics.median(walls) if walls else None, "median_throughput": statistics.median(throughputs) if throughputs else None, "median_peak_rss_bytes": statistics.median(rss) if rss else None}
-            python_wall = by_backend.get(PYTHON_BACKEND, {}).get("median_wall_seconds")
-            rust_wall = by_backend.get(RUST_BACKEND, {}).get("median_wall_seconds")
-            by_backend["speedup_python_over_rust"] = python_wall / rust_wall if python_wall and rust_wall else None
+                by_backend[backend] = {"count": len(selected), "median_run_service_end_to_end_seconds": statistics.median(service_times) if service_times else None, "median_child_wall_seconds": statistics.median(child_walls) if child_walls else None, "median_parent_process_seconds": statistics.median(parent_walls) if parent_walls else None, "median_throughput": statistics.median(throughputs) if throughputs else None, "median_peak_rss_bytes": statistics.median(rss) if rss else None}
+            python_time = by_backend.get(PYTHON_BACKEND, {}).get("median_run_service_end_to_end_seconds")
+            rust_time = by_backend.get(RUST_BACKEND, {}).get("median_run_service_end_to_end_seconds")
+            by_backend["speedup_python_over_rust"] = python_time / rust_time if python_time and rust_time else None
             result[cell] = by_backend
     return result
 
