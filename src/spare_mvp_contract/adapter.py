@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import copy
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -2911,6 +2910,7 @@ class SimulationAdapter:
             if core_only:
                 python_inputs = copy.deepcopy(inputs)
                 python_inputs["disable_visualization_frames"] = True
+                python_inputs["record_rng_requests"] = True
             samples, failed_samples = self._execute_aircraft_support_v1_monte_carlo_samples(
                 python_inputs,
                 profile["sample_points"],
@@ -3384,23 +3384,74 @@ class SimulationAdapter:
             "time": sample.get("time", metrics_payload.get("elapsed_minutes")),
         }
 
-    def _json_safe_core_state(self, value: Any) -> Any:
-        if value is None or isinstance(value, (str, int, float, bool)):
-            return value
-        if isinstance(value, dict):
-            return {
-                str(key): self._json_safe_core_state(item)
-                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
-            }
-        if isinstance(value, (list, tuple)):
-            return [self._json_safe_core_state(item) for item in value]
-        if isinstance(value, set):
-            return [self._json_safe_core_state(item) for item in sorted(value, key=repr)]
-        raise AdapterError(
-            "sample_result_contract_mismatch",
-            "Python core terminal state contains a non-JSON value",
-            value_type=type(value).__name__,
-        )
+    def _aircraft_support_v1_core_terminal_state(self, model: AircraftSupportV1Model) -> dict[str, Any]:
+        mission_order = {item.mission_id: index for index, item in enumerate(model.missions)}
+        return {
+            "aircraft": [
+                {
+                    "tail_number": item.tail_number,
+                    "state": item.state,
+                    "current_mission_id": item.current_mission_id,
+                    "prepared_mission_ids": sorted(
+                        item.prepared_mission_ids,
+                        key=lambda mission_id: (mission_order.get(mission_id, len(mission_order)), mission_id),
+                    ),
+                    "operations_day": item.operations_day,
+                    "daily_takeoffs": item.daily_takeoffs,
+                    "postflight_required": item.postflight_required,
+                    "postflight_due": item.postflight_due,
+                    "flight_hours": item.flight_hours,
+                    "takeoff_count": item.takeoff_count,
+                    "landing_count": item.landing_count,
+                    "failed_component_id": item.failed_component_id,
+                    "component_failure_minutes": {
+                        key: item.component_failure_minutes[key]
+                        for key in sorted(item.component_failure_minutes)
+                    },
+                    "in_flight_failure": item.in_flight_failure,
+                }
+                for item in model.aircraft
+            ],
+            "missions": [
+                {
+                    "mission_id": item.mission_id,
+                    "status": item.status,
+                    "actual_start": item.actual_start,
+                    "assigned_tail_numbers": list(item.assigned_tail_numbers),
+                    "success_evaluated": item.success_evaluated,
+                    "succeeded": item.succeeded,
+                }
+                for item in model.missions
+            ],
+            "jobs": [
+                {
+                    "job_id": item.job_id,
+                    "kind": item.kind,
+                    "aircraft": item.tail_number,
+                    "mission_id": item.mission_id,
+                    "activity_id": item.activity_id,
+                    "state": item.state,
+                    "step_index": item.task_index,
+                    "started_time": item.started_time,
+                    "completed_time": item.completed_time,
+                    "component_id": item.component_id,
+                    "maintenance_method": item.maintenance_method,
+                }
+                for item in model.jobs
+            ],
+            "resources": [
+                {
+                    "node_id": str(node_id),
+                    "personnel_in_use": node["personnel_in_use"],
+                    "equipment_in_use": node["equipment_in_use"],
+                    "inventory": {
+                        key: node.get("inventory", {})[key]
+                        for key in sorted(node.get("inventory", {}))
+                    },
+                }
+                for node_id, node in model.nodes.items()
+            ],
+        }
 
     def _normalize_rust_monte_carlo_sample(
         self,
@@ -3604,18 +3655,9 @@ class SimulationAdapter:
         }
         if model.disable_visualization_frames:
             sample.update({
-                "rng_requests": [],
+                "rng_requests": copy.deepcopy(model.sample_requests),
                 "stop_reason": execution["metrics"].get("stop_reason"),
-                "terminal_state": self._json_safe_core_state({
-                "aircraft": [asdict(item) for item in model.aircraft],
-                "missions": [asdict(item) for item in model.missions],
-                "jobs": [asdict(item) for item in model.jobs],
-                "nodes": copy.deepcopy(model.nodes),
-                "shipments": [asdict(item) for item in model.transport_shipments],
-                "transits": [asdict(item) for item in model.resource_transits],
-                "rng": model.rng.getstate(),
-                "steps": model.steps,
-                }),
+                "terminal_state": self._aircraft_support_v1_core_terminal_state(model),
                 "time": execution["metrics"].get("elapsed_minutes"),
             })
         return sample

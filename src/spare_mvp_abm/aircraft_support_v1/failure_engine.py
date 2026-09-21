@@ -22,6 +22,9 @@ class FailureEngineMixin:
     aircraft: list[AircraftState]
     components: list[dict[str, Any]]
     tick_minutes: int
+    record_rng_requests: bool
+    sample_requests: list[dict[str, Any]]
+    _component_source_paths: dict[str, str]
 
     def _initialize_aircraft_lru_failure_timers(self) -> None:
         for aircraft in self.aircraft:
@@ -30,17 +33,52 @@ class FailureEngineMixin:
             # draws before applicability is checked, even when its timer is not
             # retained for this aircraft.
             for component in self.components:
-                sampled_minutes = self._sample_lru_failure_minutes(component)
+                sampled_minutes = self._sample_lru_failure_minutes(
+                    component,
+                    aircraft=aircraft,
+                    phase="initialize",
+                    reason="initialize",
+                )
                 if self.component_applicability_index.contains(aircraft, component):
                     timers[str(component.get("id") or "component")] = sampled_minutes
             aircraft.lru_failure_remaining_minutes = timers
 
-    def _sample_lru_failure_minutes(self, component: dict[str, Any]) -> float:
+    def _sample_lru_failure_minutes(
+        self,
+        component: dict[str, Any],
+        *,
+        aircraft: AircraftState,
+        phase: str,
+        reason: str,
+    ) -> float:
         hourly_rate = _non_negative_float(component.get("failure_rate"), 0.0)
         samples: list[float] = []
         quantity = max(1, int(component.get("quantity") or 1))
         if hourly_rate > 0:
-            samples.extend(self.rng.expovariate(hourly_rate) * 60.0 for _ in range(quantity))
+            for quantity_index in range(quantity):
+                # Keep this as the only RNG call in the loop. Recording must
+                # observe the historical value, never draw another sample.
+                value_minutes = self.rng.expovariate(hourly_rate) * 60.0
+                samples.append(value_minutes)
+                if self.record_rng_requests:
+                    component_id = str(component.get("id") or "component")
+                    source_path = self._component_source_paths.get(component_id)
+                    if source_path is None:
+                        raise ValueError(f"missing canonical source path for component {component_id}")
+                    self.sample_requests.append({
+                        "sequence": len(self.sample_requests) + 1,
+                        "time": self.minute,
+                        "phase": phase,
+                        "stream": "legacy-sequential-v1",
+                        "distribution": "exponential",
+                        "entity": aircraft.tail_number,
+                        "component_id": component_id,
+                        "quantity_index": quantity_index,
+                        "rate_per_hour": hourly_rate,
+                        "value_minutes": value_minutes,
+                        "reason": reason,
+                        "source_path": source_path,
+                    })
         return min(samples) if samples else math.inf
 
     def _evaluate_failures(self) -> None:
@@ -57,7 +95,12 @@ class FailureEngineMixin:
                     continue
                 remaining = aircraft.lru_failure_remaining_minutes.get(component_id)
                 if remaining is None:
-                    remaining = self._sample_lru_failure_minutes(component)
+                    remaining = self._sample_lru_failure_minutes(
+                        component,
+                        aircraft=aircraft,
+                        phase="failures",
+                        reason="missing_timer",
+                    )
                 remaining -= self.tick_minutes
                 aircraft.lru_failure_remaining_minutes[component_id] = remaining
                 if remaining <= 0:
