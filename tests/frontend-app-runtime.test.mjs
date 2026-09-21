@@ -1325,7 +1325,8 @@ test("project list exports project JSON without direct Project JSON import at ru
 
     await runtime.click("[data-project-export]", { projectExport: "runtime" });
     assert.equal(runtime.downloads.length, 1);
-    assert.match(runtime.downloads[0].download, /^spare-mvp-project-runtime-/);
+    assert.match(runtime.downloads[0].download, /^project-runtime-/);
+    assert.doesNotMatch(runtime.downloads[0].download, /spare-mvp/i);
     const exported = JSON.parse(await runtime.downloads[0].blob.text());
     assert.equal(exported.scenarioId, "json-runtime-scenario");
     assert.equal(exported.experiment.name, "运行时项目");

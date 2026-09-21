@@ -5552,7 +5552,7 @@ function systemDataExportFilename(tab) {
     String(now.getMonth() + 1).padStart(2, "0"),
     String(now.getDate()).padStart(2, "0")
   ].join("-");
-  return `spare-mvp-${tab.key}-data-${date}.json`;
+  return `system-data-${tab.key}-${date}.json`;
 }
 
 function buildSystemDataExportPayload(tab, rows) {
@@ -13730,7 +13730,7 @@ function projectJsonExportFilename(project) {
     String(now.getMonth() + 1).padStart(2, "0"),
     String(now.getDate()).padStart(2, "0")
   ].join("-");
-  return `spare-mvp-project-${normalizeProjectFileSegment(project.id)}-${date}.json`;
+  return `project-${normalizeProjectFileSegment(project.id)}-${date}.json`;
 }
 
 function downloadProjectJsonExport(filename, projectJson) {
