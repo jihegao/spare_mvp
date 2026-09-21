@@ -2893,8 +2893,9 @@ class SimulationAdapter:
                 worker_count=worker_count,
                 cache_dir=Path(output_dir) / "sim-engine-cache",
             )
-            engine_metadata = copy.deepcopy(rust_metadata.get("engine_metadata") or {})
-            engine_metadata.setdefault("semantic_profile", "event-time-v2")
+            engine_metadata = self._normalize_rust_engine_metadata(
+                rust_metadata.get("engine_metadata")
+            )
             plan_cache_status = str(rust_metadata.get("plan_cache_status") or "unknown")
             raw_engine_timings = rust_metadata.get("timings") or {}
             engine_timings = ({
@@ -3264,6 +3265,18 @@ class SimulationAdapter:
         }
         self._write_json(run_dir / "artifact-manifest.json", manifest)
         return {"run": run, "result": result, "artifact_manifest": manifest}
+
+    def _normalize_rust_engine_metadata(self, raw_metadata: Any) -> dict[str, Any]:
+        engine_metadata = copy.deepcopy(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        if not engine_metadata.get("engine_version"):
+            engine_metadata["engine_version"] = (
+                engine_metadata.get("runtime_version")
+                or engine_metadata.get("compiler_version")
+            )
+        if not engine_metadata.get("source_commit"):
+            engine_metadata["source_commit"] = engine_metadata.get("build_commit")
+        engine_metadata.setdefault("semantic_profile", "event-time-v2")
+        return engine_metadata
 
     def _execute_rust_monte_carlo_samples(
         self,
