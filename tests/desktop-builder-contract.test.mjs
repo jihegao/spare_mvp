@@ -148,6 +148,7 @@ test("desktop build entry keeps dependency and ASAR contracts unchanged", async 
   const greenBuilder = await readFile(new URL("../packaging/green/Build-GreenPackage.ps1", import.meta.url), "utf8");
   assert.match(greenBuilder, /desktop-build-provenance\.json/);
   assert.match(greenBuilder, /verify-green-inputs\.py/);
+  assert.match(greenBuilder, /python\.exe'\) -X utf8 -I -B \(Join-Path \$repo 'packaging\\green\\verify-green-inputs\.py'\)/);
   assert.match(greenBuilder, /--portable \$staging --desktop \$staging --green-manifest \$validatedGreenManifest/);
   assert.ok(greenBuilder.indexOf("verify-green-inputs.py") < greenBuilder.indexOf("Move-Item -LiteralPath $desktopExecutable.FullName"));
 });
