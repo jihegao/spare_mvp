@@ -57,6 +57,7 @@ internal static class GreenExtractor
                 }
             }
             if (String.IsNullOrWhiteSpace(parent)) throw new ArgumentException("解压位置不能为空。");
+            ExpectedPredecessor predecessor = ResolveExpectedPredecessor(args);
             string destination = Path.Combine(parent, "spare-mvp-2.0-green");
             if (Directory.Exists(destination) || File.Exists(destination))
                 throw new IOException("目标目录已存在：" + destination + "\r\n请选择其他目录，避免覆盖或删除已有内容。");
@@ -87,22 +88,28 @@ internal static class GreenExtractor
             ownedStaging = null;
             string launcher = Path.Combine(destination, "SpareMvpDesktop.exe");
             if (!File.Exists(launcher)) throw new FileNotFoundException("解压后未找到桌面启动器。", launcher);
-            bool shortcutCreated = CreateDesktopShortcut(launcher, destination);
+            ShortcutChange shortcutChange = CreateDesktopShortcut(launcher, destination, predecessor);
             try
             {
-                MigrateOwnedLegacyShortcut(launcher, destination);
+                MigrateOwnedLegacyShortcut(launcher, destination, predecessor, shortcutChange);
+                shortcutChange.Commit();
             }
             catch
             {
-                if (shortcutCreated)
-                    DeleteOwnedShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), ShortcutFileName), launcher, destination, ProductName);
+                shortcutChange.RollBack();
                 throw;
             }
             // Shortcut creation completes the owned extraction transaction.
             // A later launch failure leaves the complete package for manual use.
             ownedDestination = null;
             if (!noLaunch) Process.Start(new ProcessStartInfo(launcher) { WorkingDirectory = destination, UseShellExecute = true });
-            if (!unattended) MessageBox.Show("平台已解压到：\r\n" + destination + "\r\n\r\n桌面快捷方式已创建，平台正在启动。", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (!unattended)
+            {
+                string shortcutResult = shortcutChange.Applied
+                    ? "桌面快捷方式已创建，"
+                    : "桌面同名快捷方式属于其他安装或已被修改，已保留且未创建新快捷方式。\r\n\r\n";
+                MessageBox.Show("平台已解压到：\r\n" + destination + "\r\n\r\n" + shortcutResult + "平台正在启动。", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
             return 0;
         }
         catch (Exception error)
@@ -127,33 +134,49 @@ internal static class GreenExtractor
         }
     }
 
-    private static bool CreateDesktopShortcut(string launcher, string destination)
+    private static ShortcutChange CreateDesktopShortcut(string launcher, string destination, ExpectedPredecessor predecessor)
     {
         string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         if (String.IsNullOrWhiteSpace(desktop) || !Directory.Exists(desktop))
             throw new DirectoryNotFoundException("无法找到当前用户的桌面目录。");
         string shortcutPath = Path.Combine(desktop, ShortcutFileName);
         bool shortcutExisted = File.Exists(shortcutPath);
-        if (shortcutExisted && !IsOwnedShortcut(shortcutPath, launcher, destination, ProductName))
-            throw new IOException("桌面已存在不属于本安装的同名快捷方式，已保留该快捷方式。请先重命名后重试：" + shortcutPath);
+        if (shortcutExisted &&
+            !IsOwnedShortcut(shortcutPath, launcher, destination, ProductName) &&
+            (predecessor == null || !IsExpectedPredecessorShortcut(shortcutPath, predecessor, ProductName)))
+            return ShortcutChange.NotApplied(shortcutPath, launcher, destination);
         Type shellType = Type.GetTypeFromProgID("WScript.Shell");
         if (shellType == null) throw new PlatformNotSupportedException("Windows Script Host 不可用，无法创建桌面快捷方式。");
+        string temporaryPath = shortcutPath + ".installing-" + Guid.NewGuid().ToString("N") + ".lnk";
+        string backupPath = shortcutExisted ? shortcutPath + ".backup-" + Guid.NewGuid().ToString("N") + ".lnk" : null;
         object shell = null;
         object shortcut = null;
         try
         {
             shell = Activator.CreateInstance(shellType);
-            shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
+            shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { temporaryPath });
             Type shortcutType = shortcut.GetType();
             shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { launcher });
             shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { destination });
             shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { ProductName });
             shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { launcher + ",0" });
             shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
+            if (shortcutExisted)
+                File.Replace(temporaryPath, shortcutPath, backupPath);
+            else
+                File.Move(temporaryPath, shortcutPath);
         }
         catch
         {
-            if (!shortcutExisted) DeleteOwnedShortcut(shortcutPath, launcher, destination, ProductName);
+            try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
+            catch { }
+            if (!String.IsNullOrWhiteSpace(backupPath) && File.Exists(backupPath))
+            {
+                try { File.Replace(backupPath, shortcutPath, null); }
+                catch { }
+            }
+            else if (!shortcutExisted)
+                DeleteOwnedShortcut(shortcutPath, launcher, destination, ProductName);
             throw;
         }
         finally
@@ -161,15 +184,191 @@ internal static class GreenExtractor
             if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut);
             if (shell != null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
         }
-        return !shortcutExisted;
+        return new ShortcutChange(shortcutPath, backupPath, launcher, destination);
     }
 
-    private static void MigrateOwnedLegacyShortcut(string launcher, string destination)
+    private static void MigrateOwnedLegacyShortcut(string launcher, string destination, ExpectedPredecessor predecessor, ShortcutChange change)
     {
+        if (!change.Applied) return;
         string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         string legacyShortcutPath = Path.Combine(desktop, LegacyShortcutFileName);
         if (!File.Exists(legacyShortcutPath)) return;
-        if (IsOwnedShortcut(legacyShortcutPath, launcher, destination, LegacyShortcutDescription)) File.Delete(legacyShortcutPath);
+        if (!IsOwnedShortcut(legacyShortcutPath, launcher, destination, LegacyShortcutDescription) &&
+            (predecessor == null || !IsExpectedPredecessorShortcut(legacyShortcutPath, predecessor, LegacyShortcutDescription)))
+            return;
+        string backupPath = legacyShortcutPath + ".migration-" + Guid.NewGuid().ToString("N") + ".lnk";
+        File.Move(legacyShortcutPath, backupPath);
+        change.SetLegacyBackup(legacyShortcutPath, backupPath);
+    }
+
+    private static ExpectedPredecessor ResolveExpectedPredecessor(string[] args)
+    {
+        string rootValue = ReadOption(args, "--replace-installation");
+        string identity = ReadOption(args, "--replace-installation-id");
+        if (String.IsNullOrWhiteSpace(rootValue) && String.IsNullOrWhiteSpace(identity)) return null;
+        if (String.IsNullOrWhiteSpace(rootValue) || String.IsNullOrWhiteSpace(identity))
+            throw new ArgumentException("安全迁移必须同时提供 --replace-installation 和 --replace-installation-id。");
+        string root = Path.GetFullPath(rootValue);
+        if (!Directory.Exists(root) ||
+            !File.Exists(Path.Combine(root, "SpareMvpDesktop.exe")) ||
+            !File.Exists(Path.Combine(root, "manifest.json")) ||
+            !File.Exists(Path.Combine(root, "scripts", "start-portable.ps1")))
+            throw new InvalidDataException("指定的旧安装缺少平台发行标记，未接管快捷方式。");
+        string normalizedIdentity = identity.Trim().ToLowerInvariant();
+        if (!String.Equals(normalizedIdentity, InstallationId(root), StringComparison.Ordinal))
+            throw new InvalidDataException("指定的旧安装身份与路径不匹配，未接管快捷方式。");
+        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string bindingPath = Path.Combine(localAppData, "spare_mvp", "instances", normalizedIdentity, "data-root-binding.json");
+        if (!File.Exists(bindingPath)) throw new InvalidDataException("指定的旧安装没有可验证的数据绑定，未接管快捷方式。");
+        string binding = File.ReadAllText(bindingPath, Encoding.UTF8);
+        if (!String.Equals(ReadJsonStringField(binding, "installation_id"), normalizedIdentity, StringComparison.Ordinal) ||
+            !PathsEqual(ReadJsonStringField(binding, "package_root"), root))
+            throw new InvalidDataException("指定的旧安装数据绑定不匹配，未接管快捷方式。");
+        return new ExpectedPredecessor(root, normalizedIdentity);
+    }
+
+    private static string ReadOption(string[] args, string name)
+    {
+        for (int index = 0; index < args.Length; index++)
+        {
+            if (!String.Equals(args[index], name, StringComparison.Ordinal)) continue;
+            if (index + 1 >= args.Length || args[index + 1].StartsWith("--", StringComparison.Ordinal))
+                throw new ArgumentException(name + " 缺少参数。");
+            return args[index + 1];
+        }
+        return null;
+    }
+
+    private static string InstallationId(string root)
+    {
+        string normalized = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .ToLowerInvariant().Replace('\\', '/');
+        byte[] digest;
+        using (SHA256 sha = SHA256.Create())
+            digest = sha.ComputeHash(Encoding.UTF8.GetBytes("spare-mvp-installation-v1\0" + normalized));
+        StringBuilder value = new StringBuilder(24);
+        for (int index = 0; index < 12; index++) value.Append(digest[index].ToString("x2"));
+        return value.ToString();
+    }
+
+    private static string ReadJsonStringField(string json, string field)
+    {
+        string marker = "\"" + field + "\"";
+        int position = json.IndexOf(marker, StringComparison.Ordinal);
+        if (position < 0) return null;
+        position = json.IndexOf(':', position + marker.Length);
+        if (position < 0) return null;
+        position++;
+        while (position < json.Length && Char.IsWhiteSpace(json[position])) position++;
+        if (position >= json.Length || json[position] != '"') return null;
+        position++;
+        StringBuilder value = new StringBuilder();
+        while (position < json.Length)
+        {
+            char current = json[position++];
+            if (current == '"') return value.ToString();
+            if (current != '\\') { value.Append(current); continue; }
+            if (position >= json.Length) return null;
+            char escaped = json[position++];
+            if (escaped == '"' || escaped == '\\' || escaped == '/') value.Append(escaped);
+            else if (escaped == 'b') value.Append('\b');
+            else if (escaped == 'f') value.Append('\f');
+            else if (escaped == 'n') value.Append('\n');
+            else if (escaped == 'r') value.Append('\r');
+            else if (escaped == 't') value.Append('\t');
+            else if (escaped == 'u' && position + 4 <= json.Length)
+            {
+                int code;
+                if (!Int32.TryParse(json.Substring(position, 4), System.Globalization.NumberStyles.HexNumber, null, out code)) return null;
+                value.Append((char)code);
+                position += 4;
+            }
+            else return null;
+        }
+        return null;
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        if (String.IsNullOrWhiteSpace(left) || String.IsNullOrWhiteSpace(right)) return false;
+        return String.Equals(Path.GetFullPath(left).TrimEnd('\\', '/'), Path.GetFullPath(right).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsExpectedPredecessorShortcut(string shortcutPath, ExpectedPredecessor predecessor, string expectedDescription)
+    {
+        return IsOwnedShortcut(shortcutPath, Path.Combine(predecessor.Root, "SpareMvpDesktop.exe"), predecessor.Root, expectedDescription);
+    }
+
+    private sealed class ExpectedPredecessor
+    {
+        internal readonly string Root;
+        internal readonly string Identity;
+        internal ExpectedPredecessor(string root, string identity) { Root = root; Identity = identity; }
+    }
+
+    private sealed class ShortcutChange
+    {
+        private readonly string shortcutPath;
+        private readonly string backupPath;
+        private readonly string launcher;
+        private readonly string destination;
+        private string legacyPath;
+        private string legacyBackupPath;
+        internal readonly bool Applied;
+
+        internal ShortcutChange(string shortcutPath, string backupPath, string launcher, string destination)
+        {
+            this.shortcutPath = shortcutPath;
+            this.backupPath = backupPath;
+            this.launcher = launcher;
+            this.destination = destination;
+            Applied = true;
+        }
+
+        private ShortcutChange(string shortcutPath, string launcher, string destination)
+        {
+            this.shortcutPath = shortcutPath;
+            this.launcher = launcher;
+            this.destination = destination;
+            Applied = false;
+        }
+
+        internal static ShortcutChange NotApplied(string shortcutPath, string launcher, string destination)
+        {
+            return new ShortcutChange(shortcutPath, launcher, destination);
+        }
+
+        internal void SetLegacyBackup(string path, string backup)
+        {
+            legacyPath = path;
+            legacyBackupPath = backup;
+        }
+
+        internal void Commit()
+        {
+            try { if (!String.IsNullOrWhiteSpace(backupPath) && File.Exists(backupPath)) File.Delete(backupPath); }
+            catch { }
+            try { if (!String.IsNullOrWhiteSpace(legacyBackupPath) && File.Exists(legacyBackupPath)) File.Delete(legacyBackupPath); }
+            catch { }
+        }
+
+        internal void RollBack()
+        {
+            try
+            {
+                if (!String.IsNullOrWhiteSpace(legacyBackupPath) && File.Exists(legacyBackupPath))
+                    File.Move(legacyBackupPath, legacyPath);
+            }
+            catch { }
+            try
+            {
+                if (!String.IsNullOrWhiteSpace(backupPath) && File.Exists(backupPath))
+                    File.Replace(backupPath, shortcutPath, null);
+                else if (Applied)
+                    DeleteOwnedShortcut(shortcutPath, launcher, destination, ProductName);
+            }
+            catch { }
+        }
     }
 
     private static void DeleteOwnedShortcut(string shortcutPath, string launcher, string destination, string expectedDescription)

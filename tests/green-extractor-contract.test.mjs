@@ -31,7 +31,7 @@ test("green extractor stages the embedded tar before invoking Windows tar", () =
   assert.match(source, /Directory\.Delete\(ownedStaging, true\)/);
   assert.match(source, /ownedDestination = destination/);
   assert.match(source, /Directory\.Delete\(ownedDestination, true\)/);
-  assert.match(source, /shortcutCreated = CreateDesktopShortcut\(launcher, destination\);[\s\S]{0,1000}ownedDestination = null;/);
+  assert.match(source, /shortcutChange = CreateDesktopShortcut\(launcher, destination, predecessor\);[\s\S]{0,1200}ownedDestination = null;/);
   assert.match(source, /Directory\.Exists\(destination\) \|\| File\.Exists\(destination\)/);
 });
 
@@ -41,23 +41,44 @@ test("green extractor creates a current-user desktop shortcut for the extracted 
   assert.match(source, /CreateShortcut/);
   assert.match(source, /TargetPath/);
   assert.match(source, /SpareMvpDesktop\.exe/);
-  assert.match(source, /CreateDesktopShortcut\(launcher, destination\)/);
+  assert.match(source, /CreateDesktopShortcut\(launcher, destination, predecessor\)/);
   assert.match(source, /备件规划及任务可靠度验证评估平台 V2\.0/);
   assert.match(source, /ShortcutFileName = ProductName \+ "\.lnk"/);
   assert.match(source, /Description[\s\S]{0,160}ProductName/);
-  assert.match(source, /MigrateOwnedLegacyShortcut\(launcher, destination\)/);
-  assert.match(source, /IsOwnedShortcut\(legacyShortcutPath, launcher, destination, LegacyShortcutDescription\)/);
+  assert.match(source, /MigrateOwnedLegacyShortcut\(launcher, destination, predecessor, shortcutChange\)/);
+  assert.match(source, /IsExpectedPredecessorShortcut\(legacyShortcutPath, predecessor, LegacyShortcutDescription\)/);
   assert.match(source, /String\.IsNullOrWhiteSpace\(details\[2\]\)/);
   assert.match(source, /String\.Equals\(details\[3\], expectedDescription, StringComparison\.Ordinal\)/);
   assert.match(source, /String\.Equals\(details\[4\], Path\.GetFullPath\(expectedLauncher\) \+ ",0", StringComparison\.OrdinalIgnoreCase\)/);
   const createShortcut = source.slice(
-    source.indexOf("private static bool CreateDesktopShortcut"),
+    source.indexOf("private static ShortcutChange CreateDesktopShortcut"),
     source.indexOf("private static void MigrateOwnedLegacyShortcut")
   );
   assert.ok(createShortcut.indexOf("File.Exists(shortcutPath)") < createShortcut.indexOf("CreateShortcut"));
   assert.ok(createShortcut.indexOf("!IsOwnedShortcut(shortcutPath, launcher, destination, ProductName)") < createShortcut.indexOf("CreateShortcut"));
-  assert.match(createShortcut, /if \(!shortcutExisted\) DeleteOwnedShortcut/);
-  assert.match(source, /if \(shortcutCreated\)[\s\S]{0,220}DeleteOwnedShortcut/);
+  assert.match(createShortcut, /IsExpectedPredecessorShortcut\(shortcutPath, predecessor, ProductName\)/);
+  assert.match(createShortcut, /return ShortcutChange\.NotApplied/);
+  assert.match(createShortcut, /File\.Replace\(temporaryPath, shortcutPath, backupPath\)/);
+  assert.match(createShortcut, /File\.Move\(temporaryPath, shortcutPath\)/);
+  assert.ok(createShortcut.indexOf("return ShortcutChange.NotApplied") < createShortcut.indexOf('Type.GetTypeFromProgID("WScript.Shell")'));
+  assert.match(source, /shortcutChange\.RollBack\(\)/);
+  assert.match(source, /shortcutChange\.Commit\(\)/);
+});
+
+test("green extractor only redirects a shortcut for an explicitly bound predecessor", () => {
+  assert.match(source, /ReadOption\(args, "--replace-installation"\)/);
+  assert.match(source, /ReadOption\(args, "--replace-installation-id"\)/);
+  assert.match(source, /InstallationId\(root\)/);
+  assert.match(source, /"spare-mvp-installation-v1\\0" \+ normalized/);
+  assert.match(source, /"spare_mvp", "instances", normalizedIdentity, "data-root-binding\.json"/);
+  assert.match(source, /ReadJsonStringField\(binding, "installation_id"\)/);
+  assert.match(source, /PathsEqual\(ReadJsonStringField\(binding, "package_root"\), root\)/);
+  assert.match(source, /File\.Exists\(Path\.Combine\(root, "manifest\.json"\)\)/);
+  assert.match(source, /File\.Exists\(Path\.Combine\(root, "scripts", "start-portable\.ps1"\)\)/);
+  assert.match(source, /IsOwnedShortcut\(shortcutPath, Path\.Combine\(predecessor\.Root, "SpareMvpDesktop\.exe"\), predecessor\.Root, expectedDescription\)/);
+  assert.match(source, /File\.Move\(legacyShortcutPath, backupPath\)/);
+  assert.match(source, /File\.Move\(legacyBackupPath, legacyPath\)/);
+  assert.match(source, /属于其他安装或已被修改，已保留且未创建新快捷方式/);
 });
 
 test("green package builds a guarded uninstaller into the sealed payload", () => {
