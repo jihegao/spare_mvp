@@ -37,14 +37,13 @@ test("green extractor stages the embedded tar before invoking Windows tar", () =
 
 test("green extractor creates a current-user desktop shortcut for the extracted launcher", () => {
   assert.match(source, /Environment\.SpecialFolder\.DesktopDirectory/);
-  assert.match(source, /Type\.GetTypeFromProgID\("WScript\.Shell"\)/);
-  assert.match(source, /CreateShortcut/);
-  assert.match(source, /TargetPath/);
+  assert.doesNotMatch(source, /WScript\.Shell|CreateShortcut|BindingFlags\.InvokeMember/);
+  assert.match(source, /ShellLinkFile\.Write\(temporaryPath, launcher, destination, ProductName, launcher, 0\)/);
   assert.match(source, /SpareMvpDesktop\.exe/);
   assert.match(source, /CreateDesktopShortcut\(launcher, destination, predecessor\)/);
   assert.match(source, /备件规划及任务可靠度验证评估平台 V2\.0/);
   assert.match(source, /ShortcutFileName = ProductName \+ "\.lnk"/);
-  assert.match(source, /Description[\s\S]{0,160}ProductName/);
+  assert.match(source, /SetDescription\(description\)/);
   assert.match(source, /MigrateOwnedLegacyShortcut\(launcher, destination, predecessor, shortcutChange\)/);
   assert.match(source, /IsExpectedPredecessorShortcut\(legacyShortcutPath, predecessor, LegacyShortcutDescription\)/);
   assert.match(source, /String\.IsNullOrWhiteSpace\(details\[2\]\)/);
@@ -54,13 +53,15 @@ test("green extractor creates a current-user desktop shortcut for the extracted 
     source.indexOf("private static ShortcutChange CreateDesktopShortcut"),
     source.indexOf("private static void MigrateOwnedLegacyShortcut")
   );
-  assert.ok(createShortcut.indexOf("File.Exists(shortcutPath)") < createShortcut.indexOf("CreateShortcut"));
-  assert.ok(createShortcut.indexOf("!IsOwnedShortcut(shortcutPath, launcher, destination, ProductName)") < createShortcut.indexOf("CreateShortcut"));
+  assert.ok(createShortcut.indexOf("File.Exists(shortcutPath)") < createShortcut.indexOf("ShellLinkFile.Write"));
+  assert.ok(createShortcut.indexOf("!IsOwnedShortcut(shortcutPath, launcher, destination, ProductName)") < createShortcut.indexOf("ShellLinkFile.Write"));
   assert.match(createShortcut, /IsExpectedPredecessorShortcut\(shortcutPath, predecessor, ProductName\)/);
   assert.match(createShortcut, /return ShortcutChange\.NotApplied/);
   assert.match(createShortcut, /File\.Replace\(temporaryPath, shortcutPath, backupPath\)/);
   assert.match(createShortcut, /File\.Move\(temporaryPath, shortcutPath\)/);
-  assert.ok(createShortcut.indexOf("return ShortcutChange.NotApplied") < createShortcut.indexOf('Type.GetTypeFromProgID("WScript.Shell")'));
+  assert.match(createShortcut, /Path\.Combine\(desktop, "spare-mvp-shortcut-installing-" \+ Guid\.NewGuid\(\)\.ToString\("N"\) \+ "\.lnk"\)/);
+  assert.doesNotMatch(createShortcut, /shortcutPath \+ "\.installing-/);
+  assert.ok(createShortcut.indexOf("return ShortcutChange.NotApplied") < createShortcut.indexOf("ShellLinkFile.Write"));
   assert.match(source, /shortcutChange\.RollBack\(\)/);
   assert.match(source, /shortcutChange\.Commit\(\)/);
 });
@@ -79,6 +80,30 @@ test("green extractor only redirects a shortcut for an explicitly bound predeces
   assert.match(source, /File\.Move\(legacyShortcutPath, backupPath\)/);
   assert.match(source, /File\.Move\(legacyBackupPath, legacyPath\)/);
   assert.match(source, /属于其他安装或已被修改，已保留且未创建新快捷方式/);
+});
+
+test("shortcut IO uses the native Unicode Shell Link interfaces", () => {
+  for (const [label, program] of [["extractor", source], ["uninstaller", uninstaller]]) {
+    assert.doesNotMatch(program, /WScript\.Shell|GetTypeFromProgID|InvokeMember/, label);
+    assert.match(program, /Guid\("00021401-0000-0000-C000-000000000046"\)/, label);
+    assert.match(program, /Guid\("000214F9-0000-0000-C000-000000000046"\)/, label);
+    assert.match(program, /Guid\("0000010B-0000-0000-C000-000000000046"\)/, label);
+    assert.match(program, /interface IShellLinkW/, label);
+    assert.match(program, /interface IPersistFile/, label);
+    assert.match(program, /MarshalAs\(UnmanagedType\.LPWStr\)/, label);
+    assert.match(program, /\(\(IPersistFile\)link\)\.Load\(shortcutPath, 0\)/, label);
+    assert.match(program, /link\.GetPath\(target, target\.Capacity, out findData, 4\)/, label);
+    assert.match(program, /link\.GetWorkingDirectory\(workingDirectory, workingDirectory\.Capacity\)/, label);
+    assert.match(program, /link\.GetArguments\(arguments, arguments\.Capacity\)/, label);
+    assert.match(program, /link\.GetDescription\(description, description\.Capacity\)/, label);
+    assert.match(program, /link\.GetIconLocation\(iconPath, iconPath\.Capacity, out iconIndex\)/, label);
+  }
+  assert.match(source, /link\.SetPath\(targetPath\)/);
+  assert.match(source, /link\.SetWorkingDirectory\(workingDirectory\)/);
+  assert.match(source, /link\.SetArguments\(""\)/);
+  assert.match(source, /link\.SetDescription\(description\)/);
+  assert.match(source, /link\.SetIconLocation\(iconPath, iconIndex\)/);
+  assert.match(source, /\(\(IPersistFile\)link\)\.Save\(shortcutPath, true\)/);
 });
 
 test("green package builds a guarded uninstaller into the sealed payload", () => {

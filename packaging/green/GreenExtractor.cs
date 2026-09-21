@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -145,22 +144,11 @@ internal static class GreenExtractor
             !IsOwnedShortcut(shortcutPath, launcher, destination, ProductName) &&
             (predecessor == null || !IsExpectedPredecessorShortcut(shortcutPath, predecessor, ProductName)))
             return ShortcutChange.NotApplied(shortcutPath, launcher, destination);
-        Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-        if (shellType == null) throw new PlatformNotSupportedException("Windows Script Host 不可用，无法创建桌面快捷方式。");
-        string temporaryPath = shortcutPath + ".installing-" + Guid.NewGuid().ToString("N") + ".lnk";
+        string temporaryPath = Path.Combine(desktop, "spare-mvp-shortcut-installing-" + Guid.NewGuid().ToString("N") + ".lnk");
         string backupPath = shortcutExisted ? shortcutPath + ".backup-" + Guid.NewGuid().ToString("N") + ".lnk" : null;
-        object shell = null;
-        object shortcut = null;
         try
         {
-            shell = Activator.CreateInstance(shellType);
-            shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { temporaryPath });
-            Type shortcutType = shortcut.GetType();
-            shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { launcher });
-            shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { destination });
-            shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { ProductName });
-            shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { launcher + ",0" });
-            shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
+            ShellLinkFile.Write(temporaryPath, launcher, destination, ProductName, launcher, 0);
             if (shortcutExisted)
                 File.Replace(temporaryPath, shortcutPath, backupPath);
             else
@@ -178,11 +166,6 @@ internal static class GreenExtractor
             else if (!shortcutExisted)
                 DeleteOwnedShortcut(shortcutPath, launcher, destination, ProductName);
             throw;
-        }
-        finally
-        {
-            if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut);
-            if (shell != null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
         }
         return new ShortcutChange(shortcutPath, backupPath, launcher, destination);
     }
@@ -404,28 +387,109 @@ internal static class GreenExtractor
 
     private static string[] ReadShortcutDetails(string shortcutPath)
     {
-        Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-        if (shellType == null) throw new PlatformNotSupportedException("Windows Script Host 不可用，无法核对桌面快捷方式。");
-        object shell = null;
-        object shortcut = null;
-        try
+        return ShellLinkFile.Read(shortcutPath);
+    }
+
+    private static class ShellLinkFile
+    {
+        internal static void Write(string shortcutPath, string targetPath, string workingDirectory, string description, string iconPath, int iconIndex)
         {
-            shell = Activator.CreateInstance(shellType);
-            shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
-            Type shortcutType = shortcut.GetType();
-            return new string[] {
-                (string)shortcutType.InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null),
-                (string)shortcutType.InvokeMember("WorkingDirectory", BindingFlags.GetProperty, null, shortcut, null),
-                (string)shortcutType.InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null),
-                (string)shortcutType.InvokeMember("Description", BindingFlags.GetProperty, null, shortcut, null),
-                (string)shortcutType.InvokeMember("IconLocation", BindingFlags.GetProperty, null, shortcut, null)
-            };
+            IShellLinkW link = (IShellLinkW)new ShellLinkComObject();
+            try
+            {
+                link.SetPath(targetPath);
+                link.SetWorkingDirectory(workingDirectory);
+                link.SetArguments("");
+                link.SetDescription(description);
+                link.SetIconLocation(iconPath, iconIndex);
+                ((IPersistFile)link).Save(shortcutPath, true);
+            }
+            finally
+            {
+                Marshal.FinalReleaseComObject(link);
+            }
         }
-        finally
+
+        internal static string[] Read(string shortcutPath)
         {
-            if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut);
-            if (shell != null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
+            IShellLinkW link = (IShellLinkW)new ShellLinkComObject();
+            try
+            {
+                ((IPersistFile)link).Load(shortcutPath, 0);
+                StringBuilder target = new StringBuilder(32768);
+                WIN32_FIND_DATAW findData;
+                link.GetPath(target, target.Capacity, out findData, 4);
+                StringBuilder workingDirectory = new StringBuilder(32768);
+                link.GetWorkingDirectory(workingDirectory, workingDirectory.Capacity);
+                StringBuilder arguments = new StringBuilder(32768);
+                link.GetArguments(arguments, arguments.Capacity);
+                StringBuilder description = new StringBuilder(1024);
+                link.GetDescription(description, description.Capacity);
+                StringBuilder iconPath = new StringBuilder(32768);
+                int iconIndex;
+                link.GetIconLocation(iconPath, iconPath.Capacity, out iconIndex);
+                return new string[] {
+                    target.ToString(), workingDirectory.ToString(), arguments.ToString(), description.ToString(),
+                    iconPath.ToString() + "," + iconIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                };
+            }
+            finally
+            {
+                Marshal.FinalReleaseComObject(link);
+            }
         }
+    }
+
+    [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+    private class ShellLinkComObject { }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
+    private interface IShellLinkW
+    {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder file, int maximumPath, out WIN32_FIND_DATAW findData, uint flags);
+        void GetIDList(out IntPtr itemList);
+        void SetIDList(IntPtr itemList);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder description, int maximumName);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string description);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder directory, int maximumPath);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string directory);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder arguments, int maximumPath);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string arguments);
+        void GetHotkey(out short hotkey);
+        void SetHotkey(short hotkey);
+        void GetShowCmd(out int showCommand);
+        void SetShowCmd(int showCommand);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder iconPath, int maximumPath, out int iconIndex);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string iconPath, int iconIndex);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, uint reserved);
+        void Resolve(IntPtr window, uint flags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string path);
+    }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("0000010B-0000-0000-C000-000000000046")]
+    private interface IPersistFile
+    {
+        void GetClassID(out Guid classId);
+        [PreserveSig] int IsDirty();
+        void Load([MarshalAs(UnmanagedType.LPWStr)] string fileName, uint mode);
+        void Save([MarshalAs(UnmanagedType.LPWStr)] string fileName, [MarshalAs(UnmanagedType.Bool)] bool remember);
+        void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string fileName);
+        void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string fileName);
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WIN32_FIND_DATAW
+    {
+        internal uint FileAttributes;
+        internal System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        internal System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        internal System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        internal uint FileSizeHigh;
+        internal uint FileSizeLow;
+        internal uint Reserved0;
+        internal uint Reserved1;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] internal string FileName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)] internal string AlternateFileName;
     }
 
     private static void VerifyPayload(string executable, long payloadLength, byte[] expectedHash, Action pulse)
