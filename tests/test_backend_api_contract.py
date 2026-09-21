@@ -28,6 +28,7 @@ from src.spare_mvp_backend.api import (
     _lite_mesa_spare_shortfall_result,
     _lite_mesa_worker_process_failure,
     _initialize_lite_mesa_sample_worker,
+    _normalize_experiment_plan_config,
     _normalize_lite_mesa_analysis_settings,
     _run_aircraft_support_v1_analysis_sample,
     _run_lite_mesa_analysis_sample_worker,
@@ -3419,6 +3420,55 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(adapter_config["sweep"]["failureRates"], [0.05])
         self.assertEqual(adapter_config["sweep"]["spareMultipliers"], [1.0, 1.2])
         self.assertEqual(adapter_config["sweep"]["supportCapacities"], [2])
+        self.assertEqual(adapter_config["backend"], "python")
+        self.assertEqual(adapter_config["output_scope"], "full_analysis")
+
+    def test_run_service_persists_python_core_without_analysis_artifacts(self) -> None:
+        project = small_aircraft_support_project("project-python-core")
+        saved = self.api.save_project(project)
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "python core",
+                "steps": 1,
+                "parallelCores": 1,
+                "projectJson": copy.deepcopy(project),
+                "monteCarloBackend": "python",
+                "monteCarloOutputScope": "core",
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 1,
+                        "sweep": {
+                            "failureRates": [1.0],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [1],
+                        },
+                    }
+                },
+            },
+        )
+
+        status = self.api.submit_run({
+            "project_id": saved["project_id"],
+            "experiment_plan_id": plan["experiment_plan_id"],
+            "model_family": "aircraft_support_v1",
+            "run_type": "monte_carlo",
+        })
+        stored_run = self.api.get_run(status["run_id"])
+        stored_result = self.api.get_run_result(status["run_id"])
+        manifest = self.api.get_run_artifacts(status["run_id"])
+
+        self.assertEqual(status["status"], "succeeded")
+        self.assertEqual(status["analysis_status"], "not_generated")
+        self.assertEqual(stored_run["monte_carlo_output_scope"], "core")
+        self.assertIn("run_service_end_to_end_seconds", stored_run["timings"])
+        self.assertEqual(stored_result["analysis_status"], "not_generated")
+        self.assertNotIn("analysis_outputs", stored_result)
+        self.assertEqual(
+            {item["kind"] for item in manifest["artifacts"]},
+            {"run_config", "input_project", "compiled_scenario", "sample_results", "aggregate_result", "metrics", "report", "log"},
+        )
 
     def test_experiment_plan_rejects_invalid_parallel_cores_before_save(self) -> None:
         project = small_aircraft_support_project("project-invalid-parallel-cores")
@@ -6541,6 +6591,31 @@ class BackendApiContractTest(unittest.TestCase):
         validation = self.api.validate_modeling_import(import_package)
 
         self.assertTrue(validation["ok"])
+
+    def test_experiment_plan_defaults_monte_carlo_backend_contract(self) -> None:
+        normalized = _normalize_experiment_plan_config({"parallelCores": 1})
+
+        self.assertEqual(normalized["monteCarloBackend"], "python")
+        self.assertEqual(normalized["monteCarloOutputScope"], "full_analysis")
+
+    def test_experiment_plan_requires_core_scope_for_rust_backend(self) -> None:
+        with self.assertRaises(RunServiceError) as ctx:
+            _normalize_experiment_plan_config({
+                "monteCarloBackend": "rust_event_time_v2",
+                "monteCarloOutputScope": "full_analysis",
+            })
+
+        self.assertEqual(ctx.exception.code, "bad_run_request")
+        self.assertEqual(ctx.exception.details["field"], "monteCarloOutputScope")
+
+    def test_experiment_plan_accepts_explicit_rust_core_contract(self) -> None:
+        normalized = _normalize_experiment_plan_config({
+            "monteCarloBackend": "rust_event_time_v2",
+            "monteCarloOutputScope": "core",
+        })
+
+        self.assertEqual(normalized["monteCarloBackend"], "rust_event_time_v2")
+        self.assertEqual(normalized["monteCarloOutputScope"], "core")
 
 
 if __name__ == "__main__":

@@ -66,6 +66,7 @@
     },
     "organization_graph_identity": { "$ref": "#/$defs/organizationGraphIdentity" },
     "organization_dispatch_summary": { "$ref": "#/$defs/organizationDispatchSummaryV0" },
+    "analysis_status": { "type": "string", "enum": ["not_generated", "generated"] },
     "analysis_outputs": {
       "type": "object",
       "properties": {
@@ -144,19 +145,6 @@
         "model_family": { "const": "aircraft_support_v1" },
         "metrics": {
           "type": "object",
-          "required": [
-            "sortie_completion_rate",
-            "operational_availability",
-            "operational_availability_sample_count",
-            "available_aircraft_hours",
-            "total_aircraft_hours",
-            "available_aircraft",
-            "active_jobs",
-            "spare_stock_total",
-            "avg_departure_delay",
-            "maintenance_backlog",
-            "lru_failures"
-          ],
           "properties": {
             "sortie_completion_rate": { "type": "number", "minimum": 0, "maximum": 1 },
             "operational_availability": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
@@ -172,7 +160,58 @@
           },
           "additionalProperties": true
         }
-      }
+      },
+      "allOf": [{
+        "if": {
+          "properties": { "analysis_status": { "const": "not_generated" } },
+          "required": ["analysis_status"]
+        },
+        "then": {
+          "properties": {
+            "metrics": {
+              "required": [
+                "planned_sorties",
+                "planned_mission_waves",
+                "successful_mission_waves",
+                "mission_success_rate",
+                "launched_sorties",
+                "completed_sorties",
+                "failed_sorties",
+                "cancelled_sorties",
+                "delayed_sorties",
+                "avg_departure_delay",
+                "lru_failures",
+                "spare_stock_total",
+                "spare_consumed_total",
+                "spare_demand_total",
+                "spare_immediately_filled_total",
+                "spare_fill_rate",
+                "shortage_events",
+                "elapsed_minutes"
+              ]
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "metrics": {
+              "required": [
+                "sortie_completion_rate",
+                "operational_availability",
+                "operational_availability_sample_count",
+                "available_aircraft_hours",
+                "total_aircraft_hours",
+                "available_aircraft",
+                "active_jobs",
+                "spare_stock_total",
+                "avg_departure_delay",
+                "maintenance_backlog",
+                "lru_failures"
+              ]
+            }
+          }
+        }
+      }]
     }
   ]
 }

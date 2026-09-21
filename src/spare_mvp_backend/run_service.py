@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import threading
+import time
 from typing import Any
 
 from src.spare_mvp_backend.errors import RunServiceError
@@ -148,6 +149,7 @@ class RunService:
             return self.repository.control_run_with_audit(run_id, action, actor_user_id=actor_user_id)
 
     def _submit_run_unlocked(self, request: dict[str, Any]) -> dict[str, Any]:
+        service_started = time.perf_counter()
         project_id = str(request.get("project_id") or "")
         experiment_plan_id = str(request.get("experiment_plan_id") or "")
         raw_model_family = request.get("model_family")
@@ -308,6 +310,9 @@ class RunService:
         self.repository.upsert_artifact_manifest(bundle["artifact_manifest"])
         if request.get("formal_run"):
             self._record_formal_run_modeling_import_reference(project_for_run, run)
+        if run_type == "monte_carlo":
+            run.setdefault("timings", {})["run_service_end_to_end_seconds"] = time.perf_counter() - service_started
+            self.repository.upsert_run(run)
         return self._status_from_run(run)
 
     def _assert_formal_run_uses_imported_sample(self, project_for_run: dict[str, Any]) -> None:
@@ -753,6 +758,19 @@ class RunService:
             "experiment_type": run.get("experiment_type"),
             "mc_experiment_id": run.get("mc_experiment_id"),
             "simulation_experiment_base": run.get("simulation_experiment_base"),
+            "monte_carlo_backend": run.get("monte_carlo_backend"),
+            "monte_carlo_output_scope": run.get("monte_carlo_output_scope"),
+            "analysis_status": run.get("analysis_status"),
+            "engine_metadata": run.get("engine_metadata"),
+            "plan_cache_status": run.get("plan_cache_status"),
+            "parallel_cores": run.get("parallel_cores"),
+            "worker_count": run.get("worker_count"),
+            "completed_sample_count": run.get("completed_sample_count"),
+            "failed_sample_count": run.get("failed_sample_count"),
+            "throughput": run.get("throughput"),
+            "throughput_scope": run.get("throughput_scope"),
+            "output_size_bytes": run.get("output_size_bytes"),
+            "timings": run.get("timings"),
         }
 
     def _augment_run_config_artifact(
