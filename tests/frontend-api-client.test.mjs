@@ -3291,8 +3291,7 @@ test("project switch flushes pending project draft autosave before changing proj
   );
   assert.match(enterWorkbenchSource, /selectedExperimentPlanKeys = new Set\(\)/);
   assert.match(enterWorkbenchSource, /experimentPlan = null/);
-  assert.match(enterWorkbenchSource, /liteMesaMonteCarloResult = null/);
-  assert.match(enterWorkbenchSource, /liteMesaAnalysisResults = \{\}/);
+  assert.match(enterWorkbenchSource, /resetSimulationTaskUiSession\(\)/);
   assert.match(flushSource, /clearTimeout\(projectDraftAutosaveTimer\)/);
   assert.match(flushSource, /projectDraftAutosaveTimer = null/);
   assert.match(flushSource, /projectDraftSaveStatus === "有未保存修改"/);

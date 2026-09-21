@@ -4917,7 +4917,13 @@ test("current Project mutations invalidate visualization identity and epoch befo
     appSource.indexOf("function invalidateVisualizationSession"),
     appSource.indexOf("function updateVisualizationSessionSetting")
   );
+  const projectResetSource = appSource.slice(
+    appSource.indexOf("function resetWorkbenchStateForCurrentProject"),
+    appSource.indexOf("async function createProjectFromSelectedProjectTemplate")
+  );
   assert.match(mutationSource, /startsWith\("current-project:"\)[\s\S]*invalidateVisualizationSession/);
+  assert.match(mutationSource, /startsWith\("current-project:"\)[\s\S]*invalidateSelectedRunContextResults/);
+  assert.match(projectResetSource, /resetSimulationTaskUiSession\(\)/);
   assert.match(invalidationSource, /visualizationSessionRequestEpoch \+= 1/);
   assert.match(invalidationSource, /visualizationSession = null/);
 });

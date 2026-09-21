@@ -12624,6 +12624,8 @@ function resetRunContextToCurrentProject() {
 function resetSavedRunContextAfterProjectMutation() {
   if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) {
     invalidateVisualizationSession("当前项目建模数据已更新，请重新运行推演。");
+    invalidateSelectedRunContextResults("当前项目建模数据已更新，请重新运行。");
+    liteMesaMonteCarloStatus = "当前项目建模数据已更新，请重新运行 Mesa 分析。";
     return;
   }
   resetRunContextToCurrentProject();
@@ -13341,11 +13343,8 @@ function resetWorkbenchStateForCurrentProject() {
   selectedExperimentPlanKeys = new Set();
   replaceSelectedRunContextKey(readStoredRunContextKey(currentBackendProjectId()));
   experimentPlan = null;
-  liteMesaMonteCarloResult = null;
-  liteMesaAnalysisResults = {};
+  resetSimulationTaskUiSession();
   resetSupportOrganizationWorkbenchSelection();
-  analysisXlsxExportState = {};
-  aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
   liteMesaMonteCarloStatus = "项目已切换，请重新运行 Mesa 分析。";
 }
 

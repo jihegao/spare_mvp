@@ -2406,6 +2406,44 @@ test("Monte Carlo settings stay frozen while its task result is loading", async 
   }
 });
 
+test("switching Projects clears active task UI without deleting the old recovery mapping", async () => {
+  const projectA = createRuntimeProjectJson({ project_id: "project-task-a" });
+  const projectB = createRuntimeProjectJson({ project_id: "project-task-b" });
+  const backendProjects = ["project-task-a", "project-task-b"].map((projectId) => ({
+    project_id: projectId,
+    experiment_name: projectId,
+    base_code: "RT",
+    summary: "task switch regression",
+    source_import_id: "",
+    updated_at: "2026-07-18 00:00:00"
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail&project=project-task-a",
+    projectJson: projectA,
+    projectJsonById: { "project-task-b": projectB },
+    backendProjects,
+    liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    await runtime.click("[data-lite-mesa-action='run']");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const storedBeforeSwitch = runtime.storage.get("spare-mvp:simulation-tasks:v1");
+    assert.match(storedBeforeSwitch, /simulation-task-runtime-1/);
+
+    await runtime.click("[data-enter-workbench]", { projectId: "project-task-b" });
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail&project=project-task-b");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-action="run"[^>]*disabled/);
+    assert.equal(runtime.storage.get("spare-mvp:simulation-tasks:v1"), storedBeforeSwitch);
+
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("aircraft mission reliability page runs explicitly and exports retained summaries as XLSX without node details", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-aircraft-mission-reliability",
