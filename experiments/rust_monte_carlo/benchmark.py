@@ -39,6 +39,16 @@ DEFAULT_DATABASE = Path("/home/g/Models/spare_mvp/runs/system-start/spare_mvp.sq
 PYTHON_BACKEND = "python"
 RUST_BACKEND = "rust_event_time_v2"
 BACKENDS = (PYTHON_BACKEND, RUST_BACKEND)
+CORE_ARTIFACT_KINDS = frozenset({
+    "run_config",
+    "input_project",
+    "compiled_scenario",
+    "sample_results",
+    "aggregate_result",
+    "result_summary",
+    "metrics",
+    "monte_carlo_base",
+})
 
 
 @dataclass(frozen=True)
@@ -153,6 +163,23 @@ def failed_count(payload: dict[str, Any]) -> int | None:
     return len(failed) if isinstance(failed, list) else None
 
 
+def validate_core_row(row: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if row.get("status") != "succeeded":
+        errors.append(f"status={row.get('status')!r}")
+    result = row.get("result_summary") if isinstance(row.get("result_summary"), dict) else {}
+    run = row.get("run") if isinstance(row.get("run"), dict) else {}
+    analysis_status = result.get("analysis_status", run.get("analysis_status"))
+    if analysis_status != "not_generated":
+        errors.append(f"analysis_status={analysis_status!r}")
+    if row.get("failed_sample_count") != 0:
+        errors.append(f"failed_sample_count={row.get('failed_sample_count')!r}")
+    actual_kinds = frozenset(row.get("artifact_kinds") or ())
+    if actual_kinds != CORE_ARTIFACT_KINDS:
+        errors.append(f"artifact_kinds={sorted(actual_kinds)!r}")
+    return errors
+
+
 def build_selector_config(base_plan: dict[str, Any], backend: str, samples: int, workers: int, cache_dir: Path) -> dict[str, Any]:
     config = json.loads(json.dumps(base_plan.get("config") or {}))
     config["samples"] = samples
@@ -168,13 +195,8 @@ def build_selector_config(base_plan: dict[str, Any], backend: str, samples: int,
             "supportCapacities": [1],
         },
     })
-    # Keep both spellings while the backend selector contract is being rolled out.
     config["monteCarloBackend"] = backend
     config["monteCarloOutputScope"] = "core"
-    config["monte_carlo_backend"] = backend
-    config["monte_carlo_output_scope"] = "core"
-    config["cacheDir"] = str(cache_dir)
-    config["cache_dir"] = str(cache_dir)
     return config
 
 
@@ -221,12 +243,6 @@ def run_backend_child(args: argparse.Namespace) -> None:
             "model_family": "aircraft_support_v1",
             "run_type": "monte_carlo",
             "formal_run": False,
-            "monteCarloBackend": args.child_backend,
-            "monteCarloOutputScope": "core",
-            "monte_carlo_backend": args.child_backend,
-            "monte_carlo_output_scope": "core",
-            "cacheDir": str(Path(args.child_cache_dir)),
-            "cache_dir": str(Path(args.child_cache_dir)),
         })
         detail = repository.get_run_detail(run["run_id"])
     result = detail.get("result_summary") or {}
@@ -367,8 +383,13 @@ def main() -> None:
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 for warmup in range(args.warmup):
                     for backend in BACKENDS:
-                        report["rows"].append(run_one(args, report, base_plan, temporary_root, cache_dir, backend, sample_count, worker_count, warmup, "warmup", pair_id))
+                        row = run_one(args, report, base_plan, temporary_root, cache_dir, backend, sample_count, worker_count, warmup, "warmup", pair_id)
+                        report["rows"].append(row)
                         atomic_write_json(args.output, report)
+                        if row.get("validation_errors"):
+                            report["status"] = "failed_closed"
+                            atomic_write_json(args.output, report)
+                            raise SystemExit(f"core contract failed: {row['validation_errors']}")
                 for repeat in range(repeats):
                     order = BACKENDS if repeat % 2 == 0 else tuple(reversed(BACKENDS))
                     pair_rows = []
@@ -377,6 +398,10 @@ def main() -> None:
                         report["rows"].append(row)
                         pair_rows.append(row)
                         atomic_write_json(args.output, report)
+                        if row.get("validation_errors"):
+                            report["status"] = "failed_closed"
+                            atomic_write_json(args.output, report)
+                            raise SystemExit(f"core contract failed: {row['validation_errors']}")
                     report["pairs"].append({"pair_id": pair_id, "repeat": repeat, "order": list(order), "rows": [row["row_id"] for row in pair_rows]})
                     atomic_write_json(args.output, report)
         report["status"] = "passed"
@@ -405,14 +430,26 @@ def run_one(args: argparse.Namespace, report: dict[str, Any], base_plan: dict[st
     except OSError:
         pass
     payload.update({"row_id": f"{pair_id}:{phase}:{repeat}:{backend}", "pair_id": pair_id, "phase": phase, "repeat": repeat, "order_index": order_index, "samples": samples, "workers": workers, "backend": backend, "wall_seconds_parent": finished - started, "system_before": before, "system_after": after})
+    payload["validation_errors"] = validate_core_row(payload)
     return payload
 
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for backend in BACKENDS:
-        values = [float(row["wall_seconds_parent"]) for row in rows if row.get("backend") == backend and row.get("phase") == "measurement" and row.get("parent_returncode") == 0]
-        result[backend] = {"count": len(values), "median_wall_seconds": statistics.median(values) if values else None}
+    for sample_count in sorted({row.get("samples") for row in rows if row.get("phase") == "measurement"}):
+        for worker_count in sorted({row.get("workers") for row in rows if row.get("phase") == "measurement" and row.get("samples") == sample_count}):
+            cell = f"samples={sample_count},workers={worker_count}"
+            by_backend: dict[str, Any] = {}
+            for backend in BACKENDS:
+                selected = [row for row in rows if row.get("phase") == "measurement" and row.get("samples") == sample_count and row.get("workers") == worker_count and row.get("backend") == backend and row.get("parent_returncode") == 0]
+                walls = [float(row["wall_seconds_parent"]) for row in selected]
+                throughputs = [float(value) for row in selected if (value := row.get("throughput")) is not None]
+                rss = [int(row["parent_peak_rss_bytes"]) for row in selected if row.get("parent_peak_rss_bytes") is not None]
+                by_backend[backend] = {"count": len(selected), "median_wall_seconds": statistics.median(walls) if walls else None, "median_throughput": statistics.median(throughputs) if throughputs else None, "median_peak_rss_bytes": statistics.median(rss) if rss else None}
+            python_wall = by_backend.get(PYTHON_BACKEND, {}).get("median_wall_seconds")
+            rust_wall = by_backend.get(RUST_BACKEND, {}).get("median_wall_seconds")
+            by_backend["speedup_python_over_rust"] = python_wall / rust_wall if python_wall and rust_wall else None
+            result[cell] = by_backend
     return result
 
 

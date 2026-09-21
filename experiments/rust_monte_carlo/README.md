@@ -46,9 +46,7 @@ python experiments/rust_monte_carlo/benchmark.py \
 ```json
 {
   "monteCarloBackend": "python | rust_event_time_v2",
-  "monteCarloOutputScope": "core",
-  "monte_carlo_backend": "python | rust_event_time_v2",
-  "monte_carlo_output_scope": "core"
+  "monteCarloOutputScope": "core"
 }
 ```
 
