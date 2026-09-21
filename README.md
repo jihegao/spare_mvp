@@ -7,6 +7,7 @@
 统一文档入口见 [`docs/README.md`](docs/README.md)。常用文档：
 
 - [`docs/product-roadmap.md`](docs/product-roadmap.md)：从当前原型到真实系统的产品里程碑、阶段依赖和验收口径。
+- [`docs/windows-desktop-rc1.md`](docs/windows-desktop-rc1.md)：Electron + 内置 Windows 原生 Python 运行时绿色自解压版的构建、运行和发布边界。
 - [`docs/spare_mvp_rms_allocation_design.md`](docs/spare_mvp_rms_allocation_design.md)：装备 RMS 指标分配当前实现、算法口径和非目标。
 - [`docs/basic-support-activity-csv-import-design.md`](docs/basic-support-activity-csv-import-design.md)：基本保障活动统一 CSV 模板、校验、原子落地和兼容契约。
 - [`docs/reliability-block-diagram-contract.md`](docs/reliability-block-diagram-contract.md)：可靠性框图当前绘图契约。

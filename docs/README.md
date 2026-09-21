@@ -45,6 +45,7 @@
 | --- | --- |
 | [`../README.md`](../README.md) | 仓库概览、运行方式、能力范围和边界。 |
 | [`product-roadmap.md`](product-roadmap.md) | 总路线图：产品里程碑、阶段依赖、主干运行路径和验收口径。 |
+| [`windows-desktop-rc1.md`](windows-desktop-rc1.md) | Windows 绿色桌面版：离线自解压、桌面快捷方式、Electron 客户端、内置原生 Python 运行时、卸载和验收边界。 |
 | [`spare_mvp_rms_allocation_design.md`](spare_mvp_rms_allocation_design.md) | 当前 RMS 指标分配工作台的实现说明、算法口径、UI 边界和非目标。 |
 | [`basic-support-activity-csv-import-design.md`](basic-support-activity-csv-import-design.md) | 基本保障活动统一 CSV 模板、引用校验、原子落地和兼容策略。 |
 | [`support-organization-contract.md`](support-organization-contract.md) | 保障组织树、横向关系、资源归属、作用域、运输策略与 Scenario 图编译契约。 |
@@ -83,3 +84,5 @@ http://127.0.0.1:4173/front/
 5. 删除旧 UI、迁移入口、移除路由、改变结果来源或替换可视化承载位置时，必须用旧文案和新文案搜索 `README.md`、`docs/`、`AGENTS.md`，同步更新当前状态文档；归档文档保留原始语境时必须位于 `archive/deprecated/`。
 
 - [Project Excel 标准模板](project-excel-template.md)：schema 驱动四域子表、字段说明、旧格式兼容、导入编译门槛及完整往返验证。
+
+- [Windows 绿色桌面版安全交付契约与证据索引](windows-desktop-rc1.md#安全交付技术契约g0)：G0 约束、G1/G2 Linux 代码门、#366 待验矩阵、G3 失败记录及 `2252f03` 的原生 build/install/start/basic smoke；原生综合业务验收尚未通过。

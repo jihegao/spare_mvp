@@ -23,6 +23,7 @@ class PortableRuntimeManifestTest(unittest.TestCase):
             'sha256': package.digest(root / 'downloads/python.zip'),
         }))
         (root / 'requirements-windows.lock').write_text('reviewed dependency lock')
+        (root / 'installed-distributions.json').write_text('[]')
         runtime = root / 'runtime'
         (runtime / 'Lib/site-packages').mkdir(parents=True)
         (runtime / 'python.exe').write_bytes(b'prepared interpreter')
@@ -107,6 +108,7 @@ class PortableRuntimeManifestTest(unittest.TestCase):
             runtime = self.bundle(bundle)
             shutil.copytree(bundle, output / 'dependencies')
             shutil.rmtree(output / 'dependencies/runtime')
+            shutil.rmtree(output / 'dependencies/downloads')
             shutil.copytree(runtime, output / 'runtime')
             (output / 'source-manifest.json').write_text(json.dumps({'source_commit': 'a' * 40}))
             # This fixture isolates runtime provenance; frontend cache has its own tests.
@@ -117,6 +119,42 @@ class PortableRuntimeManifestTest(unittest.TestCase):
             (output / 'runtime/Lib/site-packages/example.py').write_text('changed after copy')
             with self.assertRaisesRegex(ValueError, 'Runtime content differs'):
                 package.seal(output)
+
+    def test_slim_release_verification_keeps_provenance_without_archive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp)
+            runtime = self.bundle(bundle)
+            shutil.rmtree(bundle / 'downloads')
+            package.verify_runtime_manifest(bundle, runtime, require_archive=False)
+            (bundle / 'requirements-windows.lock').write_text('changed lock')
+            with self.assertRaisesRegex(ValueError, 'archive or dependency lock'):
+                package.verify_runtime_manifest(bundle, runtime, require_archive=False)
+
+    def test_release_dependency_layout_rejects_build_only_materials(self):
+        additions = ('wheelhouse/example.whl', 'downloads/python.zip', 'unreviewed.json')
+        for name in additions:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / 'package'
+                dependencies = root / 'dependencies'
+                dependencies.mkdir(parents=True)
+                for approved in package.RELEASE_DEPENDENCY_FILES:
+                    (dependencies / approved).write_text('reviewed provenance')
+                package.verify_release_dependencies(root)
+                extra = dependencies / name
+                extra.parent.mkdir(parents=True, exist_ok=True)
+                extra.write_text('build-only material')
+                with self.assertRaisesRegex(ValueError, 'provenance allowlist'):
+                    package.verify_release_dependencies(root)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'package'
+            dependencies = root / 'dependencies'
+            dependencies.mkdir(parents=True)
+            for approved in package.RELEASE_DEPENDENCY_FILES:
+                (dependencies / approved).write_text('reviewed provenance')
+            (dependencies / 'wheelhouse').mkdir()
+            with self.assertRaisesRegex(ValueError, 'provenance allowlist'):
+                package.verify_release_dependencies(root)
 
     def test_dependency_check_binds_its_interpreter_to_requested_runtime_source(self):
         with tempfile.TemporaryDirectory() as tmp:

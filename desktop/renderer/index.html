@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>备件规划与任务可靠度验证评估平台</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="brand" aria-labelledby="title">
+        <span class="edition">SPARE MVP 2.0</span>
+        <h1 id="title">备件规划与任务可靠度验证评估平台</h1>
+        <p>绿色版正在启动自带的 Windows 原生运行环境。</p>
+      </section>
+      <section class="status-card" aria-live="polite">
+        <div class="status-row">
+          <span class="spinner" aria-hidden="true"></span>
+          <div>
+            <strong id="status-title">正在校验内置运行环境</strong>
+            <p id="status-detail">无需 Docker、WSL、管理员权限或重启 Windows。</p>
+          </div>
+        </div>
+        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="5">
+          <span id="progress-bar"></span>
+        </div>
+        <div class="actions">
+          <button id="primary-action" type="button" hidden>重试</button>
+        </div>
+        <p id="error-message" class="error" hidden></p>
+      </section>
+      <ol class="steps" aria-label="启动步骤">
+        <li data-step="environment" class="active">校验内置环境</li>
+        <li data-step="services">启动仿真服务</li>
+        <li data-step="workspace">加载工作区</li>
+      </ol>
+    </main>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>
