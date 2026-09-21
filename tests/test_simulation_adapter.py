@@ -2822,8 +2822,9 @@ class SimulationAdapterTest(unittest.TestCase):
                     "samples": results,
                     "failed_samples": [],
                     "engine_metadata": {
-                        "engine_version": "test-wheel",
-                        "source_commit": "test-commit",
+                        "compiler_version": "compiler-test",
+                        "runtime_version": "runtime-test",
+                        "build_commit": "test-commit",
                         "semantic_profile": "event-time-v2",
                     },
                     "cache_groups": [{
@@ -2875,6 +2876,10 @@ class SimulationAdapterTest(unittest.TestCase):
                 item for item in rust_bundle["artifact_manifest"]["artifacts"] if item["kind"] == "run_config"
             )
             run_config = json.loads((Path(rust_tmp) / run_config_artifact["path"]).read_text())
+            report_artifact = next(
+                item for item in rust_bundle["artifact_manifest"]["artifacts"] if item["kind"] == "report"
+            )
+            report = json.loads((Path(rust_tmp) / report_artifact["path"]).read_text())
 
         expected_kinds = {
             "run_config", "input_project", "compiled_scenario", "sample_results",
@@ -2937,6 +2942,17 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(rust_bundle["run"]["monte_carlo_backend"], "rust_event_time_v2")
         self.assertEqual(rust_bundle["run"]["execution_plan_fingerprints"], ["plan-sha"])
         self.assertEqual(run_config["plan_cache_status"], "hit")
+        for payload in (
+            rust_bundle["run"],
+            run_config,
+            report,
+            rust_bundle["artifact_manifest"],
+        ):
+            self.assertEqual(payload["engine_metadata"]["engine_version"], "runtime-test")
+            self.assertEqual(payload["engine_metadata"]["source_commit"], "test-commit")
+            self.assertEqual(payload["engine_metadata"]["compiler_version"], "compiler-test")
+            self.assertEqual(payload["engine_metadata"]["runtime_version"], "runtime-test")
+            self.assertEqual(payload["engine_metadata"]["build_commit"], "test-commit")
         self.assertEqual(len(fake.calls), 1)
         self.assertNotEqual(fake.calls[0][0][0]["seed"], fake.calls[0][0][1]["seed"])
         self.assertEqual(
@@ -2948,6 +2964,21 @@ class SimulationAdapterTest(unittest.TestCase):
         jsonschema.validate(
             rust_bundle["artifact_manifest"],
             json.loads((REPO_ROOT / "contracts/artifact_manifest.schema.json").read_text()),
+        )
+
+    def test_rust_engine_metadata_falls_back_to_compiler_version(self) -> None:
+        self.assertEqual(
+            self.adapter._normalize_rust_engine_metadata({
+                "compiler_version": "compiler-only",
+                "build_commit": "build-only",
+            }),
+            {
+                "compiler_version": "compiler-only",
+                "build_commit": "build-only",
+                "engine_version": "compiler-only",
+                "source_commit": "build-only",
+                "semantic_profile": "event-time-v2",
+            },
         )
 
     def test_rust_monte_carlo_failure_is_explicit_and_does_not_fallback(self) -> None:
