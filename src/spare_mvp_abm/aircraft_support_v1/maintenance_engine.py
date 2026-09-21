@@ -559,7 +559,12 @@ class MaintenanceEngineMixin:
             aircraft.state = "available"
             component = self._component_by_id(job.component_id)
             if component is not None:
-                aircraft.lru_failure_remaining_minutes[str(component.get("id") or "component")] = self._sample_lru_failure_minutes(component)
+                aircraft.lru_failure_remaining_minutes[str(component.get("id") or "component")] = self._sample_lru_failure_minutes(
+                    component,
+                    aircraft=aircraft,
+                    phase="job_progress_and_completions",
+                    reason="repair_completed",
+                )
             aircraft.failed_component_id = None
             aircraft.failed_component_minute = None
             aircraft.component_failure_minutes = {}

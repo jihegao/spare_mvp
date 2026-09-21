@@ -147,6 +147,11 @@ class AircraftSupportV1Model(
             or self.inputs.get("disableVisualizationFrames")
             or time_config.get("disable_visualization_frames")
         )
+        self.record_rng_requests = _truthy_input_flag(
+            self.inputs.get("record_rng_requests")
+            or self.inputs.get("recordRngRequests")
+        )
+        self.sample_requests: list[dict[str, Any]] = []
         self.duration_minutes = int(time_config.get("duration_minutes", 1440))
         self.tick_minutes = int(time_config.get("tick_minutes", 1))
         self.sample_every_minutes = int(time_config.get("sample_every_minutes", 30))
@@ -158,6 +163,11 @@ class AircraftSupportV1Model(
         self.time = 0
         self.event_log: list[dict[str, Any]] = []
         self.aircraft = self._build_aircraft()
+        self._component_source_paths = {
+            str(component.get("id")): f"equipment_tree.components[{index}]"
+            for index, component in enumerate(self.inputs.get("equipment_tree", {}).get("components", []))
+            if isinstance(component, dict) and component.get("id") not in (None, "")
+        }
         self.equipment_tree_components = self._equipment_tree_components()
         self.components = self._behavior_components()
         self.component_applicability_index = ComponentApplicabilityIndex(self.components, self.aircraft)

@@ -20,6 +20,7 @@ from src.spare_mvp_backend.project_payload import ProjectJsonExporter
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
 from tests.test_aircraft_support_v1_model import (
     _lateral_organization_inputs,
+    _minimal_inputs,
     _vertical_organization_inputs,
 )
 
@@ -51,6 +52,79 @@ class SimulationAdapterTest(unittest.TestCase):
             resource["productId"] = component_products.get(str(resource.get("model"))) or products[0]["id"]
         project["products"] = products
         return project
+
+    def test_rng_request_recording_is_observational_and_rust_shaped(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["fleet_count"] = 1
+        inputs["aircraft"]["initial_ready"] = 1
+        inputs["equipment_tree"] = {
+            "root_component_id": "aircraft-root",
+            "components": [
+                {"id": "aircraft-root", "name": "Aircraft", "parent_id": None},
+                {
+                    "id": "radar-lru",
+                    "name": "Radar LRU",
+                    "parent_id": "aircraft-root",
+                    "quantity": 2,
+                    "failure_distribution": {"distributionType": "exponential", "rate": 20.0},
+                },
+            ],
+        }
+
+        baseline = AircraftSupportV1Model(copy.deepcopy(inputs))
+        recorded_inputs = copy.deepcopy(inputs)
+        recorded_inputs["record_rng_requests"] = True
+        recorded = AircraftSupportV1Model(recorded_inputs)
+        repeated = AircraftSupportV1Model(copy.deepcopy(recorded_inputs))
+
+        baseline_result = baseline.run()
+        recorded_result = recorded.run()
+        repeated_result = repeated.run()
+
+        self.assertEqual(recorded_result, baseline_result)
+        self.assertEqual(repeated_result, baseline_result)
+        self.assertEqual(recorded.rng.getstate(), baseline.rng.getstate())
+        self.assertEqual(
+            self.adapter._aircraft_support_v1_core_terminal_state(recorded),
+            self.adapter._aircraft_support_v1_core_terminal_state(baseline),
+        )
+
+        component = recorded.components[0]
+        repeated_component = repeated.components[0]
+        for phase, reason in (
+            ("job_progress_and_completions", "repair_completed"),
+            ("failures", "missing_timer"),
+        ):
+            recorded._sample_lru_failure_minutes(
+                component,
+                aircraft=recorded.aircraft[0],
+                phase=phase,
+                reason=reason,
+            )
+            repeated._sample_lru_failure_minutes(
+                repeated_component,
+                aircraft=repeated.aircraft[0],
+                phase=phase,
+                reason=reason,
+            )
+
+        self.assertEqual(recorded.sample_requests, repeated.sample_requests)
+        json.dumps(recorded.sample_requests, allow_nan=False)
+        self.assertTrue(recorded.sample_requests)
+        self.assertEqual(
+            set(recorded.sample_requests[0]),
+            {
+                "sequence", "time", "phase", "stream", "distribution",
+                "entity", "component_id", "quantity_index", "rate_per_hour",
+                "value_minutes", "reason", "source_path",
+            },
+        )
+        self.assertEqual(recorded.sample_requests[0]["phase"], "initialize")
+        self.assertEqual(recorded.sample_requests[0]["reason"], "initialize")
+        self.assertEqual(recorded.sample_requests[0]["source_path"], "equipment_tree.components[1]")
+        self.assertEqual(recorded.sample_requests[0]["entity"], "AC-001")
+        self.assertIn("repair_completed", {item["reason"] for item in recorded.sample_requests})
+        self.assertIn("missing_timer", {item["reason"] for item in recorded.sample_requests})
 
     def test_failure_distribution_rate_accepts_current_editor_fields(self) -> None:
         self.assertAlmostEqual(
@@ -2821,6 +2895,40 @@ class SimulationAdapterTest(unittest.TestCase):
             self.assertNotIn(forbidden, python_samples[0])
             self.assertNotIn(forbidden, rust_samples[0])
         self.assertTrue(python_samples[0]["terminal_state"])
+        self.assertTrue(python_samples[0]["rng_requests"])
+        json.dumps(python_samples[0]["rng_requests"], allow_nan=False)
+        python_terminal = python_samples[0]["terminal_state"]
+        self.assertEqual(set(python_terminal), {"aircraft", "missions", "jobs", "resources"})
+        self.assertEqual(
+            set(python_terminal["aircraft"][0]),
+            {
+                "tail_number", "state", "current_mission_id", "prepared_mission_ids",
+                "operations_day", "daily_takeoffs", "postflight_required", "postflight_due",
+                "flight_hours", "takeoff_count", "landing_count", "failed_component_id",
+                "component_failure_minutes", "in_flight_failure",
+            },
+        )
+        self.assertEqual(
+            set(python_terminal["missions"][0]),
+            {
+                "mission_id", "status", "actual_start", "assigned_tail_numbers",
+                "success_evaluated", "succeeded",
+            },
+        )
+        self.assertEqual(
+            set(python_terminal["jobs"][0]),
+            {
+                "job_id", "kind", "aircraft", "mission_id", "activity_id", "state",
+                "step_index", "started_time", "completed_time", "component_id",
+                "maintenance_method",
+            },
+        )
+        self.assertEqual(
+            set(python_terminal["resources"][0]),
+            {"node_id", "personnel_in_use", "equipment_in_use", "inventory"},
+        )
+        self.assertNotIn("rng", python_terminal)
+        self.assertNotIn("steps", python_terminal)
         self.assertEqual(python_samples[0]["stop_reason"], python_samples[0]["metrics"]["stop_reason"])
         self.assertEqual(set(python_samples[0]["metrics"]), set(CORE_MONTE_CARLO_METRIC_KEYS))
         self.assertEqual(set(rust_samples[0]["metrics"]), set(CORE_MONTE_CARLO_METRIC_KEYS))

@@ -24,8 +24,11 @@ function oneOfBranch(schema, modelFamily) {
   return schema.oneOf.find((branch) => branch.properties?.model_family?.const === modelFamily);
 }
 
-function requiredMetricSet(resultSchema, modelFamily) {
-  return new Set(oneOfBranch(resultSchema, modelFamily).properties.metrics.required);
+function requiredMetricSet(resultSchema, modelFamily, analysisStatus = "generated") {
+  const branch = oneOfBranch(resultSchema, modelFamily);
+  const analysisConditional = branch.allOf.find((entry) => entry.if?.properties?.analysis_status);
+  const selected = analysisStatus === "not_generated" ? analysisConditional.then : analysisConditional.else;
+  return new Set(selected.properties.metrics.required);
 }
 
 async function scenarioInputProperties() {
@@ -175,13 +178,14 @@ test("scenario schema exposes only the current aircraft_support_v1 selector", as
 
 test("result schema exposes only aircraft_support_v1 metrics", async () => {
   const schema = await readJson("contracts/result.schema.json");
-  const currentRequired = requiredMetricSet(schema, "aircraft_support_v1");
+  const fullAnalysisRequired = requiredMetricSet(schema, "aircraft_support_v1", "generated");
+  const coreRequired = requiredMetricSet(schema, "aircraft_support_v1", "not_generated");
 
   assert.equal(oneOfBranch(schema, "smoke"), undefined);
   assert.equal(oneOfBranch(schema, "aviation_support"), undefined);
   assert.equal(schema.properties.model_family.const, "aircraft_support_v1");
   assert.deepEqual(
-    currentRequired,
+    fullAnalysisRequired,
     new Set([
       "sortie_completion_rate",
       "operational_availability",
@@ -196,6 +200,29 @@ test("result schema exposes only aircraft_support_v1 metrics", async () => {
       "lru_failures",
     ])
   );
+  assert.deepEqual(
+    coreRequired,
+    new Set([
+      "planned_sorties",
+      "planned_mission_waves",
+      "successful_mission_waves",
+      "mission_success_rate",
+      "launched_sorties",
+      "completed_sorties",
+      "failed_sorties",
+      "cancelled_sorties",
+      "delayed_sorties",
+      "avg_departure_delay",
+      "lru_failures",
+      "spare_stock_total",
+      "spare_consumed_total",
+      "spare_demand_total",
+      "spare_immediately_filled_total",
+      "spare_fill_rate",
+      "shortage_events",
+      "elapsed_minutes",
+    ])
+  );
 });
 
 test("aircraft support result metrics stay aligned with snapshot fields", async () => {
@@ -207,7 +234,10 @@ test("aircraft support result metrics stay aligned with snapshot fields", async 
     [...snapshotMatch[1].matchAll(/"([^"]+)":/g)].map((match) => match[1])
   );
   const schema = await readJson("contracts/result.schema.json");
-  const currentRequired = requiredMetricSet(schema, "aircraft_support_v1");
+  const currentRequired = new Set([
+    ...requiredMetricSet(schema, "aircraft_support_v1", "generated"),
+    ...requiredMetricSet(schema, "aircraft_support_v1", "not_generated"),
+  ]);
 
   for (const metricId of currentRequired) {
     assert.ok(sourceMetricIds.has(metricId), `${metricId} is required by schema but absent from snapshot()`);
