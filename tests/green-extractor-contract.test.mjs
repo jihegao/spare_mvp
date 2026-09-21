@@ -31,7 +31,7 @@ test("green extractor stages the embedded tar before invoking Windows tar", () =
   assert.match(source, /Directory\.Delete\(ownedStaging, true\)/);
   assert.match(source, /ownedDestination = destination/);
   assert.match(source, /Directory\.Delete\(ownedDestination, true\)/);
-  assert.match(source, /CreateDesktopShortcut\(launcher, destination\);[\s\S]{0,900}ownedDestination = null;/);
+  assert.match(source, /shortcutCreated = CreateDesktopShortcut\(launcher, destination\);[\s\S]{0,1000}ownedDestination = null;/);
   assert.match(source, /Directory\.Exists\(destination\) \|\| File\.Exists\(destination\)/);
 });
 
@@ -46,8 +46,18 @@ test("green extractor creates a current-user desktop shortcut for the extracted 
   assert.match(source, /ShortcutFileName = ProductName \+ "\.lnk"/);
   assert.match(source, /Description[\s\S]{0,160}ProductName/);
   assert.match(source, /MigrateOwnedLegacyShortcut\(launcher, destination\)/);
-  assert.match(source, /IsOwnedShortcut\(legacyShortcutPath, launcher, destination\)/);
+  assert.match(source, /IsOwnedShortcut\(legacyShortcutPath, launcher, destination, LegacyShortcutDescription\)/);
   assert.match(source, /String\.IsNullOrWhiteSpace\(details\[2\]\)/);
+  assert.match(source, /String\.Equals\(details\[3\], expectedDescription, StringComparison\.Ordinal\)/);
+  assert.match(source, /String\.Equals\(details\[4\], Path\.GetFullPath\(expectedLauncher\) \+ ",0", StringComparison\.OrdinalIgnoreCase\)/);
+  const createShortcut = source.slice(
+    source.indexOf("private static bool CreateDesktopShortcut"),
+    source.indexOf("private static void MigrateOwnedLegacyShortcut")
+  );
+  assert.ok(createShortcut.indexOf("File.Exists(shortcutPath)") < createShortcut.indexOf("CreateShortcut"));
+  assert.ok(createShortcut.indexOf("!IsOwnedShortcut(shortcutPath, launcher, destination, ProductName)") < createShortcut.indexOf("CreateShortcut"));
+  assert.match(createShortcut, /if \(!shortcutExisted\) DeleteOwnedShortcut/);
+  assert.match(source, /if \(shortcutCreated\)[\s\S]{0,220}DeleteOwnedShortcut/);
 });
 
 test("green package builds a guarded uninstaller into the sealed payload", () => {
@@ -78,8 +88,47 @@ test("green package builds a guarded uninstaller into the sealed payload", () =>
   assert.match(uninstaller, /项目数据库和用户数据已保留/);
   assert.match(uninstaller, /ShortcutFileName = ProductName \+ "\.lnk"/);
   assert.match(uninstaller, /DesktopShortcutPath\(LegacyShortcutFileName\)/);
-  assert.match(uninstaller, /removeLegacyShortcut = legacyShortcutExists && IsOwnedShortcut/);
-  assert.match(uninstaller, /removeLegacyShortcut && File\.Exists\(legacyShortcutPath\)/);
+  assert.match(uninstaller, /String\.Equals\(details\[3\], expectedDescription, StringComparison\.Ordinal\)/);
+  assert.match(uninstaller, /String\.Equals\(details\[4\], Path\.GetFullPath\(expectedLauncher\) \+ ",0", StringComparison\.OrdinalIgnoreCase\)/);
+  const removal = uninstaller.slice(
+    uninstaller.indexOf("private static int RemoveInstalledFiles"),
+    uninstaller.indexOf("private static bool IsOwnedShortcut")
+  );
+  const directoryDelete = removal.indexOf("Directory.Delete(installationRoot, true)");
+  const currentOwnershipCheck = removal.indexOf("IsOwnedShortcut(shortcutPath, expectedLauncher, ProductName)");
+  const currentDelete = removal.indexOf("File.Delete(shortcutPath)");
+  const legacyOwnershipCheck = removal.indexOf("IsOwnedShortcut(legacyShortcutPath, expectedLauncher, LegacyShortcutDescription)");
+  const legacyDelete = removal.indexOf("File.Delete(legacyShortcutPath)");
+  assert.ok(directoryDelete >= 0 && currentOwnershipCheck > directoryDelete && currentDelete > currentOwnershipCheck);
+  assert.ok(legacyOwnershipCheck > directoryDelete && legacyDelete > legacyOwnershipCheck);
+  assert.ok(removal.indexOf("File.Exists(shortcutPath) || File.Exists(legacyShortcutPath)") > legacyDelete);
   assert.match(uninstaller, /备件规划及任务可靠度验证评估平台 V2\.0/);
   assert.match(portablePackager, /'Uninstall-SpareMvp\.exe'/);
+});
+
+test("shortcut ownership rejects every user-visible or routing mutation", () => {
+  const expected = {
+    target: "C:\\App\\SpareMvpDesktop.exe",
+    workingDirectory: "C:\\App",
+    arguments: "",
+    description: "备件规划及任务可靠度验证评估平台 V2.0",
+    iconLocation: "C:\\App\\SpareMvpDesktop.exe,0",
+  };
+  const isOwned = (details) =>
+    details.target.toLowerCase() === expected.target.toLowerCase() &&
+    details.workingDirectory.toLowerCase() === expected.workingDirectory.toLowerCase() &&
+    details.arguments.trim() === "" &&
+    details.description === expected.description &&
+    details.iconLocation.toLowerCase() === expected.iconLocation.toLowerCase();
+
+  assert.equal(isOwned(expected), true);
+  for (const [field, value] of [
+    ["target", "C:\\Other\\SpareMvpDesktop.exe"],
+    ["workingDirectory", "C:\\Other"],
+    ["arguments", "--custom"],
+    ["description", "用户修改的快捷方式"],
+    ["iconLocation", "C:\\Icons\\custom.ico,0"],
+  ]) {
+    assert.equal(isOwned({ ...expected, [field]: value }), false, field);
+  }
 });

@@ -15,6 +15,7 @@ internal static class GreenExtractor
     private const string ProductName = "备件规划及任务可靠度验证评估平台 V2.0";
     private const string ShortcutFileName = ProductName + ".lnk";
     private const string LegacyShortcutFileName = "spare_mvp 2.0.lnk";
+    private const string LegacyShortcutDescription = "spare_mvp 2.0 绿色桌面版";
 
     [STAThread]
     private static int Main(string[] args)
@@ -86,14 +87,15 @@ internal static class GreenExtractor
             ownedStaging = null;
             string launcher = Path.Combine(destination, "SpareMvpDesktop.exe");
             if (!File.Exists(launcher)) throw new FileNotFoundException("解压后未找到桌面启动器。", launcher);
-            CreateDesktopShortcut(launcher, destination);
+            bool shortcutCreated = CreateDesktopShortcut(launcher, destination);
             try
             {
                 MigrateOwnedLegacyShortcut(launcher, destination);
             }
             catch
             {
-                DeleteOwnedShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), ShortcutFileName), launcher, destination);
+                if (shortcutCreated)
+                    DeleteOwnedShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), ShortcutFileName), launcher, destination, ProductName);
                 throw;
             }
             // Shortcut creation completes the owned extraction transaction.
@@ -125,12 +127,15 @@ internal static class GreenExtractor
         }
     }
 
-    private static void CreateDesktopShortcut(string launcher, string destination)
+    private static bool CreateDesktopShortcut(string launcher, string destination)
     {
         string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         if (String.IsNullOrWhiteSpace(desktop) || !Directory.Exists(desktop))
             throw new DirectoryNotFoundException("无法找到当前用户的桌面目录。");
         string shortcutPath = Path.Combine(desktop, ShortcutFileName);
+        bool shortcutExisted = File.Exists(shortcutPath);
+        if (shortcutExisted && !IsOwnedShortcut(shortcutPath, launcher, destination, ProductName))
+            throw new IOException("桌面已存在不属于本安装的同名快捷方式，已保留该快捷方式。请先重命名后重试：" + shortcutPath);
         Type shellType = Type.GetTypeFromProgID("WScript.Shell");
         if (shellType == null) throw new PlatformNotSupportedException("Windows Script Host 不可用，无法创建桌面快捷方式。");
         object shell = null;
@@ -146,11 +151,17 @@ internal static class GreenExtractor
             shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { launcher + ",0" });
             shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
         }
+        catch
+        {
+            if (!shortcutExisted) DeleteOwnedShortcut(shortcutPath, launcher, destination, ProductName);
+            throw;
+        }
         finally
         {
             if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut);
             if (shell != null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
         }
+        return !shortcutExisted;
     }
 
     private static void MigrateOwnedLegacyShortcut(string launcher, string destination)
@@ -158,14 +169,14 @@ internal static class GreenExtractor
         string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         string legacyShortcutPath = Path.Combine(desktop, LegacyShortcutFileName);
         if (!File.Exists(legacyShortcutPath)) return;
-        if (IsOwnedShortcut(legacyShortcutPath, launcher, destination)) File.Delete(legacyShortcutPath);
+        if (IsOwnedShortcut(legacyShortcutPath, launcher, destination, LegacyShortcutDescription)) File.Delete(legacyShortcutPath);
     }
 
-    private static void DeleteOwnedShortcut(string shortcutPath, string launcher, string destination)
+    private static void DeleteOwnedShortcut(string shortcutPath, string launcher, string destination, string expectedDescription)
     {
         try
         {
-            if (File.Exists(shortcutPath) && IsOwnedShortcut(shortcutPath, launcher, destination)) File.Delete(shortcutPath);
+            if (File.Exists(shortcutPath) && IsOwnedShortcut(shortcutPath, launcher, destination, expectedDescription)) File.Delete(shortcutPath);
         }
         catch
         {
@@ -173,7 +184,7 @@ internal static class GreenExtractor
         }
     }
 
-    private static bool IsOwnedShortcut(string shortcutPath, string expectedLauncher, string expectedWorkingDirectory)
+    private static bool IsOwnedShortcut(string shortcutPath, string expectedLauncher, string expectedWorkingDirectory, string expectedDescription)
     {
         try
         {
@@ -182,7 +193,9 @@ internal static class GreenExtractor
                 String.Equals(Path.GetFullPath(details[0]), Path.GetFullPath(expectedLauncher), StringComparison.OrdinalIgnoreCase) &&
                 !String.IsNullOrWhiteSpace(details[1]) &&
                 String.Equals(Path.GetFullPath(details[1]), Path.GetFullPath(expectedWorkingDirectory), StringComparison.OrdinalIgnoreCase) &&
-                String.IsNullOrWhiteSpace(details[2]);
+                String.IsNullOrWhiteSpace(details[2]) &&
+                String.Equals(details[3], expectedDescription, StringComparison.Ordinal) &&
+                String.Equals(details[4], Path.GetFullPath(expectedLauncher) + ",0", StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
@@ -204,7 +217,9 @@ internal static class GreenExtractor
             return new string[] {
                 (string)shortcutType.InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null),
                 (string)shortcutType.InvokeMember("WorkingDirectory", BindingFlags.GetProperty, null, shortcut, null),
-                (string)shortcutType.InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null)
+                (string)shortcutType.InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null),
+                (string)shortcutType.InvokeMember("Description", BindingFlags.GetProperty, null, shortcut, null),
+                (string)shortcutType.InvokeMember("IconLocation", BindingFlags.GetProperty, null, shortcut, null)
             };
         }
         finally

@@ -12,6 +12,7 @@ internal static class GreenUninstaller
     private const string ProductName = "备件规划及任务可靠度验证评估平台 V2.0";
     private const string ShortcutFileName = ProductName + ".lnk";
     private const string LegacyShortcutFileName = "spare_mvp 2.0.lnk";
+    private const string LegacyShortcutDescription = "spare_mvp 2.0 绿色桌面版";
     private const string LauncherFileName = "SpareMvpDesktop.exe";
     private const string WorkerArgument = "--remove";
 
@@ -233,10 +234,7 @@ internal static class GreenUninstaller
         {
             Thread.Sleep(750);
             AssertInstallationRoot(installationRoot);
-            bool shortcutExists = File.Exists(shortcutPath);
-            bool removeShortcut = shortcutExists && IsOwnedShortcut(shortcutPath, Path.Combine(installationRoot, LauncherFileName));
-            bool legacyShortcutExists = File.Exists(legacyShortcutPath);
-            bool removeLegacyShortcut = legacyShortcutExists && IsOwnedShortcut(legacyShortcutPath, Path.Combine(installationRoot, LauncherFileName));
+            string expectedLauncher = Path.Combine(installationRoot, LauncherFileName);
             Exception lastError = null;
             for (int attempt = 0; attempt < 30 && Directory.Exists(installationRoot); attempt++)
             {
@@ -253,10 +251,10 @@ internal static class GreenUninstaller
             }
             if (Directory.Exists(installationRoot))
                 throw new IOException("无法删除安装目录，请关闭仍在使用其中文件的程序后重试。", lastError);
-            if (removeShortcut && File.Exists(shortcutPath)) File.Delete(shortcutPath);
-            if (removeLegacyShortcut && File.Exists(legacyShortcutPath)) File.Delete(legacyShortcutPath);
+            if (File.Exists(shortcutPath) && IsOwnedShortcut(shortcutPath, expectedLauncher, ProductName)) File.Delete(shortcutPath);
+            if (File.Exists(legacyShortcutPath) && IsOwnedShortcut(legacyShortcutPath, expectedLauncher, LegacyShortcutDescription)) File.Delete(legacyShortcutPath);
             string dataResult = userDataDeleted ? "已按二次确认永久删除用户数据。" : "项目数据库和用户数据已保留。";
-            bool retainedShortcut = (shortcutExists && !removeShortcut) || (legacyShortcutExists && !removeLegacyShortcut);
+            bool retainedShortcut = File.Exists(shortcutPath) || File.Exists(legacyShortcutPath);
             string result = retainedShortcut
                 ? ProductName + "安装目录已删除。桌面快捷方式已被修改或指向其他安装，因此予以保留。" + dataResult
                 : ProductName + "已卸载，安装目录和本安装拥有的桌面快捷方式已删除。" + dataResult;
@@ -271,7 +269,7 @@ internal static class GreenUninstaller
         }
     }
 
-    private static bool IsOwnedShortcut(string shortcutPath, string expectedLauncher)
+    private static bool IsOwnedShortcut(string shortcutPath, string expectedLauncher, string expectedDescription)
     {
         try
         {
@@ -281,7 +279,9 @@ internal static class GreenUninstaller
                 String.Equals(Path.GetFullPath(details[0]), Path.GetFullPath(expectedLauncher), StringComparison.OrdinalIgnoreCase) &&
                 !String.IsNullOrWhiteSpace(details[1]) &&
                 String.Equals(Path.GetFullPath(details[1]), expectedWorkingDirectory, StringComparison.OrdinalIgnoreCase) &&
-                String.IsNullOrWhiteSpace(details[2]);
+                String.IsNullOrWhiteSpace(details[2]) &&
+                String.Equals(details[3], expectedDescription, StringComparison.Ordinal) &&
+                String.Equals(details[4], Path.GetFullPath(expectedLauncher) + ",0", StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
@@ -303,7 +303,9 @@ internal static class GreenUninstaller
             return new string[] {
                 (string)shortcutType.InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null),
                 (string)shortcutType.InvokeMember("WorkingDirectory", BindingFlags.GetProperty, null, shortcut, null),
-                (string)shortcutType.InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null)
+                (string)shortcutType.InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null),
+                (string)shortcutType.InvokeMember("Description", BindingFlags.GetProperty, null, shortcut, null),
+                (string)shortcutType.InvokeMember("IconLocation", BindingFlags.GetProperty, null, shortcut, null)
             };
         }
         finally
