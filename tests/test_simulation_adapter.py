@@ -2807,6 +2807,21 @@ class SimulationAdapterTest(unittest.TestCase):
             "aggregate_result", "metrics", "report", "log",
         }
         self.assertEqual({item["kind"] for item in rust_bundle["artifact_manifest"]["artifacts"]}, expected_kinds)
+        core_sample_keys = {
+            "sample_index", "seed", "sweep", "metrics", "rng_requests",
+            "stop_reason", "terminal_state", "time",
+        }
+        self.assertEqual(set(python_samples[0]), core_sample_keys)
+        self.assertEqual(set(rust_samples[0]), core_sample_keys)
+        for forbidden in (
+            "frames", "events", "downtime_events", "lifecycle_trace",
+            "mission_wave_reliability", "period_outcome",
+            "organization_graph_identity", "organization_dispatch_summary",
+        ):
+            self.assertNotIn(forbidden, python_samples[0])
+            self.assertNotIn(forbidden, rust_samples[0])
+        self.assertTrue(python_samples[0]["terminal_state"])
+        self.assertEqual(python_samples[0]["stop_reason"], python_samples[0]["metrics"]["stop_reason"])
         self.assertEqual(set(python_samples[0]["metrics"]), set(CORE_MONTE_CARLO_METRIC_KEYS))
         self.assertEqual(set(rust_samples[0]["metrics"]), set(CORE_MONTE_CARLO_METRIC_KEYS))
         self.assertEqual(rust_bundle["result"]["analysis_status"], "not_generated")

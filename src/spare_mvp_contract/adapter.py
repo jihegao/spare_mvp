@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -2906,8 +2907,12 @@ class SimulationAdapter:
             if isinstance(reported_worker_count, int) and not isinstance(reported_worker_count, bool):
                 worker_count = min(len(profile["sample_points"]), max(1, reported_worker_count))
         else:
+            python_inputs = inputs
+            if core_only:
+                python_inputs = copy.deepcopy(inputs)
+                python_inputs["disable_visualization_frames"] = True
             samples, failed_samples = self._execute_aircraft_support_v1_monte_carlo_samples(
-                inputs,
+                python_inputs,
                 profile["sample_points"],
                 steps=steps,
                 worker_count=worker_count,
@@ -2920,19 +2925,7 @@ class SimulationAdapter:
                 failed_samples=failed_samples,
             )
         if core_only:
-            for sample in samples:
-                metrics_payload = sample.get("metrics") if isinstance(sample.get("metrics"), dict) else {}
-                missing_metrics = [key for key in CORE_MONTE_CARLO_METRIC_KEYS if key not in metrics_payload]
-                if missing_metrics:
-                    raise AdapterError(
-                        "rust_result_contract_mismatch" if backend == "rust_event_time_v2" else "sample_result_contract_mismatch",
-                        "core Monte Carlo sample is missing required metrics",
-                        sample_index=sample.get("sample_index"),
-                        missing_metrics=missing_metrics,
-                    )
-                sample["metrics"] = {
-                    key: copy.deepcopy(metrics_payload[key]) for key in CORE_MONTE_CARLO_METRIC_KEYS
-                }
+            samples = [self._project_core_monte_carlo_sample(sample, backend=backend) for sample in samples]
 
         aggregation_started = time.perf_counter()
         organization_identity = organization_graph_identity(
@@ -3363,6 +3356,52 @@ class SimulationAdapter:
         }
         return samples, failures, metadata
 
+    def _project_core_monte_carlo_sample(
+        self,
+        sample: dict[str, Any],
+        *,
+        backend: str,
+    ) -> dict[str, Any]:
+        metrics_payload = sample.get("metrics") if isinstance(sample.get("metrics"), dict) else {}
+        missing_metrics = [key for key in CORE_MONTE_CARLO_METRIC_KEYS if key not in metrics_payload]
+        if missing_metrics:
+            raise AdapterError(
+                "rust_result_contract_mismatch" if backend == "rust_event_time_v2" else "sample_result_contract_mismatch",
+                "core Monte Carlo sample is missing required metrics",
+                sample_index=sample.get("sample_index"),
+                missing_metrics=missing_metrics,
+            )
+        return {
+            "sample_index": sample["sample_index"],
+            "seed": sample["seed"],
+            "sweep": copy.deepcopy(sample["sweep"]),
+            "metrics": {
+                key: copy.deepcopy(metrics_payload[key]) for key in CORE_MONTE_CARLO_METRIC_KEYS
+            },
+            "rng_requests": copy.deepcopy(sample.get("rng_requests") or []),
+            "stop_reason": sample.get("stop_reason", metrics_payload.get("stop_reason")),
+            "terminal_state": copy.deepcopy(sample.get("terminal_state") or {}),
+            "time": sample.get("time", metrics_payload.get("elapsed_minutes")),
+        }
+
+    def _json_safe_core_state(self, value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {
+                str(key): self._json_safe_core_state(item)
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            }
+        if isinstance(value, (list, tuple)):
+            return [self._json_safe_core_state(item) for item in value]
+        if isinstance(value, set):
+            return [self._json_safe_core_state(item) for item in sorted(value, key=repr)]
+        raise AdapterError(
+            "sample_result_contract_mismatch",
+            "Python core terminal state contains a non-JSON value",
+            value_type=type(value).__name__,
+        )
+
     def _normalize_rust_monte_carlo_sample(
         self,
         raw_sample: Any,
@@ -3519,33 +3558,37 @@ class SimulationAdapter:
         self._apply_aircraft_support_v1_capacity(sample_inputs, point["support_capacity"])
         model = AircraftSupportV1Model(sample_inputs)
         execution = model.run()
-        mission_wave_reliability = self._aircraft_support_v1_sample_mission_wave_reliability(model.missions)
-        period_outcome = mission_period_outcome(
-            model.missions,
-            duration_days=execution.get("metrics", {}).get("simulation_days", 0),
-        )
+        mission_wave_reliability = []
+        period_outcome = {}
+        if not model.disable_visualization_frames:
+            mission_wave_reliability = self._aircraft_support_v1_sample_mission_wave_reliability(model.missions)
+            period_outcome = mission_period_outcome(
+                model.missions,
+                duration_days=execution.get("metrics", {}).get("simulation_days", 0),
+            )
         sweep = {
             "failure_rate": point["failure_rate"],
             "spare_multiplier": point["spare_multiplier"],
             "support_capacity": point["support_capacity"],
         }
         frames = []
-        max_frames = max(1, int(steps)) if steps > 0 else 1
-        for sample_step, frame in enumerate(execution["frames"][:max_frames]):
-            item = copy.deepcopy(frame)
-            item["sample_index"] = sample_index
-            item["sample_step"] = sample_step
-            item["seed"] = point["seed"]
-            item["sweep"] = copy.deepcopy(sweep)
-            frames.append(item)
-        if not frames:
-            item = model.visualization_frame(run_id="", step=0)
-            item["sample_index"] = sample_index
-            item["sample_step"] = 0
-            item["seed"] = point["seed"]
-            item["sweep"] = copy.deepcopy(sweep)
-            frames.append(item)
-        return {
+        if not model.disable_visualization_frames:
+            max_frames = max(1, int(steps)) if steps > 0 else 1
+            for sample_step, frame in enumerate(execution["frames"][:max_frames]):
+                item = copy.deepcopy(frame)
+                item["sample_index"] = sample_index
+                item["sample_step"] = sample_step
+                item["seed"] = point["seed"]
+                item["sweep"] = copy.deepcopy(sweep)
+                frames.append(item)
+            if not frames:
+                item = model.visualization_frame(run_id="", step=0)
+                item["sample_index"] = sample_index
+                item["sample_step"] = 0
+                item["seed"] = point["seed"]
+                item["sweep"] = copy.deepcopy(sweep)
+                frames.append(item)
+        sample = {
             "sample_index": sample_index,
             "seed": point["seed"],
             "sweep": sweep,
@@ -3559,6 +3602,23 @@ class SimulationAdapter:
             "organization_graph_identity": copy.deepcopy(execution["organization_graph_identity"]),
             "organization_dispatch_summary": copy.deepcopy(execution["organization_dispatch_summary"]),
         }
+        if model.disable_visualization_frames:
+            sample.update({
+                "rng_requests": [],
+                "stop_reason": execution["metrics"].get("stop_reason"),
+                "terminal_state": self._json_safe_core_state({
+                "aircraft": [asdict(item) for item in model.aircraft],
+                "missions": [asdict(item) for item in model.missions],
+                "jobs": [asdict(item) for item in model.jobs],
+                "nodes": copy.deepcopy(model.nodes),
+                "shipments": [asdict(item) for item in model.transport_shipments],
+                "transits": [asdict(item) for item in model.resource_transits],
+                "rng": model.rng.getstate(),
+                "steps": model.steps,
+                }),
+                "time": execution["metrics"].get("elapsed_minutes"),
+            })
+        return sample
 
     def _apply_aircraft_support_v1_failure_multiplier(self, inputs: dict[str, Any], multiplier: float) -> None:
         for component in inputs.get("equipment_tree", {}).get("components", []):
