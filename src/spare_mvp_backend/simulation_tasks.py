@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import logging
+import math
 import threading
 import time
 from typing import Any, Callable, Protocol
@@ -16,6 +18,9 @@ from src.spare_mvp_backend.errors import BackendApiError
 
 
 TERMINAL_RETENTION_SECONDS = 30 * 60
+DEFAULT_SIMULATION_TASK_KIND = "lite_mesa_analysis"
+DEFAULT_MODEL_FAMILY = "aircraft_support_v1"
+LOGGER = logging.getLogger(__name__)
 
 
 class SimulationEngine(Protocol):
@@ -96,7 +101,7 @@ class SimulationTaskService:
         self._active_task_id: str | None = None
 
     def submit(self, owner_user_id: str, request: dict[str, Any]) -> dict[str, Any]:
-        frozen_request = copy.deepcopy(request)
+        frozen_request = normalize_simulation_task_request(request)
         fingerprint = simulation_task_input_fingerprint(frozen_request)
         with self._condition:
             self._purge_expired_locked()
@@ -168,6 +173,8 @@ class SimulationTaskService:
                 task = self._owned_task_locked(owner_user_id, task_id)
                 if task.status != "running":
                     if task.status == "failed":
+                        if task.result is not None:
+                            return copy.deepcopy(task.result)
                         error = task.error or {}
                         raise BackendApiError(
                             str(error.get("code") or "simulation_task_failed"),
@@ -190,7 +197,12 @@ class SimulationTaskService:
                 task = self._tasks.get(task_id)
                 if task is None or task.status != "running":
                     return
-                task.progress = _normalize_progress(progress, task.progress)
+                if not isinstance(progress, dict):
+                    return
+                normalized = _normalize_progress(progress, task.progress)
+                if normalized is None:
+                    return
+                task.progress = normalized
                 self._condition.notify_all()
 
         with self._condition:
@@ -198,7 +210,11 @@ class SimulationTaskService:
             request = copy.deepcopy(task.request)
         try:
             result = self._runner.run(request, report)
+            if not isinstance(result, dict):
+                raise TypeError("SimulationEngine.run must return a dictionary")
         except Exception as exc:  # noqa: BLE001 - async boundary must retain failure state.
+            if not isinstance(exc, BackendApiError):
+                LOGGER.exception("Unhandled simulation task failure for %s", task_id)
             error = _structured_failure(exc)
             with self._condition:
                 task = self._tasks[task_id]
@@ -206,7 +222,21 @@ class SimulationTaskService:
             return
         with self._condition:
             task = self._tasks[task_id]
-            self._finish_locked(task, status="completed", result=copy.deepcopy(result))
+            frozen_result = copy.deepcopy(result)
+            if frozen_result.get("status") == "blocked":
+                message = str(frozen_result.get("message") or "仿真任务无法完成。")
+                self._finish_locked(
+                    task,
+                    status="failed",
+                    result=frozen_result,
+                    error={
+                        "code": "simulation_task_blocked",
+                        "message": message,
+                        "details": {},
+                    },
+                )
+            else:
+                self._finish_locked(task, status="completed", result=frozen_result)
 
     def _finish_locked(
         self,
@@ -280,20 +310,41 @@ class SimulationTaskService:
 
 
 def simulation_task_input_fingerprint(request: dict[str, Any]) -> str:
-    canonical = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    normalized = normalize_simulation_task_request(request)
+    canonical = json.dumps(
+        normalized,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _initial_progress(request: dict[str, Any]) -> dict[str, Any]:
-    settings = request.get("settings") if isinstance(request.get("settings"), dict) else {}
-    try:
-        total = max(0, int(settings.get("samples") or 0))
-    except (TypeError, ValueError):
-        total = 0
+def normalize_simulation_task_request(request: dict[str, Any]) -> dict[str, Any]:
+    """Canonicalize aliases/defaults while retaining all execution-affecting fields."""
+    normalized = copy.deepcopy(request)
+    normalized["kind"] = str(normalized.get("kind") or DEFAULT_SIMULATION_TASK_KIND).strip()
+    analysis_type = normalized.get("analysis_type", normalized.get("analysisType", ""))
+    normalized["analysis_type"] = str(analysis_type or "").strip()
+    normalized.pop("analysisType", None)
+
+    project = normalized.get("project")
+    if not isinstance(project, dict) and isinstance(normalized.get("projectJson"), dict):
+        normalized["project"] = copy.deepcopy(normalized["projectJson"])
+    normalized.pop("projectJson", None)
+
+    normalized["model_family"] = str(normalized.get("model_family") or DEFAULT_MODEL_FAMILY).strip()
+    if not isinstance(normalized.get("settings"), dict):
+        normalized["settings"] = {}
+    return normalized
+
+
+def _initial_progress(_request: dict[str, Any]) -> dict[str, Any]:
     return {
         "stage": "running",
         "processed": 0,
-        "total": total,
+        "total": 0,
         "succeeded": 0,
         "failed": 0,
         "elapsed_seconds": 0.0,
@@ -301,18 +352,49 @@ def _initial_progress(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_progress(progress: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any]:
+def _normalize_progress(progress: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any] | None:
     normalized = copy.deepcopy(previous)
-    for key in ("stage", "processed", "total", "succeeded", "failed", "elapsed_seconds", "eta_seconds"):
+    for key in ("processed", "total", "succeeded", "failed"):
         if key in progress:
-            normalized[key] = copy.deepcopy(progress[key])
+            value = progress[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                return None
+            normalized[key] = value
+    for key in ("processed", "total", "succeeded", "failed"):
+        if int(normalized.get(key) or 0) < int(previous.get(key) or 0):
+            return None
+    processed = int(normalized.get("processed") or 0)
+    total = int(normalized.get("total") or 0)
+    succeeded = int(normalized.get("succeeded") or 0)
+    failed = int(normalized.get("failed") or 0)
+    if processed != succeeded + failed or processed > total:
+        return None
+
+    if "elapsed_seconds" in progress:
+        elapsed = progress["elapsed_seconds"]
+        if isinstance(elapsed, bool) or not isinstance(elapsed, (int, float)) or not math.isfinite(elapsed):
+            return None
+        if elapsed < float(previous.get("elapsed_seconds") or 0.0):
+            return None
+        normalized["elapsed_seconds"] = float(elapsed)
+    if "eta_seconds" in progress:
+        eta = progress["eta_seconds"]
+        if eta is not None and (
+            isinstance(eta, bool)
+            or not isinstance(eta, (int, float))
+            or not math.isfinite(eta)
+            or eta < 0
+        ):
+            return None
+        normalized["eta_seconds"] = None if eta is None else float(eta)
+    normalized["stage"] = "running"
     return normalized
 
 
 def _structured_failure(exc: Exception) -> dict[str, Any]:
     if isinstance(exc, BackendApiError):
         return {"code": exc.code, "message": str(exc), "details": copy.deepcopy(exc.details)}
-    return {"code": "simulation_task_failed", "message": str(exc), "details": {}}
+    return {"code": "simulation_task_failed", "message": "仿真任务执行失败。", "details": {}}
 
 
 def _iso(value: datetime | None) -> str | None:
