@@ -14,13 +14,15 @@ export function createSimulationTaskController({
   }
 
   const activeMonitors = new Map();
+  const volatileTaskIds = new Map();
 
   return {
     taskId(scope) {
-      return readTaskMap(storage, storageKey)[scope] || "";
+      return volatileTaskIds.get(scope) || readTaskMap(storage, storageKey)[scope] || "";
     },
 
     clear(scope) {
+      volatileTaskIds.delete(scope);
       updateTaskMap(storage, storageKey, (tasks) => {
         delete tasks[scope];
       });
@@ -44,6 +46,7 @@ export function createSimulationTaskController({
         throw normalizeTaskRequestError(error);
       }
       if (!submitted.taskId) throw new Error("后端未返回 task_id");
+      volatileTaskIds.set(scope, submitted.taskId);
       persistTaskId(storage, storageKey, scope, submitted.taskId);
       options.onStatus?.(submitted);
       return monitor(scope, submitted.taskId, options);
@@ -114,6 +117,7 @@ export function createSimulationTaskController({
       } catch (error) {
         const normalized = normalizeTaskRequestError(error);
         if (normalized.code === "simulation_task_not_found") {
+          volatileTaskIds.delete(scope);
           updateTaskMap(storage, storageKey, (tasks) => { delete tasks[scope]; });
           const unavailable = unavailableTaskStatus(taskId);
           options.onStatus?.(unavailable);
@@ -121,16 +125,35 @@ export function createSimulationTaskController({
         }
         throw normalized;
       }
-      options.onStatus?.(status);
-      if (status.status === "completed") {
+      if (TERMINAL_STATUSES.has(status.status)) {
+        options.onStatus?.({
+          ...status,
+          status: "running",
+          stage: "fetching_result",
+          message: "正在读取任务结果"
+        });
         try {
           const response = await api.getSimulationTaskResult(taskId);
-          return { ...status, result: response?.result ?? response };
+          const responseError = response?.result_error || response?.error || null;
+          return {
+            ...status,
+            result: response?.result ?? (response?.status ? null : response),
+            error: responseError || status.error,
+            message: String(response?.message || responseError?.message || status.message || "")
+          };
         } catch (error) {
+          if (status.status === "failed") {
+            const normalized = normalizeTaskRequestError(error);
+            return {
+              ...status,
+              error: status.error || { code: normalized?.code || "", message: normalized?.message || "运行错误" },
+              message: status.message || normalized?.message || "运行错误"
+            };
+          }
           throw normalizeTaskRequestError(error);
         }
       }
-      if (status.status === "failed") return status;
+      options.onStatus?.(status);
       await delay(pollIntervalMs);
     }
   }
@@ -164,6 +187,7 @@ export function simulationTaskProgressText(task) {
   if (!task) return "";
   if (task.code === "simulation_task_not_found") return "任务已中断，请重新运行。";
   if (task.status === "failed") return `运行失败：${task.message || "后端未返回错误详情"}`;
+  if (task.stage === "fetching_result") return "计算已结束，正在读取任务结果…";
   const counts = task.total > 0
     ? `已处理 ${task.processed}/${task.total}，成功 ${task.succeeded}，失败 ${task.failed}`
     : "运行中";
@@ -173,8 +197,24 @@ export function simulationTaskProgressText(task) {
   return `${counts}，${elapsed}${eta}`;
 }
 
-export function simulationTaskScope(pageId, contextFingerprint) {
-  return `${String(pageId || "unknown")}::${String(contextFingerprint || "current")}`;
+export function simulationTaskScope({ userId, pageId, contextKind, contextId, contextFingerprint } = {}) {
+  const compactFingerprint = compactTaskScopeHash(contextFingerprint || "current");
+  return [
+    "user", scopePart(userId || "anonymous"),
+    "page", scopePart(pageId || "unknown"),
+    "context", scopePart(contextKind || "current_project"), scopePart(contextId || "current"),
+    "hash", compactFingerprint
+  ].join(":");
+}
+
+export function compactTaskScopeHash(value) {
+  const input = String(value || "");
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function unavailableTaskStatus(taskId) {
@@ -209,7 +249,18 @@ function updateTaskMap(storage, storageKey, update) {
   if (!storage) return;
   const tasks = readTaskMap(storage, storageKey);
   update(tasks);
-  storage.setItem(storageKey, JSON.stringify(tasks));
+  try {
+    const serialized = JSON.stringify(tasks);
+    if (Object.keys(tasks).length) storage.setItem(storageKey, serialized);
+    else storage.removeItem?.(storageKey);
+  } catch {
+    // Storage is only a refresh aid. A submitted task must keep polling even
+    // when the browser blocks sessionStorage or its quota is exhausted.
+  }
+}
+
+function scopePart(value) {
+  return encodeURIComponent(String(value || ""));
 }
 
 function count(value) {

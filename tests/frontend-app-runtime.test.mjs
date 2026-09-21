@@ -2358,6 +2358,27 @@ test("configurable result analysis pages omit Mesa from visible copy", async () 
   }
 });
 
+test("analysis stays active while the completed task result is loading", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-carry-list-analysis",
+    liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    const pendingRun = runtime.click("[data-lite-mesa-analysis-action='run']");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run" disabled/);
+    assert.match(runtime.appNode.innerHTML, /正在读取任务结果/);
+    assert.equal(runtime.requests.filter((request) => request.url === "/api/simulation-tasks").length, 1);
+    await pendingRun;
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run" disabled/);
+    assert.match(runtime.appNode.innerHTML, /分析结果已生成/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("aircraft mission reliability page runs explicitly and exports retained summaries as XLSX without node details", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-aircraft-mission-reliability",

@@ -724,6 +724,7 @@ let liteMesaMonteCarloSettings = { ...DEFAULT_CURRENT_MONTE_CARLO_SETTINGS };
 let liteMesaMonteCarloResult = null;
 let liteMesaMonteCarloStatus = "等待运行分析。";
 let liteMesaMonteCarloRequestEpoch = 0;
+let liteMesaMonteCarloTaskStatus = null;
 const DEFAULT_LITE_MESA_ANALYSIS_SAMPLES = 4;
 const DEFAULT_LITE_MESA_ANALYSIS_PARALLEL_CORES = 4;
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
@@ -1757,6 +1758,7 @@ function bindEvents() {
       invalidateVisualizationSession("已退出可视化推演。", { keepalive: true });
       isLoggedIn = false;
       backendAuthToken = "";
+      resetSimulationTaskUiSession();
       localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
       selectedRoute = DEFAULT_ROUTE;
       location.hash = "route=login";
@@ -13247,6 +13249,7 @@ async function handleLogin() {
       username: session.user.username,
       role: session.user.role
     };
+    resetSimulationTaskUiSession();
     backendApiStatus = "M4 会话已建立";
     await hydrateProjectCatalogFromBackend();
   } catch (err) {
@@ -13257,6 +13260,7 @@ async function handleLogin() {
     backendAuthToken = "";
     localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
     currentUser = DEMO_USERS.find((user) => user.username === username) || DEMO_USERS[2];
+    resetSimulationTaskUiSession();
     backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
   isLoggedIn = true;
@@ -13274,6 +13278,7 @@ async function restoreStoredBackendSessionOnBoot() {
       username: user.username || currentUser.username,
       role: user.role || currentUser.role
     };
+    resetSimulationTaskUiSession();
     isLoggedIn = true;
     if (selectedRoute === DEFAULT_ROUTE) {
       selectedRoute = "projects";
@@ -18927,7 +18932,35 @@ function m7RunArtifactRows() {
 }
 
 function simulationTaskScopeForPage(page) {
-  return simulationTaskScope(page.id, selectedRunContextRequestFingerprint());
+  const context = selectedExperimentPlanContext();
+  const contextId = context?.kind === "experiment-plan"
+    ? String(context?.plan?.experiment_plan_id || context?.key || "").trim()
+    : String(currentBackendProjectId() || currentProject?.id || context?.key || "").trim();
+  return simulationTaskScope({
+    userId: currentUser?.user_id || currentUser?.username || "anonymous",
+    pageId: page.id,
+    contextKind: context?.kind || "current-project",
+    contextId,
+    contextFingerprint: selectedRunContextRequestFingerprint()
+  });
+}
+
+function resetSimulationTaskUiSession() {
+  liteMesaMonteCarloRequestEpoch += 1;
+  liteMesaAnalysisRequestEpoch += 1;
+  simulationTaskRestoreAttempts.clear();
+}
+
+function nextSimulationTaskRequestEpoch(page) {
+  if (page.component === "lite-mesa-monte-carlo-analysis") return ++liteMesaMonteCarloRequestEpoch;
+  return ++liteMesaAnalysisRequestEpoch;
+}
+
+function simulationTaskRequestIsCurrent(page, scope, requestEpoch) {
+  const epoch = page.component === "lite-mesa-monte-carlo-analysis"
+    ? liteMesaMonteCarloRequestEpoch
+    : liteMesaAnalysisRequestEpoch;
+  return requestEpoch === epoch && simulationTaskScopeForPage(page) === scope;
 }
 
 function simulationTaskPayload(analysisType, settings) {
@@ -18953,29 +18986,31 @@ function queueSimulationTaskRestore(page) {
   const scope = simulationTaskScopeForPage(page);
   if (!simulationTaskController.taskId(scope) || simulationTaskRestoreAttempts.has(scope)) return;
   simulationTaskRestoreAttempts.add(scope);
+  const requestEpoch = nextSimulationTaskRequestEpoch(page);
   queueMicrotask(async () => {
     try {
       const outcome = await simulationTaskController.resume(scope, {
-        onStatus: (status) => applyRemoteSimulationTaskStatusForScope(page, scope, status)
+        onStatus: (status) => applyRemoteSimulationTaskStatusForScope(page, scope, requestEpoch, status)
       });
-      if (outcome && simulationTaskScopeForPage(page) === scope) {
+      if (outcome && simulationTaskRequestIsCurrent(page, scope, requestEpoch)) {
         acceptRemoteSimulationTaskOutcome(page, outcome, captureAnalysisSourceIdentity());
       }
     } catch (err) {
-      if (simulationTaskScopeForPage(page) === scope) applyRemoteSimulationTaskError(page, err);
+      if (simulationTaskRequestIsCurrent(page, scope, requestEpoch)) applyRemoteSimulationTaskError(page, err);
     } finally {
-      if (simulationTaskScopeForPage(page) === scope) render();
+      if (simulationTaskRequestIsCurrent(page, scope, requestEpoch)) render();
     }
   });
 }
 
-function applyRemoteSimulationTaskStatusForScope(page, scope, task) {
-  if (simulationTaskScopeForPage(page) !== scope) return;
+function applyRemoteSimulationTaskStatusForScope(page, scope, requestEpoch, task) {
+  if (!simulationTaskRequestIsCurrent(page, scope, requestEpoch)) return;
   applyRemoteSimulationTaskStatus(page, task);
 }
 
 function applyRemoteSimulationTaskStatus(page, task) {
   if (page.component === "lite-mesa-monte-carlo-analysis") {
+    liteMesaMonteCarloTaskStatus = task;
     liteMesaMonteCarloStatus = simulationTaskProgressText(task);
   } else {
     const definition = liteMesaAnalysisDefinitionForPage(page);
@@ -18998,11 +19033,12 @@ function applyRemoteSimulationTaskStatus(page, task) {
 
 function acceptRemoteSimulationTaskOutcome(page, outcome, analysisSource) {
   if (!outcome) return;
-  if (outcome.status !== "completed" || !outcome.result) {
+  if (!outcome.result) {
     applyRemoteSimulationTaskStatus(page, outcome);
     return;
   }
   if (page.component === "lite-mesa-monte-carlo-analysis") {
+    liteMesaMonteCarloTaskStatus = outcome;
     liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(outcome.result);
     const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
     liteMesaMonteCarloStatus = liteMesaMonteCarloResult.status === "blocked"
@@ -19033,6 +19069,7 @@ function applyRemoteSimulationTaskError(page, err) {
     ? "已有仿真任务正在运行，请等待当前任务完成后重试。"
     : `分析失败：${formatBackendError(err)}`;
   if (page.component === "lite-mesa-monte-carlo-analysis") {
+    liteMesaMonteCarloTaskStatus = null;
     liteMesaMonteCarloResult = null;
     liteMesaMonteCarloStatus = message;
     return;
@@ -19066,6 +19103,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
   const displayedSettings = settingsError ? liteMesaMonteCarloSettings : runSettings;
   const readonly = frozenPlan ? "readonly" : "";
   const sampleRows = liteMesaMonteCarloSampleRows(result);
+  const taskRunning = liteMesaMonteCarloTaskStatus?.status === "running";
   return `
     <div class="lite-mesa-workbench">
       <section class="lite-mesa-hero">
@@ -19087,7 +19125,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
           <label>随机种子<input data-lite-mesa-field="seed" type="number" min="0" step="1" value="${htmlEscape(displayedSettings.seed ?? "")}" ${readonly}></label>
           ${frozenPlan ? `<p class="inline-status">冻结方案参数只读</p>` : ""}
           ${settingsError ? `<p class="inline-status error">${htmlEscape(settingsError)}</p>` : ""}
-          <button type="button" class="btn-primary" data-lite-mesa-action="run" ${settingsError ? "disabled" : ""}>运行分析</button>
+          <button type="button" class="btn-primary" data-lite-mesa-action="run" ${settingsError ? "disabled" : taskRunning ? "disabled" : ""}>运行分析</button>
           <p class="inline-status">${htmlEscape(liteMesaMonteCarloStatus)}</p>
         </section>
         <section class="lite-mesa-results">
@@ -19184,6 +19222,7 @@ function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
   const parallelCores = experiment.parallelCores ?? 1;
   liteMesaMonteCarloSettings = { samples, seed, parallelCores };
   liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloTaskStatus = null;
   liteMesaMonteCarloStatus = "已载入蒙特卡洛实验设置，等待运行 Mesa 分析。";
 }
 
@@ -19233,6 +19272,7 @@ async function runLiteMesaMonteCarloAnalysis() {
   }
   liteMesaMonteCarloSettings = { samples, seed, parallelCores };
   liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloTaskStatus = { status: "running", stage: "submitting" };
   liteMesaMonteCarloStatus = `正在运行 Mesa 分析（样本 ${samples}，Base seed ${seed}，并行核心 ${parallelCores}）`;
   const page = getFeaturePageById(selectedFeatureId);
   const scope = simulationTaskScopeForPage(page);
@@ -19241,19 +19281,21 @@ async function runLiteMesaMonteCarloAnalysis() {
     const outcome = await simulationTaskController.start(
       scope,
       simulationTaskPayload("mission_reliability", { samples, seed, parallelCores }),
-      { onStatus: (status) => applyRemoteSimulationTaskStatusForScope(page, scope, status) }
+      { onStatus: (status) => applyRemoteSimulationTaskStatusForScope(page, scope, requestEpoch, status) }
     );
     if (
       requestEpoch !== liteMesaMonteCarloRequestEpoch
+      || !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
     acceptRemoteSimulationTaskOutcome(page, outcome, captureAnalysisSourceIdentity());
   } catch (err) {
     if (
       requestEpoch !== liteMesaMonteCarloRequestEpoch
+      || !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
-    if (simulationTaskScopeForPage(page) === scope) applyRemoteSimulationTaskError(page, err);
+    if (simulationTaskRequestIsCurrent(page, scope, requestEpoch)) applyRemoteSimulationTaskError(page, err);
   }
 }
 
@@ -19306,7 +19348,8 @@ function normalizeLiteMesaMonteCarloResult(payload) {
       workerCount: Number(payload?.worker_count || 0),
       sampleDiagnostics: Array.isArray(payload?.sample_diagnostics) ? payload.sample_diagnostics : [],
       timings: payload?.timings || {},
-      message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
+      issues: Array.isArray(payload?.issues) ? payload.issues : [],
+      message: simulationBlockedResultMessage(payload)
     };
   }
   const runs = Array.isArray(payload.samples) ? payload.samples : [];
@@ -19336,6 +19379,13 @@ function normalizeLiteMesaMonteCarloResult(payload) {
     timings: payload.timings || {},
     message: payload.message || ""
   };
+}
+
+function simulationBlockedResultMessage(payload, fallback = "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。") {
+  const issueMessages = (Array.isArray(payload?.issues) ? payload.issues : [])
+    .map((issue) => String(issue?.message || issue?.detail || issue || "").trim())
+    .filter(Boolean);
+  return [String(payload?.message || "").trim(), ...issueMessages].filter(Boolean).join("；") || fallback;
 }
 
 function liteMesaBusinessMetricRows(result) {
@@ -20241,9 +20291,10 @@ function updateAircraftMissionReliabilityInput(field, value) {
 
 async function handleAircraftMissionReliabilityAction(action) {
   if (action === "run") {
+    const page = getFeaturePageById(selectedFeatureId);
     setAnalysisXlsxState(getFeaturePageById(selectedFeatureId), "idle", "");
     const outcome = await simulationTaskController.runInline(
-      simulationTaskScope(selectedFeatureId, selectedRunContextRequestFingerprint()),
+      simulationTaskScopeForPage(page),
       () => calculateAircraftMissionReliability(
         aircraftMissionReliabilityContextProjectJson(),
         captureAnalysisSourceIdentity()
@@ -20257,6 +20308,9 @@ async function handleAircraftMissionReliabilityAction(action) {
     );
     const result = outcome.result;
     aircraftMissionReliabilityState.result = result?.ok ? result : null;
+    if (outcome.status === "failed") {
+      aircraftMissionReliabilityState.status = simulationTaskProgressText(outcome);
+    }
   }
 }
 
@@ -20685,7 +20739,7 @@ function renderLiteMesaAnalysisPage(page) {
         </div>
         ${renderLiteMesaAnalysisSettings(definition, settings, result)}
         <div class="lite-mesa-analysis-action-line">
-          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run"${result?.taskProgress?.status === "running" ? " disabled" : ""}>运行分析</button>
           <p class="inline-status">${htmlEscape(statusText)}</p>
         </div>
       </section>
@@ -20715,7 +20769,7 @@ function renderSpareShortfallAnalysisPage(page, definition, result) {
         <div class="section-head"><h3>分析设定</h3></div>
         ${renderLiteMesaAnalysisSettings(definition, settings, result)}
         <div class="lite-mesa-analysis-action-line">
-          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run"${result?.taskProgress?.status === "running" ? " disabled" : ""}>运行分析</button>
           <p class="inline-status">${htmlEscape(statusText)}</p>
         </div>
       </section>
@@ -20745,7 +20799,7 @@ function renderCarryListAnalysisPage(page, definition, result) {
         <div class="section-head"><h3>分析设定</h3></div>
         ${renderLiteMesaAnalysisSettings(definition, settings, result)}
         <div class="lite-mesa-analysis-action-line">
-          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run"${result?.taskProgress?.status === "running" ? " disabled" : ""}>运行分析</button>
           <p class="inline-status">${htmlEscape(statusText)}</p>
         </div>
       </section>
@@ -20783,7 +20837,7 @@ function renderDowntimeFactorAnalysisPage(page, definition, settings, result) {
         </div>
         ${renderLiteMesaAnalysisSettings(definition, settings, result)}
         <div class="lite-mesa-analysis-action-line">
-          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run"${result?.taskProgress?.status === "running" ? " disabled" : ""}>运行分析</button>
           <p class="inline-status">${htmlEscape(statusText)}</p>
         </div>
       </section>
@@ -20933,7 +20987,7 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
 }
 
 async function runLiteMesaAnalysisPage(page) {
-  liteMesaAnalysisRequestEpoch += 1;
+  const requestEpoch = ++liteMesaAnalysisRequestEpoch;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();
   const definition = liteMesaAnalysisDefinitionForPage(page);
@@ -20959,27 +21013,32 @@ async function runLiteMesaAnalysisPage(page) {
     [definition.analysisType]: {
       status: "running",
       message: "分析运行中",
+      taskProgress: { status: "running", stage: "submitting" },
       sampleCount: 0,
       metrics: definition.metricLabels.map((label) => [label, "运行中"]),
       rows: [],
       limitations: []
     }
   };
+  const scope = simulationTaskScopeForPage(page);
   try {
-    const scope = simulationTaskScopeForPage(page);
     simulationTaskRestoreAttempts.add(scope);
     const outcome = await simulationTaskController.start(
       scope,
       simulationTaskPayload(definition.analysisType, normalizedSettings),
-      { onStatus: (status) => applyRemoteSimulationTaskStatusForScope(page, scope, status) }
+      { onStatus: (status) => applyRemoteSimulationTaskStatusForScope(page, scope, requestEpoch, status) }
     );
     if (
-      !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+      requestEpoch !== liteMesaAnalysisRequestEpoch
+      || !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
     acceptRemoteSimulationTaskOutcome(page, outcome, analysisSource);
   } catch (err) {
     if (
-      !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
+      requestEpoch !== liteMesaAnalysisRequestEpoch
+      || !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
+      || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
     applyRemoteSimulationTaskError(page, err);
   }
@@ -21128,7 +21187,8 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
       eventDetails: Array.isArray(payload?.event_details) ? payload.event_details : [],
       eventDetailsComplete: Array.isArray(payload?.event_details),
       limitations: Array.isArray(payload?.limitations) ? payload.limitations : [],
-      message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
+      issues: Array.isArray(payload?.issues) ? payload.issues : [],
+      message: simulationBlockedResultMessage(payload)
     };
   }
   const waveRows = Array.isArray(payload.wave_rows)

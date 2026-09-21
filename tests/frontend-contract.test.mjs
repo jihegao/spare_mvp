@@ -831,7 +831,7 @@ test("results analysis pages route to independent Mesa session wrappers", async 
   assert.match(appSource, /function renderLiteMesaAnalysisPage/);
   assert.match(appSource, /function runLiteMesaAnalysisPage/);
   assert.match(appSource, /let liteMesaAnalysisResults =/);
-  assert.match(appSource, /data-lite-mesa-analysis-action="run">运行分析/);
+  assert.match(appSource, /data-lite-mesa-analysis-action="run"[^>]*>运行分析/);
   assert.match(appSource, /simulationTaskController\.start/);
   assert.match(appSource, /simulationTaskController\.resume/);
   assert.match(appSource, /session_complete/);
@@ -849,6 +849,35 @@ test("results analysis pages route to independent Mesa session wrappers", async 
   assert.doesNotMatch(appSource, /\["用户参数"/);
   assert.doesNotMatch(wrapperSource, /创建正式 run、result 与 artifact|正式 current-analysis|runFormalAnalysisPage/);
   assert.doesNotMatch(appSource, /await runCurrentAnalysisPage\(page\)/);
+});
+
+test("simulation task recovery is user-scoped and rejects stale result responses", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const scopeSource = appSource.slice(
+    appSource.indexOf("function simulationTaskScopeForPage"),
+    appSource.indexOf("function simulationTaskPayload")
+  );
+  const analysisRunSource = appSource.slice(
+    appSource.indexOf("async function runLiteMesaAnalysisPage"),
+    appSource.indexOf("function nonnegativeFiniteAnalysisNumber")
+  );
+  const aircraftRunSource = appSource.slice(
+    appSource.indexOf("async function handleAircraftMissionReliabilityAction"),
+    appSource.indexOf("function analysisXlsxState")
+  );
+
+  assert.match(scopeSource, /userId: currentUser\?\.user_id \|\| currentUser\?\.username/);
+  assert.match(scopeSource, /contextId/);
+  assert.match(scopeSource, /contextFingerprint: selectedRunContextRequestFingerprint\(\)/);
+  assert.match(scopeSource, /simulationTaskRestoreAttempts\.clear\(\)/);
+  assert.match(analysisRunSource, /const requestEpoch = \+\+liteMesaAnalysisRequestEpoch/);
+  assert.match(analysisRunSource, /applyRemoteSimulationTaskStatusForScope\(page, scope, requestEpoch, status\)/);
+  assert.match(analysisRunSource, /simulationTaskRequestIsCurrent\(page, scope, requestEpoch\)/);
+  assert.match(analysisRunSource, /taskProgress: \{ status: "running", stage: "submitting" \}/);
+  assert.match(aircraftRunSource, /outcome\.status === "failed"/);
+  assert.match(aircraftRunSource, /simulationTaskProgressText\(outcome\)/);
+  assert.match(appSource, /simulationBlockedResultMessage\(payload\)/);
+  assert.match(appSource, /issue\?\.message \|\| issue\?\.detail/);
 });
 
 test("independent Mesa wrapper pages keep formal projection UI isolated", async () => {
@@ -887,7 +916,7 @@ test("spare shortfall page restores context and settings and sorts product rows 
   assert.match(pageSource, /lite-mesa-hero/);
   assert.match(pageSource, /<h3>\$\{htmlEscape\(definition\.title\)\}<\/h3>/);
   assert.match(pageSource, /renderExperimentPlanContextDropdown\(page\)/);
-  assert.match(pageSource, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
+  assert.match(pageSource, /data-lite-mesa-analysis-action="run"[^>]*>运行分析<\/button>/);
   assert.match(pageSource, /lite-mesa-analysis-settings|renderLiteMesaAnalysisSettings/);
   assert.match(sessionSource, /data-spare-aircraft-filter/);
   assert.match(sessionSource, /renderSpareShortfallSortHeading\("需求数量", "demand"\)/);
@@ -2888,7 +2917,7 @@ test("monte carlo detail embeds editable current settings and frozen read-only s
   assert.match(detailSource, /data-lite-mesa-field="parallelCores"/);
   assert.match(detailSource, /data-lite-mesa-field="seed"/);
   assert.match(detailSource, /const readonly = frozenPlan \? "readonly" : ""/);
-  assert.match(detailSource, /settingsError \? "disabled" : ""/);
+  assert.match(detailSource, /settingsError \? "disabled" : taskRunning \? "disabled" : ""/);
 });
 
 test("browser smoke enters monte carlo embedded Mesa detail", async () => {
