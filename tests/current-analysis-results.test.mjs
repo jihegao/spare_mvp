@@ -6,6 +6,7 @@ import {
   createDefaultCurrentAnalysisProfiles,
   createEmptyCurrentAnalysisResults,
   formalProjectionFromCurrentResult,
+  normalizeBackendCurrentAnalysisResult,
   transitionCurrentAnalysisResult
 } from "../front/current-analysis-results.mjs";
 
@@ -14,6 +15,17 @@ const payload = (analysisType, runId = "run-current-1") => ({
   run_id: runId,
   model_family: "aircraft_support_v1",
   data: []
+});
+
+test("analysis_status=not_generated is preserved without synthesizing a result", () => {
+  const result = normalizeBackendCurrentAnalysisResult("carry_list", {
+    analysis_status: "not_generated",
+    source: "formal_backend",
+    last_success_result: null
+  });
+  assert.equal(result.status, "not_generated");
+  assert.equal(result.last_success_result, null);
+  assert.equal(formalProjectionFromCurrentResult(result), null);
 });
 
 test("current analysis results move through empty configured running completed stale failed blocked and preview states", () => {

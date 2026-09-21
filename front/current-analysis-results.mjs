@@ -183,10 +183,12 @@ export function transitionCurrentAnalysisResult(results, analysisType, event = {
 }
 
 export function normalizeBackendCurrentAnalysisResult(analysisType, raw = {}) {
+  const rawStatus = String(raw?.status || raw?.analysis_status || "").trim();
   const current = {
     ...createEmptyCurrentAnalysisResult(analysisType, raw),
     ...cloneJson(raw),
-    analysis_type: analysisType
+    analysis_type: analysisType,
+    ...(rawStatus ? { status: rawStatus } : {})
   };
   const success = current.last_success_result;
   if (!success?.payload) return current;

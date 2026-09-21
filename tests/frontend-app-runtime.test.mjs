@@ -7005,6 +7005,28 @@ test("experiment plan add opens an editable plan branch", async () => {
   }
 });
 
+test("experiment plan editor locks Rust event-time output to core and persists both fields", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-management" });
+  try {
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+    await runtime.change("[data-experiment-monte-carlo-backend]", {}, { value: "rust_event_time_v2" });
+    assert.match(runtime.appNode.innerHTML, /仅核心 Monte Carlo 结果，不生成分析模块结果/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-monte-carlo-output-scope[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /value="core" selected/);
+    await runtime.click("[data-save-plan]");
+    const createPlanRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(createPlanRequest);
+    const body = JSON.parse(createPlanRequest.options.body || "{}");
+    assert.equal(body.config.monteCarloBackend, "rust_event_time_v2");
+    assert.equal(body.config.monteCarloOutputScope, "core");
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment plan save posts composed projectJson without mutating source project", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-management",

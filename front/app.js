@@ -19,6 +19,8 @@ import {
   buildFrontendResultState,
   createBackendApiClient,
   MAX_MONTE_CARLO_PARALLEL_CORES,
+  normalizeMonteCarloBackend,
+  normalizeMonteCarloOutputScope,
   normalizeMonteCarloParallelCores,
   normalizeProjectJsonBasicMissions,
   normalizeProjectJsonForClientDraft
@@ -2997,6 +2999,33 @@ function bindEvents() {
     if (experimentPlanInput) {
       experimentPlanBranchActive = true;
       setPath(experimentPlanDraft, experimentPlanInput.dataset.experimentPlanPath, parseInput(experimentPlanInput));
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentMonteCarloBackendSelect = event.target.closest("[data-experiment-monte-carlo-backend]");
+    if (experimentMonteCarloBackendSelect) {
+      const backend = normalizeMonteCarloBackend(experimentMonteCarloBackendSelect.value);
+      experimentPlanDraft.monteCarloBackend = backend;
+      experimentPlanDraft.monteCarloOutputScope = normalizeMonteCarloOutputScope(
+        experimentPlanDraft.monteCarloOutputScope,
+        { backend }
+      );
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentMonteCarloOutputScopeSelect = event.target.closest("[data-experiment-monte-carlo-output-scope]");
+    if (experimentMonteCarloOutputScopeSelect) {
+      const backend = normalizedExperimentPlanMonteCarloBackend();
+      experimentPlanDraft.monteCarloOutputScope = normalizeMonteCarloOutputScope(
+        experimentMonteCarloOutputScopeSelect.value,
+        { backend }
+      );
+      experimentPlanBranchActive = true;
       updatePreviewResultsThroughApiClient(experimentPlanDraft);
       render();
       return;
@@ -12760,6 +12789,8 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
   if (config.samples !== undefined) draft.experiment.samples = config.samples;
   if (config.seed !== undefined) draft.experiment.seed = config.seed;
   if (config.parallelCores !== undefined) draft.experiment.parallelCores = config.parallelCores;
+  if (config.monteCarloBackend !== undefined) draft.monteCarloBackend = config.monteCarloBackend;
+  if (config.monteCarloOutputScope !== undefined) draft.monteCarloOutputScope = config.monteCarloOutputScope;
   if (config.stopCondition !== undefined) draft.experiment.stopCondition = config.stopCondition;
   if (config.seedPolicy && typeof config.seedPolicy === "object" && !Array.isArray(config.seedPolicy)) {
     draft.seedPolicy = cloneScenario(config.seedPolicy);
@@ -12785,6 +12816,8 @@ function renderExperimentPlanEditor(page) {
   const seedPolicy = experimentPlanSeedPolicy();
   const stopPolicy = experimentPlanStopPolicy();
   const parallelCoresError = experimentPlanParallelCoresError();
+  const monteCarloBackend = normalizedExperimentPlanMonteCarloBackend();
+  const monteCarloOutputScope = normalizedExperimentPlanMonteCarloOutputScope();
   return `
     <div class="section-head">
       <h3>方案编辑</h3>
@@ -12795,7 +12828,20 @@ function renderExperimentPlanEditor(page) {
       ${experimentPlanField("实验名称", "experiment.name")}
       ${experimentPlanField("样本数", "experiment.samples", "number")}
       ${experimentPlanField("并行核心数", "experiment.parallelCores", "number", `min="1" max="${MAX_MONTE_CARLO_PARALLEL_CORES}" step="1" ${parallelCoresError ? 'aria-invalid="true"' : ""}`)}
+      <label>Monte Carlo 后端
+        <select data-experiment-monte-carlo-backend>
+          <option value="python" ${monteCarloBackend === "python" ? "selected" : ""}>Python（默认）</option>
+          <option value="rust_event_time_v2" ${monteCarloBackend === "rust_event_time_v2" ? "selected" : ""}>Rust event-time v2</option>
+        </select>
+      </label>
+      <label>Monte Carlo 输出范围
+        <select data-experiment-monte-carlo-output-scope ${monteCarloBackend === "rust_event_time_v2" ? "disabled" : ""}>
+          <option value="analysis_modules" ${monteCarloOutputScope === "analysis_modules" ? "selected" : ""}>核心结果 + 分析模块结果</option>
+          <option value="core" ${monteCarloOutputScope === "core" ? "selected" : ""}>仅核心结果</option>
+        </select>
+      </label>
     </div>
+    ${monteCarloBackend === "rust_event_time_v2" ? `<p class="inline-status">仅核心 Monte Carlo 结果，不生成分析模块结果</p>` : ""}
     ${parallelCoresError ? `<p class="inline-status error">${htmlEscape(parallelCoresError)}</p>` : ""}
     <div class="section-head sub-section-head">
       <h3>运行配置</h3>
@@ -18843,6 +18889,61 @@ function renderMonteCarloFormalBlockedState(boundary) {
   `;
 }
 
+function firstDefinedRunDetailValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== "");
+}
+
+function displayRunDetailValue(value, { numeric = false } = {}) {
+  if (value === undefined || value === null || value === "") return "未提供";
+  if (numeric && Number.isFinite(Number(value))) return String(Number(value));
+  return String(value);
+}
+
+function monteCarloRunExecutionDetails(run = {}, detail = {}) {
+  const result = detail?.result || detail?.result_summary || detail?.resultSummary || {};
+  const config = detail?.experiment_plan?.config || detail?.experimentPlan?.config || {};
+  const timings = run.timings || result.timings || detail.timings || {};
+  const requestedSamples = firstDefinedRunDetailValue(
+    run.requested_sample_count,
+    run.requestedSampleCount,
+    result.requested_sample_count,
+    result.requestedSampleCount,
+    config.samples
+  );
+  const failedSamples = firstDefinedRunDetailValue(
+    run.failed_sample_count,
+    run.failedSampleCount,
+    result.failed_sample_count,
+    result.failedSampleCount,
+    Array.isArray(result.failed_samples) ? result.failed_samples.length : undefined
+  );
+  const elapsedSeconds = firstDefinedRunDetailValue(
+    timings.total_seconds,
+    timings.totalSeconds,
+    run.elapsed_seconds,
+    run.elapsedSeconds,
+    result.elapsed_seconds,
+    result.elapsedSeconds
+  );
+  const throughput = firstDefinedRunDetailValue(
+    run.throughput,
+    run.samples_per_second,
+    result.throughput,
+    result.samples_per_second,
+    elapsedSeconds && Number(requestedSamples) > 0 ? Number(requestedSamples) / Number(elapsedSeconds) : undefined
+  );
+  return [
+    ["Monte Carlo 后端", firstDefinedRunDetailValue(run.monte_carlo_backend, run.monteCarloBackend, config.monteCarloBackend)],
+    ["输出范围", firstDefinedRunDetailValue(run.monte_carlo_output_scope, run.monteCarloOutputScope, config.monteCarloOutputScope)],
+    ["样本数", requestedSamples],
+    ["并行度", firstDefinedRunDetailValue(run.parallel_cores, run.parallelCores, result.parallel_cores, result.parallelCores, config.parallelCores)],
+    ["耗时（秒）", elapsedSeconds],
+    ["吞吐（样本/秒）", throughput],
+    ["缓存状态", firstDefinedRunDetailValue(run.cache_status, run.cacheStatus, run.cache_hit === true ? "命中" : run.cache_hit === false ? "未命中" : undefined, result.cache_status, result.cacheStatus)],
+    ["失败样本数", failedSamples]
+  ];
+}
+
 function renderM7RunArtifactPanel() {
   const run = m7RunDetail?.run || backendRun || {};
   const artifactManifestId = m7RunDetail?.artifact_manifest?.artifact_manifest_id
@@ -18876,6 +18977,10 @@ function renderM7RunArtifactPanel() {
         <button type="button" data-action="m7-open-run-detail" data-run-id="${htmlEscape(selectedRunId)}" ${selectedRunId ? "" : "disabled"}>详情</button>
         <button type="button" data-action="m7-archive-run" data-run-id="${htmlEscape(selectedRunId)}" ${selectedRunId && canManageLifecycle ? "" : "disabled"}${lifecycleDisabledReason}>归档</button>
         <button type="button" class="btn-danger" data-action="m7-delete-run" data-run-id="${htmlEscape(selectedRunId)}" ${selectedRunId && canManageLifecycle ? "" : "disabled"}${lifecycleDisabledReason}>软删除 tombstone</button>
+      </div>
+      <div class="backend-run-chain mc-run-execution-details">
+        <span>Monte Carlo 执行详情</span>
+        <table><tbody>${monteCarloRunExecutionDetails(run, m7RunDetail || {}).map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(displayRunDetailValue(value))}</td></tr>`).join("")}</tbody></table>
       </div>
       <table>
         <tbody>${runRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody>
@@ -19429,6 +19534,7 @@ function renderCurrentAnalysisResultPanel(page, title) {
 
 function currentAnalysisSourceLabel(result) {
   const status = result.status || "empty";
+  if (status === "not_generated") return "尚未生成正式结果";
   if (status === "empty") return "等待正式结果";
   if (status === "running") return "正式后端运行中";
   if (["failed", "blocked"].includes(status)) {
@@ -19445,6 +19551,7 @@ function currentAnalysisShouldShowFailure(result) {
 function currentAnalysisStatusLabel(status) {
   const labels = {
     empty: "未运行",
+    not_generated: "未生成",
     configured: "待运行",
     running: "运行中",
     completed: "已完成",
@@ -19457,6 +19564,7 @@ function currentAnalysisStatusLabel(status) {
 }
 
 function currentAnalysisStatusMessage(result) {
+  if (result.status === "not_generated") return "当前 analysis_status=not_generated：分析模块结果尚未生成，不展示零值或伪造的分析指标。";
   if (result.status === "completed") return "当前结果来自正式后端链路和精确 projection 校验。";
   if (result.status === "running") return "正在使用默认基础方案和当前页参数空间生成正式结果。";
   if (result.status === "failed") return result.last_failure?.message || "最近一次运行失败，上一条成功结果会继续保留。";
@@ -19613,7 +19721,7 @@ function formalAnalysisBoundary(page) {
     const projectionPayloadError = currentResult.last_failure?.message || "";
     const projectionNotApplicable = Boolean(projectionPayload && projectionPayload.formal === false);
     const formalUnlocked = Boolean(projectionPayload);
-    const state = currentResult.status === "empty"
+    const state = ["empty", "not_generated"].includes(currentResult.status)
       ? "unconfigured"
       : currentResult.status === "configured"
         ? "pending"
@@ -19681,7 +19789,7 @@ function formalAnalysisBoundary(page) {
     && analysisArtifacts.length > 0
     && projectionPayload
   );
-  const state = currentResult.status === "empty"
+  const state = ["empty", "not_generated"].includes(currentResult.status)
     ? "unconfigured"
     : currentResult.status === "configured"
       ? "pending"
@@ -21639,6 +21747,11 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
   projectJson.seedPolicy.mode = projectJson.seedPolicy.mode === "random" ? "random" : "fixed";
   projectJson.seedPolicy.baseSeed = positiveExperimentSeed(projectJson.seedPolicy.baseSeed ?? projectJson.experiment.seed);
   projectJson.experiment.seed = projectJson.seedPolicy.baseSeed;
+  projectJson.monteCarloBackend = normalizeMonteCarloBackend(projectJson.monteCarloBackend ?? projectJson.experiment.monteCarloBackend);
+  projectJson.monteCarloOutputScope = normalizeMonteCarloOutputScope(
+    projectJson.monteCarloOutputScope ?? projectJson.experiment.monteCarloOutputScope,
+    { backend: projectJson.monteCarloBackend }
+  );
   if (!projectJson.stopPolicy || typeof projectJson.stopPolicy !== "object" || Array.isArray(projectJson.stopPolicy)) {
     projectJson.stopPolicy = { schemaVersion: "stop-policy-v0", mode: "or", conditions: [{ type: "duration" }], defaulted: true };
   }
@@ -21652,6 +21765,18 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
     projectJson.scenarioComposition.overrides = [];
   }
   return projectJson;
+}
+
+function normalizedExperimentPlanMonteCarloBackend() {
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
+  return normalizeMonteCarloBackend(experimentPlanDraft.monteCarloBackend);
+}
+
+function normalizedExperimentPlanMonteCarloOutputScope() {
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
+  return normalizeMonteCarloOutputScope(experimentPlanDraft.monteCarloOutputScope, {
+    backend: experimentPlanDraft.monteCarloBackend
+  });
 }
 
 function experimentPlanParallelCoresError(projectJson = experimentPlanDraft) {
