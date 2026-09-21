@@ -15,6 +15,7 @@ project-j16-8aircraft-43day-availability-20260727-copy-2
 ```bash
 python experiments/rust_monte_carlo/benchmark.py \
   --compiler-root /home/g/apps/sim-engine-wheel-f760b8c-src \
+  --compiler-commit 0123456789abcdef0123456789abcdef01234567 \
   --output /tmp/f35-rust-monte-carlo.json
 ```
 
@@ -36,6 +37,8 @@ python experiments/rust_monte_carlo/benchmark.py \
 ```
 
 `--database` 和 `--project-id` 可覆盖默认固定来源；默认 live DB 只以 SQLite `mode=ro` 打开。每次子进程前，父进程通过 SQLite `Connection.backup()` 复制到临时 DB，再插入本次 backend/sample/worker 对应的临时 ExperimentPlan。所有 run、result 和 artifact 写入临时 DB/临时 output，退出后自动清理；live DB 不写入。
+
+`--compiler-commit` 用于没有 `.git` 的 archive/wheel checkout，必须是 40 位小写十六进制；省略时回退到 `git rev-parse HEAD`。如果显式指定，Rust run 的 `run.engine_metadata.build_commit` 必须完全匹配，否则基准 fail-closed。
 
 同一个 `samples/workers` cell 使用一个共享 `sim-engine-cache` 目录；每个 fresh child 的 output 下建立指向该目录的 symlink。这样 warmup 后可以观察 Rust plan cache 的 cold/hit 状态，同时仍保持每次运行独立 DB。第一条 warmup 行就是 cold-cache 证据。
 

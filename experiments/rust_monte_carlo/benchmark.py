@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import sqlite3
 import statistics
@@ -88,6 +89,12 @@ def parse_ints(value: str, *, name: str) -> tuple[int, ...]:
     if not values or any(item <= 0 for item in values):
         raise argparse.ArgumentTypeError(f"{name} must contain positive integers")
     return values
+
+
+def parse_commit(value: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{40}", value):
+        raise argparse.ArgumentTypeError("compiler commit must be exactly 40 lowercase hexadecimal characters")
+    return value
 
 
 def git_commit(path: Path) -> str | None:
@@ -187,7 +194,7 @@ def artifact_payload(manifest: dict[str, Any] | None, output_dir: Path, kind: st
     return {}
 
 
-def validate_core_row(row: dict[str, Any]) -> list[str]:
+def validate_core_row(row: dict[str, Any], expected_compiler_commit: str | None = None) -> list[str]:
     errors: list[str] = []
     if row.get("status") != "succeeded":
         errors.append(f"status={row.get('status')!r}")
@@ -201,6 +208,11 @@ def validate_core_row(row: dict[str, Any]) -> list[str]:
     actual_kinds = frozenset(row.get("artifact_kinds") or ())
     if actual_kinds != CORE_ARTIFACT_KINDS:
         errors.append(f"artifact_kinds={sorted(actual_kinds)!r}")
+    if row.get("backend") == RUST_BACKEND and expected_compiler_commit:
+        engine_metadata = run.get("engine_metadata") if isinstance(run.get("engine_metadata"), dict) else {}
+        actual_commit = engine_metadata.get("build_commit")
+        if actual_commit != expected_compiler_commit:
+            errors.append(f"engine_metadata.build_commit={actual_commit!r}")
     return errors
 
 
@@ -354,6 +366,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--database", type=Path, default=DEFAULT_DATABASE)
     result.add_argument("--project-id", default=DEFAULT_PROJECT_ID)
     result.add_argument("--compiler-root", type=Path, help="optional sim_engine_compiler checkout recorded in evidence metadata")
+    result.add_argument("--compiler-commit", type=parse_commit, help="explicit 40-character compiler build commit for archived checkouts")
     result.add_argument("--output", type=Path, required=False, default=Path("/tmp/f35-rust-monte-carlo.json"))
     result.add_argument("--samples", default=None, help="comma-separated sample counts; default 32,128")
     result.add_argument("--workers", default=None, help="comma-separated worker counts; default 1,8,32")
@@ -388,6 +401,7 @@ def main() -> None:
     if args.warmup < 0 or repeats < 1:
         raise SystemExit("--warmup must be >= 0 and --repeats must be positive")
     compiler_root = args.compiler_root.resolve() if args.compiler_root else None
+    compiler_commit = args.compiler_commit or (git_commit(compiler_root) if compiler_root else None)
     project, inputs, base_plan = canonical_source(args.database, args.project_id)
     base_config = base_plan.get("config") or {}
     base_large_sample = (base_config.get("analysisRequests") or {}).get("largeSample") or {}
@@ -399,7 +413,7 @@ def main() -> None:
         report: dict[str, Any] = {
             "schema_version": "rust-monte-carlo-benchmark-v1",
             "status": "running",
-            "source": {"database": str(args.database), "project_id": args.project_id, "project_sha256": digest(project), "canonical_inputs_sha256": digest(inputs), "base_experiment_plan_id": base_plan.get("experiment_plan_id"), "base_canonical_fingerprint": base_plan.get("canonical_fingerprint"), "base_config_sha256": digest(base_config), "base_seed": base_config.get("seed"), "base_sweep": base_large_sample.get("sweep"), "spare_mvp_commit": git_commit(ROOT), "compiler_commit": git_commit(compiler_root) if compiler_root else None, "compiler_root": str(compiler_root) if compiler_root else None, "wheel_sha256": wheel_hashes(compiler_root, args.wheel) if compiler_root else {}, "python": sys.version, "platform": platform.platform()},
+            "source": {"database": str(args.database), "project_id": args.project_id, "project_sha256": digest(project), "canonical_inputs_sha256": digest(inputs), "base_experiment_plan_id": base_plan.get("experiment_plan_id"), "base_canonical_fingerprint": base_plan.get("canonical_fingerprint"), "base_config_sha256": digest(base_config), "base_seed": base_config.get("seed"), "base_sweep": base_large_sample.get("sweep"), "spare_mvp_commit": git_commit(ROOT), "compiler_commit": compiler_commit, "compiler_root": str(compiler_root) if compiler_root else None, "wheel_sha256": wheel_hashes(compiler_root, args.wheel) if compiler_root else {}, "python": sys.version, "platform": platform.platform()},
             "matrix": asdict(Matrix(samples=samples, workers=workers, warmup=args.warmup, repeats=repeats)),
             "scope": "core Monte Carlo only; no analysis requests or analysis-module artifacts",
             "rows": [],
@@ -467,7 +481,7 @@ def run_one(args: argparse.Namespace, report: dict[str, Any], base_plan: dict[st
     except OSError:
         pass
     payload.update({"row_id": f"{pair_id}:{phase}:{repeat}:{backend}", "pair_id": pair_id, "phase": phase, "repeat": repeat, "order_index": order_index, "samples": samples, "workers": workers, "backend": backend, "wall_seconds_parent": finished - started, "system_before": before, "system_after": after})
-    payload["validation_errors"] = validate_core_row(payload)
+    payload["validation_errors"] = validate_core_row(payload, args.compiler_commit)
     return payload
 
 
