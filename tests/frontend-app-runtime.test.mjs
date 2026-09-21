@@ -8436,6 +8436,15 @@ test("Monte Carlo detail renders backend sample timeout as an actionable blocked
   }
 });
 
+test("Monte Carlo run detail keeps backend execution metadata field compatibility", () => {
+  const source = fs.readFileSync(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(source, /run\.plan_cache_status/);
+  assert.match(source, /result\.execution_metadata\?\.plan_cache_status/);
+  assert.match(source, /run\.sample_count/);
+  assert.match(source, /result\.sample_count/);
+  assert.match(source, /timings\.total_ns/);
+});
+
 test("permission menu visibility toggles every leaf role and persists through the existing system-config save", async () => {
   const leafKey = "system-management-project-data-management";
   const runtime = await setupRuntimeApp({
