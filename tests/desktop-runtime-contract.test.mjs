@@ -25,6 +25,7 @@ function pathContract(packageRoot, root = packageRoot) {
     logs_dir: path.join(root, "instance", "logs"),
     diagnostics_dir: path.join(root, "instance", "diagnostics"),
     integrity_cache: path.join(root, "instance", "integrity-cache.json"),
+    binding_inventory_mutex: "Global\\SpareMvpBindingInventory_v1",
   };
 }
 
@@ -312,6 +313,11 @@ test("portable startup migrates durable legacy files only when they exist", asyn
   assert.match(startScript, /--preserve-source-before-reuse/);
   assert.match(startScript, /if \(\$legacyWasUsed\) \{ \$migrationArguments \+= '--conflict-after-source-backup' \}/);
   assert.match(startScript, /if \(-not \[bool\]\$Paths\.binding_matches_selected -and \$legacyHasDurableFiles\) \{[\s\S]{0,300}migrate-files/);
+  const acquire = startScript.indexOf("$bindingInventoryMutex = Acquire-SharedDataMutex");
+  const lockedRescan = startScript.indexOf("$lockedPathJson = & $Python @pathArguments");
+  const bindingWrite = startScript.indexOf("--write-binding");
+  const release = startScript.indexOf("Release-SharedDataMutex -Mutex $bindingInventoryMutex");
+  assert.ok(acquire >= 0 && acquire < lockedRescan && lockedRescan < bindingWrite && bindingWrite < release);
 });
 
 test("Electron windows disable Node integration and isolate the launcher bridge", async () => {

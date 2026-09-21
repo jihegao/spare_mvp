@@ -51,6 +51,8 @@ python scripts/portable-package.py source-manifest --root /tmp/spare-source-mani
 
 `-DependencyBundle` 默认取 runtime 的父目录；构建环境必须具有匹配受审锁的 wheels、CPython 归档、依赖版本清单及 `runtime-manifest.json`。构建逐文件验证实际 `-RuntimeSource`，不能用 B bundle 的校验替代 A runtime 的内容检查；新增字节码、修改或缺少文件都会阻断。最终用户包的 `dependencies/` 只保留 `windows-runtime.json`、`requirements-windows.lock`、`installed-distributions.json` 和 `runtime-manifest.json`；`wheelhouse/` 与 `downloads/` 留在受控构建环境，不重复进入发行包。封包时用保留的规格、锁和 runtime manifest 重新核对复制后的 runtime。
 
+绿色封装还要求 portable source manifest、green source manifest 与 Electron 的 `desktop-build-provenance.json` 使用同一源码提交；后者绑定受审 desktop 源文件、`app.asar` 和桌面 EXE 哈希。混用旧 portable 或旧 `win-unpacked` 会在封装前失败。
+
 首次桌面启动对所有不可变文件执行 SHA-256，并在 `%LOCALAPPDATA%\spare_mvp\instances\<installation_id>\integrity-cache.json` 记录 manifest 哈希以及每个文件的路径、大小和 mtime。后续启动先逐项比对元数据，并始终重新哈希 `app/`、`assets/`、`scripts/`、Electron `resources/`、桌面主程序、源码清单和 Python 核心可执行/DLL；缓存缺失、损坏或任一元数据变化都会退回完整 SHA-256，校验失败则阻断启动。安装目录中的 `data/` 仅作为旧版数据迁移来源，不再承载活动状态，也不纳入发布 manifest；完整性缓存同样不替代外部 EXE 哈希或代码签名。
 
 绿色自解压程序要求最终解压目录尚不存在；即使为空目录也拒绝覆盖，以免把目录所有权判断建立在无法证明的既有内容上。失败时只清理本次创建的 `.extracting-*` 暂存目录，保留既有目录、其他安装和业务数据，随后可在同一父目录重新选择新的目标重试。发行包内的本文件会复制为 `README-Windows.md`，两者内容来自同一受审来源。
@@ -62,6 +64,8 @@ python scripts/portable-package.py source-manifest --root /tmp/spare-source-mani
 源清单采用 v2，覆盖应用、所有实际复制的启动脚本、入口、说明文件，并绑定构建脚本、数据库初始化器与依赖锁。修改这些文件后必须提交候选并重新生成清单；旧清单不能继续用于构建。暂存后的源码也在封包前再次核对，字节码文件纳入包完整性检查。
 
 双击 `Start-Platform.vbs` / `Start-Platform.cmd`，停止运行 `Stop-Platform.cmd`。`scripts/portable-paths.py` 是唯一运行路径解析入口；端口状态、PID、日志、验收证据、诊断和完整性缓存在 `%LOCALAPPDATA%\spare_mvp\instances\<installation_id>` 下按安装隔离。启动器、停止器和验证脚本只消费解析结果，不向包内 `data/` 写运行状态。使用包自己的 Python，禁用用户 site-packages 和字节码写入。PID 旁的 `.pid.json` 保存创建时间、服务模块、解释器路径和本次启动标识；全部匹配后才停止该进程。身份未知时保留记录并报告，不终止进程。旧版只有 PID 的记录不能作为终止凭据。
+
+新安装在迁移和发布数据根 binding 前取得全局 binding inventory mutex，并在锁内重新扫描所有安装的 binding；因此父目录和子目录候选不能通过并发启动绕过嵌套保护。
 
 验证脚本先校验完整性及依赖闭包，再启动服务、校验健康端点、前端模块 MIME、Solara 静态资源并停止自己启动的实例。解析结果的 `evidence_dir/startup-smoke.json` 明确记录 **仅启动验收**，不宣称业务完成或机器已经断网。
 

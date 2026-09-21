@@ -10,6 +10,7 @@ from pathlib import Path
 
 PRODUCT_DIRECTORY = "spare_mvp"
 BINDING_FILE = "data-root-binding.json"
+BINDING_INVENTORY_MUTEX = "Global\\SpareMvpBindingInventory_v1"
 
 
 def _absolute_path(value: str, *, label: str) -> Path:
@@ -182,6 +183,7 @@ def resolve_paths(
         "matplotlib_root": str(instance_root / "matplotlib"),
         "startup_lock": str(instance_root / "startup.lock"),
         "startup_mutex": "Local\\SpareMvpInstance_" + installation_id,
+        "binding_inventory_mutex": BINDING_INVENTORY_MUTEX,
         "data_lock": str(data_lock.resolve(strict=False)),
         "data_mutex": data_mutex,
         "binding_file": str(binding_file.resolve(strict=False)),

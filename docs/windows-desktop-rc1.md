@@ -1,6 +1,6 @@
 # Windows 绿色桌面版
 
-> **当前交付状态（2026-09-20）**：G1 数据生命周期与完整性修复、G2 的 #382 清理已通过下文记录的 Linux 代码门；#366 仍有阻塞与待验项。G3 已构建首个隔离候选，但原生 Windows 启动在首次迁移时失败，证据高度指向 SQLite 句柄未关闭；旧候选保留失败结论，须以修复后的新源码 SHA 重建新候选。原生综合验收未通过；这不是可发布结论。正式合并、发布和切换不在当前授权内。
+> **当前交付状态（2026-09-21）**：源码 `2252f03ae2ce21e1780638ee9b9e298b6516e174` 已完成 Windows 原生构建、隔离解压、安装、启动和基础 HTTP 冒烟，旧候选的 SQLite 句柄故障已经修复。该证据只覆盖 build/install/start/basic smoke；卸载、重装、数据生命周期、完整业务流程、#366 最终矩阵和正式发布仍未通过，不得据此关闭 issue 或标记 V2 正式发布。
 
 最终离线交付文件为 `spare-mvp-2.0-green.exe`。它是普通用户权限运行的自解压包：用户选择目录后，程序解压完整平台并启动 `SpareMvpDesktop.exe`。该路线不安装或调用 Docker Desktop、WSL，不启用 Windows 可选功能，不接受第三方许可，也不安排 Windows 重启。
 
@@ -46,7 +46,7 @@ cd ..
   -Destination '.\dist\spare-mvp-2.0-green.exe'
 ```
 
-`npm run dist:win` 是受审的唯一 Electron 目录包构建入口。它在调用锁定的 `electron-builder 26.0.20` 前，先校验 `app-builder-lib` 依赖收集器的版本、完整文件 SHA-256 和预期源码片段，再幂等应用仅等待 stdout 写流完成的本地补丁；任一内容漂移都会失败关闭。该步骤不改变依赖收集命令、生产依赖闭包、ASAR 配置、Windows 可执行文件资源编辑或重试行为，构建不得用直接调用 `electron-builder` 或关闭 `signAndEditExecutable` 绕过。
+`npm run dist:win` 是受审的唯一 Electron 目录包构建入口。它在调用锁定的 `electron-builder 26.0.20` 前，先校验 `app-builder-lib` 依赖收集器的版本、完整文件 SHA-256 和预期源码片段，再幂等应用仅等待 stdout 写流完成的本地补丁；任一内容漂移都会失败关闭。构建完成后生成 `desktop-build-provenance.json`，绑定源码提交、受审 desktop 源文件、`app.asar` 和桌面 EXE 的 SHA-256；绿色封装器要求 portable source manifest、green source manifest 和该证明使用同一提交，并重新核对制品哈希。该步骤不改变依赖收集命令、生产依赖闭包、ASAR 配置、Windows 可执行文件资源编辑或重试行为，构建不得用直接调用 `electron-builder` 或关闭 `signAndEditExecutable` 绕过。
 
 从无 `.git` 的受控源码归档构建时，先在原 checkout 运行 `green-source-manifest.py --root <文件>`，再向封装命令传入 `-GreenSourceManifest <文件>`；封装器会核对受审文件集合和逐文件 SHA-256。
 
@@ -78,7 +78,7 @@ cd ..
 - 程序、Electron、Python、应用和离线资源留在安装目录，静态清单不包含业务数据及运行态。
 - 生产业务数据默认位于 `%LOCALAPPDATA%\spare_mvp\data`，当前用户的多个安装默认共用；数据库、应保留配置及迁移备份在此生命周期内管理。隔离验收显式指定独立数据根。
 - 唯一解析入口为 `scripts/portable-paths.py`：`--package-root` 必填，`--data-root` 可选；数据根选择顺序为显式参数、`SPARE_MVP_DATA_ROOT`、当前安装已绑定的数据根、生产默认值。覆盖路径必须为绝对路径。启动、停止、桌面、备份恢复与诊断消费该入口，不各自推导用户目录。
-- 解析结果以 JSON 输出 `package_root`、`installation_id`、`data_root`、`database`、`instance_root`、`state_file`、`pid_root`、`logs_dir`、`evidence_dir`、`diagnostics_dir`、`integrity_cache`、`output_root`、`matplotlib_root`、`startup_lock`、`startup_mutex`、`data_lock`、`data_mutex`、`binding_file`、`binding_exists`、`binding_matches_selected`、`data_root_source`、`other_bindings`、`conflicting_bindings` 和 `binding_scan_errors`。安装身份由规范化真实安装路径稳定派生；实例状态根位于 `%LOCALAPPDATA%\spare_mvp\instances\<installation_id>`。路径规范化及越界校验只在公共入口实现。
+- 解析结果以 JSON 输出 `package_root`、`installation_id`、`data_root`、`database`、`instance_root`、`state_file`、`pid_root`、`logs_dir`、`evidence_dir`、`diagnostics_dir`、`integrity_cache`、`output_root`、`matplotlib_root`、`startup_lock`、`startup_mutex`、`binding_inventory_mutex`、`data_lock`、`data_mutex`、`binding_file`、`binding_exists`、`binding_matches_selected`、`data_root_source`、`other_bindings`、`conflicting_bindings` 和 `binding_scan_errors`。安装身份由规范化真实安装路径稳定派生；实例状态根位于 `%LOCALAPPDATA%\spare_mvp\instances\<installation_id>`。路径规范化及越界校验只在公共入口实现；全局 binding inventory mutex 将持锁后的最终扫描、迁移和 binding 发布串行化，防止并发创建父子嵌套数据根。
 - 当前安装的数据根绑定随实例元数据保留，保证无环境变量的停止及卸载仍定位同一数据。端口、PID、启动锁、日志、验收证据、诊断与校验缓存按安装实例隔离；不得通过另一实例的活动端口文件复用或停止其服务。
 - **共享写锁**以规范化业务数据根为键，使用以规范化数据根派生的 `Global\SpareMvpData_<hash>` named mutex；须覆盖初始化、迁移、恢复及后端运行整个写入期。实例局部启动锁只防止本安装重复启动，不替代跨安装写互斥。其他安装占用时失败关闭，不终止对方。
 - 用户导出位置由用户选择，永不纳入卸载删除范围。诊断排除凭据和项目正文。
@@ -180,6 +180,12 @@ Python 使用仓库 Python ≥3.12 的测试环境；原生目标使用包内锁
 该修复在 Linux 通过联合 Python **54/54**、桌面/解压 Node **2 个文件**及 `diff-check`。Tech lead 独立强持有 **22 个真实 SQLite 连接**，覆盖迁移、既有复用、相同快照、冲突备份及重试、校验异常，断言 link/unlink 时所有连接已显式关闭，且无 `.migrating-*` / `.compare-*` 残留。3 个生命周期脚本的 `source_manifest()` 内容 SHA 校验通过，修复后 `portable-data.py` SHA-256 为 `2fe4739f3d9aaf1867f645b54956ea369d243dd5a1da2fb06e4ad9b32c9faeb4`。
 
 这些 Linux 回归只证明连接生命周期与原有保护回归；必须从包含修复的新源码 SHA 重建新候选，不能替换旧 EXE 后沿用其身份或验收记录。原生新候选仍须重新完成首次启动、迁移/重试、备份完整性、无临时残留及后续综合验收。旧候选 G3 保持失败，新候选原生项目待验。
+
+### G4 修复后候选基础冒烟（2026-09-21）
+
+修复后候选绑定源码 `2252f03ae2ce21e1780638ee9b9e298b6516e174`。Windows 原生构建成功，隔离短路径中校验 18,810 个不可变文件；backend `127.0.0.1:4173`、Solara `127.0.0.1:8765`、前端、API 和工作区均返回 HTTP 200，停止后无候选 PID 或端口残留。
+
+自解压文件为 `spare-mvp-2.0-green-2252f03.exe`，大小 `861873200` bytes，SHA-256 为 `f9465142aefbd84d85e384aaa02e5665c9335b53a21c4ad02f55a0403bd391c5`。该记录证明构建、安装、启动和基础冒烟，不证明 GUI 业务操作、卸载/重装、永久删除保护、第二安装互斥、断网完整业务或五入口性能已通过。
 
 ### 后续任务边界
 

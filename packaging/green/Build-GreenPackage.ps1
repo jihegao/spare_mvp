@@ -18,7 +18,8 @@ if (Test-Path -LiteralPath $destinationPath) { throw "Destination already exists
 foreach ($required in @(
     (Join-Path $portable 'runtime\python.exe'),
     (Join-Path $portable 'scripts\portable-package.py'),
-    (Join-Path $desktop 'resources\app.asar')
+    (Join-Path $desktop 'resources\app.asar'),
+    (Join-Path $desktop 'desktop-build-provenance.json')
 )) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Required green-package input is missing: $required" }
 }
@@ -32,17 +33,15 @@ try {
     New-Item -ItemType Directory -Path $staging | Out-Null
     Copy-Item -Path (Join-Path $portable '*') -Destination $staging -Recurse
     Copy-Item -Path (Join-Path $desktop '*') -Destination $staging -Recurse -Force
-    $desktopExecutable = Get-ChildItem -LiteralPath $staging -Filter '*.exe' -File |
-        Where-Object { $_.Name -ne 'SpareMvpDesktop.exe' } | Select-Object -First 1
-    if ($null -eq $desktopExecutable) { throw 'Desktop executable was not found.' }
-    Move-Item -LiteralPath $desktopExecutable.FullName -Destination (Join-Path $staging 'SpareMvpDesktop.exe') -Force
 
     if ($GreenSourceManifest) {
-        $greenManifest = Get-Content -LiteralPath (Resolve-Path -LiteralPath $GreenSourceManifest).Path -Raw | ConvertFrom-Json
+        $greenManifestPath = (Resolve-Path -LiteralPath $GreenSourceManifest).Path
+        $greenManifest = Get-Content -LiteralPath $greenManifestPath -Raw | ConvertFrom-Json
     } else {
         $generatedManifest = Join-Path $working 'green-source-manifest.json'
         & (Join-Path $portable 'runtime\python.exe') -I -B (Join-Path $repo 'packaging\green\green-source-manifest.py') --repo $repo --root $generatedManifest
         if ($LASTEXITCODE -ne 0) { throw 'Green source manifest generation failed.' }
+        $greenManifestPath = $generatedManifest
         $greenManifest = Get-Content -LiteralPath $generatedManifest -Raw | ConvertFrom-Json
     }
     if ($greenManifest.format_version -ne 1 -or $greenManifest.source_commit -notmatch '^[a-f0-9]{40}$') {
@@ -58,7 +57,16 @@ try {
         $actualHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($actualHash -ne $greenManifest.files.$name) { throw "Green source differs from its manifest: $name" }
     }
-    $greenManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $staging 'green-source-manifest.json') -Encoding UTF8
+    $validatedGreenManifest = Join-Path $working 'validated-green-source-manifest.json'
+    $greenManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $validatedGreenManifest -Encoding UTF8
+    & (Join-Path $staging 'runtime\python.exe') -I -B (Join-Path $repo 'packaging\green\verify-green-inputs.py') `
+        --portable $staging --desktop $staging --green-manifest $validatedGreenManifest
+    if ($LASTEXITCODE -ne 0) { throw 'Portable and Electron inputs do not share one reviewed source provenance.' }
+    Copy-Item -LiteralPath $validatedGreenManifest -Destination (Join-Path $staging 'green-source-manifest.json')
+    $desktopExecutable = Get-ChildItem -LiteralPath $staging -Filter '*.exe' -File |
+        Where-Object { $_.Name -ne 'SpareMvpDesktop.exe' } | Select-Object -First 1
+    if ($null -eq $desktopExecutable) { throw 'Desktop executable was not found.' }
+    Move-Item -LiteralPath $desktopExecutable.FullName -Destination (Join-Path $staging 'SpareMvpDesktop.exe') -Force
 
     if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) { throw "C# compiler is unavailable: $compiler" }
     $uninstallerSource = Join-Path $PSScriptRoot 'GreenUninstaller.cs'

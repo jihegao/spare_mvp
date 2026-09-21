@@ -138,10 +138,16 @@ test("desktop build entry keeps dependency and ASAR contracts unchanged", async 
   ]);
   assert.equal(
     packageJson.scripts["dist:win"],
-    "node scripts/patch-electron-builder-collector.mjs && electron-builder --win dir --x64",
+    "node scripts/patch-electron-builder-collector.mjs && electron-builder --win dir --x64 && node scripts/write-build-provenance.mjs ../dist/desktop-installer/win-unpacked",
   );
   const sourceFiles = (await readFile(new URL("../packaging/green/source-files.txt", import.meta.url), "utf8"))
     .split(/\r?\n/)
     .filter(Boolean);
   assert.equal(sourceFiles.filter(file => file === "desktop/scripts/patch-electron-builder-collector.mjs").length, 1);
+  assert.equal(sourceFiles.filter(file => file === "desktop/scripts/write-build-provenance.mjs").length, 1);
+  const greenBuilder = await readFile(new URL("../packaging/green/Build-GreenPackage.ps1", import.meta.url), "utf8");
+  assert.match(greenBuilder, /desktop-build-provenance\.json/);
+  assert.match(greenBuilder, /verify-green-inputs\.py/);
+  assert.match(greenBuilder, /--portable \$staging --desktop \$staging --green-manifest \$validatedGreenManifest/);
+  assert.ok(greenBuilder.indexOf("verify-green-inputs.py") < greenBuilder.indexOf("Move-Item -LiteralPath $desktopExecutable.FullName"));
 });

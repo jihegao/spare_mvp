@@ -8,7 +8,7 @@
   "author": "spare_mvp",
   "scripts": {
     "start": "electron .",
-    "dist:win": "node scripts/patch-electron-builder-collector.mjs && electron-builder --win dir --x64"
+    "dist:win": "node scripts/patch-electron-builder-collector.mjs && electron-builder --win dir --x64 && node scripts/write-build-provenance.mjs ../dist/desktop-installer/win-unpacked"
   },
   "dependencies": {
     "archiver": "7.0.1"

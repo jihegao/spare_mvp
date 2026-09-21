@@ -3,6 +3,7 @@ desktop/preload.cjs
 desktop/service-manager.mjs
 desktop/diagnostics.mjs
 desktop/scripts/patch-electron-builder-collector.mjs
+desktop/scripts/write-build-provenance.mjs
 desktop/renderer/app.mjs
 desktop/renderer/index.html
 desktop/renderer/styles.css
@@ -12,5 +13,6 @@ packaging/green/GreenExtractor.cs
 packaging/green/GreenUninstaller.cs
 packaging/green/Build-GreenPackage.ps1
 packaging/green/green-source-manifest.py
+packaging/green/verify-green-inputs.py
 packaging/green/source-files.txt
 docs/windows-desktop-rc1.md

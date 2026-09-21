@@ -17,6 +17,7 @@ $script:fakeListeners = @()
 $script:listenerInspectionFails = $false
 $assertions = 0
 $actualSelf = Microsoft.PowerShell.Management\Get-Process -Id $PID
+$powerShellExe = $actualSelf.Path
 Write-PortableProcessRecord -Process $actualSelf -Name backend -Python $python -PidPath $pidPath -InstanceToken $token
 $actualRecord = Get-Content -LiteralPath "$pidPath.json" -Raw | ConvertFrom-Json
 if ($actualRecord.pid -ne $PID -or $actualRecord.started_at_utc -ne $actualSelf.StartTime.ToUniversalTime().ToString('o')) {
@@ -107,6 +108,34 @@ try {
     Set-TestRecord
     Assert-True ($null -eq (Get-OwnedPortableProcess -Name backend -Python $python -PidPath $pidPath -PreserveRecordOnMismatch)) 'Exited PID was accepted in check-only mode'
     Assert-True (Test-Path $pidPath) 'Check-only exited-process mismatch removed the PID record'
+    $mutexProbe = Join-Path $root 'mutex-probe.ps1'
+    @'
+param([string]$MutexName, [string]$Expectation)
+$mutex = [Threading.Mutex]::new($false, $MutexName)
+$acquired = $false
+try {
+    try { $acquired = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $acquired = $true }
+    if (($Expectation -eq 'available') -eq $acquired) { exit 0 }
+    exit 1
+} finally {
+    if ($acquired) { $mutex.ReleaseMutex() }
+    $mutex.Dispose()
+}
+'@ | Set-Content -LiteralPath $mutexProbe -Encoding UTF8
+    $inventoryName = 'Global\SpareMvpBindingInventoryTest_' + [Guid]::NewGuid().ToString('N')
+    $inventoryMutex = Acquire-SharedDataMutex -MutexName $inventoryName
+    try {
+        $blockedProbe = Start-Process -FilePath $powerShellExe -ArgumentList @(
+            '-NoProfile', '-File', $mutexProbe, '-MutexName', $inventoryName, '-Expectation', 'blocked'
+        ) -Wait -PassThru -WindowStyle Hidden
+        Assert-True ($blockedProbe.ExitCode -eq 0) 'Binding inventory mutex did not exclude a concurrent process'
+    } finally {
+        Release-SharedDataMutex -Mutex $inventoryMutex
+    }
+    $availableProbe = Start-Process -FilePath $powerShellExe -ArgumentList @(
+        '-NoProfile', '-File', $mutexProbe, '-MutexName', $inventoryName, '-Expectation', 'available'
+    ) -Wait -PassThru -WindowStyle Hidden
+    Assert-True ($availableProbe.ExitCode -eq 0) 'Binding inventory mutex remained unavailable after release'
     Write-Output "Portable ownership tests passed: $assertions assertions. No real processes were stopped."
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force

@@ -9,8 +9,18 @@ const portablePackager = await readFile(new URL("../scripts/portable-package.py"
 
 test("green extractor stages the embedded tar before invoking Windows tar", () => {
   assert.match(source, /Path\.GetTempPath\(\)/);
-  assert.match(source, /new FileStream\(temporaryPayload, FileMode\.CreateNew/);
-  assert.match(source, /"-xf \\"" \+ temporaryPayload/);
+  assert.match(source, /new FileStream\(temporaryPayload, FileMode\.CreateNew, FileAccess\.ReadWrite, FileShare\.Read\)/);
+  assert.match(source, /sha\.TransformBlock\(buffer/);
+  assert.doesNotMatch(source, /FileMode\.Open, FileAccess\.Read, FileShare\.Read/);
+  assert.match(source, /ValidateArchiveEntries\(temporaryPayload, destination\)/);
+  assert.match(source, /RunTar\(temporaryPayload, destination, "-xf", false\)/);
+  assert.match(source, /RunTar\(archive, destination, "-tf", true\)/);
+  assert.match(source, /RunTar\(archive, destination, "-tvf", true\)/);
+  assert.match(source, /line\[0\] != '-' && line\[0\] != 'd'/);
+  assert.match(source, /Path\.IsPathRooted\(normalized\)/);
+  assert.match(source, /part == "\.\."/);
+  assert.match(source, /FileAttributes\.ReparsePoint/);
+  assert.match(source, /operation \+ " " \+ QuoteArgument\(archive\)/);
   assert.match(source, /WorkingDirectory = destination/);
   assert.doesNotMatch(source, /temporaryPayload[\s\S]{0,120}" -C /);
   assert.match(source, /File\.Delete\(temporaryPayload\)/);

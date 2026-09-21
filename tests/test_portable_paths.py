@@ -150,6 +150,23 @@ class PortablePathsTest(unittest.TestCase):
             self.assertTrue(first["data_mutex"].startswith("Global\\"))
             self.assertNotEqual(first["instance_root"], second["instance_root"])
 
+    def test_binding_inventory_mutex_is_global_across_parent_and_child_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = {"LOCALAPPDATA": str(root / "local")}
+            first_package = root / "first"
+            second_package = root / "second"
+            first_package.mkdir()
+            second_package.mkdir()
+            parent = paths_module.resolve_paths(
+                str(first_package), explicit_data_root=str(root / "shared"), environment=environment
+            )
+            child = paths_module.resolve_paths(
+                str(second_package), explicit_data_root=str(root / "shared" / "child"), environment=environment
+            )
+            self.assertEqual(parent["binding_inventory_mutex"], child["binding_inventory_mutex"])
+            self.assertEqual(parent["binding_inventory_mutex"], "Global\\SpareMvpBindingInventory_v1")
+
     def test_nested_data_roots_are_rejected_across_installations(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

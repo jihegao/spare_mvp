@@ -233,6 +233,7 @@ $backendProcess = $null
 $solaraProcess = $null
 $startupMutex = $null
 $sharedDataMutex = $null
+$bindingInventoryMutex = $null
 $activePortsWritten = $false
 $activePortsTemporary = "$ActivePortsFile.tmp-$PID"
 try {
@@ -270,6 +271,19 @@ try {
         Remove-Item -LiteralPath (Join-Path $LegacyDataRoot 'active-ports.json') -Force -ErrorAction SilentlyContinue
     }
 
+    # Parent and child data roots have different data mutexes. Serialize the
+    # final inventory scan through binding publication so fresh installations
+    # cannot concurrently create overlapping bindings.
+    $bindingInventoryMutex = Acquire-SharedDataMutex -MutexName ([string]$Paths.binding_inventory_mutex) `
+        -BusyMessage 'Another installation is preparing its user-data binding. Retry after that startup finishes.'
+    $lockedPathJson = & $Python @pathArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Portable path revalidation failed while holding the binding inventory lock.' }
+    $LockedPaths = $lockedPathJson | ConvertFrom-Json
+    if ([string]$LockedPaths.installation_id -ne [string]$Paths.installation_id -or
+        [IO.Path]::GetFullPath([string]$LockedPaths.data_root) -ine [IO.Path]::GetFullPath($DataRoot)) {
+        throw 'Portable path selection changed before binding; no migration or binding was performed.'
+    }
+    $Paths = $LockedPaths
     $sharedDataMutex = Acquire-SharedDataMutex -MutexName ([string]$Paths.data_mutex)
     $migrationArguments = @(
         '-I', '-B', $DataManager, 'migrate',
@@ -298,6 +312,8 @@ try {
     $pathJson = & $Python @bindingArguments
     if ($LASTEXITCODE -ne 0) { throw 'Portable data-root binding failed after database validation.' }
     $Paths = $pathJson | ConvertFrom-Json
+    Release-SharedDataMutex -Mutex $bindingInventoryMutex
+    $bindingInventoryMutex = $null
     if ($AutoSelectPorts) {
         $BackendPort = Resolve-TcpPort `
             -PreferredPort $BackendPort `
@@ -422,6 +438,10 @@ try {
     if ($null -ne $sharedDataMutex) {
         Release-SharedDataMutex -Mutex $sharedDataMutex
         $sharedDataMutex = $null
+    }
+    if ($null -ne $bindingInventoryMutex) {
+        Release-SharedDataMutex -Mutex $bindingInventoryMutex
+        $bindingInventoryMutex = $null
     }
     if ($null -ne $startupMutex) {
         Release-SharedDataMutex -Mutex $startupMutex

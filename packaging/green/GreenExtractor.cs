@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -62,7 +63,7 @@ internal static class GreenExtractor
             if (unattended)
             {
                 VerifyPayload(executable, payloadLength, expectedHash, delegate { });
-                ExtractPayload(executable, payloadLength, ownedStaging, delegate { });
+                ExtractPayload(executable, payloadLength, expectedHash, ownedStaging, delegate { });
             }
             else
             {
@@ -72,7 +73,7 @@ internal static class GreenExtractor
                     progress.UpdateState("正在校验安装包…");
                     VerifyPayload(executable, payloadLength, expectedHash, progress.Pulse);
                     progress.UpdateState("正在解压完整运行环境，请勿关闭…");
-                    ExtractPayload(executable, payloadLength, ownedStaging, progress.Pulse);
+                    ExtractPayload(executable, payloadLength, expectedHash, ownedStaging, progress.Pulse);
                     progress.Close();
                 }
             }
@@ -163,13 +164,14 @@ internal static class GreenExtractor
         }
     }
 
-    private static void ExtractPayload(string executable, long payloadLength, string destination, Action pulse)
+    private static void ExtractPayload(string executable, long payloadLength, byte[] expectedHash, string destination, Action pulse)
     {
         string temporaryPayload = Path.Combine(Path.GetTempPath(), "spare-mvp-" + Guid.NewGuid().ToString("N") + ".tar");
         try
         {
             using (FileStream source = File.OpenRead(executable))
-            using (FileStream payload = new FileStream(temporaryPayload, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (FileStream payload = new FileStream(temporaryPayload, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read))
+            using (SHA256 sha = SHA256.Create())
             {
                 source.Position = source.Length - FooterSize - payloadLength;
                 byte[] buffer = new byte[1024 * 1024];
@@ -179,25 +181,20 @@ internal static class GreenExtractor
                     int read = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
                     if (read <= 0) throw new EndOfStreamException("安装包数据不完整。");
                     payload.Write(buffer, 0, read);
+                    sha.TransformBlock(buffer, 0, read, null, 0);
                     remaining -= read;
                     pulse();
                 }
-            }
-
-            ProcessStartInfo info = new ProcessStartInfo(
-                "tar.exe",
-                "-xf \"" + temporaryPayload.Replace("\"", "\\\"") + "\"")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WorkingDirectory = destination,
-                RedirectStandardError = true
-            };
-            using (Process tar = Process.Start(info))
-            {
-                string error = tar.StandardError.ReadToEnd();
-                tar.WaitForExit();
-                if (tar.ExitCode != 0) throw new InvalidOperationException("系统解压程序失败：" + error.Trim());
+                sha.TransformFinalBlock(new byte[0], 0, 0);
+                if (!FixedTimeEquals(sha.Hash, expectedHash))
+                    throw new InvalidDataException("复制后的安装包数据校验失败，请重新获取文件。");
+                payload.Flush();
+                // This same handle remains open from creation and hashing
+                // through extraction. FileShare.Read lets tar read the file
+                // while preventing another writer or deleter from opening it.
+                ValidateArchiveEntries(temporaryPayload, destination);
+                RunTar(temporaryPayload, destination, "-xf", false);
+                AssertNoReparsePoints(destination);
             }
         }
         finally
@@ -205,6 +202,83 @@ internal static class GreenExtractor
             try { if (File.Exists(temporaryPayload)) File.Delete(temporaryPayload); }
             catch { }
         }
+    }
+
+    private static void ValidateArchiveEntries(string archive, string destination)
+    {
+        string listing = RunTar(archive, destination, "-tf", true);
+        foreach (string raw in listing.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string entry = raw.Trim();
+            if (!IsSafeArchivePath(destination, entry))
+                throw new InvalidDataException("安装包包含越界路径，拒绝解压：" + entry);
+        }
+        string verbose = RunTar(archive, destination, "-tvf", true);
+        foreach (string raw in verbose.Split(new string[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string line = raw.TrimStart();
+            if (line.Length == 0) continue;
+            if (line[0] != '-' && line[0] != 'd')
+                throw new InvalidDataException("安装包包含链接或其他不支持的条目类型，拒绝解压。");
+        }
+    }
+
+    private static bool IsSafeArchivePath(string destination, string entry)
+    {
+        if (String.IsNullOrWhiteSpace(entry) || entry.IndexOf('\0') >= 0) return false;
+        string normalized = entry.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+        while (normalized.StartsWith("." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            normalized = normalized.Substring(2);
+        normalized = normalized.TrimEnd(Path.DirectorySeparatorChar);
+        if (normalized.Length == 0 || normalized == ".") return true;
+        if (Path.IsPathRooted(normalized) || normalized.IndexOf(':') >= 0) return false;
+        foreach (string part in normalized.Split(Path.DirectorySeparatorChar))
+            if (part == "..") return false;
+        string root = Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        string candidate = Path.GetFullPath(Path.Combine(destination, normalized));
+        return candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string RunTar(string archive, string destination, string operation, bool captureOutput)
+    {
+        ProcessStartInfo info = new ProcessStartInfo("tar.exe", operation + " " + QuoteArgument(archive))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = destination,
+            RedirectStandardOutput = captureOutput,
+            RedirectStandardError = true
+        };
+        using (Process tar = Process.Start(info))
+        {
+            string output = captureOutput ? tar.StandardOutput.ReadToEnd() : "";
+            string error = tar.StandardError.ReadToEnd();
+            tar.WaitForExit();
+            if (tar.ExitCode != 0) throw new InvalidOperationException("系统解压程序失败：" + error.Trim());
+            return output;
+        }
+    }
+
+    private static void AssertNoReparsePoints(string destination)
+    {
+        Queue<string> pending = new Queue<string>();
+        pending.Enqueue(destination);
+        while (pending.Count != 0)
+        {
+            string directory = pending.Dequeue();
+            foreach (string entry in Directory.GetFileSystemEntries(directory))
+            {
+                FileAttributes attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException("安装包解压出了重解析点，拒绝安装：" + entry);
+                if ((attributes & FileAttributes.Directory) != 0) pending.Enqueue(entry);
+            }
+        }
+    }
+
+    private static string QuoteArgument(string value)
+    {
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
     private static void ReadExactly(Stream stream, byte[] buffer, int offset, int count)
