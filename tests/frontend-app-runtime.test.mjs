@@ -2406,6 +2406,82 @@ test("Monte Carlo settings stay frozen while its task result is loading", async 
   }
 });
 
+test("refresh restores persisted task settings before resuming Monte Carlo, carry, and downtime tasks", async () => {
+  const storageKey = "spare-mvp:simulation-tasks:v1";
+  const cases = [
+    {
+      feature: "spare-planning-monte-carlo-experiment-detail",
+      runSelector: "[data-lite-mesa-action='run']",
+      changes: [
+        ["[data-lite-mesa-field]", { liteMesaField: "samples" }, "9"],
+        ["[data-lite-mesa-field]", { liteMesaField: "seed" }, "4242"],
+        ["[data-lite-mesa-field]", { liteMesaField: "parallelCores" }, "3"]
+      ],
+      assertions(html) {
+        assert.match(html, /data-lite-mesa-field="samples"[^>]*value="9"[^>]*readonly/);
+        assert.match(html, /data-lite-mesa-field="seed"[^>]*value="4242"[^>]*readonly/);
+        assert.match(html, /data-lite-mesa-field="parallelCores"[^>]*value="3"[^>]*readonly/);
+      }
+    },
+    {
+      feature: "spare-planning-carry-list-analysis",
+      runSelector: "[data-lite-mesa-analysis-action='run']",
+      changes: [["[data-lite-mesa-analysis-field]", { liteMesaAnalysisField: "missionConfidenceTarget" }, "0.73"]],
+      assertions(html) {
+        assert.match(html, /data-lite-mesa-analysis-field="missionConfidenceTarget"[^>]*value="0.73"[^>]*readonly/);
+      }
+    },
+    {
+      feature: "mission-reliability-downtime-factor-analysis",
+      runSelector: "[data-lite-mesa-analysis-action='run']",
+      changes: [["[data-lite-mesa-analysis-field]", { liteMesaAnalysisField: "topN" }, "9"]],
+      assertions(html) {
+        assert.match(html, /data-lite-mesa-analysis-field="topN"[^>]*value="9"[^>]*readonly/);
+      }
+    }
+  ];
+
+  for (const testCase of cases) {
+    const projectJson = createRuntimeProjectJson();
+    const initial = await setupRuntimeApp({ hash: `feature=${testCase.feature}`, projectJson });
+    let storedTasks;
+    let taskId;
+    let taskPayload;
+    try {
+      for (const [selector, dataset, value] of testCase.changes) {
+        await initial.change(selector, dataset, { value });
+      }
+      await initial.click(testCase.runSelector);
+      storedTasks = initial.storage.get(storageKey);
+      const records = Object.values(JSON.parse(storedTasks));
+      assert.equal(records.length, 1);
+      assert.equal(typeof records[0], "object");
+      taskId = records[0].task_id;
+      assert.ok(taskId);
+      assert.doesNotMatch(storedTasks, /projectJson|components|supportNodes|secret/);
+      taskPayload = JSON.parse(initial.requests.find((request) => request.url === "/api/simulation-tasks").options.body);
+    } finally {
+      initial.restore();
+    }
+
+    const restored = await setupRuntimeApp({
+      hash: `feature=${testCase.feature}`,
+      projectJson,
+      storageEntries: [[storageKey, storedTasks]],
+      simulationTaskEntries: [[taskId, taskPayload]],
+      simulationTasksStayRunning: true
+    });
+    try {
+      await restored.flush();
+      testCase.assertions(restored.appNode.innerHTML);
+      assert.match(restored.appNode.innerHTML, /运行中|已处理/);
+      assert.equal(restored.requests.filter((request) => request.url === "/api/simulation-tasks").length, 0);
+    } finally {
+      restored.restore();
+    }
+  }
+});
+
 test("switching Projects clears active task UI without deleting the old recovery mapping", async () => {
   const projectA = createRuntimeProjectJson({ project_id: "project-task-a" });
   const projectB = createRuntimeProjectJson({ project_id: "project-task-b" });
@@ -8632,6 +8708,8 @@ async function setupRuntimeApp({
   systemConfigPayload = {},
   liteMesaAnalysisResponseOverrides = {},
   liteMesaAnalysisResponseDelayMs = 0,
+  simulationTaskEntries = [],
+  simulationTasksStayRunning = false,
   visualizationSessionResponseOverrides = {},
   visualizationSessionResponseDelayMs = 0,
   visualizationSessionDeleteFailures = 0,
@@ -8660,7 +8738,7 @@ async function setupRuntimeApp({
     ...Object.entries(projectJsonById)
   ]);
   const runtimeRuns = new Map();
-  const runtimeSimulationTasks = new Map();
+  const runtimeSimulationTasks = new Map(simulationTaskEntries);
   let createProjectFromImportCount = 0;
   let projectSaveCount = 0;
   let visualizationSessionCount = 0;
@@ -9084,11 +9162,11 @@ async function setupRuntimeApp({
       const samples = Number(body.settings?.samples || 2);
       return jsonResponse({
         task_id: taskId,
-        status: "completed",
-        stage: "completed",
-        processed: samples,
+        status: simulationTasksStayRunning ? "running" : "completed",
+        stage: simulationTasksStayRunning ? "running" : "completed",
+        processed: simulationTasksStayRunning ? 0 : samples,
         total: samples,
-        succeeded: samples,
+        succeeded: simulationTasksStayRunning ? 0 : samples,
         failed: 0,
         elapsed_seconds: 1,
         eta_seconds: null,

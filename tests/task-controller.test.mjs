@@ -34,12 +34,27 @@ test("remote task persists task_id and reports real progress through completion"
   };
   const updates = [];
   const controller = createSimulationTaskController({ api, storage, pollIntervalMs: 0, delay: async () => {} });
-  const completed = await controller.start("analysis::fingerprint", { analysis_type: "carry_list" }, {
+  const completed = await controller.start("analysis::fingerprint", {
+    analysis_type: "carry_list",
+    settings: { samples: 3, seed: 42, parallelCores: 2, missionConfidenceTarget: 0.82, secret: "do-not-store" },
+    context: { projectJson: { secret: "never-persist" } }
+  }, {
     onStatus: (status) => updates.push(status)
   });
 
   assert.equal(posts, 1);
   assert.equal(controller.taskId("analysis::fingerprint"), "task-1");
+  assert.deepEqual(controller.taskRecord("analysis::fingerprint"), {
+    taskId: "task-1",
+    analysisType: "carry_list",
+    settings: { samples: 3, seed: 42, parallelCores: 2, missionConfidenceTarget: 0.82 }
+  });
+  assert.deepEqual(JSON.parse(storage.snapshot()["spare-mvp:simulation-tasks:v1"])["analysis::fingerprint"], {
+    task_id: "task-1",
+    analysis_type: "carry_list",
+    settings: { samples: 3, seed: 42, parallelCores: 2, missionConfidenceTarget: 0.82 }
+  });
+  assert.doesNotMatch(storage.snapshot()["spare-mvp:simulation-tasks:v1"], /secret|projectJson|never-persist/);
   assert.deepEqual(updates.slice(-3).map((status) => status.processed), [1, 2, 3]);
   assert.equal(completed.result.sample_count, 2);
   assert.equal(updates[2].processed, updates[2].succeeded + updates[2].failed);
@@ -58,6 +73,11 @@ test("resume after refresh polls stored task without a duplicate POST", async ()
     async getSimulationTaskResult() { return { result: { status: "session_complete" } }; }
   };
   const controller = createSimulationTaskController({ api, storage, delay: async () => {} });
+  assert.deepEqual(controller.taskRecord("page::context"), {
+    taskId: "task-restored",
+    analysisType: "",
+    settings: {}
+  });
   const result = await controller.resume("page::context");
   assert.equal(posts, 0);
   assert.equal(result.taskId, "task-restored");

@@ -18991,11 +18991,48 @@ function simulationTaskPageAnalysisType(page) {
   return "";
 }
 
+function restoreSimulationTaskSettings(page, taskRecord) {
+  const analysisType = simulationTaskPageAnalysisType(page);
+  if (!taskRecord || (taskRecord.analysisType && taskRecord.analysisType !== analysisType)) return false;
+  const settings = taskRecord.settings || {};
+  const samples = Number(settings.samples);
+  const seed = Number(settings.seed);
+  const parallelCores = Number(settings.parallelCores);
+  const common = {
+    ...(Number.isFinite(samples) ? { samples: Math.max(1, Math.min(1000, Math.trunc(samples))) } : {}),
+    ...(Number.isFinite(seed) ? { seed: Math.trunc(seed) } : {}),
+    ...(Number.isFinite(parallelCores) ? { parallelCores: Math.max(1, Math.min(32, Math.trunc(parallelCores))) } : {})
+  };
+  if (page.component === "lite-mesa-monte-carlo-analysis") {
+    liteMesaMonteCarloSettings = { ...liteMesaMonteCarloSettings, ...common };
+    return true;
+  }
+  const specific = analysisType === "carry_list" && Number.isFinite(Number(settings.missionConfidenceTarget))
+    ? { missionConfidenceTarget: Math.max(0, Math.min(1, Number(settings.missionConfidenceTarget))) }
+    : analysisType === "downtime_factors" && Number.isFinite(Number(settings.topN))
+      ? { topN: Math.max(1, Math.min(20, Math.trunc(Number(settings.topN)))) }
+      : {};
+  liteMesaAnalysisSettings = {
+    ...liteMesaAnalysisSettings,
+    [analysisType]: {
+      ...(liteMesaAnalysisSettings[analysisType] || {}),
+      ...common,
+      ...specific
+    }
+  };
+  return true;
+}
+
 function queueSimulationTaskRestore(page) {
   const analysisType = simulationTaskPageAnalysisType(page);
   if (!analysisType) return;
   const scope = simulationTaskScopeForPage(page);
-  if (!simulationTaskController.taskId(scope) || simulationTaskRestoreAttempts.has(scope)) return;
+  const taskRecord = simulationTaskController.taskRecord(scope);
+  if (!taskRecord || simulationTaskRestoreAttempts.has(scope)) return;
+  if (!restoreSimulationTaskSettings(page, taskRecord)) {
+    simulationTaskController.clear(scope);
+    return;
+  }
   simulationTaskRestoreAttempts.add(scope);
   const requestEpoch = nextSimulationTaskRequestEpoch(scope);
   queueMicrotask(async () => {

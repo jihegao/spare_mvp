@@ -14,15 +14,21 @@ export function createSimulationTaskController({
   }
 
   const activeMonitors = new Map();
-  const volatileTaskIds = new Map();
+  const volatileTaskRecords = new Map();
+  const taskRecordForScope = (scope) => (
+    volatileTaskRecords.get(scope)
+    || normalizeStoredTaskRecord(readTaskMap(storage, storageKey)[scope])
+  );
 
   return {
+    taskRecord: taskRecordForScope,
+
     taskId(scope) {
-      return volatileTaskIds.get(scope) || readTaskMap(storage, storageKey)[scope] || "";
+      return taskRecordForScope(scope)?.taskId || "";
     },
 
     clear(scope) {
-      volatileTaskIds.delete(scope);
+      volatileTaskRecords.delete(scope);
       updateTaskMap(storage, storageKey, (tasks) => {
         delete tasks[scope];
       });
@@ -46,8 +52,9 @@ export function createSimulationTaskController({
         throw normalizeTaskRequestError(error);
       }
       if (!submitted.taskId) throw new Error("后端未返回 task_id");
-      volatileTaskIds.set(scope, submitted.taskId);
-      persistTaskId(storage, storageKey, scope, submitted.taskId);
+      const taskRecord = createStoredTaskRecord(submitted.taskId, payload);
+      volatileTaskRecords.set(scope, taskRecord);
+      persistTaskRecord(storage, storageKey, scope, taskRecord);
       options.onStatus?.(submitted);
       return monitor(scope, submitted.taskId, options);
     },
@@ -117,7 +124,7 @@ export function createSimulationTaskController({
       } catch (error) {
         const normalized = normalizeTaskRequestError(error);
         if (normalized.code === "simulation_task_not_found") {
-          volatileTaskIds.delete(scope);
+          volatileTaskRecords.delete(scope);
           updateTaskMap(storage, storageKey, (tasks) => { delete tasks[scope]; });
           const unavailable = unavailableTaskStatus(taskId);
           options.onStatus?.(unavailable);
@@ -241,8 +248,54 @@ function readTaskMap(storage, storageKey) {
   }
 }
 
-function persistTaskId(storage, storageKey, scope, taskId) {
-  updateTaskMap(storage, storageKey, (tasks) => { tasks[scope] = taskId; });
+function persistTaskRecord(storage, storageKey, scope, taskRecord) {
+  updateTaskMap(storage, storageKey, (tasks) => {
+    tasks[scope] = {
+      task_id: taskRecord.taskId,
+      analysis_type: taskRecord.analysisType,
+      settings: taskRecord.settings
+    };
+  });
+}
+
+function normalizeStoredTaskRecord(value) {
+  if (typeof value === "string") {
+    const taskId = value.trim();
+    return taskId ? { taskId, analysisType: "", settings: {} } : null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const taskId = String(value.task_id || value.taskId || "").trim();
+  if (!taskId) return null;
+  return {
+    taskId,
+    analysisType: String(value.analysis_type || value.analysisType || "").trim(),
+    settings: sanitizeTaskSettings(value.settings)
+  };
+}
+
+function createStoredTaskRecord(taskId, payload = {}) {
+  return {
+    taskId: String(taskId),
+    analysisType: String(payload.analysis_type || payload.analysisType || "").trim(),
+    settings: sanitizeTaskSettings(payload.settings)
+  };
+}
+
+function sanitizeTaskSettings(settings) {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return {};
+  const allowedKeys = [
+    "samples",
+    "seed",
+    "parallelCores",
+    "missionConfidenceTarget",
+    "topN",
+    "write_event_snapshots"
+  ];
+  return Object.fromEntries(allowedKeys.flatMap((key) => {
+    const value = settings[key];
+    if (typeof value === "boolean") return [[key, value]];
+    return Number.isFinite(value) ? [[key, value]] : [];
+  }));
 }
 
 function updateTaskMap(storage, storageKey, update) {
