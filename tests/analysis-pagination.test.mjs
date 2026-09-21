@@ -21,6 +21,8 @@ function formalView() {
     const renderSpareShortfallSortHeading = label => label;
     const renderBar = () => '';
     const carryUtilizationDisplay = fixed, formatReliabilityPercent = fixed;
+    const carryProjectedSatisfactionDisplay = row => fixed(row.projectedSatisfactionRate);
+    const carryActualSatisfactionDisplay = row => row.demand === null ? '数据不可用' : fixed(row.satisfactionRate);
     const visibleDowntimeAnomalySnapshots = result => result.snapshots || [];
     const renderLiteMesaMissionReliabilityWaveChart = rows => '<chart data-count="' + rows.length + '"></chart>';
     ${source.slice(source.indexOf('function taskReliabilityDetailCells('), source.indexOf('function renderLiteMesaMissionReliabilityWaveChart('))}
