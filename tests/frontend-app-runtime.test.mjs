@@ -2628,9 +2628,9 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
         ["满足下限备件", "2/2"]
       ],
       rows: [
-        { aircraftModel: "J-15", productId: "product-engine", spareType: "不得显示的旧发动机备件", recommended: 5, usedQuantity: 1, carriedQuantity: 1, demand: 6, shortage: 1, satisfactionRate: 0.9, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0, utilization: 0, riskLevel: "高", lifeLimited: true, lifeLandings: 120, lifeHours: 240 },
-        { aircraftModel: "J-35", productId: "product-radar", spareType: "不得显示的旧雷达备件", recommended: 2, usedQuantity: 1, carriedQuantity: 9, demand: 2, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 2, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 },
-        { aircraftModel: "J-15", productId: "product-zero", spareType: "不得显示的旧零需求备件", recommended: 0, usedQuantity: 0, carriedQuantity: 0, demand: 0, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 }
+        { aircraftModel: "J-15", productId: "product-engine", spareType: "不得显示的旧发动机备件", recommended: 5, usedQuantity: 1, carriedQuantity: 1, demand: 6, immediatelyFilledQuantity: 1, shortage: 1, projectedSatisfactionRate: 0.9, minimumSatisfactionRate: 0.9, riskLevel: "高", lifeLimited: true, lifeLandings: 120, lifeHours: 240 },
+        { aircraftModel: "J-35", productId: "product-radar", spareType: "不得显示的旧雷达备件", recommended: 2, usedQuantity: 1, carriedQuantity: 9, demand: 2, immediatelyFilledQuantity: 2, shortage: 0, projectedSatisfactionRate: 1, minimumSatisfactionRate: 0.9, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 },
+        { aircraftModel: "J-15", productId: "product-zero", spareType: "不得显示的旧零需求备件", recommended: 0, usedQuantity: 0, carriedQuantity: 0, demand: 0, immediatelyFilledQuantity: 0, shortage: 0, projectedSatisfactionRate: 1, minimumSatisfactionRate: 0.9, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 }
       ]
     }
   });
@@ -2640,12 +2640,13 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
 
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(detailPanel, /总体备件利用率[\s\S]*20\.00%/);
-    assert.match(detailPanel, /满足下限备件[\s\S]*2\/2/);
+    assert.match(detailPanel, /满足下限备件[\s\S]*1\/2/);
+    assert.match(detailPanel, /总体实际即时满足率[\s\S]*37\.50%/);
     assert.match(detailPanel, /<th>机型<\/th><th>产品<\/th>/);
-    assert.match(detailPanel, /<th>预计满足率<\/th><th>即时满足率<\/th><th>约束状态<\/th>/);
-    assert.match(detailPanel, /<th>备件利用率<\/th>/);
-    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>90%<\/td><td>不可用<\/td><td>满足（0\.00%）<\/td><td>100\.00%<\/td>/);
-    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>不可用<\/td><td>满足（\+10\.00%）<\/td><td>11\.11%<\/td>/);
+    assert.match(detailPanel, /<th>规划满足率<\/th><th>实际即时满足率<\/th><th>实际约束状态<\/th>/);
+    assert.match(detailPanel, /<th>实际备件利用率<\/th>/);
+    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>90%<\/td><td>17%<\/td><td>未满足（-73\.33%）<\/td><td>100\.00%<\/td>/);
+    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>100%<\/td><td>满足（\+10\.00%）<\/td><td>11\.11%<\/td>/);
     assert.match(detailPanel, /隐藏需求数值为 0 的备件/);
     assert.match(detailPanel, /data-carry-hide-zero checked/);
     assert.match(detailPanel, /data-carry-aircraft-filter/);
@@ -2677,6 +2678,7 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     await runtime.change("[data-carry-hide-zero]", {}, { checked: false });
     const filteredAndSortedRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO/);
+    assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO[\s\S]*<td>100%<\/td><td>--<\/td><td>数据不可用<\/td><td>--<\/td>/);
     assert.ok(filteredAndSortedRows.indexOf("发动机控制模块 / EC-15") < filteredAndSortedRows.indexOf("零需求产品 / ZERO"));
   } finally {
     runtime.restore();
@@ -2688,7 +2690,7 @@ test("carry list overall utilization is unavailable when total carried quantity 
     hash: "feature=spare-planning-carry-list-analysis",
     liteMesaAnalysisResponseOverrides: {
       rows: [
-        { aircraftModel: "J-15", productId: "spare-zero", recommended: 0, usedQuantity: 0, carriedQuantity: 0, demand: 1, shortage: 0, riskLevel: "低" }
+        { aircraftModel: "J-15", productId: "spare-zero", recommended: 0, usedQuantity: 0, carriedQuantity: 0, demand: 1, immediatelyFilledQuantity: 0, shortage: 0, projectedSatisfactionRate: 1, riskLevel: "低" }
       ]
     }
   });
@@ -2711,7 +2713,8 @@ test("carry list does not treat missing or invalid raw quantities as a real zero
     hash: "feature=spare-planning-carry-list-analysis",
     liteMesaAnalysisResponseOverrides: {
       rows: [
-        { aircraftModel: "J-15", productId: "legacy-spare", recommended: 2, usedQuantity: "   ", carriedQuantity: false, demand: 1, shortage: 0, utilization: 0.5, riskLevel: "低" }
+        { aircraftModel: "J-15", productId: "complete-spare", recommended: 1, usedQuantity: 1, carriedQuantity: 1, demand: 1, immediatelyFilledQuantity: 1, shortage: 0, riskLevel: "低" },
+        { aircraftModel: "J-15", productId: "legacy-spare", recommended: 2, usedQuantity: "   ", carriedQuantity: false, demand: null, shortage: 0, utilization: 0.5, riskLevel: "低" }
       ]
     }
   });
@@ -2720,11 +2723,13 @@ test("carry list does not treat missing or invalid raw quantities as a real zero
     await runtime.click("[data-lite-mesa-analysis-action='run']");
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(detailPanel, /总体备件利用率[\s\S]*数据不可用/);
+    assert.match(detailPanel, /满足下限备件[\s\S]*数据不可用/);
     assert.doesNotMatch(detailPanel, /总体备件利用率[\s\S]*--/);
-    assert.match(detailPanel, /<td>50\.00%<\/td>/);
+    assert.match(detailPanel, /<td>数据不可用<\/td>/);
     await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "spare-planning-carry-list-analysis" });
     const body = analysisExportBodies(runtime).at(-1);
     assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("总体备件利用率"), "数据不可用");
+    assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("满足下限备件"), "数据不可用");
   } finally {
     runtime.restore();
   }
@@ -2781,10 +2786,10 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     }),
     liteMesaAnalysisResponseOverrides: {
       rows: [
-        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, usedQuantity: 8, carriedQuantity: 4, demand: 4, shortage: 0, satisfactionRate: 1, observedFillRate: 0.5, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 0, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
-        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, usedQuantity: 0, carriedQuantity: 0, demand: 3, shortage: 0, satisfactionRate: 1, observedFillRate: 0.25, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, utilization: 2, lifeLimited: false, riskLevel: "低" },
-        { aircraftModel: "J-15", productId: "carry-zero", recommended: 0, usedQuantity: 0, carriedQuantity: 0, demand: 0, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, lifeLimited: false, riskLevel: "低" },
-        { aircraftModel: "J-16", productId: "carry-a", recommended: 1, usedQuantity: 0, carriedQuantity: 1, demand: 1, shortage: 0, satisfactionRate: 1, minimumSatisfactionRate: 0.9, satisfactionConstraintMet: true, satisfactionConstraintMargin: 0.1, lifeLimited: false, riskLevel: "低" }
+        { aircraftModel: "J-15", productId: "carry-a", recommended: 4, usedQuantity: 8, carriedQuantity: 4, demand: 4, immediatelyFilledQuantity: 2, shortage: 0, projectedSatisfactionRate: 1, minimumSatisfactionRate: 0.9, lifeLimited: true, lifeLandings: 100, lifeHours: 0, riskLevel: "高" },
+        { aircraftModel: "J-15", productId: "carry-b", recommended: 2, usedQuantity: 0, carriedQuantity: 0, demand: 4, immediatelyFilledQuantity: 1, shortage: 0, projectedSatisfactionRate: 1, minimumSatisfactionRate: 0.9, lifeLimited: false, riskLevel: "低" },
+        { aircraftModel: "J-15", productId: "carry-zero", recommended: 0, usedQuantity: 0, carriedQuantity: 0, demand: 0, immediatelyFilledQuantity: 0, shortage: 0, projectedSatisfactionRate: 1, minimumSatisfactionRate: 0.9, lifeLimited: false, riskLevel: "低" },
+        { aircraftModel: "J-16", productId: "carry-a", recommended: 1, usedQuantity: 0, carriedQuantity: 1, demand: 1, immediatelyFilledQuantity: 1, shortage: 0, projectedSatisfactionRate: 1, minimumSatisfactionRate: 0.9, lifeLimited: false, riskLevel: "低" }
       ]
     }
   });
@@ -2799,12 +2804,12 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     assert.equal(body.analysis_type, "carry_list");
     assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
     assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("总体备件利用率"), "160.00%");
-    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "预计使用数量", "携行总数量", "需求数量", "预计短缺数量", "预计满足率", "即时满足率", "预计满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
-    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[7], row[9], row[10], row[11], row[12], row[13]]), [
-      ["J-15", "液压泵 / B-01", 2, 0, 0, "100%", "90%", "满足", "+10.00%", "不可计算", "否"],
-      ["J-15", "航电模块 / A-01", 4, 8, 4, "100%", "90%", "满足", "+10.00%", "200.00%", "是"]
+    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "实际需求数量", "实际即时满足数量", "预计短缺数量", "规划满足率", "实际即时满足率", "实际满足率下限", "实际约束状态", "实际约束余量", "实际备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[8], row[10], row[11], row[12], row[13], row[14]]), [
+      ["J-15", "液压泵 / B-01", 2, 0, 0, "100%", "90%", "未满足", "-65.00%", "--", "否"],
+      ["J-15", "航电模块 / A-01", 4, 8, 4, "100%", "90%", "未满足", "-40.00%", "200.00%", "是"]
     ]);
-    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[8]), ["25%", "50%"]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[9]), ["25%", "50%"]);
     assert.doesNotMatch(JSON.stringify(body), /J-16|零需求件/);
   } finally {
     runtime.restore();
@@ -8302,8 +8307,8 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
         metrics: [
           { metric_id: "mission_success_rate", mean: 0.73, sample_variance: 0.0123, valid_sample_count: 3 },
           { metric_id: "operational_availability", mean: 0.81, sample_variance: 0.0064, valid_sample_count: 3 },
-          { metric_id: "spare_fill_rate", mean: 0.64, sample_variance: 0.02, valid_sample_count: 2 },
-          { metric_id: "spare_utilization", mean: 0.29, sample_variance: null, valid_sample_count: 1 },
+          { metric_id: "spare_fill_rate", mean: 0.5, overall_ratio: 1 / 12, sample_variance: 0.5, valid_sample_count: 2, mean_aggregation_method: "arithmetic_mean", overall_aggregation_method: "ratio_of_totals", overall_status: "available", numerator_total: 1, denominator_total: 12 },
+          { metric_id: "spare_utilization", mean: 0.125, overall_ratio: 1 / 36, sample_variance: 0.03125, valid_sample_count: 2, mean_aggregation_method: "arithmetic_mean", overall_aggregation_method: "ratio_of_totals", overall_status: "available", numerator_total: 1, denominator_total: 36 },
           { metric_id: "ready_rate", mean: 0, sample_variance: null, valid_sample_count: 2, invalid_reason: "sample_variance_not_finite" },
           { metric_id: "sortie_rate", mean: 0.82, sample_variance: 0.0025, valid_sample_count: 3 },
           { metric_id: "mean_transport_delay", mean: 7.5, sample_variance: 4, valid_sample_count: 3 },
@@ -8315,8 +8320,10 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
         sample_id: "sample-render-fallback-check",
         final: {
           mission_success_rate: 0.11,
-          spare_fill_rate: 0.22,
-          spare_utilization: 0.33
+          spare_immediately_filled_total: 1,
+          spare_demand_total: 12,
+          spare_consumed_total: 1,
+          spare_carried_total: 36
         }
       }]
     }
@@ -8358,23 +8365,36 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
     assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
     assert.match(resultCards, /使用可用度\(A\)[\s\S]*<strong>0\.81<\/strong>/);
-    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64<\/strong>/);
-    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29<\/strong>/);
+    assert.match(resultCards, /实际即时满足率（样本均值）[\s\S]*<strong>0\.50<\/strong>/);
+    assert.match(resultCards, /实际备件利用率（样本均值）[\s\S]*<strong>0\.13<\/strong>/);
     assert.doesNotMatch(resultCards, /比例|架次\/机\/天|小时|项/);
-    assert.match(metricTable, /<th>均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
-    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>1<\/td>/);
-    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<th>样本均值<\/th><th>跨样本总体比率<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>--<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>--<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>实际即时满足率<\/td>\s*<td>0\.50<\/td>\s*<td>8\.33%<\/td>\s*<td>0\.5000<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>实际备件利用率<\/td>\s*<td>0\.13<\/td>\s*<td>2\.78%<\/td>\s*<td>0\.0313<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>--<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
     assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
     assert.match(metricTable, /<td>维修积压<\/td>[\s\S]*?<td>项<\/td>/);
     assert.doesNotMatch(metricTable, /比例²|\(架次\/机\/天\)²|小时²|项²/);
-    for (const label of ["任务可靠度", "使用可用度\\(A\\)", "备件满足率", "备件利用率"]) {
+    for (const label of ["任务可靠度", "使用可用度\\(A\\)", "实际即时满足率", "实际备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }
     assert.doesNotMatch(runtime.appNode.innerHTML, /sample_id|mean_transport_delay|mission_success_rate|operational_availability|spare_fill_rate|spare_utilization/);
     assert.match(runtime.appNode.innerHTML, new RegExp("Mesa 分析完成：3/4 个样本，失败 1 个，总耗时 70\\.9 秒。"));
+    assert.match(runtime.appNode.innerHTML, /样本实际备件指标明细[\s\S]*8\.33%[\s\S]*2\.78%/);
+
+    await runtime.click("[data-analysis-xlsx-export]");
+    const exportRequest = runtime.requests
+      .filter((request) => request.url === "/api/analysis-results/export-xlsx")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(exportRequest.analysis_type, "monte_carlo");
+    assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率" && row[1] === "0.50"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率（跨样本总体）" && row[1] === "8.33%"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "实际备件利用率（跨样本总体）" && row[1] === "2.78%"));
+    assert.deepEqual(exportRequest.detail_sections[0].rows[0].slice(2), [12, 1, "8.33%", 36, 1, "2.78%"]);
   } finally {
     runtime.restore();
   }
@@ -8408,7 +8428,7 @@ test("Monte Carlo detail renders backend sample timeout as an actionable blocked
     assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /成功样本[\s\S]*<strong>0<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /失败样本[\s\S]*<strong>4<\/strong>/);
-    assert.match(runtime.appNode.innerHTML, /无有效样本/);
+    assert.match(runtime.appNode.innerHTML, /--/);
     assert.match(runtime.appNode.innerHTML, /不可计算/);
   } finally {
     runtime.restore();

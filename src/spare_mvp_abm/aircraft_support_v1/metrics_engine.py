@@ -28,7 +28,6 @@ class MetricsEngineMixin:
         postflight_backlog = sum(1 for job in self.jobs if job.kind == "postflight" and job.state in {"waiting", "running"})
         preventive_backlog = sum(1 for job in self.jobs if job.kind == "preventive" and job.state in {"waiting", "running"})
         stock_total = sum(sum(max(0, int(qty)) for qty in node["inventory"].values()) for node in self.nodes.values())
-        total_inventory = max(1, stock_total + self.spare_consumed_total)
         aircraft_count = max(1, len(self.aircraft))
         simulation_days = max(1.0, self.duration_minutes / 1440.0)
         sortie_completion_rate = min(1.0, self.completed_sorties / planned_sorties)
@@ -68,6 +67,7 @@ class MetricsEngineMixin:
             "spare_stock_total": stock_total,
             "avg_departure_delay": avg_delay,
             "spare_consumed_total": self.spare_consumed_total,
+            "spare_carried_total": self.spare_carried_total,
             "maintenance_backlog": backlog,
             "repair_backlog": repair_backlog,
             "postflight_backlog": postflight_backlog,
@@ -91,8 +91,16 @@ class MetricsEngineMixin:
             "delayed_sorties": self.delayed_sorties,
             "spare_demand_total": self.spare_demand_total,
             "spare_immediately_filled_total": self.spare_immediately_filled_total,
-            "spare_fill_rate": self.spare_immediately_filled_total / self.spare_demand_total if self.spare_demand_total else 1.0,
-            "spare_utilization": min(1.0, self.spare_consumed_total / total_inventory),
+            "spare_fill_rate": (
+                self.spare_immediately_filled_total / self.spare_demand_total
+                if self.spare_demand_total > 0
+                else None
+            ),
+            "spare_utilization": (
+                self.spare_consumed_total / self.spare_carried_total
+                if self.spare_carried_total > 0
+                else None
+            ),
             "shortage_events": self.shortage_events,
             "transport_in_transit_count": len(self.transport_shipments),
             "downtime_failure_events": downtime_summary["failure"]["event_count"],

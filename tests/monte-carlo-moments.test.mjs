@@ -28,7 +28,8 @@ test("moments exclude strings, nonfinite values, booleans, metadata, and use n-1
       metrics: {
         mission_success_rate: 0.8,
         operational_availability: 0.9,
-        spare_fill_rate: 0.6,
+        spare_immediately_filled_total: 3,
+        spare_demand_total: 5,
         spare_utilization: Number.POSITIVE_INFINITY,
         ready_rate: 0.4,
         mean_transport_delay: "3",
@@ -66,7 +67,7 @@ test("n=0 and n=1 remain explicitly unavailable and payload strings are not norm
   assert.equal(one.metrics[0].mean, 0.75);
   assert.equal(one.metrics[0].sampleVariance, null);
   assert.equal(formatMonteCarloMoment(one.metrics[0].sampleVariance, "ratio", { variance: true }), "不可计算");
-  assert.equal(formatMonteCarloMoment(empty.metrics[0].mean, "ratio"), "无有效样本");
+  assert.equal(formatMonteCarloMoment(empty.metrics[0].mean, "ratio"), "--");
 
   const normalized = normalizeMonteCarloMetricMoments({
     total_sample_count: 2,
@@ -81,6 +82,36 @@ test("n=0 and n=1 remain explicitly unavailable and payload strings are not norm
   });
   assert.equal(normalized.metrics[0].mean, null);
   assert.equal(normalized.metrics[0].sampleVariance, null);
+});
+
+test("actual spare metrics use ratio of totals and exclude zero denominators", () => {
+  const moments = buildMonteCarloMetricMoments([
+    { metrics: { spare_immediately_filled_total: 1, spare_demand_total: 1, spare_consumed_total: 1, spare_carried_total: 4 } },
+    { metrics: { spare_immediately_filled_total: 0, spare_demand_total: 11, spare_consumed_total: 0, spare_carried_total: 32 } },
+    { metrics: { spare_immediately_filled_total: 0, spare_demand_total: 0, spare_consumed_total: 0, spare_carried_total: 0 } }
+  ]);
+  const byId = Object.fromEntries(moments.metrics.map((metric) => [metric.metricId, metric]));
+  assert.equal(byId.spare_fill_rate.mean, 0.5);
+  assert.ok(Math.abs(byId.spare_fill_rate.overallRatio - 1 / 12) < 1e-12);
+  assert.equal(byId.spare_fill_rate.validSampleCount, 2);
+  assert.equal(byId.spare_fill_rate.denominatorTotal, 12);
+  assert.equal(byId.spare_utilization.mean, 0.125);
+  assert.ok(Math.abs(byId.spare_utilization.overallRatio - 1 / 36) < 1e-12);
+  assert.equal(byId.spare_utilization.validSampleCount, 2);
+  assert.equal(byId.spare_utilization.denominatorTotal, 36);
+
+  const zero = buildMonteCarloMetricMoments([
+    { metrics: { spare_immediately_filled_total: 0, spare_demand_total: 0, spare_consumed_total: 0, spare_carried_total: 0 } }
+  ]);
+  const zeroById = Object.fromEntries(zero.metrics.map((metric) => [metric.metricId, metric]));
+  assert.equal(zeroById.spare_fill_rate.invalidReason, "zero_denominator");
+  assert.equal(zeroById.spare_fill_rate.overallStatus, "zero_denominator");
+  assert.equal(zeroById.spare_utilization.validSampleCount, 0);
+
+  const missing = buildMonteCarloMetricMoments([{ metrics: {} }]);
+  const missingById = Object.fromEntries(missing.metrics.map((metric) => [metric.metricId, metric]));
+  assert.equal(missingById.spare_fill_rate.invalidReason, "data_unavailable");
+  assert.equal(missingById.spare_fill_rate.overallStatus, "data_unavailable");
 });
 
 test("finite extremes keep finite means and mark unrepresentable variance unavailable", () => {

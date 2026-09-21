@@ -3517,6 +3517,7 @@ class SimulationAdapter:
             demand_count = demand_quantity
             filled_count = max(0.0, float(row_stats.get("immediately_filled_quantity", 0) or 0))
             fill_rate = filled_count / demand_count if demand_count > 0 else 1.0
+            actual_satisfaction_rate = filled_count / demand_count if demand_count > 0 else None
             request_count = max(0.0, float(row_stats.get("request_count", 0) or 0))
             type_shortage_probability = shortage_count / request_count if request_count else 0.0
             sample_demand_quantities = [
@@ -3577,8 +3578,16 @@ class SimulationAdapter:
                     "projected_shortage_count": projected_shortage_quantity,
                     "projected_satisfaction_rate": projected_satisfaction_rate,
                     "minimum_satisfaction_rate": satisfaction_target,
-                    "satisfaction_constraint_met": projected_satisfaction_rate + 1e-12 >= satisfaction_target,
-                    "satisfaction_constraint_margin": projected_satisfaction_rate - satisfaction_target,
+                    "satisfaction_constraint_met": (
+                        actual_satisfaction_rate + 1e-12 >= satisfaction_target
+                        if actual_satisfaction_rate is not None
+                        else None
+                    ),
+                    "satisfaction_constraint_margin": (
+                        actual_satisfaction_rate - satisfaction_target
+                        if actual_satisfaction_rate is not None
+                        else None
+                    ),
                     "utilization": min(1.0, consumed_quantity / max(1.0, float(baseline_quantity))),
                     "carry_utilization": carry_utilization,
                     "shortage_probability": projected_shortage_probability,
@@ -4020,26 +4029,60 @@ class SimulationAdapter:
                         "spare_type": row["spare_type"],
                         "baseline_quantity": row["baseline_quantity"],
                         "recommended_quantity": row["recommended_quantity"],
-                        "used_quantity": row["projected_filled_count"],
+                        # Actual observations.  Keep these quantities explicit so consumers can
+                        # aggregate ratios of totals instead of averaging per-row/sample rates.
+                        "consumed_quantity": row["used_quantity"],
+                        "used_quantity": row["used_quantity"],
                         "carried_quantity": row["carried_quantity"],
                         "recommended_multiplier": (
                             row["recommended_quantity"] / row["baseline_quantity"]
                             if row["baseline_quantity"] > 0
                             else float(row["recommended_quantity"])
                         ),
+                        "demand_quantity": row["demand_count"],
                         "demand_count": row["demand_count"],
-                        "filled_count": row["projected_filled_count"],
+                        "immediately_filled_quantity": row["filled_count"],
+                        "filled_count": row["filled_count"],
+                        # Planning outputs remain available under names that cannot be mistaken
+                        # for actual simulation observations.
+                        "projected_filled_count": row["projected_filled_count"],
+                        "projected_shortage_count": row["projected_shortage_count"],
+                        "projected_satisfaction_rate": row["projected_satisfaction_rate"],
+                        "projected_utilization": row["carry_utilization"],
+                        # Deprecated planning alias retained for projection-v0 readers.
                         "shortage_count": row["projected_shortage_count"],
                         "observed_filled_count": row["filled_count"],
                         "observed_shortage_count": row["shortage_count"],
                         "observed_shortage_quantity": row["shortage_quantity"],
                         "observed_request_count": row["request_count"],
                         "observed_request_shortfall_rate": row["observed_shortage_probability"],
-                        "observed_fill_rate": row["fill_rate"],
-                        "satisfaction_rate": row["projected_satisfaction_rate"],
+                        "observed_fill_rate": (
+                            row["filled_count"] / row["demand_count"]
+                            if row["demand_count"] > 0
+                            else None
+                        ),
+                        "actual_satisfaction_rate": (
+                            row["filled_count"] / row["demand_count"]
+                            if row["demand_count"] > 0
+                            else None
+                        ),
+                        "satisfaction_rate": (
+                            row["filled_count"] / row["demand_count"]
+                            if row["demand_count"] > 0
+                            else None
+                        ),
                         "satisfaction_constraint_met": row["satisfaction_constraint_met"],
                         "satisfaction_constraint_margin": row["satisfaction_constraint_margin"],
-                        "utilization": row["carry_utilization"],
+                        "actual_utilization": (
+                            row["used_quantity"] / row["carried_quantity"]
+                            if row["carried_quantity"] > 0
+                            else None
+                        ),
+                        "utilization": (
+                            row["used_quantity"] / row["carried_quantity"]
+                            if row["carried_quantity"] > 0
+                            else None
+                        ),
                         "risk_level": row["risk_level"],
                         "minimum_satisfaction_rate": row["minimum_satisfaction_rate"],
                         "hide_zero_demand": True,
@@ -4592,7 +4635,7 @@ class SimulationAdapter:
             return None
         demand = self._non_negative_number(metrics["spare_demand_total"], 0.0)
         filled = self._non_negative_number(metrics["spare_immediately_filled_total"], 0.0)
-        return self._clamp01(filled / demand) if demand else 1.0
+        return self._clamp01(filled / demand) if demand else None
 
     def _aviation_monte_carlo_visualization_frames(self, run_id: str, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         frames: list[dict[str, Any]] = []
@@ -4663,12 +4706,19 @@ class SimulationAdapter:
         }
 
     def _aggregate_sample_metrics(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
+        ratio_metric_fields = {
+            "spare_fill_rate": ("spare_immediately_filled_total", "spare_demand_total"),
+            "spare_utilization": ("spare_consumed_total", "spare_carried_total"),
+        }
+        ratio_quantity_fields = {field for fields in ratio_metric_fields.values() for field in fields}
         keys = sorted(
             {
                 key
                 for sample in samples
                 for key, value in sample.get("metrics", {}).items()
                 if is_finite_json_number(value)
+                and key not in ratio_quantity_fields
+                and key not in ratio_metric_fields
             }
         )
         aggregate = {}
@@ -4681,6 +4731,29 @@ class SimulationAdapter:
             mean = finite_mean(values)
             if mean is not None:
                 aggregate[key] = mean
+        for metric_id, (numerator_field, denominator_field) in ratio_metric_fields.items():
+            pairs = [
+                (float(metrics[numerator_field]), float(metrics[denominator_field]))
+                for sample in samples
+                for metrics in [sample.get("metrics")]
+                if isinstance(metrics, dict)
+                and is_finite_json_number(metrics.get(numerator_field))
+                and is_finite_json_number(metrics.get(denominator_field))
+                and float(metrics[numerator_field]) >= 0
+                and float(metrics[denominator_field]) >= 0
+            ]
+            positive_pairs = [(numerator, denominator) for numerator, denominator in pairs if denominator > 0]
+            numerator_total = math.fsum(numerator for numerator, _denominator in positive_pairs)
+            denominator_total = math.fsum(denominator for _numerator, denominator in positive_pairs)
+            if pairs:
+                aggregate[numerator_field] = numerator_total
+                aggregate[denominator_field] = denominator_total
+            aggregate[metric_id] = numerator_total / denominator_total if denominator_total > 0 else None
+            aggregate[f"{metric_id}_status"] = (
+                "available"
+                if denominator_total > 0
+                else "zero_denominator" if pairs else "data_unavailable"
+            )
         if any(
             isinstance(sample.get("metrics"), dict)
             and "operational_availability" in sample["metrics"]

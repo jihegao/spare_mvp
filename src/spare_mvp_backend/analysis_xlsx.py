@@ -22,6 +22,7 @@ SUPPORTED_ANALYSIS_TYPES = {
     "aircraft_mission_reliability": "飞机任务可靠性评估",
     "mission_reliability": "任务可靠度评估",
     "downtime_factors": "停机因素分析",
+    "monte_carlo": "蒙特卡洛分析",
 }
 MAX_DETAIL_ROWS = 10_000
 MAX_DETAIL_COLUMNS = 40

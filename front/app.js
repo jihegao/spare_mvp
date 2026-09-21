@@ -18931,6 +18931,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
   const settingsError = runSettings.validationError || "";
   const displayedSettings = settingsError ? liteMesaMonteCarloSettings : runSettings;
   const readonly = frozenPlan ? "readonly" : "";
+  const sampleRows = liteMesaMonteCarloSampleRows(result);
   return `
     <div class="lite-mesa-workbench">
       <section class="lite-mesa-hero">
@@ -18958,6 +18959,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         <section class="lite-mesa-results">
           <div class="section-head">
             <h3>实验运行结果</h3>
+            ${renderAnalysisXlsxExportControl(page, result)}
           </div>
           ${hasResult ? `
             <div class="lite-mesa-metric-cards">
@@ -18968,7 +18970,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
             <div class="lite-mesa-metric-cards">
               ${topMetrics.map((row) => `
                 <div class="metric-card">
-                  <span>${htmlEscape(row.label)}</span>
+                  <span>${htmlEscape(row.overallAggregationMethod === "ratio_of_totals" ? `${row.label}（样本均值）` : row.label)}</span>
                   <strong>${htmlEscape(row.meanLabel)}</strong>
                 </div>
               `).join("")}
@@ -18986,21 +18988,59 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         </div>
         <div class="table-wrap">
           <table class="lite-mesa-stat-table">
-            <thead><tr><th>业务指标</th><th>均值</th><th>样本方差（n-1）</th><th>单位</th><th>有效样本数</th></tr></thead>
+            <thead><tr><th>业务指标</th><th>样本均值</th><th>跨样本总体比率</th><th>样本方差（n-1）</th><th>单位</th><th>有效样本数</th></tr></thead>
             <tbody>${hasResult ? metricRows.map((row) => `
               <tr>
                 <td>${htmlEscape(row.label)}</td>
                 <td>${htmlEscape(row.meanLabel)}</td>
+                <td>${htmlEscape(row.overallRatioLabel)}</td>
                 <td>${htmlEscape(row.varianceLabel)}</td>
                 <td>${htmlEscape(row.unit)}</td>
                 <td>${htmlEscape(row.validSampleCount)}</td>
               </tr>
-            `).join("") : `<tr><td colspan="5">当前没有可展示的业务结果。</td></tr>`}</tbody>
+            `).join("") : `<tr><td colspan="6">当前没有可展示的业务结果。</td></tr>`}</tbody>
+          </table>
+        </div>
+      </section>
+      <section class="lite-mesa-stat-section">
+        <div class="section-head"><h3>样本实际备件指标明细</h3></div>
+        <div class="table-wrap">
+          <table class="lite-mesa-stat-table">
+            <thead><tr><th>样本</th><th>Seed</th><th>实际需求</th><th>实际即时满足</th><th>实际即时满足率</th><th>实际携行</th><th>实际消耗</th><th>实际备件利用率</th></tr></thead>
+            <tbody>${sampleRows.length ? sampleRows.map((row) => `<tr>
+              <td>${htmlEscape(row.sampleLabel)}</td><td>${htmlEscape(row.seed)}</td>
+              <td>${htmlEscape(row.demand)}</td><td>${htmlEscape(row.filled)}</td><td>${htmlEscape(row.fillRate)}</td>
+              <td>${htmlEscape(row.carried)}</td><td>${htmlEscape(row.consumed)}</td><td>${htmlEscape(row.utilization)}</td>
+            </tr>`).join("") : `<tr><td colspan="8">暂无有效样本明细。</td></tr>`}</tbody>
           </table>
         </div>
       </section>
     </div>
   `;
+}
+
+function liteMesaMonteCarloSampleRows(result) {
+  return (result?.runs || []).map((sample, index) => {
+    const metrics = sample?.metrics || sample?.final || {};
+    const demand = Number(metrics.spare_demand_total);
+    const filled = Number(metrics.spare_immediately_filled_total);
+    const carried = Number(metrics.spare_carried_total);
+    const consumed = Number(metrics.spare_consumed_total);
+    const hasFillQuantities = Number.isFinite(demand) && demand >= 0 && Number.isFinite(filled) && filled >= 0;
+    const hasUtilizationQuantities = Number.isFinite(carried) && carried >= 0 && Number.isFinite(consumed) && consumed >= 0;
+    const hasFill = hasFillQuantities && demand > 0;
+    const hasUtilization = hasUtilizationQuantities && carried > 0;
+    return {
+      sampleLabel: `样本 ${Number(sample?.sample_index ?? index) + 1}`,
+      seed: sample?.seed ?? "--",
+      demand: Number.isFinite(demand) && demand >= 0 ? demand : "数据不可用",
+      filled: Number.isFinite(filled) && filled >= 0 ? filled : "数据不可用",
+      fillRate: hasFill ? `${((filled / demand) * 100).toFixed(2)}%` : hasFillQuantities ? "--" : "数据不可用",
+      carried: Number.isFinite(carried) && carried >= 0 ? carried : "数据不可用",
+      consumed: Number.isFinite(consumed) && consumed >= 0 ? consumed : "数据不可用",
+      utilization: hasUtilization ? `${((consumed / carried) * 100).toFixed(2)}%` : hasUtilizationQuantities ? "--" : "数据不可用"
+    };
+  });
 }
 
 function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
@@ -19074,7 +19114,11 @@ async function runLiteMesaMonteCarloAnalysis() {
       requestEpoch !== liteMesaMonteCarloRequestEpoch
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
-    liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response);
+    liteMesaMonteCarloResult = {
+      ...normalizeLiteMesaMonteCarloResult(response),
+      completedAt: new Date().toISOString(),
+      analysisSource: captureAnalysisSourceIdentity()
+    };
     const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
     liteMesaMonteCarloStatus = liteMesaMonteCarloResult.status === "blocked"
       ? `Mesa 分析未完成：${liteMesaMonteCarloResult.message}`
@@ -19175,7 +19219,16 @@ function liteMesaBusinessMetricRows(result) {
     ...metric,
     meanLabel: metric.validSampleCount > 0 && metric.mean === null
       ? "不可计算"
+      : metric.invalidReason === "data_unavailable"
+        ? "数据不可用"
       : formatMonteCarloMoment(metric.mean, metric.valueFormat),
+    overallRatioLabel: metric.overallAggregationMethod === "ratio_of_totals"
+      ? metric.overallStatus === "data_unavailable"
+        ? "数据不可用"
+        : Number.isFinite(metric.overallRatio)
+          ? `${(metric.overallRatio * 100).toFixed(2)}%`
+          : "--"
+      : "--",
     varianceLabel: formatMonteCarloMoment(metric.sampleVariance, metric.valueFormat, { variance: true })
   }));
 }
@@ -19794,10 +19847,10 @@ function renderFormalProjectionBody(formalProjection) {
     return `
       <div class="toolbar-row"><label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求量为 0</label><span>预计满足率下限：${fixed(rows[0]?.minimumSatisfactionRate || 0.9, 2)}；满足约束后利用率越高越优</span></div><div class="table-wrap">
         <table>
-          <thead><tr><th>机型</th><th>备件</th><th>需求数量</th><th>推荐携行倍率</th><th>预计满足率</th><th>即时满足率</th><th>数量</th><th>备件利用率</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
+          <thead><tr><th>机型</th><th>备件</th><th>实际需求数量</th><th>推荐携行倍率</th><th>规划满足率</th><th>实际即时满足率</th><th>数量</th><th>实际备件利用率</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
           <tbody>${page.rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate)}</td><td>${row.qty}</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
+              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand === null ? "数据不可用" : row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${carryProjectedSatisfactionDisplay(row)}</td><td>${carryActualSatisfactionDisplay(row)}</td><td>${row.qty}</td><td>${carryUtilizationDisplay(row.utilization, row.utilizationStatus)}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
               <td><span class="status-badge ${row.priority === "高" ? "danger" : row.priority === "中" ? "warn" : "success"}">${htmlEscape(row.priority)}</span></td>
               <td class="bar-cell">${renderBar(row.qty, maxCarryQuantity, "blue")}</td>
             </tr>
@@ -20087,6 +20140,9 @@ function setAnalysisXlsxState(page, status, message) {
 function canExportAnalysisXlsx(page, result = null) {
   if (analysisXlsxState(page).status === "exporting") return false;
   if (page.component === "aircraft-mission-reliability-analysis") return Boolean(result?.ok);
+  if (page.component === "lite-mesa-monte-carlo-analysis") {
+    return result?.status === "session_complete" && liteMesaMonteCarloSampleRows(result).length > 0;
+  }
   if (result?.status !== "session_complete") return false;
   if (analysisTypeForPage(page) === "spare_shortfall") return visibleSpareShortfallRows(result).length > 0;
   if (analysisTypeForPage(page) === "carry_list") return visibleCarryListRows(result).length > 0;
@@ -20108,6 +20164,8 @@ function renderAnalysisXlsxExportControl(page, result) {
 async function exportCurrentAnalysisXlsx(page) {
   const result = page.component === "aircraft-mission-reliability-analysis"
     ? aircraftMissionReliabilityState.result
+    : page.component === "lite-mesa-monte-carlo-analysis"
+      ? liteMesaMonteCarloResult
     : liteMesaAnalysisResults[analysisTypeForPage(page)] || null;
   if (!canExportAnalysisXlsx(page, result)) {
     if (analysisXlsxState(page).status !== "exporting") {
@@ -20136,6 +20194,36 @@ async function exportCurrentAnalysisXlsx(page) {
 function analysisXlsxPayloadForPage(page, result) {
   if (page.component === "aircraft-mission-reliability-analysis") {
     return aircraftMissionReliabilityXlsxPayload(page, result);
+  }
+  if (page.component === "lite-mesa-monte-carlo-analysis") {
+    const metricRows = liteMesaBusinessMetricRows(result);
+    const sampleRows = liteMesaMonteCarloSampleRows(result);
+    const common = analysisXlsxCommonPayload(
+      page,
+      "蒙特卡洛分析",
+      result?.completedAt,
+      liteMesaMonteCarloSettings,
+      result?.analysisSource
+    );
+    return {
+      ...common,
+      analysis_type: "monte_carlo",
+      summary: metricRows.map((metric) => [
+        metric.label,
+        metric.meanLabel,
+        metric.unit
+      ]).concat(metricRows
+        .filter((metric) => metric.overallAggregationMethod === "ratio_of_totals")
+        .map((metric) => [`${metric.label}（跨样本总体）`, metric.overallRatioLabel, "数量加权"])),
+      detail_sections: [{
+        title: "样本实际备件指标明细",
+        columns: ["样本", "Seed", "实际需求数量", "实际即时满足数量", "实际即时满足率", "实际携行数量", "实际消耗数量", "实际备件利用率"],
+        rows: sampleRows.map((row) => [
+          row.sampleLabel, row.seed, row.demand, row.filled, row.fillRate,
+          row.carried, row.consumed, row.utilization
+        ])
+      }]
+    };
   }
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const settings = liteMesaAnalysisEffectiveSettings(definition);
@@ -20171,21 +20259,22 @@ function analysisXlsxPayloadForPage(page, result) {
       summary: liteMesaAnalysisVisibleMetrics(definition, result.metrics || []).map(([label, value]) => [label, value, ""]),
       detail_sections: [{
         title: "携行清单明细",
-        columns: ["机型", "产品", "建议携行数量", "预计使用数量", "携行总数量", "需求数量", "预计短缺数量", "预计满足率", "即时满足率", "预计满足率下限", "约束状态", "约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
+        columns: ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "实际需求数量", "实际即时满足数量", "预计短缺数量", "规划满足率", "实际即时满足率", "实际满足率下限", "实际约束状态", "实际约束余量", "实际备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"],
         rows: rows.map((row) => [
           row.aircraftModel || "未指定机型",
           carryListProductDisplayName(row, productsById),
           row.recommended,
           row.usedQuantity,
           row.carriedQuantity,
-          row.demand,
-          row.shortage,
-          pct(row.satisfactionRate),
-          row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate),
+          row.demand === null ? "数据不可用" : row.demand,
+          row.immediatelyFilledQuantity === null ? "数据不可用" : row.immediatelyFilledQuantity,
+          row.shortage === null ? "数据不可用" : row.shortage,
+          carryProjectedSatisfactionDisplay(row),
+          carryActualSatisfactionDisplay(row),
           pct(row.minimumSatisfactionRate),
-          row.satisfactionConstraintMet ? "满足" : "未满足",
+          row.satisfactionConstraintMet === null ? "数据不可用" : row.satisfactionConstraintMet ? "满足" : "未满足",
           carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin),
-          carryUtilizationDisplay(row.utilization),
+          carryUtilizationDisplay(row.utilization, row.utilizationStatus),
           row.lifeLimited ? "是" : "否",
           row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-",
           row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-",
@@ -20797,43 +20886,55 @@ function nonnegativeFiniteAnalysisNumber(value) {
 function normalizeCarryListAnalysisRows(rows) {
   return rows.map((row) => {
     const carriedQuantity = nonnegativeFiniteAnalysisNumber(row.carriedQuantity ?? row.carried_quantity);
-    const usedQuantity = nonnegativeFiniteAnalysisNumber(row.usedQuantity ?? row.used_quantity);
-    const legacyUtilization = nonnegativeFiniteAnalysisNumber(row.utilization);
+    const usedQuantity = nonnegativeFiniteAnalysisNumber(
+      row.consumedQuantity ?? row.consumed_quantity ?? row.usedQuantity ?? row.used_quantity
+    );
     const hasRawQuantities = usedQuantity !== null && carriedQuantity !== null;
-    const demand = nonnegativeFiniteAnalysisNumber(row.demand) ?? 0;
-    const shortage = nonnegativeFiniteAnalysisNumber(row.shortage) ?? 0;
+    const demand = nonnegativeFiniteAnalysisNumber(row.demandQuantity ?? row.demand_quantity ?? row.demand);
+    let immediatelyFilledQuantity = nonnegativeFiniteAnalysisNumber(
+      row.immediatelyFilledQuantity ?? row.immediately_filled_quantity ?? row.observedFilled ?? row.observed_filled_count
+    );
+    if (demand !== null && immediatelyFilledQuantity !== null
+        && immediatelyFilledQuantity > demand + Number.EPSILON) {
+      immediatelyFilledQuantity = null;
+    }
+    const hasActualFillQuantities = demand !== null && immediatelyFilledQuantity !== null;
+    const shortage = nonnegativeFiniteAnalysisNumber(
+      row.projectedShortageQuantity ?? row.projected_shortage_count ?? row.shortage
+    );
     const minimumSatisfactionRate = Math.max(
       0,
       Math.min(1, Number(row.minimumSatisfactionRate ?? row.minimum_satisfaction_rate ?? 0.9) || 0)
     );
-    const satisfactionRate = Math.max(
-      0,
-      Math.min(
-        1,
-        Number(row.satisfactionRate ?? row.satisfaction_rate ?? (
-          demand > 0 ? Math.max(0, demand - shortage) / demand : 1
-        )) || 0
-      )
+    const projectedSatisfactionRate = nonnegativeFiniteAnalysisNumber(
+      row.projectedSatisfactionRate ?? row.projected_satisfaction_rate
     );
+    const satisfactionRate = hasActualFillQuantities && demand > 0
+      ? Math.max(0, Math.min(1, immediatelyFilledQuantity / demand))
+      : null;
     return {
       ...row,
       demand,
       shortage,
+      immediatelyFilledQuantity,
       usedQuantity,
       carriedQuantity,
       minimumSatisfactionRate,
       satisfactionRate,
-      observedFillRate: nonnegativeFiniteAnalysisNumber(row.observedFillRate ?? row.observed_fill_rate),
-      satisfactionConstraintMet: row.satisfactionConstraintMet ?? row.satisfaction_constraint_met
-        ?? satisfactionRate + Number.EPSILON >= minimumSatisfactionRate,
-      satisfactionConstraintMargin: Number(
-        row.satisfactionConstraintMargin
-        ?? row.satisfaction_constraint_margin
-        ?? satisfactionRate - minimumSatisfactionRate
-      ),
+      projectedSatisfactionRate,
+      observedFillRate: satisfactionRate,
+      satisfactionConstraintMet: satisfactionRate === null
+        ? null
+        : satisfactionRate + Number.EPSILON >= minimumSatisfactionRate,
+      satisfactionConstraintMargin: satisfactionRate === null
+        ? null
+        : satisfactionRate - minimumSatisfactionRate,
       utilization: hasRawQuantities
         ? (carriedQuantity > 0 ? usedQuantity / carriedQuantity : null)
-        : legacyUtilization
+        : null,
+      utilizationStatus: !hasRawQuantities
+        ? "data_unavailable"
+        : carriedQuantity > 0 ? "available" : "zero_carried"
     };
   });
 }
@@ -20859,14 +20960,41 @@ function carryListOverallUtilization(rows) {
 
 function carryListMetricsWithOverall(metrics, rows) {
   const totals = carryListOverallUtilization(rows);
+  const hasCompleteActualFillQuantities = rows.length > 0 && rows.every((row) => (
+    nonnegativeFiniteAnalysisNumber(row.demand) !== null
+    && nonnegativeFiniteAnalysisNumber(row.immediatelyFilledQuantity) !== null
+  ));
+  const demandTotal = hasCompleteActualFillQuantities
+    ? rows.reduce((sum, row) => sum + nonnegativeFiniteAnalysisNumber(row.demand), 0)
+    : null;
+  const immediatelyFilledTotal = hasCompleteActualFillQuantities
+    ? rows.reduce((sum, row) => sum + nonnegativeFiniteAnalysisNumber(row.immediatelyFilledQuantity), 0)
+    : null;
+  const satisfactionStatus = !hasCompleteActualFillQuantities
+    ? "data_unavailable"
+    : demandTotal > 0 ? "available" : "zero_demand";
+  const satisfactionRate = satisfactionStatus === "available"
+    ? immediatelyFilledTotal / demandTotal
+    : null;
+  const constrainedRows = rows.filter((row) => Number(row.demand) > 0);
+  const constraintDisplay = !hasCompleteActualFillQuantities
+    ? "数据不可用"
+    : constrainedRows.length
+      ? `${constrainedRows.filter((row) => row.satisfactionConstraintMet).length}/${constrainedRows.length}`
+      : "--";
   return {
     metrics: [
-      ...metrics.filter(([label]) => label !== "总体备件利用率"),
+      ...metrics.filter(([label]) => !["满足下限备件", "总体备件利用率", "总体实际即时满足率"].includes(label)),
+      ["满足下限备件", constraintDisplay],
+      ["总体实际即时满足率", satisfactionStatus === "available"
+        ? `${(satisfactionRate * 100).toFixed(2)}%`
+        : satisfactionStatus === "zero_demand" ? "--" : "数据不可用"],
       ["总体备件利用率", totals.status === "available"
         ? `${(totals.utilization * 100).toFixed(2)}%`
         : totals.status === "zero_carried" ? "--" : "数据不可用"]
     ],
-    totals
+    totals,
+    satisfaction: { demandTotal, immediatelyFilledTotal, satisfactionRate, status: satisfactionStatus }
   };
 }
 
@@ -20930,6 +21058,10 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     spareCarriedTotal: carryListSummary?.totals.carriedQuantity ?? null,
     overallSpareUtilization: carryListSummary?.totals.utilization ?? null,
     overallSpareUtilizationStatus: carryListSummary?.totals.status ?? null,
+    spareDemandTotal: carryListSummary?.satisfaction.demandTotal ?? null,
+    spareImmediatelyFilledTotal: carryListSummary?.satisfaction.immediatelyFilledTotal ?? null,
+    overallActualSatisfactionRate: carryListSummary?.satisfaction.satisfactionRate ?? null,
+    overallActualSatisfactionStatus: carryListSummary?.satisfaction.status ?? null,
     resultFields: taskReliabilityResultFields,
     rows,
     waveRows: waveRows.length ? waveRows : rows,
@@ -21008,13 +21140,38 @@ function visibleCarryListRows(result) {
     .map(({ row }) => row);
 }
 
-function carryUtilizationDisplay(value) {
-  if (value === null || value === undefined || value === "") return "不可计算";
+function carryUtilizationDisplay(value, status = null) {
+  if (status === "data_unavailable") return "数据不可用";
+  if (status === "zero_carried") return "--";
+  if (value === null || value === undefined || value === "") return "数据不可用";
   const utilization = Number(value);
-  return Number.isFinite(utilization) ? `${(utilization * 100).toFixed(2)}%` : "不可计算";
+  return Number.isFinite(utilization) ? `${(utilization * 100).toFixed(2)}%` : "数据不可用";
+}
+
+function carryActualSatisfactionDisplay(row) {
+  if (nonnegativeFiniteAnalysisNumber(row?.demand) === null
+      || nonnegativeFiniteAnalysisNumber(row?.immediatelyFilledQuantity) === null) {
+    return "数据不可用";
+  }
+  if (Number(row.demand) === 0) return "--";
+  return pct(row.satisfactionRate);
+}
+
+function carryProjectedSatisfactionDisplay(row) {
+  return nonnegativeFiniteAnalysisNumber(row?.projectedSatisfactionRate) === null
+    ? "数据不可用"
+    : pct(row.projectedSatisfactionRate);
+}
+
+function carryConstraintDisplay(row) {
+  if (row?.satisfactionConstraintMet === null || row?.satisfactionConstraintMet === undefined) {
+    return "数据不可用";
+  }
+  return `${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）`;
 }
 
 function carrySatisfactionConstraintMarginDisplay(value) {
+  if (value === null || value === undefined || value === "") return "数据不可用";
   const margin = Number(value);
   if (!Number.isFinite(margin)) return "不可用";
   const prefix = margin > 0 ? "+" : "";
@@ -21064,8 +21221,8 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
         <label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求数值为 0 的备件</label>
       </div>
       <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>需求数量</th><th>预计短缺数量</th><th>预计满足率</th><th>即时满足率</th><th>约束状态</th><th>备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
-        <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${pct(row.satisfactionRate)}</td><td>${row.observedFillRate === null || row.observedFillRate === undefined ? "不可用" : pct(row.observedFillRate)}</td><td>${row.satisfactionConstraintMet ? "满足" : "未满足"}（${carrySatisfactionConstraintMarginDisplay(row.satisfactionConstraintMargin)}）</td><td>${carryUtilizationDisplay(row.utilization)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="13">当前筛选条件下没有备件需求</td></tr>'}</tbody>
+        <thead><tr><th>机型</th><th>产品</th><th><span class="carry-sort-heading">建议携行数量<span class="carry-sort-controls" aria-label="建议携行数量排序"><button type="button" data-carry-recommended-sort="asc" aria-label="按建议携行数量升序排列" aria-pressed="${carryRecommendedSort === "asc"}">↑</button><button type="button" data-carry-recommended-sort="desc" aria-label="按建议携行数量降序排列" aria-pressed="${carryRecommendedSort === "desc"}">↓</button></span></span></th><th>实际需求数量</th><th>预计短缺数量</th><th>规划满足率</th><th>实际即时满足率</th><th>实际约束状态</th><th>实际备件利用率</th><th><span class="carry-life-heading">有寿件<span class="carry-life-help"><button type="button" class="inline-help" aria-label="有寿件说明" aria-describedby="carry-life-limited-tooltip">?</button><span id="carry-life-limited-tooltip" class="carry-life-tooltip" role="tooltip">有寿件寿命在预防性维修中配置；起落次数或使用时间任一达到阈值即计入需求。</span></span></span></th><th>起落寿命</th><th>使用寿命(h)</th><th>优先级</th></tr></thead>
+        <tbody>${page.rows.map((row) => `<tr><td>${htmlEscape(row.aircraftModel || "未指定机型")}</td><td>${htmlEscape(carryListProductDisplayName(row, productsById))}</td><td>${row.recommended}</td><td>${row.demand === null ? "数据不可用" : row.demand}</td><td>${row.shortage === null ? "数据不可用" : row.shortage}</td><td>${carryProjectedSatisfactionDisplay(row)}</td><td>${carryActualSatisfactionDisplay(row)}</td><td>${carryConstraintDisplay(row)}</td><td>${carryUtilizationDisplay(row.utilization, row.utilizationStatus)}</td><td>${row.lifeLimited ? "是" : "否"}</td><td>${row.lifeLimited && Number(row.lifeLandings || 0) > 0 ? row.lifeLandings : "-"}</td><td>${row.lifeLimited && Number(row.lifeHours || 0) > 0 ? row.lifeHours : "-"}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("") || '<tr><td colspan="13">当前筛选条件下没有备件需求</td></tr>'}</tbody>
       </table></div>
       ${renderPagination("analysis-carry-list", page)}
     `;

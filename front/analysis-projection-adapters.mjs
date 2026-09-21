@@ -179,43 +179,60 @@ function normalizeCarryList(payload) {
     .map((row) => {
       const multiplier = Math.max(0, requireFiniteNumber(row.recommended_multiplier, "recommended_multiplier"));
       const priority = priorityLabel(row.risk_level);
-      const utilization = row.utilization === null || row.utilization === undefined
-        ? null
-        : Math.max(0, requireFiniteNumber(row.utilization, "utilization"));
       const qty = row.recommended_quantity === null || row.recommended_quantity === undefined
         ? Math.max(1, priority === "高" ? Math.ceil(multiplier) : Math.round(multiplier))
         : Math.max(0, Math.round(requireFiniteNumber(row.recommended_quantity, "recommended_quantity")));
       const carriedQuantity = optionalNonnegativeFiniteNumber(row.carried_quantity);
-      const usedQuantity = optionalNonnegativeFiniteNumber(row.used_quantity);
+      const usedQuantity = optionalNonnegativeFiniteNumber(row.consumed_quantity ?? row.used_quantity);
       const hasRawQuantities = carriedQuantity !== null && usedQuantity !== null;
+      const demandQuantity = optionalNonnegativeFiniteNumber(row.demand_quantity ?? row.demand_count);
+      let immediatelyFilledQuantity = optionalNonnegativeFiniteNumber(
+        row.immediately_filled_quantity ?? row.observed_filled_count
+      );
+      if (demandQuantity !== null && immediatelyFilledQuantity !== null
+          && immediatelyFilledQuantity > demandQuantity + Number.EPSILON) {
+        immediatelyFilledQuantity = null;
+      }
+      const hasActualFillQuantities = demandQuantity !== null && immediatelyFilledQuantity !== null;
       const minimumSatisfactionRate = row.minimum_satisfaction_rate === null || row.minimum_satisfaction_rate === undefined
         ? 0.9
         : clamp01(requireFiniteNumber(row.minimum_satisfaction_rate, "minimum_satisfaction_rate"));
-      const satisfactionRate = row.satisfaction_rate === null || row.satisfaction_rate === undefined
+      const projectedSatisfactionRate = row.projected_satisfaction_rate === null || row.projected_satisfaction_rate === undefined
+        ? (row.satisfaction_rate === null || row.satisfaction_rate === undefined
         ? Math.min(1, multiplier / Math.max(multiplier, 1))
-        : clamp01(requireFiniteNumber(row.satisfaction_rate, "satisfaction_rate"));
+        : clamp01(requireFiniteNumber(row.satisfaction_rate, "satisfaction_rate")))
+        : clamp01(requireFiniteNumber(row.projected_satisfaction_rate, "projected_satisfaction_rate"));
+      const satisfactionRate = hasActualFillQuantities && demandQuantity > 0
+        ? clamp01(immediatelyFilledQuantity / demandQuantity)
+        : null;
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         productId: stringValue(row.product_id, ""),
         name: stringValue(row.spare_type, "unknown_spare"),
         multiplier,
-        satisfy: satisfactionRate,
-        observedFillRate: optionalNonnegativeFiniteNumber(row.observed_fill_rate),
+        satisfy: projectedSatisfactionRate,
+        projectedSatisfactionRate,
+        demandQuantity,
+        immediatelyFilledQuantity,
+        observedFillRate: satisfactionRate,
         satisfactionRate,
-        satisfactionConstraintMet: row.satisfaction_constraint_met === undefined
-          ? satisfactionRate >= minimumSatisfactionRate
-          : Boolean(row.satisfaction_constraint_met),
-        satisfactionConstraintMargin: row.satisfaction_constraint_margin === null || row.satisfaction_constraint_margin === undefined
-          ? satisfactionRate - minimumSatisfactionRate
-          : requireFiniteNumber(row.satisfaction_constraint_margin, "satisfaction_constraint_margin"),
+        satisfactionConstraintMet: satisfactionRate === null
+          ? null
+          : satisfactionRate >= minimumSatisfactionRate,
+        satisfactionConstraintMargin: satisfactionRate === null
+          ? null
+          : satisfactionRate - minimumSatisfactionRate,
         delay: Math.max(0, Math.round((multiplier - 1) * 24)),
         qty,
         usedQuantity,
         carriedQuantity,
         priority,
-        demand: Math.max(0, Math.round(numberOrZero(row.demand_count))),
-        shortage: Math.max(0, Math.round(numberOrZero(row.shortage_count))),
-        utilization: hasRawQuantities ? (carriedQuantity > 0 ? usedQuantity / carriedQuantity : null) : utilization,
+        demand: demandQuantity,
+        shortage: optionalNonnegativeFiniteNumber(row.projected_shortage_count),
+        utilization: hasRawQuantities ? (carriedQuantity > 0 ? usedQuantity / carriedQuantity : null) : null,
+        utilizationStatus: !hasRawQuantities
+          ? "data_unavailable"
+          : carriedQuantity > 0 ? "available" : "zero_carried",
         minimumSatisfactionRate,
         hideZeroDemand: row.hide_zero_demand !== false,
         lifeLimited: Boolean(row.life_limited),
@@ -234,6 +251,18 @@ function normalizeCarryList(payload) {
   const overallUtilizationDisplay = !hasCompleteRawQuantities
     ? "数据不可用"
     : carriedTotal === 0 ? "--" : `${(overallUtilization * 100).toFixed(2)}%`;
+  const hasCompleteActualFillQuantities = rows.length > 0 && rows.every((row) => (
+    row.demandQuantity !== null && row.immediatelyFilledQuantity !== null
+  ));
+  const demandTotal = hasCompleteActualFillQuantities
+    ? rows.reduce((sum, row) => sum + row.demandQuantity, 0)
+    : null;
+  const immediatelyFilledTotal = hasCompleteActualFillQuantities
+    ? rows.reduce((sum, row) => sum + row.immediatelyFilledQuantity, 0)
+    : null;
+  const overallSatisfactionDisplay = !hasCompleteActualFillQuantities
+    ? "数据不可用"
+    : demandTotal === 0 ? "--" : `${((immediatelyFilledTotal / demandTotal) * 100).toFixed(2)}%`;
   return {
     analysisType: "carry_list",
     formal: true,
@@ -243,6 +272,7 @@ function normalizeCarryList(payload) {
     metrics: [
       ["默认目标", "携行备件越少越好"],
       ["携行备件数量", `${rows.reduce((sum, row) => sum + row.qty, 0)} 件`],
+      ["总体实际即时满足率", overallSatisfactionDisplay],
       ["总体备件利用率", overallUtilizationDisplay],
       ["最高携行倍率", fixed(max(rows.map((row) => row.multiplier), 0), 2)],
       ["高优先级备件", highPriority.map((row) => row.name).slice(0, 2).join(" / ") || "-"]

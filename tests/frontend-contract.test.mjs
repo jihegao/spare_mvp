@@ -4245,10 +4245,10 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
   assert.match(carryBodySource, /隐藏需求数值为 0 的备件/);
   assert.match(carryBodySource, /data-carry-aircraft-filter/);
   assert.match(carryBodySource, /<th>机型<\/th>/);
-  assert.match(carryBodySource, /<th>预计满足率<\/th><th>即时满足率<\/th><th>约束状态<\/th>/);
-  assert.match(carryBodySource, /row\.satisfactionRate/);
-  assert.match(carryBodySource, /row\.satisfactionConstraintMet/);
-  assert.match(carryBodySource, /carrySatisfactionConstraintMarginDisplay/);
+  assert.match(carryBodySource, /<th>规划满足率<\/th><th>实际即时满足率<\/th><th>实际约束状态<\/th>/);
+  assert.match(carryBodySource, /carryActualSatisfactionDisplay\(row\)/);
+  assert.match(carryBodySource, /carryProjectedSatisfactionDisplay\(row\)/);
+  assert.match(carryBodySource, /carryConstraintDisplay\(row\)/);
   assert.match(carryBodySource, /data-carry-recommended-sort="asc"/);
   assert.match(carryBodySource, /data-carry-recommended-sort="desc"/);
   assert.match(carryBodySource, /aria-label="按建议携行数量升序排列"/);
@@ -4318,7 +4318,7 @@ test("lite Mesa Monte Carlo detail uses decimal ratios, moments, and hides inter
   assert.doesNotMatch(metricSource, /shortage_events|短缺事件/);
   assert.doesNotMatch(renderSource, /后端 Mesa 仿真分析|lite-mesa-hero-meter|lite-mesa-source-grid/);
   assert.match(metricSource, /return value\.toFixed\(2\)/);
-  assert.match(metricSource, /variance \? "不可计算" : "无有效样本"/);
+  assert.match(metricSource, /variance \? "不可计算" : "--"/);
 });
 
 test("system management exposes an independent equipment RMS allocation workbench", async () => {
@@ -5360,7 +5360,7 @@ test("M9.7.4 docs promote formerly payload-only fields and avoid pending coverag
   assert.doesNotMatch(combined, /supportOrganization[^。]*fail closed/);
 });
 
-test("five result analysis pages share backend XLSX export without a Monte Carlo entry", async () => {
+test("result analysis and Monte Carlo pages share backend XLSX export", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const apiSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const aircraftSource = await readFile(new URL("../front/aircraft-mission-reliability.mjs", import.meta.url), "utf8");
@@ -5386,6 +5386,6 @@ test("five result analysis pages share backend XLSX export without a Monte Carlo
   assert.doesNotMatch(exportSource, /\[analysisSettingExportLabel\(key\), value \?\? ""\]/);
   assert.match(exportSource, /导出失败：/);
   assert.match(apiSource, /path: "\/analysis-results\/export-xlsx"[\s\S]*responseType: "download"/);
-  assert.doesNotMatch(monteCarloSource, /data-analysis-xlsx-export|exportAnalysisXlsx/);
+  assert.match(monteCarloSource, /data-analysis-xlsx-export|renderAnalysisXlsxExportControl/);
   assert.doesNotMatch(aircraftSource, /aircraftMissionReliabilityResultToXlsx|createStoredZip|xlsxRow/);
 });

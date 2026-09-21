@@ -66,6 +66,25 @@ class AnalysisXlsxExportTest(unittest.TestCase):
                 self.assertEqual(workbook["结果摘要"]["B2"].value, "80%")
                 self.assertEqual(workbook["结果明细"]["A3"].value, "安全结果")
 
+    def test_monte_carlo_export_preserves_weighted_summary_and_sample_actuals(self) -> None:
+        payload = self._payload("monte_carlo")
+        payload["summary"] = [
+            ["实际即时满足率", "8.33%", "数量加权"],
+            ["实际备件利用率", "2.78%", "数量加权"],
+        ]
+        payload["detail_sections"] = [{
+            "title": "样本实际备件指标明细",
+            "columns": ["样本", "Seed", "实际需求数量", "实际即时满足数量", "实际即时满足率", "实际携行数量", "实际消耗数量", "实际备件利用率"],
+            "rows": [["样本 1", 20260621, 12, 1, "8.33%", 36, 1, "2.78%"]],
+        }]
+        workbook = load_workbook(io.BytesIO(export_analysis_snapshot_xlsx(payload)["body"]), data_only=False)
+        self.assertEqual(workbook["结果摘要"]["B2"].value, "8.33%")
+        self.assertEqual(workbook["结果摘要"]["B3"].value, "2.78%")
+        self.assertEqual(
+            [workbook["结果明细"].cell(row=3, column=column).value for column in range(3, 9)],
+            [12, 1, "8.33%", 36, 1, "2.78%"],
+        )
+
     def test_task_reliability_keeps_summary_rounding_and_sample_wave_rows(self) -> None:
         payload = self._payload("mission_reliability")
         payload["summary"] = [

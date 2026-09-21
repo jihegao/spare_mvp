@@ -29,14 +29,14 @@ class ImmediateSpareFillTest(unittest.TestCase):
 
     def test_full_partial_empty_and_zero_demand(self):
         for canonical in (False, True):
-            for stock, quantity, expected in ((5, 5, 1), (3, 5, 0), (0, 5, 0), (0, 0, 1)):
+            for stock, quantity, expected in ((5, 5, 1), (3, 5, 0), (0, 5, 0), (0, 0, None)):
                 with self.subTest(canonical=canonical, stock=stock, quantity=quantity):
                     model = self.model(stock, quantity, canonical)
                     model._start_waiting_jobs()
                     metrics = model.snapshot()
                     self.assertEqual(metrics["spare_fill_rate"], expected)
                     self.assertEqual(metrics["spare_demand_total"], quantity)
-                    self.assertEqual(metrics["spare_immediately_filled_total"], quantity if expected else 0)
+                    self.assertEqual(metrics["spare_immediately_filled_total"], quantity if expected == 1 else 0)
                     if stock < quantity:
                         self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], stock)
 
@@ -112,7 +112,7 @@ class ImmediateSpareFillTest(unittest.TestCase):
         model._start_waiting_jobs()
         self.assertEqual(model.spare_demand_total, 0)
         model.jobs[0].state = "cancelled"
-        self.assertEqual(model.snapshot()["spare_fill_rate"], 1)
+        self.assertIsNone(model.snapshot()["spare_fill_rate"])
 
     def test_steps_of_one_job_are_distinct_and_event_stats_preserve_counts(self):
         model = self.model(1, 1)
@@ -135,7 +135,7 @@ class ImmediateSpareFillTest(unittest.TestCase):
         self.assertEqual(product["shortage_quantity"], 1)
         self.assertTrue(all(_lite_mesa_projection_event_required(event) for event in model.event_log if event["event"] == "spare_request"))
 
-    def test_moments_average_sample_ratios_and_utilization_is_independent(self):
+    def test_moments_weight_actual_quantities_and_utilization_is_independent(self):
         filled, shortage = self.model(1, 1), self.model(0, 5)
         filled._start_waiting_jobs()
         shortage._start_waiting_jobs()
@@ -143,9 +143,58 @@ class ImmediateSpareFillTest(unittest.TestCase):
         moments = build_monte_carlo_metric_moments(samples, total_sample_count=2, failed_sample_count=0)
         metric = next(row for row in moments["metrics"] if row["metric_id"] == "spare_fill_rate")
         self.assertEqual(metric["mean"], 0.5)
+        self.assertEqual(metric["overall_ratio"], 1 / 6)
         self.assertEqual(metric["sample_variance"], 0.5)
         self.assertEqual(filled.snapshot()["spare_utilization"], 1)
         self.assertEqual(filled.snapshot()["spare_fill_rate"], 1)
+
+    def test_four_seed_real_model_events_feed_weighted_monte_carlo_metrics(self):
+        samples = []
+        for sample_index, (local_quantity, parent_quantity, demand_quantity) in enumerate(
+            ((1, 8, 1), (0, 9, 3), (0, 9, 4), (0, 9, 4))
+        ):
+            inputs = _vertical_organization_inputs(
+                local_quantity=local_quantity,
+                parent_quantity=parent_quantity,
+            )
+            inputs["seed"] = 20260621 + sample_index
+            for node in inputs["support_network"]["nodes"]:
+                if node["id"] == "lateral-stock":
+                    node["inventory"]["shared-spare"] = 0
+            inputs["support_activities"]["activities"][1]["maintenance_methods"] = ["replacement"]
+            inputs["support_activities"]["activities"][1]["jobs"][0]["spare"] = [
+                {"product_id": "shared-spare", "quantity": demand_quantity}
+            ]
+            model = AircraftSupportV1Model(inputs)
+            model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+            model._start_waiting_jobs()
+            request_events = [event for event in model.event_log if event["event"] == "spare_request"]
+            self.assertEqual(len(request_events), 1)
+            samples.append({
+                "sample_index": sample_index,
+                "seed": inputs["seed"],
+                "metrics": model.snapshot(),
+                "events": copy.deepcopy(model.event_log),
+            })
+
+        adapter = SimulationAdapter()
+        aggregate = adapter._aggregate_sample_metrics(samples)
+        moments = build_monte_carlo_metric_moments(
+            samples, total_sample_count=4, failed_sample_count=0
+        )
+        metrics = {row["metric_id"]: row for row in moments["metrics"]}
+
+        self.assertEqual([sample["seed"] for sample in samples], [20260621, 20260622, 20260623, 20260624])
+        self.assertEqual(aggregate["spare_demand_total"], 12)
+        self.assertEqual(aggregate["spare_immediately_filled_total"], 1)
+        self.assertEqual(aggregate["spare_consumed_total"], 1)
+        self.assertEqual(aggregate["spare_carried_total"], 36)
+        self.assertAlmostEqual(aggregate["spare_fill_rate"], 1 / 12)
+        self.assertAlmostEqual(aggregate["spare_utilization"], 1 / 36)
+        self.assertAlmostEqual(metrics["spare_fill_rate"]["overall_ratio"], 1 / 12)
+        self.assertAlmostEqual(metrics["spare_utilization"]["overall_ratio"], 1 / 36)
+        self.assertEqual(metrics["spare_fill_rate"]["valid_sample_count"], 4)
+        self.assertEqual(metrics["spare_utilization"]["valid_sample_count"], 4)
 
     def test_legacy_aviation_unknown_fill_is_nullable_and_not_inferred_from_stock(self):
         adapter = SimulationAdapter()
@@ -156,18 +205,21 @@ class ImmediateSpareFillTest(unittest.TestCase):
         self.assertEqual(projection["applicability"]["status"], "not_applicable")
         schema = json.loads((Path(__file__).parents[1] / "contracts/result.schema.json").read_text())
         validate(None, schema["properties"]["metrics"]["properties"]["spare_fill_rate"])
-        self.assertEqual(adapter._aviation_spare_fill_rate({"spare_demand_total": 0, "spare_immediately_filled_total": 0}), 1)
+        self.assertIsNone(adapter._aviation_spare_fill_rate({"spare_demand_total": 0, "spare_immediately_filled_total": 0}))
         self.assertEqual(adapter._aviation_spare_fill_rate({"spare_fill_rate": 0.2, "spare_demand_total": 5, "spare_immediately_filled_total": 2}), 0.2)
 
-    def test_api_distinguishes_recommended_and_observed_fill(self):
+    def test_api_distinguishes_planned_and_actual_fill(self):
         projection = {"data": [
             {"aircraft_model": "A", "spare_type": "spare", "demand_count": 5,
-             "satisfaction_rate": 1, "observed_fill_rate": 0, "recommended_quantity": 5},
-            {"aircraft_model": "A", "spare_type": "old", "satisfaction_rate": 0.9},
+             "immediately_filled_quantity": 0, "projected_satisfaction_rate": 1,
+             "recommended_quantity": 5},
+            {"aircraft_model": "A", "spare_type": "old", "projected_satisfaction_rate": 0.9},
         ]}
         result = _lite_mesa_carry_list_result(projection, {"shortage_events": 0}, [], {"missionConfidenceTarget": 0.9})
-        self.assertEqual(result["rows"][0]["satisfactionRate"], 1)
+        self.assertEqual(result["rows"][0]["projectedSatisfactionRate"], 1)
+        self.assertEqual(result["rows"][0]["satisfactionRate"], 0)
         self.assertEqual(result["rows"][0]["observedFillRate"], 0)
+        self.assertIsNone(result["rows"][1]["satisfactionRate"])
         self.assertIsNone(result["rows"][1]["observedFillRate"])
 
     def test_old_visualization_and_anomaly_snapshots_preserve_unknown_fill(self):
@@ -218,4 +270,5 @@ class ImmediateSpareFillTest(unittest.TestCase):
         carry = next(row for row in projections["carry_list"]["data"] if row["product_id"] == "shared-spare")
         self.assertEqual(carry["observed_request_shortfall_rate"], 0.5)
         self.assertEqual(carry["observed_fill_rate"], 2 / 7)
-        self.assertEqual(carry["satisfaction_rate"], 1)
+        self.assertEqual(carry["satisfaction_rate"], 2 / 7)
+        self.assertEqual(carry["projected_satisfaction_rate"], 1)
