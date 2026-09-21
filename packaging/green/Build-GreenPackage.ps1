@@ -59,7 +59,7 @@ try {
     }
     $validatedGreenManifest = Join-Path $working 'validated-green-source-manifest.json'
     $greenManifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $validatedGreenManifest -Encoding UTF8
-    & (Join-Path $staging 'runtime\python.exe') -I -B (Join-Path $repo 'packaging\green\verify-green-inputs.py') `
+    & (Join-Path $staging 'runtime\python.exe') -X utf8 -I -B (Join-Path $repo 'packaging\green\verify-green-inputs.py') `
         --portable $staging --desktop $staging --green-manifest $validatedGreenManifest
     if ($LASTEXITCODE -ne 0) { throw 'Portable and Electron inputs do not share one reviewed source provenance.' }
     Copy-Item -LiteralPath $validatedGreenManifest -Destination (Join-Path $staging 'green-source-manifest.json')
