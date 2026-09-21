@@ -46,9 +46,9 @@ CORE_ARTIFACT_KINDS = frozenset({
     "compiled_scenario",
     "sample_results",
     "aggregate_result",
-    "result_summary",
     "metrics",
-    "monte_carlo_base",
+    "report",
+    "log",
 })
 
 
@@ -58,6 +58,21 @@ class Matrix:
     workers: tuple[int, ...] = (1, 8, 32)
     warmup: int = 1
     repeats: int = 6
+
+
+def self_test() -> None:
+    expected_core_artifact_kinds = frozenset({
+        "run_config",
+        "input_project",
+        "compiled_scenario",
+        "sample_results",
+        "aggregate_result",
+        "metrics",
+        "report",
+        "log",
+    })
+    if CORE_ARTIFACT_KINDS != expected_core_artifact_kinds:
+        raise AssertionError(f"CORE_ARTIFACT_KINDS={sorted(CORE_ARTIFACT_KINDS)!r}")
 
 
 def digest(value: Any) -> str:
@@ -400,6 +415,7 @@ def canonical_source(database: Path, project_id: str) -> tuple[dict[str, Any], d
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument("--self-test", action="store_true", help="validate benchmark harness constants without running a benchmark")
     result.add_argument("--database", type=Path, default=DEFAULT_DATABASE)
     result.add_argument("--project-id", default=DEFAULT_PROJECT_ID)
     result.add_argument("--compiler-root", type=Path, help="optional sim_engine_compiler checkout recorded in evidence metadata")
@@ -427,6 +443,10 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = parser().parse_args()
+    if args.self_test:
+        self_test()
+        print("benchmark self-test: ok")
+        return
     if psutil is None:
         raise SystemExit("psutil is required for an actual benchmark run; install it in the benchmark environment")
     if args.child_backend:
