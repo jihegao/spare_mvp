@@ -4635,7 +4635,7 @@ class SimulationAdapter:
             return None
         demand = self._non_negative_number(metrics["spare_demand_total"], 0.0)
         filled = self._non_negative_number(metrics["spare_immediately_filled_total"], 0.0)
-        return self._clamp01(filled / demand) if demand else 1.0
+        return self._clamp01(filled / demand) if demand else None
 
     def _aviation_monte_carlo_visualization_frames(self, run_id: str, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         frames: list[dict[str, Any]] = []
@@ -4706,12 +4706,19 @@ class SimulationAdapter:
         }
 
     def _aggregate_sample_metrics(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
+        ratio_metric_fields = {
+            "spare_fill_rate": ("spare_immediately_filled_total", "spare_demand_total"),
+            "spare_utilization": ("spare_consumed_total", "spare_carried_total"),
+        }
+        ratio_quantity_fields = {field for fields in ratio_metric_fields.values() for field in fields}
         keys = sorted(
             {
                 key
                 for sample in samples
                 for key, value in sample.get("metrics", {}).items()
                 if is_finite_json_number(value)
+                and key not in ratio_quantity_fields
+                and key not in ratio_metric_fields
             }
         )
         aggregate = {}
@@ -4724,6 +4731,29 @@ class SimulationAdapter:
             mean = finite_mean(values)
             if mean is not None:
                 aggregate[key] = mean
+        for metric_id, (numerator_field, denominator_field) in ratio_metric_fields.items():
+            pairs = [
+                (float(metrics[numerator_field]), float(metrics[denominator_field]))
+                for sample in samples
+                for metrics in [sample.get("metrics")]
+                if isinstance(metrics, dict)
+                and is_finite_json_number(metrics.get(numerator_field))
+                and is_finite_json_number(metrics.get(denominator_field))
+                and float(metrics[numerator_field]) >= 0
+                and float(metrics[denominator_field]) >= 0
+            ]
+            positive_pairs = [(numerator, denominator) for numerator, denominator in pairs if denominator > 0]
+            numerator_total = math.fsum(numerator for numerator, _denominator in pairs)
+            denominator_total = math.fsum(denominator for _numerator, denominator in pairs)
+            if pairs:
+                aggregate[numerator_field] = numerator_total
+                aggregate[denominator_field] = denominator_total
+            aggregate[metric_id] = numerator_total / denominator_total if denominator_total > 0 else None
+            aggregate[f"{metric_id}_status"] = (
+                "available"
+                if denominator_total > 0
+                else "zero_denominator" if pairs else "data_unavailable"
+            )
         if any(
             isinstance(sample.get("metrics"), dict)
             and "operational_availability" in sample["metrics"]

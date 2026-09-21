@@ -18931,6 +18931,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
   const settingsError = runSettings.validationError || "";
   const displayedSettings = settingsError ? liteMesaMonteCarloSettings : runSettings;
   const readonly = frozenPlan ? "readonly" : "";
+  const sampleRows = liteMesaMonteCarloSampleRows(result);
   return `
     <div class="lite-mesa-workbench">
       <section class="lite-mesa-hero">
@@ -18958,6 +18959,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         <section class="lite-mesa-results">
           <div class="section-head">
             <h3>实验运行结果</h3>
+            ${renderAnalysisXlsxExportControl(page, result)}
           </div>
           ${hasResult ? `
             <div class="lite-mesa-metric-cards">
@@ -18968,7 +18970,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
             <div class="lite-mesa-metric-cards">
               ${topMetrics.map((row) => `
                 <div class="metric-card">
-                  <span>${htmlEscape(row.label)}</span>
+                  <span>${htmlEscape(row.overallAggregationMethod === "ratio_of_totals" ? `${row.label}（样本均值）` : row.label)}</span>
                   <strong>${htmlEscape(row.meanLabel)}</strong>
                 </div>
               `).join("")}
@@ -18986,21 +18988,59 @@ function renderLiteMesaMonteCarloAnalysis(page) {
         </div>
         <div class="table-wrap">
           <table class="lite-mesa-stat-table">
-            <thead><tr><th>业务指标</th><th>均值</th><th>样本方差（n-1）</th><th>单位</th><th>有效样本数</th></tr></thead>
+            <thead><tr><th>业务指标</th><th>样本均值</th><th>跨样本总体比率</th><th>样本方差（n-1）</th><th>单位</th><th>有效样本数</th></tr></thead>
             <tbody>${hasResult ? metricRows.map((row) => `
               <tr>
                 <td>${htmlEscape(row.label)}</td>
                 <td>${htmlEscape(row.meanLabel)}</td>
+                <td>${htmlEscape(row.overallRatioLabel)}</td>
                 <td>${htmlEscape(row.varianceLabel)}</td>
                 <td>${htmlEscape(row.unit)}</td>
                 <td>${htmlEscape(row.validSampleCount)}</td>
               </tr>
-            `).join("") : `<tr><td colspan="5">当前没有可展示的业务结果。</td></tr>`}</tbody>
+            `).join("") : `<tr><td colspan="6">当前没有可展示的业务结果。</td></tr>`}</tbody>
+          </table>
+        </div>
+      </section>
+      <section class="lite-mesa-stat-section">
+        <div class="section-head"><h3>样本实际备件指标明细</h3></div>
+        <div class="table-wrap">
+          <table class="lite-mesa-stat-table">
+            <thead><tr><th>样本</th><th>Seed</th><th>实际需求</th><th>实际即时满足</th><th>实际即时满足率</th><th>实际携行</th><th>实际消耗</th><th>实际备件利用率</th></tr></thead>
+            <tbody>${sampleRows.length ? sampleRows.map((row) => `<tr>
+              <td>${htmlEscape(row.sampleLabel)}</td><td>${htmlEscape(row.seed)}</td>
+              <td>${htmlEscape(row.demand)}</td><td>${htmlEscape(row.filled)}</td><td>${htmlEscape(row.fillRate)}</td>
+              <td>${htmlEscape(row.carried)}</td><td>${htmlEscape(row.consumed)}</td><td>${htmlEscape(row.utilization)}</td>
+            </tr>`).join("") : `<tr><td colspan="8">暂无有效样本明细。</td></tr>`}</tbody>
           </table>
         </div>
       </section>
     </div>
   `;
+}
+
+function liteMesaMonteCarloSampleRows(result) {
+  return (result?.runs || []).map((sample, index) => {
+    const metrics = sample?.metrics || sample?.final || {};
+    const demand = Number(metrics.spare_demand_total);
+    const filled = Number(metrics.spare_immediately_filled_total);
+    const carried = Number(metrics.spare_carried_total);
+    const consumed = Number(metrics.spare_consumed_total);
+    const hasFillQuantities = Number.isFinite(demand) && demand >= 0 && Number.isFinite(filled) && filled >= 0;
+    const hasUtilizationQuantities = Number.isFinite(carried) && carried >= 0 && Number.isFinite(consumed) && consumed >= 0;
+    const hasFill = hasFillQuantities && demand > 0;
+    const hasUtilization = hasUtilizationQuantities && carried > 0;
+    return {
+      sampleLabel: `样本 ${Number(sample?.sample_index ?? index) + 1}`,
+      seed: sample?.seed ?? "--",
+      demand: Number.isFinite(demand) && demand >= 0 ? demand : "数据不可用",
+      filled: Number.isFinite(filled) && filled >= 0 ? filled : "数据不可用",
+      fillRate: hasFill ? `${((filled / demand) * 100).toFixed(2)}%` : hasFillQuantities ? "--" : "数据不可用",
+      carried: Number.isFinite(carried) && carried >= 0 ? carried : "数据不可用",
+      consumed: Number.isFinite(consumed) && consumed >= 0 ? consumed : "数据不可用",
+      utilization: hasUtilization ? `${((consumed / carried) * 100).toFixed(2)}%` : hasUtilizationQuantities ? "--" : "数据不可用"
+    };
+  });
 }
 
 function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
@@ -19074,7 +19114,11 @@ async function runLiteMesaMonteCarloAnalysis() {
       requestEpoch !== liteMesaMonteCarloRequestEpoch
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
-    liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response);
+    liteMesaMonteCarloResult = {
+      ...normalizeLiteMesaMonteCarloResult(response),
+      completedAt: new Date().toISOString(),
+      analysisSource: captureAnalysisSourceIdentity()
+    };
     const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
     liteMesaMonteCarloStatus = liteMesaMonteCarloResult.status === "blocked"
       ? `Mesa 分析未完成：${liteMesaMonteCarloResult.message}`
@@ -19176,6 +19220,11 @@ function liteMesaBusinessMetricRows(result) {
     meanLabel: metric.validSampleCount > 0 && metric.mean === null
       ? "不可计算"
       : formatMonteCarloMoment(metric.mean, metric.valueFormat),
+    overallRatioLabel: metric.overallAggregationMethod === "ratio_of_totals"
+      ? metric.overallStatus === "data_unavailable"
+        ? "数据不可用"
+        : formatMonteCarloMoment(metric.overallRatio, metric.valueFormat)
+      : "--",
     varianceLabel: formatMonteCarloMoment(metric.sampleVariance, metric.valueFormat, { variance: true })
   }));
 }
@@ -20087,6 +20136,9 @@ function setAnalysisXlsxState(page, status, message) {
 function canExportAnalysisXlsx(page, result = null) {
   if (analysisXlsxState(page).status === "exporting") return false;
   if (page.component === "aircraft-mission-reliability-analysis") return Boolean(result?.ok);
+  if (page.component === "lite-mesa-monte-carlo-analysis") {
+    return result?.status === "session_complete" && liteMesaMonteCarloSampleRows(result).length > 0;
+  }
   if (result?.status !== "session_complete") return false;
   if (analysisTypeForPage(page) === "spare_shortfall") return visibleSpareShortfallRows(result).length > 0;
   if (analysisTypeForPage(page) === "carry_list") return visibleCarryListRows(result).length > 0;
@@ -20108,6 +20160,8 @@ function renderAnalysisXlsxExportControl(page, result) {
 async function exportCurrentAnalysisXlsx(page) {
   const result = page.component === "aircraft-mission-reliability-analysis"
     ? aircraftMissionReliabilityState.result
+    : page.component === "lite-mesa-monte-carlo-analysis"
+      ? liteMesaMonteCarloResult
     : liteMesaAnalysisResults[analysisTypeForPage(page)] || null;
   if (!canExportAnalysisXlsx(page, result)) {
     if (analysisXlsxState(page).status !== "exporting") {
@@ -20136,6 +20190,36 @@ async function exportCurrentAnalysisXlsx(page) {
 function analysisXlsxPayloadForPage(page, result) {
   if (page.component === "aircraft-mission-reliability-analysis") {
     return aircraftMissionReliabilityXlsxPayload(page, result);
+  }
+  if (page.component === "lite-mesa-monte-carlo-analysis") {
+    const metricRows = liteMesaBusinessMetricRows(result);
+    const sampleRows = liteMesaMonteCarloSampleRows(result);
+    const common = analysisXlsxCommonPayload(
+      page,
+      "蒙特卡洛分析",
+      result?.completedAt,
+      liteMesaMonteCarloSettings,
+      result?.analysisSource
+    );
+    return {
+      ...common,
+      analysis_type: "monte_carlo",
+      summary: metricRows.map((metric) => [
+        metric.label,
+        metric.meanLabel,
+        metric.unit
+      ]).concat(metricRows
+        .filter((metric) => metric.overallAggregationMethod === "ratio_of_totals")
+        .map((metric) => [`${metric.label}（跨样本总体）`, metric.overallRatioLabel, "数量加权"])),
+      detail_sections: [{
+        title: "样本实际备件指标明细",
+        columns: ["样本", "Seed", "实际需求数量", "实际即时满足数量", "实际即时满足率", "实际携行数量", "实际消耗数量", "实际备件利用率"],
+        rows: sampleRows.map((row) => [
+          row.sampleLabel, row.seed, row.demand, row.filled, row.fillRate,
+          row.carried, row.consumed, row.utilization
+        ])
+      }]
+    };
   }
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const settings = liteMesaAnalysisEffectiveSettings(definition);

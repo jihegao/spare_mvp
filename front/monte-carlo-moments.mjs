@@ -1,8 +1,8 @@
 export const MONTE_CARLO_METRIC_DEFINITIONS = Object.freeze([
   { metricId: "mission_success_rate", label: "任务可靠度", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
   { metricId: "operational_availability", label: "使用可用度(A)", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
-  { metricId: "spare_fill_rate", label: "备件满足率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
-  { metricId: "spare_utilization", label: "备件利用率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
+  { metricId: "spare_fill_rate", label: "实际即时满足率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio", numeratorField: "spare_immediately_filled_total", denominatorField: "spare_demand_total" },
+  { metricId: "spare_utilization", label: "实际备件利用率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio", numeratorField: "spare_consumed_total", denominatorField: "spare_carried_total" },
   { metricId: "ready_rate", label: "战备完好率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
   { metricId: "sortie_rate", label: "出动架次率", unit: "架次/机/天", varianceUnit: "(架次/机/天)²", valueFormat: "number" },
   { metricId: "mean_transport_delay", label: "平均备件延误时间", unit: "小时", varianceUnit: "小时²", valueFormat: "number" },
@@ -50,12 +50,36 @@ function finiteSampleVariance(values, mean) {
 export function buildMonteCarloMetricMoments(samples, counts = {}) {
   const safeSamples = Array.isArray(samples) ? samples : [];
   const metrics = MONTE_CARLO_METRIC_DEFINITIONS.map((definition) => {
-    const values = safeSamples
-      .map((sample) => sample?.metrics?.[definition.metricId] ?? sample?.final?.[definition.metricId])
-      .filter(isFiniteNumber);
+    const ratioPairs = definition.numeratorField
+      ? safeSamples.flatMap((sample) => {
+        const metrics = sample?.metrics || sample?.final || {};
+        const numerator = metrics[definition.numeratorField];
+        const denominator = metrics[definition.denominatorField];
+        return isFiniteNumber(numerator) && numerator >= 0 && isFiniteNumber(denominator) && denominator > 0
+          ? [[numerator, denominator]]
+          : [];
+      })
+      : [];
+    const zeroDenominatorSampleCount = definition.numeratorField
+      ? safeSamples.filter((sample) => {
+        const metrics = sample?.metrics || sample?.final || {};
+        const numerator = metrics[definition.numeratorField];
+        const denominator = metrics[definition.denominatorField];
+        return isFiniteNumber(numerator) && numerator >= 0 && denominator === 0;
+      }).length
+      : 0;
+    const values = definition.numeratorField
+      ? ratioPairs.map(([numerator, denominator]) => numerator / denominator)
+      : safeSamples
+        .map((sample) => sample?.metrics?.[definition.metricId] ?? sample?.final?.[definition.metricId])
+        .filter(isFiniteNumber);
     const validSampleCount = values.length;
-    const mean = finiteMean(values);
-    const varianceResult = finiteSampleVariance(values, mean);
+    const arithmeticMean = finiteMean(values);
+    const numeratorTotal = ratioPairs.length ? ratioPairs.reduce((total, [numerator]) => total + numerator, 0) : null;
+    const denominatorTotal = ratioPairs.length ? ratioPairs.reduce((total, [, denominator]) => total + denominator, 0) : null;
+    const mean = arithmeticMean;
+    const overallRatio = definition.numeratorField && denominatorTotal > 0 ? numeratorTotal / denominatorTotal : null;
+    const varianceResult = finiteSampleVariance(values, arithmeticMean);
     const invalidReason = validSampleCount > 0 && mean === null
       ? "mean_not_finite"
       : varianceResult.invalidReason;
@@ -64,7 +88,13 @@ export function buildMonteCarloMetricMoments(samples, counts = {}) {
       mean,
       sampleVariance: varianceResult.value,
       validSampleCount,
-      invalidReason
+      invalidReason: definition.numeratorField && validSampleCount === 0 ? "data_unavailable" : invalidReason,
+      meanAggregationMethod: "arithmetic_mean",
+      overallAggregationMethod: definition.numeratorField ? "ratio_of_totals" : null,
+      overallStatus: overallRatio !== null ? "available" : zeroDenominatorSampleCount ? "zero_denominator" : "data_unavailable",
+      numeratorTotal,
+      denominatorTotal,
+      overallRatio
     };
   });
   const successfulSampleCount = count(counts.successfulSampleCount, safeSamples.length);
@@ -108,7 +138,14 @@ export function normalizeMonteCarloMetricMoments(payload, samples = [], counts =
       mean,
       sampleVariance,
       validSampleCount,
-      invalidReason
+      invalidReason,
+      meanAggregationMethod: source.mean_aggregation_method || "arithmetic_mean",
+      overallAggregationMethod: source.overall_aggregation_method
+        || (source.aggregation_method === "ratio_of_totals" ? "ratio_of_totals" : definition.numeratorField ? "ratio_of_totals" : null),
+      overallStatus: source.overall_status || (isFiniteNumber(source.overall_ratio) ? "available" : "data_unavailable"),
+      numeratorTotal: isFiniteNumber(source.numerator_total) ? source.numerator_total : null,
+      denominatorTotal: isFiniteNumber(source.denominator_total) ? source.denominator_total : null,
+      overallRatio: isFiniteNumber(source.overall_ratio) ? source.overall_ratio : null
     };
   });
   const successfulSampleCount = count(
@@ -131,7 +168,7 @@ export function normalizeMonteCarloMetricMoments(payload, samples = [], counts =
 }
 
 export function formatMonteCarloMoment(value, _valueFormat, { variance = false } = {}) {
-  if (!isFiniteNumber(value)) return variance ? "不可计算" : "无有效样本";
+  if (!isFiniteNumber(value)) return variance ? "不可计算" : "--";
   if (variance) return value.toFixed(4);
   return value.toFixed(2);
 }

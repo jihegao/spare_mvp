@@ -8304,8 +8304,8 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
         metrics: [
           { metric_id: "mission_success_rate", mean: 0.73, sample_variance: 0.0123, valid_sample_count: 3 },
           { metric_id: "operational_availability", mean: 0.81, sample_variance: 0.0064, valid_sample_count: 3 },
-          { metric_id: "spare_fill_rate", mean: 0.64, sample_variance: 0.02, valid_sample_count: 2 },
-          { metric_id: "spare_utilization", mean: 0.29, sample_variance: null, valid_sample_count: 1 },
+          { metric_id: "spare_fill_rate", mean: 0.5, overall_ratio: 1 / 12, sample_variance: 0.5, valid_sample_count: 2, mean_aggregation_method: "arithmetic_mean", overall_aggregation_method: "ratio_of_totals", overall_status: "available", numerator_total: 1, denominator_total: 12 },
+          { metric_id: "spare_utilization", mean: 0.125, overall_ratio: 1 / 36, sample_variance: 0.03125, valid_sample_count: 2, mean_aggregation_method: "arithmetic_mean", overall_aggregation_method: "ratio_of_totals", overall_status: "available", numerator_total: 1, denominator_total: 36 },
           { metric_id: "ready_rate", mean: 0, sample_variance: null, valid_sample_count: 2, invalid_reason: "sample_variance_not_finite" },
           { metric_id: "sortie_rate", mean: 0.82, sample_variance: 0.0025, valid_sample_count: 3 },
           { metric_id: "mean_transport_delay", mean: 7.5, sample_variance: 4, valid_sample_count: 3 },
@@ -8317,8 +8317,10 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
         sample_id: "sample-render-fallback-check",
         final: {
           mission_success_rate: 0.11,
-          spare_fill_rate: 0.22,
-          spare_utilization: 0.33
+          spare_immediately_filled_total: 1,
+          spare_demand_total: 12,
+          spare_consumed_total: 1,
+          spare_carried_total: 36
         }
       }]
     }
@@ -8360,23 +8362,36 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
     assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
     assert.match(resultCards, /使用可用度\(A\)[\s\S]*<strong>0\.81<\/strong>/);
-    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.64<\/strong>/);
-    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.29<\/strong>/);
+    assert.match(resultCards, /实际即时满足率（样本均值）[\s\S]*<strong>0\.50<\/strong>/);
+    assert.match(resultCards, /实际备件利用率（样本均值）[\s\S]*<strong>0\.13<\/strong>/);
     assert.doesNotMatch(resultCards, /比例|架次\/机\/天|小时|项/);
-    assert.match(metricTable, /<th>均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
-    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.29<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>1<\/td>/);
-    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<th>样本均值<\/th><th>跨样本总体比率<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>--<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>--<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>实际即时满足率<\/td>\s*<td>0\.50<\/td>\s*<td>0\.08<\/td>\s*<td>0\.5000<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>实际备件利用率<\/td>\s*<td>0\.13<\/td>\s*<td>0\.03<\/td>\s*<td>0\.0313<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>--<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
     assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
     assert.match(metricTable, /<td>维修积压<\/td>[\s\S]*?<td>项<\/td>/);
     assert.doesNotMatch(metricTable, /比例²|\(架次\/机\/天\)²|小时²|项²/);
-    for (const label of ["任务可靠度", "使用可用度\\(A\\)", "备件满足率", "备件利用率"]) {
+    for (const label of ["任务可靠度", "使用可用度\\(A\\)", "实际即时满足率", "实际备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }
     assert.doesNotMatch(runtime.appNode.innerHTML, /sample_id|mean_transport_delay|mission_success_rate|operational_availability|spare_fill_rate|spare_utilization/);
     assert.match(runtime.appNode.innerHTML, new RegExp("Mesa 分析完成：3/4 个样本，失败 1 个，总耗时 70\\.9 秒。"));
+    assert.match(runtime.appNode.innerHTML, /样本实际备件指标明细[\s\S]*8\.33%[\s\S]*2\.78%/);
+
+    await runtime.click("[data-analysis-xlsx-export]");
+    const exportRequest = runtime.requests
+      .filter((request) => request.url === "/api/analysis-results/export-xlsx")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(exportRequest.analysis_type, "monte_carlo");
+    assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率" && row[1] === "0.50"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率（跨样本总体）" && row[1] === "0.08"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "实际备件利用率（跨样本总体）" && row[1] === "0.03"));
+    assert.deepEqual(exportRequest.detail_sections[0].rows[0].slice(2), [12, 1, "8.33%", 36, 1, "2.78%"]);
   } finally {
     runtime.restore();
   }
@@ -8410,7 +8425,7 @@ test("Monte Carlo detail renders backend sample timeout as an actionable blocked
     assert.match(runtime.appNode.innerHTML, /总样本[\s\S]*<strong>4<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /成功样本[\s\S]*<strong>0<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /失败样本[\s\S]*<strong>4<\/strong>/);
-    assert.match(runtime.appNode.innerHTML, /无有效样本/);
+    assert.match(runtime.appNode.innerHTML, /--/);
     assert.match(runtime.appNode.innerHTML, /不可计算/);
   } finally {
     runtime.restore();

@@ -50,7 +50,8 @@ class MonteCarloMomentsTest(unittest.TestCase):
                 "metrics": {
                     "mission_success_rate": 0.8,
                     "operational_availability": 0.9,
-                    "spare_fill_rate": 0.6,
+                    "spare_immediately_filled_total": 3,
+                    "spare_demand_total": 5,
                     "spare_utilization": math.inf,
                     "ready_rate": 0.4,
                     "sortie_rate": 10**1000,
@@ -87,6 +88,60 @@ class MonteCarloMomentsTest(unittest.TestCase):
         self.assertEqual(metrics["sortie_rate"]["valid_sample_count"], 1)
         self.assertAlmostEqual(metrics["repair_backlog"]["mean"], 2.0)
         self.assertAlmostEqual(metrics["repair_backlog"]["sample_variance"], 2.0)
+
+    def test_actual_spare_ratios_use_quantity_totals_and_exclude_zero_denominators(self) -> None:
+        samples = [
+            {"metrics": {
+                "spare_immediately_filled_total": 1,
+                "spare_demand_total": 1,
+                "spare_consumed_total": 1,
+                "spare_carried_total": 4,
+            }},
+            {"metrics": {
+                "spare_immediately_filled_total": 0,
+                "spare_demand_total": 11,
+                "spare_consumed_total": 0,
+                "spare_carried_total": 32,
+            }},
+            {"metrics": {
+                "spare_immediately_filled_total": 0,
+                "spare_demand_total": 0,
+                "spare_consumed_total": 0,
+                "spare_carried_total": 0,
+            }},
+        ]
+        moments = build_monte_carlo_metric_moments(samples, total_sample_count=3, failed_sample_count=0)
+        metrics = {metric["metric_id"]: metric for metric in moments["metrics"]}
+        fill = metrics["spare_fill_rate"]
+        utilization = metrics["spare_utilization"]
+
+        self.assertAlmostEqual(fill["mean"], 0.5)
+        self.assertAlmostEqual(fill["overall_ratio"], 1 / 12)
+        self.assertEqual(fill["valid_sample_count"], 2)
+        self.assertEqual(fill["numerator_total"], 1)
+        self.assertEqual(fill["denominator_total"], 12)
+        self.assertEqual(fill["zero_denominator_sample_count"], 1)
+        self.assertAlmostEqual(utilization["mean"], 0.125)
+        self.assertAlmostEqual(utilization["overall_ratio"], 1 / 36)
+        self.assertEqual(utilization["valid_sample_count"], 2)
+        self.assertEqual(utilization["numerator_total"], 1)
+        self.assertEqual(utilization["denominator_total"], 36)
+
+        aggregate = SimulationAdapter(Path(__file__).resolve().parents[1])._aggregate_sample_metrics(samples)
+        self.assertAlmostEqual(aggregate["spare_fill_rate"], 1 / 12)
+        self.assertAlmostEqual(aggregate["spare_utilization"], 1 / 36)
+        self.assertEqual(aggregate["spare_demand_total"], 12)
+        self.assertEqual(aggregate["spare_carried_total"], 36)
+
+        zero_only = build_monte_carlo_metric_moments(
+            [samples[-1]], total_sample_count=1, failed_sample_count=0
+        )
+        zero_metrics = {metric["metric_id"]: metric for metric in zero_only["metrics"]}
+        self.assertIsNone(zero_metrics["spare_fill_rate"]["mean"])
+        self.assertEqual(zero_metrics["spare_fill_rate"]["valid_sample_count"], 0)
+        self.assertEqual(zero_metrics["spare_fill_rate"]["invalid_reason"], "zero_denominator")
+        self.assertIsNone(zero_metrics["spare_utilization"]["mean"])
+        self.assertEqual(zero_metrics["spare_utilization"]["valid_sample_count"], 0)
 
     def test_extreme_finite_values_never_raise_or_emit_nonfinite_statistics(self) -> None:
         same_sign = build_monte_carlo_metric_moments(

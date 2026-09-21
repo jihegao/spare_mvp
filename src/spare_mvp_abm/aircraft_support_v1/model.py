@@ -164,6 +164,10 @@ class AircraftSupportV1Model(
         self._failure_tree_runtime_by_aircraft_type: dict[tuple[str, str], dict[str, Any]] = {}
         self._initialize_aircraft_lru_failure_timers()
         self.nodes = self._build_support_nodes()
+        self.spare_carried_total = sum(
+            sum(max(0, int(quantity)) for quantity in node["inventory"].values())
+            for node in self.nodes.values()
+        )
         self._initialize_organization_graph()
         self.organization_graph_identity = organization_graph_identity(
             self.inputs.get("support_network", {}).get("organization_graph")

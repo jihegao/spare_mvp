@@ -1372,6 +1372,14 @@ class BackendApi:
             "experiment_id": page_result["experiment_id"],
             "sample_count": len(samples),
             "seed_list": [sample["seed"] for sample in samples],
+            "samples": [
+                {
+                    "sample_index": sample.get("sample_index"),
+                    "seed": sample.get("seed"),
+                    "metrics": copy.deepcopy(sample.get("metrics") or {}),
+                }
+                for sample in samples
+            ],
             "parallel_cores": normalized_settings["parallelCores"],
             "worker_count": worker_count,
             "aggregate_metrics": aggregate,

@@ -1214,6 +1214,52 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(repair_backlog["valid_sample_count"], 2)
         self.assertEqual(repair_backlog["invalid_reason"], "sample_variance_not_finite")
 
+    def test_lite_mesa_api_uses_actual_spare_quantity_totals_for_monte_carlo(self) -> None:
+        project = small_aircraft_support_project("project-lite-mesa-actual-spare-ratios")
+
+        def weighted_samples(inputs, *, base_seed, settings):
+            samples = [
+                _run_aircraft_support_v1_analysis_sample(
+                    inputs, seed=base_seed + sample_index, sample_index=sample_index
+                )
+                for sample_index in range(settings["samples"])
+            ]
+            actuals = [(1, 1, 1, 4), (0, 11, 0, 32), (0, 0, 0, 0)]
+            for sample, (filled, demand, consumed, carried) in zip(samples, actuals):
+                sample["metrics"].update({
+                    "spare_immediately_filled_total": filled,
+                    "spare_demand_total": demand,
+                    "spare_consumed_total": consumed,
+                    "spare_carried_total": carried,
+                    "spare_fill_rate": filled / demand if demand else None,
+                    "spare_utilization": consumed / carried if carried else None,
+                })
+            return samples, [], 1, []
+
+        with mock.patch(
+            "src.spare_mvp_backend.api._run_lite_mesa_analysis_samples",
+            side_effect=weighted_samples,
+        ):
+            payload = self.api.run_lite_mesa_analysis(
+                project,
+                analysis_type="mission_reliability",
+                settings={"samples": 3, "seed": 20260621, "parallelCores": 1},
+            )
+
+        moments = {metric["metric_id"]: metric for metric in payload["metric_moments"]["metrics"]}
+        self.assertAlmostEqual(payload["aggregate_metrics"]["spare_fill_rate"], 1 / 12)
+        self.assertAlmostEqual(payload["aggregate_metrics"]["spare_utilization"], 1 / 36)
+        self.assertEqual(payload["aggregate_metrics"]["spare_demand_total"], 12)
+        self.assertEqual(payload["aggregate_metrics"]["spare_carried_total"], 36)
+        self.assertAlmostEqual(moments["spare_fill_rate"]["mean"], 0.5)
+        self.assertAlmostEqual(moments["spare_fill_rate"]["overall_ratio"], 1 / 12)
+        self.assertEqual(moments["spare_fill_rate"]["valid_sample_count"], 2)
+        self.assertAlmostEqual(moments["spare_utilization"]["mean"], 0.125)
+        self.assertAlmostEqual(moments["spare_utilization"]["overall_ratio"], 1 / 36)
+        self.assertEqual(moments["spare_utilization"]["valid_sample_count"], 2)
+        self.assertEqual(payload["samples"][2]["metrics"]["spare_fill_rate"], None)
+        self.assertEqual(payload["samples"][2]["metrics"]["spare_utilization"], None)
+
     def test_periodic_profile_empty_slots_survive_project_round_trip_and_compile(self) -> None:
         project = small_aircraft_support_project("project-periodic-profile-empty-slots")
         project["missionProfile"]["periodicProfileLists"] = {

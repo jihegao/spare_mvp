@@ -29,14 +29,14 @@ class ImmediateSpareFillTest(unittest.TestCase):
 
     def test_full_partial_empty_and_zero_demand(self):
         for canonical in (False, True):
-            for stock, quantity, expected in ((5, 5, 1), (3, 5, 0), (0, 5, 0), (0, 0, 1)):
+            for stock, quantity, expected in ((5, 5, 1), (3, 5, 0), (0, 5, 0), (0, 0, None)):
                 with self.subTest(canonical=canonical, stock=stock, quantity=quantity):
                     model = self.model(stock, quantity, canonical)
                     model._start_waiting_jobs()
                     metrics = model.snapshot()
                     self.assertEqual(metrics["spare_fill_rate"], expected)
                     self.assertEqual(metrics["spare_demand_total"], quantity)
-                    self.assertEqual(metrics["spare_immediately_filled_total"], quantity if expected else 0)
+                    self.assertEqual(metrics["spare_immediately_filled_total"], quantity if expected == 1 else 0)
                     if stock < quantity:
                         self.assertEqual(model.nodes["deck"]["inventory"]["shared-spare"], stock)
 
@@ -112,7 +112,7 @@ class ImmediateSpareFillTest(unittest.TestCase):
         model._start_waiting_jobs()
         self.assertEqual(model.spare_demand_total, 0)
         model.jobs[0].state = "cancelled"
-        self.assertEqual(model.snapshot()["spare_fill_rate"], 1)
+        self.assertIsNone(model.snapshot()["spare_fill_rate"])
 
     def test_steps_of_one_job_are_distinct_and_event_stats_preserve_counts(self):
         model = self.model(1, 1)
@@ -135,7 +135,7 @@ class ImmediateSpareFillTest(unittest.TestCase):
         self.assertEqual(product["shortage_quantity"], 1)
         self.assertTrue(all(_lite_mesa_projection_event_required(event) for event in model.event_log if event["event"] == "spare_request"))
 
-    def test_moments_average_sample_ratios_and_utilization_is_independent(self):
+    def test_moments_weight_actual_quantities_and_utilization_is_independent(self):
         filled, shortage = self.model(1, 1), self.model(0, 5)
         filled._start_waiting_jobs()
         shortage._start_waiting_jobs()
@@ -143,6 +143,7 @@ class ImmediateSpareFillTest(unittest.TestCase):
         moments = build_monte_carlo_metric_moments(samples, total_sample_count=2, failed_sample_count=0)
         metric = next(row for row in moments["metrics"] if row["metric_id"] == "spare_fill_rate")
         self.assertEqual(metric["mean"], 0.5)
+        self.assertEqual(metric["overall_ratio"], 1 / 6)
         self.assertEqual(metric["sample_variance"], 0.5)
         self.assertEqual(filled.snapshot()["spare_utilization"], 1)
         self.assertEqual(filled.snapshot()["spare_fill_rate"], 1)
@@ -156,7 +157,7 @@ class ImmediateSpareFillTest(unittest.TestCase):
         self.assertEqual(projection["applicability"]["status"], "not_applicable")
         schema = json.loads((Path(__file__).parents[1] / "contracts/result.schema.json").read_text())
         validate(None, schema["properties"]["metrics"]["properties"]["spare_fill_rate"])
-        self.assertEqual(adapter._aviation_spare_fill_rate({"spare_demand_total": 0, "spare_immediately_filled_total": 0}), 1)
+        self.assertIsNone(adapter._aviation_spare_fill_rate({"spare_demand_total": 0, "spare_immediately_filled_total": 0}))
         self.assertEqual(adapter._aviation_spare_fill_rate({"spare_fill_rate": 0.2, "spare_demand_total": 5, "spare_immediately_filled_total": 2}), 0.2)
 
     def test_api_distinguishes_planned_and_actual_fill(self):
