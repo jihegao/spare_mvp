@@ -18908,6 +18908,8 @@ function monteCarloRunExecutionDetails(run = {}, detail = {}) {
     run.requestedSampleCount,
     result.requested_sample_count,
     result.requestedSampleCount,
+    run.sample_count,
+    result.sample_count,
     config.samples
   );
   const failedSamples = firstDefinedRunDetailValue(
@@ -18919,6 +18921,7 @@ function monteCarloRunExecutionDetails(run = {}, detail = {}) {
   );
   const elapsedSeconds = firstDefinedRunDetailValue(
     timings.total_seconds,
+    Number.isFinite(Number(timings.total_ns)) ? Number(timings.total_ns) / 1e9 : undefined,
     timings.totalSeconds,
     run.elapsed_seconds,
     run.elapsedSeconds,
@@ -18939,7 +18942,19 @@ function monteCarloRunExecutionDetails(run = {}, detail = {}) {
     ["并行度", firstDefinedRunDetailValue(run.parallel_cores, run.parallelCores, result.parallel_cores, result.parallelCores, config.parallelCores)],
     ["耗时（秒）", elapsedSeconds],
     ["吞吐（样本/秒）", throughput],
-    ["缓存状态", firstDefinedRunDetailValue(run.cache_status, run.cacheStatus, run.cache_hit === true ? "命中" : run.cache_hit === false ? "未命中" : undefined, result.cache_status, result.cacheStatus)],
+    ["缓存状态", firstDefinedRunDetailValue(
+      run.cache_status,
+      run.cacheStatus,
+      run.plan_cache_status,
+      run.execution_metadata?.plan_cache_status,
+      run.executionMetadata?.planCacheStatus,
+      run.cache_hit === true ? "命中" : run.cache_hit === false ? "未命中" : undefined,
+      result.cache_status,
+      result.cacheStatus,
+      result.plan_cache_status,
+      result.execution_metadata?.plan_cache_status,
+      result.executionMetadata?.planCacheStatus
+    )],
     ["失败样本数", failedSamples]
   ];
 }
