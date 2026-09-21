@@ -44,6 +44,8 @@ export function buildRunIntent({
     projectJson: cloneJson(projectJson),
     planProjectJson: cloneJson(experimentPlanConfig.projectJson),
     experimentPlanConfig,
+    monteCarloBackend: experimentPlanConfig.monteCarloBackend,
+    monteCarloOutputScope: experimentPlanConfig.monteCarloOutputScope,
     runRequest
   };
 }

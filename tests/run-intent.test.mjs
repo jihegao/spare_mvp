@@ -112,6 +112,26 @@ test("buildRunIntent creates canonical monte carlo request shape", async () => {
   assert.deepEqual(submittedRequests, [bound.runRequest]);
 });
 
+test("Monte Carlo backend and output scope are persisted in ExperimentPlan config and intent", () => {
+  const projectJson = {
+    project_id: "project-rust-mc",
+    experiment: { name: "Rust event-time", steps: 4, samples: 8, seed: 101, parallelCores: 2 },
+    monteCarloBackend: "rust_event_time_v2",
+    monteCarloOutputScope: "analysis_modules"
+  };
+  const intent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson: projectJson,
+    mcExperimentId: "mc-rust"
+  });
+
+  assert.equal(intent.experimentPlanConfig.monteCarloBackend, "rust_event_time_v2");
+  assert.equal(intent.experimentPlanConfig.monteCarloOutputScope, "core");
+  assert.equal(intent.monteCarloBackend, "rust_event_time_v2");
+  assert.equal(intent.monteCarloOutputScope, "core");
+});
+
 test("buildRunIntent defaults Monte Carlo to a single configured value", () => {
   const projectJson = {
     project_id: "project-baseline-mc",

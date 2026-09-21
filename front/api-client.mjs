@@ -26,6 +26,22 @@ export function normalizeMonteCarloParallelCores(value, { fallback = 1 } = {}) {
   return number;
 }
 
+export const MONTE_CARLO_BACKENDS = Object.freeze(["python", "rust_event_time_v2"]);
+export const MONTE_CARLO_OUTPUT_SCOPES = Object.freeze(["analysis_modules", "core"]);
+
+export function normalizeMonteCarloBackend(value) {
+  return MONTE_CARLO_BACKENDS.includes(String(value || "").trim())
+    ? String(value).trim()
+    : "python";
+}
+
+export function normalizeMonteCarloOutputScope(value, { backend = "python" } = {}) {
+  const normalizedBackend = normalizeMonteCarloBackend(backend);
+  if (normalizedBackend === "rust_event_time_v2") return "core";
+  const candidate = String(value || "").trim();
+  return candidate === "core" ? "core" : "analysis_modules";
+}
+
 export function liteMesaAnalysisRequestTimeoutMs(settings = {}) {
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(settings.samples) || 4)));
   const parallelCores = normalizeMonteCarloParallelCores(settings.parallelCores, { fallback: 1 });
@@ -2829,6 +2845,13 @@ export function buildExperimentPlanConfig(projectJson) {
   const scenarioComposition = normalizedScenarioComposition(projectJson);
   const stopPolicy = normalizedStopPolicy(projectJson, experiment);
   const parallelCores = normalizeMonteCarloParallelCores(experiment.parallelCores);
+  const monteCarloBackend = normalizeMonteCarloBackend(
+    projectJson.monteCarloBackend ?? experiment.monteCarloBackend
+  );
+  const monteCarloOutputScope = normalizeMonteCarloOutputScope(
+    projectJson.monteCarloOutputScope ?? experiment.monteCarloOutputScope,
+    { backend: monteCarloBackend }
+  );
   const branchProjectJson = cloneJson(projectJson);
   applyScenarioCompositionOverrides(branchProjectJson, scenarioComposition);
   const config = {
@@ -2837,6 +2860,8 @@ export function buildExperimentPlanConfig(projectJson) {
     samples: Number(experiment.samples ?? 1),
     seed: seedPolicy.baseSeed,
     parallelCores,
+    monteCarloBackend,
+    monteCarloOutputScope,
     seedPolicy,
     scenarioComposition,
     stopPolicy,
