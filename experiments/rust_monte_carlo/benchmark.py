@@ -196,6 +196,8 @@ def artifact_payload(manifest: dict[str, Any] | None, output_dir: Path, kind: st
 
 def validate_core_row(row: dict[str, Any], expected_compiler_commit: str | None = None) -> list[str]:
     errors: list[str] = []
+    if row.get("parent_returncode") != 0:
+        errors.append(f"parent_returncode={row.get('parent_returncode')!r}")
     if row.get("status") != "succeeded":
         errors.append(f"status={row.get('status')!r}")
     result = row.get("result_summary") if isinstance(row.get("result_summary"), dict) else {}
@@ -205,6 +207,10 @@ def validate_core_row(row: dict[str, Any], expected_compiler_commit: str | None 
         errors.append(f"analysis_status={analysis_status!r}")
     if row.get("failed_sample_count") != 0:
         errors.append(f"failed_sample_count={row.get('failed_sample_count')!r}")
+    if row.get("semantic_sample_count") != row.get("samples"):
+        errors.append(f"semantic_sample_count={row.get('semantic_sample_count')!r}")
+    if row.get("semantic_failed_sample_count") != 0:
+        errors.append(f"semantic_failed_sample_count={row.get('semantic_failed_sample_count')!r}")
     actual_kinds = frozenset(row.get("artifact_kinds") or ())
     if actual_kinds != CORE_ARTIFACT_KINDS:
         errors.append(f"artifact_kinds={sorted(actual_kinds)!r}")
