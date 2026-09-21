@@ -39,7 +39,7 @@ try {
         $greenManifest = Get-Content -LiteralPath $greenManifestPath -Raw | ConvertFrom-Json
     } else {
         $generatedManifest = Join-Path $working 'green-source-manifest.json'
-        & (Join-Path $portable 'runtime\python.exe') -I -B (Join-Path $repo 'packaging\green\green-source-manifest.py') --repo $repo --root $generatedManifest
+        & (Join-Path $portable 'runtime\python.exe') -X utf8 -I -B (Join-Path $repo 'packaging\green\green-source-manifest.py') --repo $repo --root $generatedManifest
         if ($LASTEXITCODE -ne 0) { throw 'Green source manifest generation failed.' }
         $greenManifestPath = $generatedManifest
         $greenManifest = Get-Content -LiteralPath $generatedManifest -Raw | ConvertFrom-Json
@@ -74,9 +74,9 @@ try {
     & $compiler /nologo /target:winexe /optimize+ /reference:System.Windows.Forms.dll /out:$uninstaller $uninstallerSource
     if ($LASTEXITCODE -ne 0) { throw 'Green uninstaller compilation failed.' }
 
-    & (Join-Path $staging 'runtime\python.exe') -I -B (Join-Path $staging 'scripts\portable-package.py') seal --root $staging
+    & (Join-Path $staging 'runtime\python.exe') -X utf8 -I -B (Join-Path $staging 'scripts\portable-package.py') seal --root $staging
     if ($LASTEXITCODE -ne 0) { throw 'Green package sealing failed.' }
-    & (Join-Path $staging 'runtime\python.exe') -I -B (Join-Path $staging 'scripts\portable-package.py') verify --root $staging
+    & (Join-Path $staging 'runtime\python.exe') -X utf8 -I -B (Join-Path $staging 'scripts\portable-package.py') verify --root $staging
     if ($LASTEXITCODE -ne 0) { throw 'Green package verification failed.' }
 
     & tar.exe -cf $payload -C $staging .

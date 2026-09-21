@@ -16,7 +16,7 @@ Set-StrictMode -Version Latest
 $PackageRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Python = Join-Path $PackageRoot 'runtime\python.exe'
 $PathResolver = Join-Path $PSScriptRoot 'portable-paths.py'
-$pathArguments = @('-I', '-B', $PathResolver, '--package-root', $PackageRoot)
+$pathArguments = @('-X', 'utf8', '-I', '-B', $PathResolver, '--package-root', $PackageRoot)
 if (-not [string]::IsNullOrWhiteSpace($DataRoot)) { $pathArguments += @('--data-root', $DataRoot) }
 $pathJson = & $Python @pathArguments
 if ($LASTEXITCODE -ne 0) { throw 'Portable path resolution failed; no process or data was changed.' }
@@ -105,7 +105,7 @@ try {
         # binding scan with deletion, so another installation cannot bind or
         # open this data root between the check and removal.
         $sharedMutex = Acquire-SharedDataMutex -MutexName ([string]$Paths.data_mutex)
-        $pathJson = & $Python -I -B $PathResolver --package-root $PackageRoot --data-root ([string]$Paths.data_root)
+        $pathJson = & $Python -X utf8 -I -B $PathResolver --package-root $PackageRoot --data-root ([string]$Paths.data_root)
         if ($LASTEXITCODE -ne 0) { throw 'Could not revalidate shared-data bindings before deletion.' }
         $deletePaths = $pathJson | ConvertFrom-Json
         if (-not [bool]$deletePaths.binding_matches_selected) {

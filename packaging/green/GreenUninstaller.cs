@@ -143,13 +143,15 @@ internal static class GreenUninstaller
         string resolver = Path.Combine(installationRoot, "scripts", "portable-paths.py");
         ProcessStartInfo info = new ProcessStartInfo(
             python,
-            "-I -B " + Quote(resolver) + " --package-root " + Quote(installationRoot) + " --field " + Quote(field))
+            "-X utf8 -I -B " + Quote(resolver) + " --package-root " + Quote(installationRoot) + " --field " + Quote(field))
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             WorkingDirectory = installationRoot,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
         };
         using (Process process = Process.Start(info))
         {

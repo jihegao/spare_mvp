@@ -1,6 +1,9 @@
 import importlib.util
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import closing
@@ -24,6 +27,49 @@ guard_module = load_script("portable-data-guard.py")
 
 
 class PortablePathsTest(unittest.TestCase):
+    def test_cli_machine_output_is_ascii_safe_and_restores_unicode_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "中文 安装"
+            local = root / "本地 数据"
+            package.mkdir()
+            local.mkdir()
+            environment = {**os.environ, "LOCALAPPDATA": str(local)}
+
+            completed = subprocess.run(
+                [sys.executable, "-X", "utf8", "-I", "-B", str(ROOT / "scripts" / "portable-paths.py"),
+                 "--package-root", str(package)],
+                env=environment,
+                capture_output=True,
+                check=True,
+            )
+
+            self.assertTrue(completed.stdout.isascii())
+            self.assertEqual(Path(json.loads(completed.stdout)["package_root"]), package.resolve())
+
+    def test_cli_field_output_uses_utf16_for_vbs_unicode_path_consumption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "中文 安装"
+            local = root / "本地 数据"
+            output = root / "resolver-output.txt"
+            package.mkdir()
+            local.mkdir()
+
+            subprocess.run(
+                [sys.executable, "-X", "utf8", "-I", "-B", str(ROOT / "scripts" / "portable-paths.py"),
+                 "--package-root", str(package), "--field", "logs_dir", "--field-output", str(output)],
+                env={**os.environ, "LOCALAPPDATA": str(local)},
+                capture_output=True,
+                check=True,
+            )
+
+            self.assertEqual(
+                Path(output.read_text(encoding="utf-16").strip()),
+                local.resolve() / "spare_mvp" / "instances" /
+                paths_module._installation_id(package.resolve()) / "logs",
+            )
+
     def test_default_paths_separate_persistent_data_and_instance_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

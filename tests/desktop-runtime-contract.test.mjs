@@ -86,8 +86,41 @@ test("portable integrity passes the isolated instance cache path explicitly", as
   const calls = [];
   await assertPortableIntegrity(paths, () => {}, async (...args) => calls.push(args));
   assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0][1].slice(0, 4), ["-X", "utf8", "-I", "-B"]);
   assert.ok(calls[0][1].includes("--cache-path"));
   assert.equal(calls[0][1][calls[0][1].indexOf("--cache-path") + 1], paths.integrityCache);
+});
+
+test("Windows runtime Python consumers preserve Unicode paths end to end", async () => {
+  const [startScript, stopScript, verifierScript, buildScript, runtimeScript, serviceManager, uninstaller, launcher] = await Promise.all([
+    readFile(new URL("../scripts/start-portable.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/stop-portable.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/verify-portable-package.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/build-portable.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/prepare-windows-runtime.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../desktop/service-manager.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../packaging/green/GreenUninstaller.cs", import.meta.url), "utf8"),
+    readFile(new URL("../Start-Platform.vbs", import.meta.url), "utf8"),
+  ]);
+  assert.match(startScript, /\$pathArguments = @\('-X', 'utf8', '-I', '-B'/);
+  assert.match(startScript, /\$ownedArguments = @\('-X', 'utf8', '-B', '-X', "spare_mvp_instance=/);
+  assert.match(startScript, /\$migrationArguments = @\([\s\S]{0,80}'-X', 'utf8', '-I', '-B'/);
+  assert.match(startScript, /Get-Content -LiteralPath \$serviceLog -Encoding UTF8/);
+  assert.match(stopScript, /\$pathArguments = @\('-X', 'utf8', '-I', '-B'/);
+  assert.match(verifierScript, /\$python -X utf8 -I -B \$pathResolver/);
+  for (const [label, source] of [["portable build", buildScript], ["runtime preparation", runtimeScript]]) {
+    const pythonInvocations = source.split(/\r?\n/).filter((line) => /& .*\$python|& \(Join-Path .*python\.exe/.test(line));
+    assert.ok(pythonInvocations.length > 0, `${label} has no Python invocations`);
+    assert.ok(pythonInvocations.every((line) => line.includes("-X utf8")), `${label} has a non-UTF-8 Python invocation`);
+  }
+  assert.match(serviceManager, /\["-X", "utf8", "-I", "-B", base\.pathResolver/);
+  assert.match(serviceManager, /"-X", "utf8", "-I", "-B", paths\.verifier/);
+  assert.match(uninstaller, /"-X utf8 -I -B " \+ Quote\(resolver\)/);
+  assert.match(uninstaller, /StandardOutputEncoding = Encoding\.UTF8/);
+  assert.match(uninstaller, /StandardErrorEncoding = Encoding\.UTF8/);
+  assert.match(launcher, /-X utf8 -I -B/);
+  assert.match(launcher, /--field-output/);
+  assert.match(launcher, /OpenTextFile\(resolverOutput, 1, False, -1\)/);
 });
 
 test("running state requires backend and Solara health for the same installation", async (t) => {

@@ -29,12 +29,12 @@ if (
     throw "Not a valid portable package: $PackageRoot"
 }
 
-& $python -I -B $verifier verify --root $PackageRoot
+& $python -X utf8 -I -B $verifier verify --root $PackageRoot
 if ($LASTEXITCODE -ne 0) { throw 'Package integrity verification failed before startup.' }
-& $python -I -B -m pip --isolated check
+& $python -X utf8 -I -B -m pip --isolated check
 if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency closure failed.' }
 $env:NO_PROXY = '127.0.0.1,localhost'
-$pathJson = & $python -I -B $pathResolver --package-root $PackageRoot
+$pathJson = & $python -X utf8 -I -B $pathResolver --package-root $PackageRoot
 if ($LASTEXITCODE -ne 0) { throw 'Portable path resolution failed before startup verification.' }
 $Paths = $pathJson | ConvertFrom-Json
 $pidRoot = [string]$Paths.pid_root

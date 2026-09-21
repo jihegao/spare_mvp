@@ -202,6 +202,7 @@ def main() -> None:
     parser.add_argument("--data-root")
     parser.add_argument("--write-binding", action="store_true")
     parser.add_argument("--field")
+    parser.add_argument("--field-output")
     args = parser.parse_args()
     try:
         result = resolve_paths(
@@ -212,9 +213,14 @@ def main() -> None:
         if args.field:
             if args.field not in result or not isinstance(result[args.field], (str, int, bool)):
                 raise ValueError(f"Unknown scalar path field: {args.field}")
-            print(result[args.field])
+            if args.field_output:
+                Path(args.field_output).write_text(str(result[args.field]) + "\n", encoding="utf-16")
+            else:
+                print(result[args.field])
         else:
-            print(json.dumps(result, ensure_ascii=False))
+            if args.field_output:
+                raise ValueError("--field-output requires --field")
+            print(json.dumps(result))
     except (OSError, ValueError, json.JSONDecodeError) as error:
         parser.error(str(error))
 
