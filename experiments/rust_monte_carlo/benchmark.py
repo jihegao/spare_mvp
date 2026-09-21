@@ -211,6 +211,15 @@ def validate_core_row(row: dict[str, Any], expected_compiler_commit: str | None 
         errors.append(f"semantic_sample_count={row.get('semantic_sample_count')!r}")
     if row.get("semantic_failed_sample_count") != 0:
         errors.append(f"semantic_failed_sample_count={row.get('semantic_failed_sample_count')!r}")
+    workers = row.get("workers")
+    samples = row.get("samples")
+    expected_affinity = list(range(workers)) if isinstance(workers, int) and workers >= 0 else None
+    affinity = row.get("affinity") if isinstance(row.get("affinity"), dict) else {}
+    if expected_affinity is None or set(("error", "requested", "effective")) - affinity.keys() or affinity.get("error") is not None or affinity.get("requested") != expected_affinity or affinity.get("effective") != expected_affinity:
+        errors.append(f"affinity={affinity!r}")
+    expected_worker_count = min(samples, workers) if isinstance(samples, int) and isinstance(workers, int) and samples >= 0 and workers >= 0 else None
+    if expected_worker_count is None or "worker_count" not in run or run.get("worker_count") != expected_worker_count:
+        errors.append(f"worker_count={run.get('worker_count')!r}")
     actual_kinds = frozenset(row.get("artifact_kinds") or ())
     if actual_kinds != CORE_ARTIFACT_KINDS:
         errors.append(f"artifact_kinds={sorted(actual_kinds)!r}")
