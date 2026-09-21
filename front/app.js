@@ -731,6 +731,7 @@ let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
 let liteMesaAnalysisResults = {};
 let liteMesaAnalysisRequestEpoch = 0;
 const simulationTaskRestoreAttempts = new Set();
+const simulationTaskRequestEpochs = new Map();
 let analysisXlsxExportState = {};
 let aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
 let rmsAllocationProject = createRmsAllocationProjectForScenario(scenario);
@@ -12642,7 +12643,9 @@ function invalidateSelectedRunContextResults(message) {
   liteMesaMonteCarloRequestEpoch += 1;
   liteMesaAnalysisRequestEpoch += 1;
   simulationTaskRestoreAttempts.clear();
+  simulationTaskRequestEpochs.clear();
   liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloTaskStatus = null;
   liteMesaAnalysisResults = {};
   analysisXlsxExportState = {};
   aircraftMissionReliabilityState.result = null;
@@ -12699,8 +12702,11 @@ function selectCurrentExperimentPlan(planKey) {
   }
   liteMesaMonteCarloRequestEpoch += 1;
   liteMesaAnalysisRequestEpoch += 1;
+  simulationTaskRestoreAttempts.clear();
+  simulationTaskRequestEpochs.clear();
   analysisXlsxExportState = {};
   liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloTaskStatus = null;
   liteMesaMonteCarloStatus = selected.kind === "experiment-plan"
     ? `已绑定实验方案：${selected.name}`
     : `已切换运行来源：${selected.name}`;
@@ -18949,18 +18955,24 @@ function resetSimulationTaskUiSession() {
   liteMesaMonteCarloRequestEpoch += 1;
   liteMesaAnalysisRequestEpoch += 1;
   simulationTaskRestoreAttempts.clear();
+  simulationTaskRequestEpochs.clear();
+  liteMesaMonteCarloTaskStatus = null;
+  liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloStatus = "等待运行分析。";
+  liteMesaAnalysisResults = {};
+  analysisXlsxExportState = {};
+  aircraftMissionReliabilityState = createAircraftMissionReliabilityState();
 }
 
-function nextSimulationTaskRequestEpoch(page) {
-  if (page.component === "lite-mesa-monte-carlo-analysis") return ++liteMesaMonteCarloRequestEpoch;
-  return ++liteMesaAnalysisRequestEpoch;
+function nextSimulationTaskRequestEpoch(scope) {
+  const requestEpoch = (simulationTaskRequestEpochs.get(scope) || 0) + 1;
+  simulationTaskRequestEpochs.set(scope, requestEpoch);
+  return requestEpoch;
 }
 
 function simulationTaskRequestIsCurrent(page, scope, requestEpoch) {
-  const epoch = page.component === "lite-mesa-monte-carlo-analysis"
-    ? liteMesaMonteCarloRequestEpoch
-    : liteMesaAnalysisRequestEpoch;
-  return requestEpoch === epoch && simulationTaskScopeForPage(page) === scope;
+  return requestEpoch === simulationTaskRequestEpochs.get(scope)
+    && simulationTaskScopeForPage(page) === scope;
 }
 
 function simulationTaskPayload(analysisType, settings) {
@@ -18986,7 +18998,7 @@ function queueSimulationTaskRestore(page) {
   const scope = simulationTaskScopeForPage(page);
   if (!simulationTaskController.taskId(scope) || simulationTaskRestoreAttempts.has(scope)) return;
   simulationTaskRestoreAttempts.add(scope);
-  const requestEpoch = nextSimulationTaskRequestEpoch(page);
+  const requestEpoch = nextSimulationTaskRequestEpoch(scope);
   queueMicrotask(async () => {
     try {
       const outcome = await simulationTaskController.resume(scope, {
@@ -18999,6 +19011,7 @@ function queueSimulationTaskRestore(page) {
       if (simulationTaskRequestIsCurrent(page, scope, requestEpoch)) applyRemoteSimulationTaskError(page, err);
     } finally {
       if (simulationTaskRequestIsCurrent(page, scope, requestEpoch)) render();
+      else simulationTaskRestoreAttempts.delete(scope);
     }
   });
 }
@@ -19104,6 +19117,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
   const readonly = frozenPlan ? "readonly" : "";
   const sampleRows = liteMesaMonteCarloSampleRows(result);
   const taskRunning = liteMesaMonteCarloTaskStatus?.status === "running";
+  const inputReadonly = taskRunning ? "readonly" : readonly;
   return `
     <div class="lite-mesa-workbench">
       <section class="lite-mesa-hero">
@@ -19120,9 +19134,9 @@ function renderLiteMesaMonteCarloAnalysis(page) {
           <div class="section-head">
             <h3>实验设置</h3>
           </div>
-          <label>样本数<input data-lite-mesa-field="samples" type="number" min="1" max="1000" step="1" value="${htmlEscape(displayedSettings.samples ?? "")}" ${readonly}></label>
-          <label>并行核心数<input data-lite-mesa-field="parallelCores" type="number" min="1" max="32" step="1" value="${htmlEscape(displayedSettings.parallelCores ?? "")}" ${readonly}></label>
-          <label>随机种子<input data-lite-mesa-field="seed" type="number" min="0" step="1" value="${htmlEscape(displayedSettings.seed ?? "")}" ${readonly}></label>
+          <label>样本数<input data-lite-mesa-field="samples" type="number" min="1" max="1000" step="1" value="${htmlEscape(displayedSettings.samples ?? "")}" ${inputReadonly}></label>
+          <label>并行核心数<input data-lite-mesa-field="parallelCores" type="number" min="1" max="32" step="1" value="${htmlEscape(displayedSettings.parallelCores ?? "")}" ${inputReadonly}></label>
+          <label>随机种子<input data-lite-mesa-field="seed" type="number" min="0" step="1" value="${htmlEscape(displayedSettings.seed ?? "")}" ${inputReadonly}></label>
           ${frozenPlan ? `<p class="inline-status">冻结方案参数只读</p>` : ""}
           ${settingsError ? `<p class="inline-status error">${htmlEscape(settingsError)}</p>` : ""}
           <button type="button" class="btn-primary" data-lite-mesa-action="run" ${settingsError ? "disabled" : taskRunning ? "disabled" : ""}>运行分析</button>
@@ -19227,6 +19241,7 @@ function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
 }
 
 function updateLiteMesaMonteCarloSetting(field, value) {
+  if (liteMesaMonteCarloTaskStatus?.status === "running") return;
   if (selectedExperimentPlanContext()?.kind === "experiment-plan") return;
   if (field === "samples") {
     liteMesaMonteCarloSettings = {
@@ -19251,7 +19266,7 @@ function updateLiteMesaMonteCarloSetting(field, value) {
 }
 
 async function runLiteMesaMonteCarloAnalysis() {
-  const requestEpoch = ++liteMesaMonteCarloRequestEpoch;
+  liteMesaMonteCarloRequestEpoch += 1;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();
   const planRunSettings = selectedExperimentPlanRunSettings();
@@ -19276,6 +19291,7 @@ async function runLiteMesaMonteCarloAnalysis() {
   liteMesaMonteCarloStatus = `正在运行 Mesa 分析（样本 ${samples}，Base seed ${seed}，并行核心 ${parallelCores}）`;
   const page = getFeaturePageById(selectedFeatureId);
   const scope = simulationTaskScopeForPage(page);
+  const requestEpoch = nextSimulationTaskRequestEpoch(scope);
   try {
     simulationTaskRestoreAttempts.add(scope);
     const outcome = await simulationTaskController.start(
@@ -19284,15 +19300,13 @@ async function runLiteMesaMonteCarloAnalysis() {
       { onStatus: (status) => applyRemoteSimulationTaskStatusForScope(page, scope, requestEpoch, status) }
     );
     if (
-      requestEpoch !== liteMesaMonteCarloRequestEpoch
-      || !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
+      !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
     acceptRemoteSimulationTaskOutcome(page, outcome, captureAnalysisSourceIdentity());
   } catch (err) {
     if (
-      requestEpoch !== liteMesaMonteCarloRequestEpoch
-      || !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
+      !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
     if (simulationTaskRequestIsCurrent(page, scope, requestEpoch)) applyRemoteSimulationTaskError(page, err);
@@ -20917,7 +20931,7 @@ function liteMesaAnalysisEffectiveSettings(definition) {
 
 function renderLiteMesaAnalysisSettings(definition, settings, result = null) {
   const items = liteMesaAnalysisSettingItems(definition, settings, result);
-  const controls = renderLiteMesaAnalysisEditableSettings(definition, settings);
+  const controls = renderLiteMesaAnalysisEditableSettings(definition, settings, result);
   return `
     <div class="lite-mesa-analysis-setting-line" aria-label="分析设定">
       ${items.map(([label, value]) => `
@@ -20944,12 +20958,13 @@ function liteMesaAnalysisSettingItems(definition, settings, result = null) {
   return items;
 }
 
-function renderLiteMesaAnalysisEditableSettings(definition, settings) {
+function renderLiteMesaAnalysisEditableSettings(definition, settings, result = null) {
+  const readonly = result?.taskProgress?.status === "running" ? "readonly" : "";
   if (definition.analysisType === "carry_list") {
     return `
       <label class="lite-mesa-setting-chip editable">
         <span>预计满足率下限</span>
-        <input data-lite-mesa-analysis-field="missionConfidenceTarget" type="number" min="0" max="1" step="0.01" value="${htmlEscape(settings.missionConfidenceTarget ?? 0.9)}">
+        <input data-lite-mesa-analysis-field="missionConfidenceTarget" type="number" min="0" max="1" step="0.01" value="${htmlEscape(settings.missionConfidenceTarget ?? 0.9)}" ${readonly}>
       </label>
     `;
   }
@@ -20957,7 +20972,7 @@ function renderLiteMesaAnalysisEditableSettings(definition, settings) {
     return `
       <label class="lite-mesa-setting-chip editable">
         <span>排序范围</span>
-        <input data-lite-mesa-analysis-field="topN" type="number" min="1" max="20" step="1" value="${htmlEscape(settings.topN ?? 4)}">
+        <input data-lite-mesa-analysis-field="topN" type="number" min="1" max="20" step="1" value="${htmlEscape(settings.topN ?? 4)}" ${readonly}>
       </label>
       <span class="downtime-topn-note">后端按累计停机时长生成排行；排序范围随请求提交，并限制返回的停机事件快照明细数量。页面筛选仅作用于已加载结果。</span>
     `;
@@ -20967,6 +20982,7 @@ function renderLiteMesaAnalysisEditableSettings(definition, settings) {
 
 function updateLiteMesaAnalysisSetting(page, field, value) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
+  if (liteMesaAnalysisResults[definition.analysisType]?.taskProgress?.status === "running") return;
   const current = liteMesaAnalysisSettings[definition.analysisType] || {};
   const next = { ...current };
   if (field === "missionConfidenceTarget") {
@@ -20987,7 +21003,7 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
 }
 
 async function runLiteMesaAnalysisPage(page) {
-  const requestEpoch = ++liteMesaAnalysisRequestEpoch;
+  liteMesaAnalysisRequestEpoch += 1;
   const requestContextKey = selectedExperimentPlanContextKey();
   const requestContextFingerprint = selectedRunContextRequestFingerprint();
   const definition = liteMesaAnalysisDefinitionForPage(page);
@@ -21021,6 +21037,7 @@ async function runLiteMesaAnalysisPage(page) {
     }
   };
   const scope = simulationTaskScopeForPage(page);
+  const requestEpoch = nextSimulationTaskRequestEpoch(scope);
   try {
     simulationTaskRestoreAttempts.add(scope);
     const outcome = await simulationTaskController.start(
@@ -21029,15 +21046,13 @@ async function runLiteMesaAnalysisPage(page) {
       { onStatus: (status) => applyRemoteSimulationTaskStatusForScope(page, scope, requestEpoch, status) }
     );
     if (
-      requestEpoch !== liteMesaAnalysisRequestEpoch
-      || !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
+      !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
     acceptRemoteSimulationTaskOutcome(page, outcome, analysisSource);
   } catch (err) {
     if (
-      requestEpoch !== liteMesaAnalysisRequestEpoch
-      || !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
+      !simulationTaskRequestIsCurrent(page, scope, requestEpoch)
       || !runContextRequestStillCurrent(requestContextKey, requestContextFingerprint)
     ) return;
     applyRemoteSimulationTaskError(page, err);

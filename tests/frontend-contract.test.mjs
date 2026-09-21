@@ -870,10 +870,15 @@ test("simulation task recovery is user-scoped and rejects stale result responses
   assert.match(scopeSource, /contextId/);
   assert.match(scopeSource, /contextFingerprint: selectedRunContextRequestFingerprint\(\)/);
   assert.match(scopeSource, /simulationTaskRestoreAttempts\.clear\(\)/);
-  assert.match(analysisRunSource, /const requestEpoch = \+\+liteMesaAnalysisRequestEpoch/);
+  assert.match(appSource, /const simulationTaskRequestEpochs = new Map\(\)/);
+  assert.match(scopeSource, /simulationTaskRequestEpochs\.get\(scope\)/);
+  assert.match(analysisRunSource, /const requestEpoch = nextSimulationTaskRequestEpoch\(scope\)/);
   assert.match(analysisRunSource, /applyRemoteSimulationTaskStatusForScope\(page, scope, requestEpoch, status\)/);
   assert.match(analysisRunSource, /simulationTaskRequestIsCurrent\(page, scope, requestEpoch\)/);
   assert.match(analysisRunSource, /taskProgress: \{ status: "running", stage: "submitting" \}/);
+  assert.match(appSource, /liteMesaMonteCarloTaskStatus = null;[\s\S]*liteMesaAnalysisResults = \{\}/);
+  assert.match(appSource, /if \(liteMesaMonteCarloTaskStatus\?\.status === "running"\) return/);
+  assert.match(appSource, /if \(liteMesaAnalysisResults\[definition\.analysisType\]\?\.taskProgress\?\.status === "running"\) return/);
   assert.match(aircraftRunSource, /outcome\.status === "failed"/);
   assert.match(aircraftRunSource, /simulationTaskProgressText\(outcome\)/);
   assert.match(appSource, /simulationBlockedResultMessage\(payload\)/);
@@ -2811,7 +2816,7 @@ test("monte carlo settings submit current or frozen context instead of formal ru
   assert.match(renderSource, /冻结方案参数只读/);
   assert.match(runSource, /simulationTaskPayload\("mission_reliability", \{ samples, seed, parallelCores \}\)/);
   assert.match(runSource, /simulationTaskController\.start/);
-  assert.match(runSource, /requestEpoch !== liteMesaMonteCarloRequestEpoch/);
+  assert.match(runSource, /simulationTaskRequestIsCurrent\(page, scope, requestEpoch\)/);
   assert.match(runSource, /runContextRequestStillCurrent/);
   assert.doesNotMatch(runSource, /submitRunIntent|startMonteCarloRunThroughApi|\/api\/runs/);
 });
@@ -3208,7 +3213,7 @@ test("monte carlo launch uses backend run context with stale-response guards", a
   const launchSource = appSource.slice(appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"), appSource.indexOf("function normalizeLiteMesaMonteCarloResult"));
   assert.match(launchSource, /simulationTaskController\.start/);
   assert.match(launchSource, /simulationTaskPayload\("mission_reliability", \{ samples, seed, parallelCores \}\)/);
-  assert.match(launchSource, /requestEpoch !== liteMesaMonteCarloRequestEpoch/);
+  assert.match(launchSource, /simulationTaskRequestIsCurrent\(page, scope, requestEpoch\)/);
   assert.match(launchSource, /runContextRequestStillCurrent\(requestContextKey, requestContextFingerprint\)/);
   assert.doesNotMatch(launchSource, /resolveSelectedExperimentPlanProjectJsonForRun|submitRunIntent|\/api\/runs/);
 });

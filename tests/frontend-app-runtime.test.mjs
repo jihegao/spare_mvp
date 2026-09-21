@@ -2368,12 +2368,39 @@ test("analysis stays active while the completed task result is loading", async (
     await new Promise((resolve) => setTimeout(resolve, 5));
     assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run" disabled/);
     assert.match(runtime.appNode.innerHTML, /正在读取任务结果/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-field="missionConfidenceTarget"[^>]*readonly/);
+    await runtime.change(
+      "[data-lite-mesa-analysis-field]",
+      { liteMesaAnalysisField: "missionConfidenceTarget" },
+      { value: "0.25" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-field="missionConfidenceTarget"[^>]*value="0.9"/);
     assert.equal(runtime.requests.filter((request) => request.url === "/api/simulation-tasks").length, 1);
     await pendingRun;
     await new Promise((resolve) => setTimeout(resolve, 35));
     await runtime.flush();
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run" disabled/);
     assert.match(runtime.appNode.innerHTML, /分析结果已生成/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("Monte Carlo settings stay frozen while its task result is loading", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    await runtime.click("[data-lite-mesa-action='run']");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"[^>]*readonly/);
+    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "99" });
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"[^>]*readonly/);
+    assert.equal(runtime.requests.filter((request) => request.url === "/api/simulation-tasks").length, 1);
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*readonly/);
   } finally {
     runtime.restore();
   }
@@ -7896,6 +7923,9 @@ test("an in-flight Monte Carlo response cannot restore results from an updated f
   try {
     await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-inflight" });
     await runtime.click("[data-lite-mesa-action='run']");
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="3"[^>]*readonly/);
+    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "99" });
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="3"[^>]*readonly/);
     experimentPlans[0] = {
       ...experimentPlans[0],
       canonical_fingerprint: "canonical:inflight-b",
