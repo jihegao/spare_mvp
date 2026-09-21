@@ -159,15 +159,18 @@ class ImmediateSpareFillTest(unittest.TestCase):
         self.assertEqual(adapter._aviation_spare_fill_rate({"spare_demand_total": 0, "spare_immediately_filled_total": 0}), 1)
         self.assertEqual(adapter._aviation_spare_fill_rate({"spare_fill_rate": 0.2, "spare_demand_total": 5, "spare_immediately_filled_total": 2}), 0.2)
 
-    def test_api_distinguishes_recommended_and_observed_fill(self):
+    def test_api_distinguishes_planned_and_actual_fill(self):
         projection = {"data": [
             {"aircraft_model": "A", "spare_type": "spare", "demand_count": 5,
-             "satisfaction_rate": 1, "observed_fill_rate": 0, "recommended_quantity": 5},
-            {"aircraft_model": "A", "spare_type": "old", "satisfaction_rate": 0.9},
+             "immediately_filled_quantity": 0, "projected_satisfaction_rate": 1,
+             "recommended_quantity": 5},
+            {"aircraft_model": "A", "spare_type": "old", "projected_satisfaction_rate": 0.9},
         ]}
         result = _lite_mesa_carry_list_result(projection, {"shortage_events": 0}, [], {"missionConfidenceTarget": 0.9})
-        self.assertEqual(result["rows"][0]["satisfactionRate"], 1)
+        self.assertEqual(result["rows"][0]["projectedSatisfactionRate"], 1)
+        self.assertEqual(result["rows"][0]["satisfactionRate"], 0)
         self.assertEqual(result["rows"][0]["observedFillRate"], 0)
+        self.assertIsNone(result["rows"][1]["satisfactionRate"])
         self.assertIsNone(result["rows"][1]["observedFillRate"])
 
     def test_old_visualization_and_anomaly_snapshots_preserve_unknown_fill(self):
@@ -218,4 +221,5 @@ class ImmediateSpareFillTest(unittest.TestCase):
         carry = next(row for row in projections["carry_list"]["data"] if row["product_id"] == "shared-spare")
         self.assertEqual(carry["observed_request_shortfall_rate"], 0.5)
         self.assertEqual(carry["observed_fill_rate"], 2 / 7)
-        self.assertEqual(carry["satisfaction_rate"], 1)
+        self.assertEqual(carry["satisfaction_rate"], 2 / 7)
+        self.assertEqual(carry["projected_satisfaction_rate"], 1)

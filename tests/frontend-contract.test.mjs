@@ -4245,10 +4245,10 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
   assert.match(carryBodySource, /隐藏需求数值为 0 的备件/);
   assert.match(carryBodySource, /data-carry-aircraft-filter/);
   assert.match(carryBodySource, /<th>机型<\/th>/);
-  assert.match(carryBodySource, /<th>预计满足率<\/th><th>即时满足率<\/th><th>约束状态<\/th>/);
-  assert.match(carryBodySource, /row\.satisfactionRate/);
-  assert.match(carryBodySource, /row\.satisfactionConstraintMet/);
-  assert.match(carryBodySource, /carrySatisfactionConstraintMarginDisplay/);
+  assert.match(carryBodySource, /<th>规划满足率<\/th><th>实际即时满足率<\/th><th>实际约束状态<\/th>/);
+  assert.match(carryBodySource, /carryActualSatisfactionDisplay\(row\)/);
+  assert.match(carryBodySource, /carryProjectedSatisfactionDisplay\(row\)/);
+  assert.match(carryBodySource, /carryConstraintDisplay\(row\)/);
   assert.match(carryBodySource, /data-carry-recommended-sort="asc"/);
   assert.match(carryBodySource, /data-carry-recommended-sort="desc"/);
   assert.match(carryBodySource, /aria-label="按建议携行数量升序排列"/);

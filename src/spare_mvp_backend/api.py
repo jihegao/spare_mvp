@@ -3164,7 +3164,6 @@ def _lite_mesa_carry_list_result(
         _metric_int(aggregate.get("spare_consumed_total"), default=0)
         + _metric_int(aggregate.get("shortage_events"), default=0),
     )
-    planned = max(1, _metric_int(aggregate.get("planned_sorties"), default=len(samples)))
     rows = []
     for item in projection.get("data") or []:
         multiplier = max(1.0, _metric_float(item.get("recommended_multiplier"), default=1.0))
@@ -3177,25 +3176,51 @@ def _lite_mesa_carry_list_result(
             ),
         )
         carried_quantity = _optional_nonnegative_metric_float(item.get("carried_quantity"))
-        used_quantity = _optional_nonnegative_metric_float(item.get("used_quantity"))
+        used_quantity = _optional_nonnegative_metric_float(
+            item.get("consumed_quantity", item.get("used_quantity"))
+        )
         has_raw_quantities = carried_quantity is not None and used_quantity is not None
-        legacy_utilization = (
-            max(0.0, _metric_float(item.get("utilization"), default=0))
-            if item.get("utilization") is not None
+        demand_quantity = _optional_nonnegative_metric_float(
+            item.get("demand_quantity", item.get("demand_count"))
+        )
+        immediately_filled_quantity = _optional_nonnegative_metric_float(
+            item.get("immediately_filled_quantity", item.get("observed_filled_count"))
+        )
+        if (
+            demand_quantity is not None
+            and immediately_filled_quantity is not None
+            and immediately_filled_quantity > demand_quantity + 1e-12
+        ):
+            immediately_filled_quantity = None
+        has_actual_fill_quantities = (
+            demand_quantity is not None and immediately_filled_quantity is not None
+        )
+        satisfaction_rate = (
+            min(1.0, immediately_filled_quantity / demand_quantity)
+            if has_actual_fill_quantities and demand_quantity > 0
             else None
         )
-        satisfaction_rate = _clamp01(
-            item.get("satisfaction_rate", item.get("fill_rate", 1.0))
+        projected_satisfaction_rate = _optional_nonnegative_metric_float(
+            item.get("projected_satisfaction_rate")
         )
-        satisfaction_constraint_met = bool(
-            item.get(
-                "satisfaction_constraint_met",
-                satisfaction_rate + 1e-12 >= minimum_satisfaction_rate,
-            )
+        projected_filled_quantity = _optional_nonnegative_metric_float(
+            item.get("projected_filled_count")
         )
-        satisfaction_constraint_margin = _metric_float(
-            item.get("satisfaction_constraint_margin"),
-            default=satisfaction_rate - minimum_satisfaction_rate,
+        projected_shortage_quantity = _optional_nonnegative_metric_float(
+            item.get("projected_shortage_count")
+        )
+        projected_utilization = _optional_nonnegative_metric_float(
+            item.get("projected_utilization")
+        )
+        satisfaction_constraint_met = (
+            satisfaction_rate + 1e-12 >= minimum_satisfaction_rate
+            if satisfaction_rate is not None
+            else None
+        )
+        satisfaction_constraint_margin = (
+            satisfaction_rate - minimum_satisfaction_rate
+            if satisfaction_rate is not None
+            else None
         )
         rows.append(
             {
@@ -3204,20 +3229,27 @@ def _lite_mesa_carry_list_result(
                 "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
                 "recommended": recommended,
                 "usedQuantity": used_quantity,
+                "consumedQuantity": used_quantity,
                 "carriedQuantity": carried_quantity,
-                "demand": max(0, _metric_int(item.get("demand_count"), default=planned)),
-                "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
-                "observedFilled": max(0, _metric_int(item.get("observed_filled_count"), default=0)),
+                "demand": demand_quantity,
+                "demandQuantity": demand_quantity,
+                "immediatelyFilledQuantity": immediately_filled_quantity,
+                "shortage": projected_shortage_quantity,
+                "projectedFilledQuantity": projected_filled_quantity,
+                "projectedShortageQuantity": projected_shortage_quantity,
+                "projectedSatisfactionRate": projected_satisfaction_rate,
+                "projectedUtilization": projected_utilization,
+                "observedFilled": immediately_filled_quantity,
                 "observedShortage": max(0, _metric_int(item.get("observed_shortage_count"), default=0)),
                 "observedShortageQuantity": _optional_nonnegative_metric_float(item.get("observed_shortage_quantity")),
-                "observedFillRate": _optional_nonnegative_metric_float(item.get("observed_fill_rate")),
+                "observedFillRate": satisfaction_rate,
                 "satisfactionRate": satisfaction_rate,
                 "satisfactionConstraintMet": satisfaction_constraint_met,
                 "satisfactionConstraintMargin": satisfaction_constraint_margin,
                 "utilization": (
                     used_quantity / carried_quantity
                     if has_raw_quantities and carried_quantity > 0
-                    else legacy_utilization if not has_raw_quantities else None
+                    else None
                 ),
                 "riskLevel": _risk_label(item.get("risk_level")),
                 "confidenceTarget": minimum_satisfaction_rate,
@@ -3251,9 +3283,46 @@ def _lite_mesa_carry_list_result(
         else "--" if overall_utilization_status == "zero_carried"
         else "数据不可用"
     )
-    constrained_rows = [row for row in rows if row["demand"] > 0]
+    has_complete_actual_fill_quantities = bool(rows) and all(
+        row.get("demandQuantity") is not None
+        and row.get("immediatelyFilledQuantity") is not None
+        for row in rows
+    )
+    demand_total = (
+        sum(float(row["demandQuantity"]) for row in rows)
+        if has_complete_actual_fill_quantities
+        else None
+    )
+    immediately_filled_total = (
+        sum(float(row["immediatelyFilledQuantity"]) for row in rows)
+        if has_complete_actual_fill_quantities
+        else None
+    )
+    overall_satisfaction_rate = (
+        immediately_filled_total / demand_total
+        if has_complete_actual_fill_quantities and demand_total is not None and demand_total > 0
+        else None
+    )
+    overall_satisfaction_status = (
+        "data_unavailable"
+        if not has_complete_actual_fill_quantities
+        else "zero_demand" if demand_total == 0
+        else "available"
+    )
+    overall_satisfaction_display = (
+        f"{overall_satisfaction_rate * 100:.2f}%"
+        if overall_satisfaction_status == "available"
+        else "--" if overall_satisfaction_status == "zero_demand"
+        else "数据不可用"
+    )
+    constrained_rows = [row for row in rows if (row.get("demand") or 0) > 0]
     satisfied_constraint_count = sum(
         1 for row in constrained_rows if row["satisfactionConstraintMet"]
+    )
+    satisfied_constraint_display = (
+        f"{satisfied_constraint_count}/{len(constrained_rows)}"
+        if all(row["satisfactionConstraintMet"] is not None for row in constrained_rows)
+        else "数据不可用"
     )
     return {
         "experiment_id": "minimum_carry_list_search",
@@ -3261,10 +3330,15 @@ def _lite_mesa_carry_list_result(
         "spare_carried_total": carried_total,
         "overall_spare_utilization": overall_utilization,
         "overall_spare_utilization_status": overall_utilization_status,
+        "spare_demand_total": demand_total,
+        "spare_immediately_filled_total": immediately_filled_total,
+        "overall_actual_satisfaction_rate": overall_satisfaction_rate,
+        "overall_actual_satisfaction_status": overall_satisfaction_status,
         "metrics": [
             ["建议携行总数", str(sum(int(row["recommended"]) for row in rows))],
             ["高优先级备件", str(sum(1 for row in rows if row["riskLevel"] == "高"))],
-            ["满足下限备件", f"{satisfied_constraint_count}/{len(constrained_rows)}"],
+            ["满足下限备件", satisfied_constraint_display],
+            ["总体实际即时满足率", overall_satisfaction_display],
             ["总体备件利用率", overall_utilization_display],
             ["预计满足率下限", f"{minimum_satisfaction_rate:.2f}"],
             ["样本数", str(len(samples))],
