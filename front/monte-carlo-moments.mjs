@@ -88,7 +88,9 @@ export function buildMonteCarloMetricMoments(samples, counts = {}) {
       mean,
       sampleVariance: varianceResult.value,
       validSampleCount,
-      invalidReason: definition.numeratorField && validSampleCount === 0 ? "data_unavailable" : invalidReason,
+      invalidReason: definition.numeratorField && validSampleCount === 0
+        ? zeroDenominatorSampleCount ? "zero_denominator" : "data_unavailable"
+        : invalidReason,
       meanAggregationMethod: "arithmetic_mean",
       overallAggregationMethod: definition.numeratorField ? "ratio_of_totals" : null,
       overallStatus: overallRatio !== null ? "available" : zeroDenominatorSampleCount ? "zero_denominator" : "data_unavailable",

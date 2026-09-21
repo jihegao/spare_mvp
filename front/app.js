@@ -19219,11 +19219,15 @@ function liteMesaBusinessMetricRows(result) {
     ...metric,
     meanLabel: metric.validSampleCount > 0 && metric.mean === null
       ? "不可计算"
+      : metric.invalidReason === "data_unavailable"
+        ? "数据不可用"
       : formatMonteCarloMoment(metric.mean, metric.valueFormat),
     overallRatioLabel: metric.overallAggregationMethod === "ratio_of_totals"
       ? metric.overallStatus === "data_unavailable"
         ? "数据不可用"
-        : formatMonteCarloMoment(metric.overallRatio, metric.valueFormat)
+        : Number.isFinite(metric.overallRatio)
+          ? `${(metric.overallRatio * 100).toFixed(2)}%`
+          : "--"
       : "--",
     varianceLabel: formatMonteCarloMoment(metric.sampleVariance, metric.valueFormat, { variance: true })
   }));

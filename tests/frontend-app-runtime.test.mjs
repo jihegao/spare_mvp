@@ -8368,8 +8368,8 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(metricTable, /<th>样本均值<\/th><th>跨样本总体比率<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
     assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>--<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
     assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>--<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>实际即时满足率<\/td>\s*<td>0\.50<\/td>\s*<td>0\.08<\/td>\s*<td>0\.5000<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
-    assert.match(metricTable, /<td>实际备件利用率<\/td>\s*<td>0\.13<\/td>\s*<td>0\.03<\/td>\s*<td>0\.0313<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>实际即时满足率<\/td>\s*<td>0\.50<\/td>\s*<td>8\.33%<\/td>\s*<td>0\.5000<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>实际备件利用率<\/td>\s*<td>0\.13<\/td>\s*<td>2\.78%<\/td>\s*<td>0\.0313<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>--<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
     assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
@@ -8389,8 +8389,8 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
       .at(-1);
     assert.equal(exportRequest.analysis_type, "monte_carlo");
     assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率" && row[1] === "0.50"));
-    assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率（跨样本总体）" && row[1] === "0.08"));
-    assert.ok(exportRequest.summary.some((row) => row[0] === "实际备件利用率（跨样本总体）" && row[1] === "0.03"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率（跨样本总体）" && row[1] === "8.33%"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "实际备件利用率（跨样本总体）" && row[1] === "2.78%"));
     assert.deepEqual(exportRequest.detail_sections[0].rows[0].slice(2), [12, 1, "8.33%", 36, 1, "2.78%"]);
   } finally {
     runtime.restore();

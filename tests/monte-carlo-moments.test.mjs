@@ -99,6 +99,19 @@ test("actual spare metrics use ratio of totals and exclude zero denominators", (
   assert.ok(Math.abs(byId.spare_utilization.overallRatio - 1 / 36) < 1e-12);
   assert.equal(byId.spare_utilization.validSampleCount, 2);
   assert.equal(byId.spare_utilization.denominatorTotal, 36);
+
+  const zero = buildMonteCarloMetricMoments([
+    { metrics: { spare_immediately_filled_total: 0, spare_demand_total: 0, spare_consumed_total: 0, spare_carried_total: 0 } }
+  ]);
+  const zeroById = Object.fromEntries(zero.metrics.map((metric) => [metric.metricId, metric]));
+  assert.equal(zeroById.spare_fill_rate.invalidReason, "zero_denominator");
+  assert.equal(zeroById.spare_fill_rate.overallStatus, "zero_denominator");
+  assert.equal(zeroById.spare_utilization.validSampleCount, 0);
+
+  const missing = buildMonteCarloMetricMoments([{ metrics: {} }]);
+  const missingById = Object.fromEntries(missing.metrics.map((metric) => [metric.metricId, metric]));
+  assert.equal(missingById.spare_fill_rate.invalidReason, "data_unavailable");
+  assert.equal(missingById.spare_fill_rate.overallStatus, "data_unavailable");
 });
 
 test("finite extremes keep finite means and mark unrepresentable variance unavailable", () => {
