@@ -204,7 +204,7 @@ def validate_core_row(row: dict[str, Any]) -> list[str]:
     return errors
 
 
-def build_selector_config(base_plan: dict[str, Any], backend: str, samples: int, workers: int, cache_dir: Path) -> dict[str, Any]:
+def build_selector_config(base_plan: dict[str, Any], backend: str, samples: int, workers: int) -> dict[str, Any]:
     config = json.loads(json.dumps(base_plan.get("config") or {}))
     config["samples"] = samples
     config["parallelCores"] = workers
@@ -240,7 +240,7 @@ def prepare_run_database(source: Path, base_plan: dict[str, Any], backend: str, 
     plan_id = f"benchmark-{backend}-{samples}-{workers}-{os.getpid()}-{time.time_ns()}"
     plan["experiment_plan_id"] = plan_id
     plan["status"] = "draft"
-    plan["config"] = build_selector_config(base_plan, backend, samples, workers, cache_dir)
+    plan["config"] = build_selector_config(base_plan, backend, samples, workers)
     plan["canonical_fingerprint"] = digest(plan["config"])
     with sqlite3.connect(destination) as connection:
         from src.spare_mvp_backend.repository import ContractRepository
@@ -389,6 +389,8 @@ def main() -> None:
         raise SystemExit("--warmup must be >= 0 and --repeats must be positive")
     compiler_root = args.compiler_root.resolve() if args.compiler_root else None
     project, inputs, base_plan = canonical_source(args.database, args.project_id)
+    base_config = base_plan.get("config") or {}
+    base_large_sample = (base_config.get("analysisRequests") or {}).get("largeSample") or {}
     with tempfile.TemporaryDirectory(prefix="f35-rust-mc-", dir=args.output.parent if args.output.parent.exists() else None) as temporary:
         temporary_root = Path(temporary)
         canonical_dir = temporary_root / "canonical"
@@ -397,7 +399,7 @@ def main() -> None:
         report: dict[str, Any] = {
             "schema_version": "rust-monte-carlo-benchmark-v1",
             "status": "running",
-            "source": {"database": str(args.database), "project_id": args.project_id, "project_sha256": digest(project), "canonical_inputs_sha256": digest(inputs), "spare_mvp_commit": git_commit(ROOT), "compiler_commit": git_commit(compiler_root) if compiler_root else None, "compiler_root": str(compiler_root) if compiler_root else None, "wheel_sha256": wheel_hashes(compiler_root, args.wheel) if compiler_root else {}, "python": sys.version, "platform": platform.platform()},
+            "source": {"database": str(args.database), "project_id": args.project_id, "project_sha256": digest(project), "canonical_inputs_sha256": digest(inputs), "base_experiment_plan_id": base_plan.get("experiment_plan_id"), "base_canonical_fingerprint": base_plan.get("canonical_fingerprint"), "base_config_sha256": digest(base_config), "base_seed": base_config.get("seed"), "base_sweep": base_large_sample.get("sweep"), "spare_mvp_commit": git_commit(ROOT), "compiler_commit": git_commit(compiler_root) if compiler_root else None, "compiler_root": str(compiler_root) if compiler_root else None, "wheel_sha256": wheel_hashes(compiler_root, args.wheel) if compiler_root else {}, "python": sys.version, "platform": platform.platform()},
             "matrix": asdict(Matrix(samples=samples, workers=workers, warmup=args.warmup, repeats=repeats)),
             "scope": "core Monte Carlo only; no analysis requests or analysis-module artifacts",
             "rows": [],
