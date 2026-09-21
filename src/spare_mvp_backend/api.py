@@ -3328,9 +3328,11 @@ def _lite_mesa_carry_list_result(
         1 for row in constrained_rows if row["satisfactionConstraintMet"]
     )
     satisfied_constraint_display = (
-        f"{satisfied_constraint_count}/{len(constrained_rows)}"
-        if all(row["satisfactionConstraintMet"] is not None for row in constrained_rows)
-        else "数据不可用"
+        "数据不可用"
+        if not has_complete_actual_fill_quantities
+        else f"{satisfied_constraint_count}/{len(constrained_rows)}"
+        if constrained_rows
+        else "--"
     )
     return {
         "experiment_id": "minimum_carry_list_search",

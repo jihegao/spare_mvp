@@ -2713,7 +2713,8 @@ test("carry list does not treat missing or invalid raw quantities as a real zero
     hash: "feature=spare-planning-carry-list-analysis",
     liteMesaAnalysisResponseOverrides: {
       rows: [
-        { aircraftModel: "J-15", productId: "legacy-spare", recommended: 2, usedQuantity: "   ", carriedQuantity: false, demand: 1, shortage: 0, utilization: 0.5, riskLevel: "低" }
+        { aircraftModel: "J-15", productId: "complete-spare", recommended: 1, usedQuantity: 1, carriedQuantity: 1, demand: 1, immediatelyFilledQuantity: 1, shortage: 0, riskLevel: "低" },
+        { aircraftModel: "J-15", productId: "legacy-spare", recommended: 2, usedQuantity: "   ", carriedQuantity: false, demand: null, shortage: 0, utilization: 0.5, riskLevel: "低" }
       ]
     }
   });
@@ -2722,11 +2723,13 @@ test("carry list does not treat missing or invalid raw quantities as a real zero
     await runtime.click("[data-lite-mesa-analysis-action='run']");
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(detailPanel, /总体备件利用率[\s\S]*数据不可用/);
+    assert.match(detailPanel, /满足下限备件[\s\S]*数据不可用/);
     assert.doesNotMatch(detailPanel, /总体备件利用率[\s\S]*--/);
     assert.match(detailPanel, /<td>数据不可用<\/td>/);
     await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "spare-planning-carry-list-analysis" });
     const body = analysisExportBodies(runtime).at(-1);
     assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("总体备件利用率"), "数据不可用");
+    assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("满足下限备件"), "数据不可用");
   } finally {
     runtime.restore();
   }

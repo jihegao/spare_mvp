@@ -148,6 +148,54 @@ class ImmediateSpareFillTest(unittest.TestCase):
         self.assertEqual(filled.snapshot()["spare_utilization"], 1)
         self.assertEqual(filled.snapshot()["spare_fill_rate"], 1)
 
+    def test_four_seed_real_model_events_feed_weighted_monte_carlo_metrics(self):
+        samples = []
+        for sample_index, (local_quantity, parent_quantity, demand_quantity) in enumerate(
+            ((1, 8, 1), (0, 9, 3), (0, 9, 4), (0, 9, 4))
+        ):
+            inputs = _vertical_organization_inputs(
+                local_quantity=local_quantity,
+                parent_quantity=parent_quantity,
+            )
+            inputs["seed"] = 20260621 + sample_index
+            for node in inputs["support_network"]["nodes"]:
+                if node["id"] == "lateral-stock":
+                    node["inventory"]["shared-spare"] = 0
+            inputs["support_activities"]["activities"][1]["maintenance_methods"] = ["replacement"]
+            inputs["support_activities"]["activities"][1]["jobs"][0]["spare"] = [
+                {"product_id": "shared-spare", "quantity": demand_quantity}
+            ]
+            model = AircraftSupportV1Model(inputs)
+            model._create_job(model.aircraft[0], model.activities[1], kind="repair")
+            model._start_waiting_jobs()
+            request_events = [event for event in model.event_log if event["event"] == "spare_request"]
+            self.assertEqual(len(request_events), 1)
+            samples.append({
+                "sample_index": sample_index,
+                "seed": inputs["seed"],
+                "metrics": model.snapshot(),
+                "events": copy.deepcopy(model.event_log),
+            })
+
+        adapter = SimulationAdapter()
+        aggregate = adapter._aggregate_sample_metrics(samples)
+        moments = build_monte_carlo_metric_moments(
+            samples, total_sample_count=4, failed_sample_count=0
+        )
+        metrics = {row["metric_id"]: row for row in moments["metrics"]}
+
+        self.assertEqual([sample["seed"] for sample in samples], [20260621, 20260622, 20260623, 20260624])
+        self.assertEqual(aggregate["spare_demand_total"], 12)
+        self.assertEqual(aggregate["spare_immediately_filled_total"], 1)
+        self.assertEqual(aggregate["spare_consumed_total"], 1)
+        self.assertEqual(aggregate["spare_carried_total"], 36)
+        self.assertAlmostEqual(aggregate["spare_fill_rate"], 1 / 12)
+        self.assertAlmostEqual(aggregate["spare_utilization"], 1 / 36)
+        self.assertAlmostEqual(metrics["spare_fill_rate"]["overall_ratio"], 1 / 12)
+        self.assertAlmostEqual(metrics["spare_utilization"]["overall_ratio"], 1 / 36)
+        self.assertEqual(metrics["spare_fill_rate"]["valid_sample_count"], 4)
+        self.assertEqual(metrics["spare_utilization"]["valid_sample_count"], 4)
+
     def test_legacy_aviation_unknown_fill_is_nullable_and_not_inferred_from_stock(self):
         adapter = SimulationAdapter()
         metrics = {"spare_stock_total": 9, "spare_consumed_total": 1}

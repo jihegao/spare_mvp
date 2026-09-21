@@ -20977,9 +20977,11 @@ function carryListMetricsWithOverall(metrics, rows) {
     ? immediatelyFilledTotal / demandTotal
     : null;
   const constrainedRows = rows.filter((row) => Number(row.demand) > 0);
-  const constraintDisplay = constrainedRows.every((row) => row.satisfactionConstraintMet !== null)
-    ? `${constrainedRows.filter((row) => row.satisfactionConstraintMet).length}/${constrainedRows.length}`
-    : "数据不可用";
+  const constraintDisplay = !hasCompleteActualFillQuantities
+    ? "数据不可用"
+    : constrainedRows.length
+      ? `${constrainedRows.filter((row) => row.satisfactionConstraintMet).length}/${constrainedRows.length}`
+      : "--";
   return {
     metrics: [
       ...metrics.filter(([label]) => !["满足下限备件", "总体备件利用率", "总体实际即时满足率"].includes(label)),

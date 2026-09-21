@@ -127,11 +127,33 @@ class MonteCarloMomentsTest(unittest.TestCase):
         self.assertEqual(utilization["numerator_total"], 1)
         self.assertEqual(utilization["denominator_total"], 36)
 
-        aggregate = SimulationAdapter(Path(__file__).resolve().parents[1])._aggregate_sample_metrics(samples)
+        adapter = SimulationAdapter(Path(__file__).resolve().parents[1])
+        aggregate = adapter._aggregate_sample_metrics(samples)
         self.assertAlmostEqual(aggregate["spare_fill_rate"], 1 / 12)
         self.assertAlmostEqual(aggregate["spare_utilization"], 1 / 36)
         self.assertEqual(aggregate["spare_demand_total"], 12)
         self.assertEqual(aggregate["spare_carried_total"], 36)
+
+        ignores_zero_denominator_numerator = adapter._aggregate_sample_metrics([
+            {"metrics": {
+                "spare_immediately_filled_total": 5,
+                "spare_demand_total": 0,
+                "spare_consumed_total": 7,
+                "spare_carried_total": 0,
+            }},
+            {"metrics": {
+                "spare_immediately_filled_total": 1,
+                "spare_demand_total": 12,
+                "spare_consumed_total": 1,
+                "spare_carried_total": 36,
+            }},
+        ])
+        self.assertEqual(ignores_zero_denominator_numerator["spare_immediately_filled_total"], 1)
+        self.assertEqual(ignores_zero_denominator_numerator["spare_demand_total"], 12)
+        self.assertAlmostEqual(ignores_zero_denominator_numerator["spare_fill_rate"], 1 / 12)
+        self.assertEqual(ignores_zero_denominator_numerator["spare_consumed_total"], 1)
+        self.assertEqual(ignores_zero_denominator_numerator["spare_carried_total"], 36)
+        self.assertAlmostEqual(ignores_zero_denominator_numerator["spare_utilization"], 1 / 36)
 
         zero_only = build_monte_carlo_metric_moments(
             [samples[-1]], total_sample_count=1, failed_sample_count=0

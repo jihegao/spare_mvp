@@ -4280,6 +4280,39 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(missing_raw["overall_spare_utilization_status"], "data_unavailable")
         self.assertIn(["总体备件利用率", "数据不可用"], missing_raw["metrics"])
 
+        mixed_missing_actual = _lite_mesa_carry_list_result(
+            {"data": [
+                {
+                    "product_id": "complete",
+                    "recommended_quantity": 1,
+                    "demand_quantity": 1,
+                    "immediately_filled_quantity": 1,
+                    "consumed_quantity": 1,
+                    "carried_quantity": 1,
+                },
+                {"product_id": "missing", "recommended_quantity": 1},
+            ]},
+            {"shortage_events": 0},
+            [{}],
+            settings,
+        )
+        self.assertIn(["满足下限备件", "数据不可用"], mixed_missing_actual["metrics"])
+
+        no_demand = _lite_mesa_carry_list_result(
+            {"data": [{
+                "product_id": "zero-demand",
+                "recommended_quantity": 0,
+                "demand_quantity": 0,
+                "immediately_filled_quantity": 0,
+                "consumed_quantity": 0,
+                "carried_quantity": 0,
+            }]},
+            {"shortage_events": 0},
+            [{}],
+            settings,
+        )
+        self.assertIn(["满足下限备件", "--"], no_demand["metrics"])
+
         empty_projection = _lite_mesa_carry_list_result(
             {"data": []},
             {"spare_consumed_total": 5, "shortage_events": 2},

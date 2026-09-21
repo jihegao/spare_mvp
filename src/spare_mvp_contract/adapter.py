@@ -4743,8 +4743,8 @@ class SimulationAdapter:
                 and float(metrics[denominator_field]) >= 0
             ]
             positive_pairs = [(numerator, denominator) for numerator, denominator in pairs if denominator > 0]
-            numerator_total = math.fsum(numerator for numerator, _denominator in pairs)
-            denominator_total = math.fsum(denominator for _numerator, denominator in pairs)
+            numerator_total = math.fsum(numerator for numerator, _denominator in positive_pairs)
+            denominator_total = math.fsum(denominator for _numerator, denominator in positive_pairs)
             if pairs:
                 aggregate[numerator_field] = numerator_total
                 aggregate[denominator_field] = denominator_total
