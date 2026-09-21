@@ -2358,6 +2358,168 @@ test("configurable result analysis pages omit Mesa from visible copy", async () 
   }
 });
 
+test("analysis stays active while the completed task result is loading", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-carry-list-analysis",
+    liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    const pendingRun = runtime.click("[data-lite-mesa-analysis-action='run']");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run" disabled/);
+    assert.match(runtime.appNode.innerHTML, /正在读取任务结果/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-field="missionConfidenceTarget"[^>]*readonly/);
+    await runtime.change(
+      "[data-lite-mesa-analysis-field]",
+      { liteMesaAnalysisField: "missionConfidenceTarget" },
+      { value: "0.25" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-field="missionConfidenceTarget"[^>]*value="0.9"/);
+    assert.equal(runtime.requests.filter((request) => request.url === "/api/simulation-tasks").length, 1);
+    await pendingRun;
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run" disabled/);
+    assert.match(runtime.appNode.innerHTML, /分析结果已生成/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("Monte Carlo settings stay frozen while its task result is loading", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    await runtime.click("[data-lite-mesa-action='run']");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"[^>]*readonly/);
+    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "99" });
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"[^>]*readonly/);
+    assert.equal(runtime.requests.filter((request) => request.url === "/api/simulation-tasks").length, 1);
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*readonly/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("refresh restores persisted task settings before resuming Monte Carlo, carry, and downtime tasks", async () => {
+  const storageKey = "spare-mvp:simulation-tasks:v1";
+  const cases = [
+    {
+      feature: "spare-planning-monte-carlo-experiment-detail",
+      runSelector: "[data-lite-mesa-action='run']",
+      changes: [
+        ["[data-lite-mesa-field]", { liteMesaField: "samples" }, "9"],
+        ["[data-lite-mesa-field]", { liteMesaField: "seed" }, "4242"],
+        ["[data-lite-mesa-field]", { liteMesaField: "parallelCores" }, "3"]
+      ],
+      assertions(html) {
+        assert.match(html, /data-lite-mesa-field="samples"[^>]*value="9"[^>]*readonly/);
+        assert.match(html, /data-lite-mesa-field="seed"[^>]*value="4242"[^>]*readonly/);
+        assert.match(html, /data-lite-mesa-field="parallelCores"[^>]*value="3"[^>]*readonly/);
+      }
+    },
+    {
+      feature: "spare-planning-carry-list-analysis",
+      runSelector: "[data-lite-mesa-analysis-action='run']",
+      changes: [["[data-lite-mesa-analysis-field]", { liteMesaAnalysisField: "missionConfidenceTarget" }, "0.73"]],
+      assertions(html) {
+        assert.match(html, /data-lite-mesa-analysis-field="missionConfidenceTarget"[^>]*value="0.73"[^>]*readonly/);
+      }
+    },
+    {
+      feature: "mission-reliability-downtime-factor-analysis",
+      runSelector: "[data-lite-mesa-analysis-action='run']",
+      changes: [["[data-lite-mesa-analysis-field]", { liteMesaAnalysisField: "topN" }, "9"]],
+      assertions(html) {
+        assert.match(html, /data-lite-mesa-analysis-field="topN"[^>]*value="9"[^>]*readonly/);
+      }
+    }
+  ];
+
+  for (const testCase of cases) {
+    const projectJson = createRuntimeProjectJson();
+    const initial = await setupRuntimeApp({ hash: `feature=${testCase.feature}`, projectJson });
+    let storedTasks;
+    let taskId;
+    let taskPayload;
+    try {
+      for (const [selector, dataset, value] of testCase.changes) {
+        await initial.change(selector, dataset, { value });
+      }
+      await initial.click(testCase.runSelector);
+      storedTasks = initial.storage.get(storageKey);
+      const records = Object.values(JSON.parse(storedTasks));
+      assert.equal(records.length, 1);
+      assert.equal(typeof records[0], "object");
+      taskId = records[0].task_id;
+      assert.ok(taskId);
+      assert.doesNotMatch(storedTasks, /projectJson|components|supportNodes|secret/);
+      taskPayload = JSON.parse(initial.requests.find((request) => request.url === "/api/simulation-tasks").options.body);
+    } finally {
+      initial.restore();
+    }
+
+    const restored = await setupRuntimeApp({
+      hash: `feature=${testCase.feature}`,
+      projectJson,
+      storageEntries: [[storageKey, storedTasks]],
+      simulationTaskEntries: [[taskId, taskPayload]],
+      simulationTasksStayRunning: true
+    });
+    try {
+      await restored.flush();
+      testCase.assertions(restored.appNode.innerHTML);
+      assert.match(restored.appNode.innerHTML, /运行中|已处理/);
+      assert.equal(restored.requests.filter((request) => request.url === "/api/simulation-tasks").length, 0);
+    } finally {
+      restored.restore();
+    }
+  }
+});
+
+test("switching Projects clears active task UI without deleting the old recovery mapping", async () => {
+  const projectA = createRuntimeProjectJson({ project_id: "project-task-a" });
+  const projectB = createRuntimeProjectJson({ project_id: "project-task-b" });
+  const backendProjects = ["project-task-a", "project-task-b"].map((projectId) => ({
+    project_id: projectId,
+    experiment_name: projectId,
+    base_code: "RT",
+    summary: "task switch regression",
+    source_import_id: "",
+    updated_at: "2026-07-18 00:00:00"
+  }));
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail&project=project-task-a",
+    projectJson: projectA,
+    projectJsonById: { "project-task-b": projectB },
+    backendProjects,
+    liteMesaAnalysisResponseDelayMs: 25
+  });
+  try {
+    await runtime.click("[data-lite-mesa-action='run']");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const storedBeforeSwitch = runtime.storage.get("spare-mvp:simulation-tasks:v1");
+    assert.match(storedBeforeSwitch, /simulation-task-runtime-1/);
+
+    await runtime.click("[data-enter-workbench]", { projectId: "project-task-b" });
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail&project=project-task-b");
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-lite-mesa-action="run"[^>]*disabled/);
+    assert.equal(runtime.storage.get("spare-mvp:simulation-tasks:v1"), storedBeforeSwitch);
+
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总样本/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("aircraft mission reliability page runs explicitly and exports retained summaries as XLSX without node details", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-aircraft-mission-reliability",
@@ -7875,6 +8037,9 @@ test("an in-flight Monte Carlo response cannot restore results from an updated f
   try {
     await runtime.change("[data-current-experiment-plan]", { currentExperimentPlan: "" }, { value: "plan-inflight" });
     await runtime.click("[data-lite-mesa-action='run']");
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="3"[^>]*readonly/);
+    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "99" });
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="3"[^>]*readonly/);
     experimentPlans[0] = {
       ...experimentPlans[0],
       canonical_fingerprint: "canonical:inflight-b",
@@ -8543,6 +8708,8 @@ async function setupRuntimeApp({
   systemConfigPayload = {},
   liteMesaAnalysisResponseOverrides = {},
   liteMesaAnalysisResponseDelayMs = 0,
+  simulationTaskEntries = [],
+  simulationTasksStayRunning = false,
   visualizationSessionResponseOverrides = {},
   visualizationSessionResponseDelayMs = 0,
   visualizationSessionDeleteFailures = 0,
@@ -8571,6 +8738,7 @@ async function setupRuntimeApp({
     ...Object.entries(projectJsonById)
   ]);
   const runtimeRuns = new Map();
+  const runtimeSimulationTasks = new Map(simulationTaskEntries);
   let createProjectFromImportCount = 0;
   let projectSaveCount = 0;
   let visualizationSessionCount = 0;
@@ -8592,6 +8760,7 @@ async function setupRuntimeApp({
   const previousWindow = globalThis.window;
   const previousLocation = globalThis.location;
   const previousLocalStorage = globalThis.localStorage;
+  const previousSessionStorage = globalThis.sessionStorage;
   const previousFetch = globalThis.fetch;
   const previousSetTimeout = globalThis.setTimeout;
   const previousClearTimeout = globalThis.clearTimeout;
@@ -8625,6 +8794,17 @@ async function setupRuntimeApp({
     }
   };
   globalThis.localStorage = {
+    getItem(key) {
+      return storage.has(key) ? storage.get(key) : null;
+    },
+    setItem(key, value) {
+      storage.set(key, String(value));
+    },
+    removeItem(key) {
+      storage.delete(key);
+    }
+  };
+  globalThis.sessionStorage = {
     getItem(key) {
       return storage.has(key) ? storage.get(key) : null;
     },
@@ -8943,6 +9123,56 @@ async function setupRuntimeApp({
         deleted: true
       });
     }
+    if (url === "/api/simulation-tasks" && method === "POST") {
+      const body = JSON.parse(options.body || "{}");
+      const taskId = `simulation-task-runtime-${runtimeSimulationTasks.size + 1}`;
+      runtimeSimulationTasks.set(taskId, body);
+      const samples = Number(body.settings?.samples || 2);
+      return jsonResponse({
+        task_id: taskId,
+        status: "running",
+        stage: "running",
+        processed: 0,
+        total: samples,
+        succeeded: 0,
+        failed: 0,
+        elapsed_seconds: 0,
+        eta_seconds: null,
+        input_fingerprint: `runtime:${taskId}`
+      });
+    }
+    const simulationTaskResultMatch = url.match(/^\/api\/simulation-tasks\/([^/]+)\/result$/);
+    if (simulationTaskResultMatch && method === "GET") {
+      const taskId = decodeURIComponent(simulationTaskResultMatch[1]);
+      const body = runtimeSimulationTasks.get(taskId);
+      if (!body) return jsonResponse({ code: "simulation_task_not_found", message: "task not found" }, { ok: false, status: 404 });
+      const response = await globalThis.fetch("/api/mesa-analysis-runs", {
+        method: "POST",
+        headers: options.headers,
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) return response;
+      return jsonResponse({ task_id: taskId, status: "completed", result: await response.json() });
+    }
+    const simulationTaskMatch = url.match(/^\/api\/simulation-tasks\/([^/]+)$/);
+    if (simulationTaskMatch && method === "GET") {
+      const taskId = decodeURIComponent(simulationTaskMatch[1]);
+      const body = runtimeSimulationTasks.get(taskId);
+      if (!body) return jsonResponse({ code: "simulation_task_not_found", message: "task not found" }, { ok: false, status: 404 });
+      const samples = Number(body.settings?.samples || 2);
+      return jsonResponse({
+        task_id: taskId,
+        status: simulationTasksStayRunning ? "running" : "completed",
+        stage: simulationTasksStayRunning ? "running" : "completed",
+        processed: simulationTasksStayRunning ? 0 : samples,
+        total: samples,
+        succeeded: simulationTasksStayRunning ? 0 : samples,
+        failed: 0,
+        elapsed_seconds: 1,
+        eta_seconds: null,
+        input_fingerprint: `runtime:${taskId}`
+      });
+    }
     if (url === "/api/mesa-analysis-runs" && method === "POST") {
 	      if (liteMesaAnalysisResponseDelayMs > 0) {
 	        await new Promise((resolve) => previousSetTimeout(resolve, liteMesaAnalysisResponseDelayMs));
@@ -9249,6 +9479,7 @@ async function setupRuntimeApp({
       globalThis.window = previousWindow;
       globalThis.location = previousLocation;
       globalThis.localStorage = previousLocalStorage;
+      globalThis.sessionStorage = previousSessionStorage;
       globalThis.fetch = previousFetch;
     }
   };

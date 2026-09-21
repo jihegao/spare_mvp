@@ -15,7 +15,7 @@ import signal
 import sqlite3
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from src.spare_mvp_backend.analysis_xlsx import AnalysisXlsxError, export_analysis_snapshot_xlsx
@@ -1186,6 +1186,7 @@ class BackendApi:
         settings: dict[str, Any] | None = None,
         model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
         context: dict[str, Any] | None = None,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Run a draft or frozen-plan Mesa analysis without formal persistence."""
         analysis_started = time.perf_counter()
@@ -1205,6 +1206,14 @@ class BackendApi:
                 model_family=model_family,
                 replacement_model_family=ACTIVE_FORMAL_MODEL_FAMILY,
             )
+        _report_lite_mesa_progress(
+            progress_callback,
+            processed=0,
+            total=normalized_settings["samples"],
+            succeeded=0,
+            failed=0,
+            started_at=analysis_started,
+        )
         project = copy.deepcopy(resolved_context.project)
         fingerprint = canonical_fingerprint(
             {
@@ -1249,10 +1258,18 @@ class BackendApi:
         inputs = copy.deepcopy(scenario["simulation_inputs"])
         base_seed = normalized_settings["seed"] if normalized_settings["seed"] is not None else int(inputs.get("seed", 0))
         sample_started = time.perf_counter()
+        sample_run_kwargs: dict[str, Any] = {
+            "base_seed": base_seed,
+            "settings": normalized_settings,
+        }
+        if progress_callback is not None:
+            sample_run_kwargs.update(
+                progress_callback=progress_callback,
+                analysis_started=analysis_started,
+            )
         samples, failed_samples, worker_count, sample_diagnostics = _run_lite_mesa_analysis_samples(
             inputs,
-            base_seed=base_seed,
-            settings=normalized_settings,
+            **sample_run_kwargs,
         )
         sample_execution_seconds = time.perf_counter() - sample_started
 
@@ -2571,6 +2588,8 @@ def _run_lite_mesa_analysis_samples(
     *,
     base_seed: int,
     settings: dict[str, Any],
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    analysis_started: float | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, list[dict[str, Any]]]:
     sample_count = settings["samples"]
     worker_count = min(settings["parallelCores"], sample_count)
@@ -2609,6 +2628,12 @@ def _run_lite_mesa_analysis_samples(
                     outcomes.append(async_result.get())
                 except Exception as exc:  # pragma: no cover - worker process failure guard.
                     outcomes.append(_lite_mesa_worker_process_failure(task, exc))
+                _report_lite_mesa_outcomes_progress(
+                    progress_callback,
+                    outcomes,
+                    total=sample_count,
+                    started_at=analysis_started or session_started,
+                )
             if not pending:
                 break
             if time.perf_counter() >= session_deadline:
@@ -2616,6 +2641,12 @@ def _run_lite_mesa_analysis_samples(
                 outcomes.extend(
                     _lite_mesa_session_timeout_failure(task, settings, elapsed_seconds)
                     for task, _async_result in pending
+                )
+                _report_lite_mesa_outcomes_progress(
+                    progress_callback,
+                    outcomes,
+                    total=sample_count,
+                    started_at=analysis_started or session_started,
                 )
                 pool.terminate()
                 terminated = True
@@ -2645,6 +2676,51 @@ def _run_lite_mesa_analysis_samples(
         for outcome in outcomes
     ]
     return samples, failed_samples, worker_count, sample_diagnostics
+
+
+def _report_lite_mesa_outcomes_progress(
+    callback: Callable[[dict[str, Any]], None] | None,
+    outcomes: list[dict[str, Any]],
+    *,
+    total: int,
+    started_at: float,
+) -> None:
+    _report_lite_mesa_progress(
+        callback,
+        processed=len(outcomes),
+        total=total,
+        succeeded=sum(outcome.get("status") == "ok" for outcome in outcomes),
+        failed=sum(outcome.get("status") == "failed" for outcome in outcomes),
+        started_at=started_at,
+    )
+
+
+def _report_lite_mesa_progress(
+    callback: Callable[[dict[str, Any]], None] | None,
+    *,
+    processed: int,
+    total: int,
+    succeeded: int,
+    failed: int,
+    started_at: float,
+) -> None:
+    if callback is None:
+        return
+    elapsed_seconds = max(0.0, time.perf_counter() - started_at)
+    eta_seconds = None
+    if processed > 0 and total > processed:
+        eta_seconds = elapsed_seconds / processed * (total - processed)
+    callback(
+        {
+            "stage": "running",
+            "processed": processed,
+            "total": total,
+            "succeeded": succeeded,
+            "failed": failed,
+            "elapsed_seconds": elapsed_seconds,
+            "eta_seconds": eta_seconds,
+        }
+    )
 
 
 def _lite_mesa_worker_process_failure(
