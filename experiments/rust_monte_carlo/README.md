@@ -14,7 +14,7 @@ project-j16-8aircraft-43day-availability-20260727-copy-2
 
 ```bash
 python experiments/rust_monte_carlo/benchmark.py \
-  --compiler-root /home/g/apps/sim_engine_compiler-o5bcd-20260921/o5d-runtime \
+  --compiler-root /home/g/apps/sim-engine-wheel-f760b8c-src \
   --output /tmp/f35-rust-monte-carlo.json
 ```
 
@@ -41,7 +41,7 @@ python experiments/rust_monte_carlo/benchmark.py \
 
 ## 计划和后端边界
 
-每个临时 plan 同时写入兼容字段：
+每个临时 plan 写入正式 camelCase selector 字段：
 
 ```json
 {

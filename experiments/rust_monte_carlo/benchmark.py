@@ -163,6 +163,30 @@ def failed_count(payload: dict[str, Any]) -> int | None:
     return len(failed) if isinstance(failed, list) else None
 
 
+def semantic_summary(sample_results: dict[str, Any], aggregate_result: dict[str, Any]) -> dict[str, Any]:
+    sample_keys = ("sample_index", "seed", "sweep", "metrics", "rng_requests", "stop_reason", "terminal_state", "time")
+    samples = []
+    for sample in sample_results.get("samples") or []:
+        if isinstance(sample, dict):
+            samples.append({key: sample[key] for key in sample_keys if key in sample})
+    return {
+        "samples": samples,
+        "failed_samples": aggregate_result.get("failed_samples", sample_results.get("failed_samples", [])),
+        "aggregate_metrics": aggregate_result.get("aggregate_metrics"),
+        "metric_moments": aggregate_result.get("metric_moments"),
+        "failed_sample_count": aggregate_result.get("failed_sample_count"),
+    }
+
+
+def artifact_payload(manifest: dict[str, Any] | None, output_dir: Path, kind: str) -> dict[str, Any]:
+    for artifact in (manifest or {}).get("artifacts", []):
+        if artifact.get("kind") == kind:
+            path = output_dir / str(artifact.get("path") or "")
+            if path.exists():
+                return json.loads(path.read_text(encoding="utf-8"))
+    return {}
+
+
 def validate_core_row(row: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if row.get("status") != "succeeded":
@@ -248,6 +272,10 @@ def run_backend_child(args: argparse.Namespace) -> None:
     result = detail.get("result_summary") or {}
     stored_run = detail.get("run") or run
     finished = time.perf_counter()
+    sample_results = artifact_payload(detail.get("artifact_manifest"), output_dir, "sample_results")
+    aggregate_result = artifact_payload(detail.get("artifact_manifest"), output_dir, "aggregate_result")
+    semantic = semantic_summary(sample_results, aggregate_result)
+    result_failed_count = failed_count(result)
     payload = {
         "backend": args.child_backend,
         "status": stored_run.get("status"),
@@ -255,7 +283,7 @@ def run_backend_child(args: argparse.Namespace) -> None:
         "run": stored_run,
         "result_summary": result,
         "artifact_kinds": artifact_kinds(detail.get("artifact_manifest")),
-        "failed_sample_count": failed_count(result),
+        "failed_sample_count": result_failed_count if result_failed_count is not None else failed_count(stored_run),
         "timings": result.get("timings") or stored_run.get("timings") or {},
         "throughput": result.get("throughput") or stored_run.get("throughput"),
         "cache_status": stored_run.get("plan_cache_status") or result.get("plan_cache_status") or result.get("execution_metadata", {}).get("plan_cache_status") or "not_reported",
@@ -263,6 +291,8 @@ def run_backend_child(args: argparse.Namespace) -> None:
         "affinity": affinity,
         "wall_seconds": finished - started,
         "cache_dir": str(args.child_cache_dir),
+        "semantic_summary": semantic,
+        "semantic_digest": digest(semantic),
         "system": system_snapshot(),
     }
     atomic_write_json(Path(args.child_output), payload)
@@ -402,7 +432,12 @@ def main() -> None:
                             report["status"] = "failed_closed"
                             atomic_write_json(args.output, report)
                             raise SystemExit(f"core contract failed: {row['validation_errors']}")
-                    report["pairs"].append({"pair_id": pair_id, "repeat": repeat, "order": list(order), "rows": [row["row_id"] for row in pair_rows]})
+                    if len({row.get("semantic_digest") for row in pair_rows}) != 1:
+                        report["status"] = "failed_closed"
+                        report["pairs"].append({"pair_id": pair_id, "repeat": repeat, "order": list(order), "rows": [row["row_id"] for row in pair_rows], "semantic_match": False})
+                        atomic_write_json(args.output, report)
+                        raise SystemExit(f"semantic core mismatch in {pair_id} repeat={repeat}")
+                    report["pairs"].append({"pair_id": pair_id, "repeat": repeat, "order": list(order), "rows": [row["row_id"] for row in pair_rows], "semantic_match": True})
                     atomic_write_json(args.output, report)
         report["status"] = "passed"
         report["summary"] = summarize(report["rows"])
