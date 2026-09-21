@@ -263,6 +263,25 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         timeoutMs: liteMesaAnalysisRequestTimeoutMs(timeoutSettings)
       });
     },
+    createSimulationTask(payload) {
+      return request({
+        method: "POST",
+        path: "/simulation-tasks",
+        body: payload
+      });
+    },
+    getSimulationTask(taskId) {
+      return request({
+        method: "GET",
+        path: `/simulation-tasks/${encodeURIComponent(taskId)}`
+      });
+    },
+    getSimulationTaskResult(taskId) {
+      return request({
+        method: "GET",
+        path: `/simulation-tasks/${encodeURIComponent(taskId)}/result`
+      });
+    },
     startSimulationRun(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
       return request({
         method: "POST",

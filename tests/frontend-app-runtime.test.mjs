@@ -8571,6 +8571,7 @@ async function setupRuntimeApp({
     ...Object.entries(projectJsonById)
   ]);
   const runtimeRuns = new Map();
+  const runtimeSimulationTasks = new Map();
   let createProjectFromImportCount = 0;
   let projectSaveCount = 0;
   let visualizationSessionCount = 0;
@@ -8592,6 +8593,7 @@ async function setupRuntimeApp({
   const previousWindow = globalThis.window;
   const previousLocation = globalThis.location;
   const previousLocalStorage = globalThis.localStorage;
+  const previousSessionStorage = globalThis.sessionStorage;
   const previousFetch = globalThis.fetch;
   const previousSetTimeout = globalThis.setTimeout;
   const previousClearTimeout = globalThis.clearTimeout;
@@ -8625,6 +8627,17 @@ async function setupRuntimeApp({
     }
   };
   globalThis.localStorage = {
+    getItem(key) {
+      return storage.has(key) ? storage.get(key) : null;
+    },
+    setItem(key, value) {
+      storage.set(key, String(value));
+    },
+    removeItem(key) {
+      storage.delete(key);
+    }
+  };
+  globalThis.sessionStorage = {
     getItem(key) {
       return storage.has(key) ? storage.get(key) : null;
     },
@@ -8943,6 +8956,56 @@ async function setupRuntimeApp({
         deleted: true
       });
     }
+    if (url === "/api/simulation-tasks" && method === "POST") {
+      const body = JSON.parse(options.body || "{}");
+      const taskId = `simulation-task-runtime-${runtimeSimulationTasks.size + 1}`;
+      runtimeSimulationTasks.set(taskId, body);
+      const samples = Number(body.settings?.samples || 2);
+      return jsonResponse({
+        task_id: taskId,
+        status: "running",
+        stage: "running",
+        processed: 0,
+        total: samples,
+        succeeded: 0,
+        failed: 0,
+        elapsed_seconds: 0,
+        eta_seconds: null,
+        input_fingerprint: `runtime:${taskId}`
+      });
+    }
+    const simulationTaskResultMatch = url.match(/^\/api\/simulation-tasks\/([^/]+)\/result$/);
+    if (simulationTaskResultMatch && method === "GET") {
+      const taskId = decodeURIComponent(simulationTaskResultMatch[1]);
+      const body = runtimeSimulationTasks.get(taskId);
+      if (!body) return jsonResponse({ code: "simulation_task_not_found", message: "task not found" }, { ok: false, status: 404 });
+      const response = await globalThis.fetch("/api/mesa-analysis-runs", {
+        method: "POST",
+        headers: options.headers,
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) return response;
+      return jsonResponse({ task_id: taskId, status: "completed", result: await response.json() });
+    }
+    const simulationTaskMatch = url.match(/^\/api\/simulation-tasks\/([^/]+)$/);
+    if (simulationTaskMatch && method === "GET") {
+      const taskId = decodeURIComponent(simulationTaskMatch[1]);
+      const body = runtimeSimulationTasks.get(taskId);
+      if (!body) return jsonResponse({ code: "simulation_task_not_found", message: "task not found" }, { ok: false, status: 404 });
+      const samples = Number(body.settings?.samples || 2);
+      return jsonResponse({
+        task_id: taskId,
+        status: "completed",
+        stage: "completed",
+        processed: samples,
+        total: samples,
+        succeeded: samples,
+        failed: 0,
+        elapsed_seconds: 1,
+        eta_seconds: null,
+        input_fingerprint: `runtime:${taskId}`
+      });
+    }
     if (url === "/api/mesa-analysis-runs" && method === "POST") {
 	      if (liteMesaAnalysisResponseDelayMs > 0) {
 	        await new Promise((resolve) => previousSetTimeout(resolve, liteMesaAnalysisResponseDelayMs));
@@ -9249,6 +9312,7 @@ async function setupRuntimeApp({
       globalThis.window = previousWindow;
       globalThis.location = previousLocation;
       globalThis.localStorage = previousLocalStorage;
+      globalThis.sessionStorage = previousSessionStorage;
       globalThis.fetch = previousFetch;
     }
   };

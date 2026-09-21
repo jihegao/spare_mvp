@@ -101,6 +101,35 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   assert.equal(calls[8].body.run_type, "single");
 });
 
+test("frontend API client exposes simulation task submit, status, and result routes", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.method === "POST") return { task_id: "task-ui", status: "running" };
+      if (request.path.endsWith("/result")) return { task_id: "task-ui", status: "completed", result: { status: "session_complete" } };
+      return { task_id: "task-ui", status: "running", processed: 1, total: 4 };
+    }
+  });
+  const payload = {
+    kind: "lite_mesa_analysis",
+    context: { kind: "current_project", project_id: "project-ui" },
+    analysis_type: "spare_shortfall",
+    settings: { samples: 4, seed: 1 },
+    model_family: "aircraft_support_v1"
+  };
+
+  await client.createSimulationTask(payload);
+  await client.getSimulationTask("task-ui");
+  await client.getSimulationTaskResult("task-ui");
+
+  assert.deepEqual(calls, [
+    { method: "POST", path: "/simulation-tasks", body: payload },
+    { method: "GET", path: "/simulation-tasks/task-ui" },
+    { method: "GET", path: "/simulation-tasks/task-ui/result" }
+  ]);
+});
+
 test("frontend API client requests RMS allocation export as a downloadable XLSX file", async () => {
   const requests = [];
   const client = createBackendApiClient({

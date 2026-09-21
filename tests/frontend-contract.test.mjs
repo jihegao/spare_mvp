@@ -832,7 +832,8 @@ test("results analysis pages route to independent Mesa session wrappers", async 
   assert.match(appSource, /function runLiteMesaAnalysisPage/);
   assert.match(appSource, /let liteMesaAnalysisResults =/);
   assert.match(appSource, /data-lite-mesa-analysis-action="run">运行分析/);
-  assert.match(appSource, /backendApi\.runLiteMesaAnalysis/);
+  assert.match(appSource, /simulationTaskController\.start/);
+  assert.match(appSource, /simulationTaskController\.resume/);
   assert.match(appSource, /session_complete/);
   assert.doesNotMatch(wrapperSource, /full-settings/);
   assert.match(appSource, /分析设定/);
@@ -2779,8 +2780,8 @@ test("monte carlo settings submit current or frozen context instead of formal ru
   assert.match(renderSource, /data-lite-mesa-field="parallelCores"/);
   assert.match(renderSource, /data-lite-mesa-field="seed"/);
   assert.match(renderSource, /冻结方案参数只读/);
-  assert.match(runSource, /buildBackendRunContext\(selectedContext\)/);
-  assert.match(runSource, /selectedContext\?\.kind === "current-project" \? \{ samples, seed, parallelCores \} : \{\}/);
+  assert.match(runSource, /simulationTaskPayload\("mission_reliability", \{ samples, seed, parallelCores \}\)/);
+  assert.match(runSource, /simulationTaskController\.start/);
   assert.match(runSource, /requestEpoch !== liteMesaMonteCarloRequestEpoch/);
   assert.match(runSource, /runContextRequestStillCurrent/);
   assert.doesNotMatch(runSource, /submitRunIntent|startMonteCarloRunThroughApi|\/api\/runs/);
@@ -2942,7 +2943,8 @@ test("result analysis pages route visible runs through Lite Mesa instead of curr
     assert.notEqual(page.component, "analysis", page.id);
   }
   assert.match(liteMesaSource, /data-lite-mesa-analysis-action="run"/);
-  assert.match(liteMesaSource, /backendApi\.runLiteMesaAnalysis\(\s*backendContext,\s*definition\.analysisType/);
+  assert.match(liteMesaSource, /simulationTaskController\.start/);
+  assert.match(liteMesaSource, /simulationTaskPayload\(definition\.analysisType, normalizedSettings\)/);
   assert.match(analysisActionSource, /runLiteMesaAnalysisPage\(page\)/);
   assert.match(appSource, /const analysisType = analysisTypeForPage\(page\)/);
   assert.doesNotMatch(liteMesaSource, /分析任务列表|创建\/编辑\/删除|选择方案 \+ 参数/);
@@ -2979,8 +2981,8 @@ test("independent Mesa result analysis pages consume only session settings and s
   assert.match(analysisSettingsSource, /return \{ \.\.\.analysisSettings, \.\.\.selectedExperimentPlanRunSettings\(\) \}/);
   assert.match(appSource, /data-current-experiment-plan/);
   assert.match(mesaSource, /async function runLiteMesaAnalysisPage/);
-  assert.match(mesaSource, /backendApi\.runLiteMesaAnalysis/);
-  assert.match(mesaSource, /buildBackendRunContext\(context\)/);
+  assert.match(mesaSource, /simulationTaskController\.start/);
+  assert.match(mesaSource, /simulationTaskPayload\(definition\.analysisType, normalizedSettings\)/);
   assert.match(mesaSource, /payload\.status === "session_complete"/);
   for (const hiddenSetting of ["项目", "当前项目", "分析对象", "结果内容"]) {
     assert.doesNotMatch(mesaSource, new RegExp(`\\["${hiddenSetting}"`));
@@ -3175,10 +3177,8 @@ test("experiment plan editor exposes one runtime configuration and removes Scena
 test("monte carlo launch uses backend run context with stale-response guards", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"), appSource.indexOf("function normalizeLiteMesaMonteCarloResult"));
-  assert.match(launchSource, /const selectedContext = selectedExperimentPlanContext\(\)/);
-  assert.match(launchSource, /buildBackendRunContext\(selectedContext\)/);
-  assert.match(launchSource, /backendApi\.runLiteMesaAnalysis\(\s*backendContext,\s*"mission_reliability"/);
-  assert.match(launchSource, /selectedContext\?\.kind === "current-project" \? \{ samples, seed, parallelCores \} : \{\}/);
+  assert.match(launchSource, /simulationTaskController\.start/);
+  assert.match(launchSource, /simulationTaskPayload\("mission_reliability", \{ samples, seed, parallelCores \}\)/);
   assert.match(launchSource, /requestEpoch !== liteMesaMonteCarloRequestEpoch/);
   assert.match(launchSource, /runContextRequestStillCurrent\(requestContextKey, requestContextFingerprint\)/);
   assert.doesNotMatch(launchSource, /resolveSelectedExperimentPlanProjectJsonForRun|submitRunIntent|\/api\/runs/);
@@ -3258,7 +3258,8 @@ test("issue 349 and 350 frontend uses frozen run contexts and visualization sess
   assert.doesNotMatch(solaraSource.slice(solaraSource.indexOf("export function buildSolaraVisualizationUrl"), solaraSource.indexOf("export function normalizeSolaraVisualizationUrl")), /embedded|project_id|experiment_plan_id|plan_samples|authorization|access_token|bearer/i);
   assert.match(appSource, /DEFAULT_CURRENT_MONTE_CARLO_SETTINGS/);
   assert.match(monteCarloSource, /冻结方案参数只读/);
-  assert.match(monteCarloSource, /buildBackendRunContext\(selectedContext\)/);
+  assert.match(monteCarloSource, /simulationTaskPayload\("mission_reliability"/);
+  assert.match(monteCarloSource, /simulationTaskController\.start/);
   assert.match(apiSource, /\.\.\.\(!frozenPlan \? \{ settings \} : \{\}\)/);
 });
 
@@ -3315,6 +3316,7 @@ test("visual simulation creates a session while analyses submit current or froze
   const analysisSource = appSource.slice(appSource.indexOf("async function runLiteMesaAnalysisPage"), appSource.indexOf("function normalizeLiteMesaAnalysisResult"));
   assert.match(apiSource, /path: "\/visualization-sessions"/);
   assert.match(apiSource, /path: "\/mesa-analysis-runs"/);
+  assert.match(apiSource, /path: "\/simulation-tasks"/);
   assert.match(apiSource, /timeoutSettings = settings/);
   assert.match(apiSource, /liteMesaAnalysisRequestTimeoutMs\(timeoutSettings\)/);
   assert.match(sessionSource, /buildVisualizationSessionRequest/);
@@ -3326,9 +3328,8 @@ test("visual simulation creates a session while analyses submit current or froze
   assert.match(visualSource, /visualizationSessionToken/);
   assert.match(visualSource, /playbackSpeed: visualizationSessionSettings\.playbackSpeed/);
   assert.doesNotMatch(visualSource, /projectId:|experimentPlanId:|planSamples:|planSeed:/);
-  assert.match(analysisSource, /buildBackendRunContext\(context\)/);
-  assert.match(analysisSource, /context\?\.kind === "current-project" \? normalizedSettings : \{\}/);
-  assert.match(analysisSource, /undefined,\s*normalizedSettings/);
+  assert.match(analysisSource, /simulationTaskController\.start/);
+  assert.match(analysisSource, /simulationTaskPayload\(definition\.analysisType, normalizedSettings\)/);
   assert.match(solaraSource, /visualization_session_id/);
   assert.match(solaraSource, /visualization_session_token/);
   assert.match(solaraSource, /playback_speed/);
