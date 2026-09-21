@@ -93,7 +93,7 @@ def export_analysis_snapshot_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
             _fit_columns(detail_sheet)
 
         workbook.properties.title = analysis_name
-        workbook.properties.creator = "spare_mvp"
+        workbook.properties.creator = "备件规划及任务可靠度验证评估平台"
         output = io.BytesIO()
         output.write(workbook_bytes(workbook))
     except Exception as exc:

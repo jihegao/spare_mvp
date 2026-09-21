@@ -31,7 +31,7 @@ test("green extractor stages the embedded tar before invoking Windows tar", () =
   assert.match(source, /Directory\.Delete\(ownedStaging, true\)/);
   assert.match(source, /ownedDestination = destination/);
   assert.match(source, /Directory\.Delete\(ownedDestination, true\)/);
-  assert.match(source, /CreateDesktopShortcut\(launcher, destination\);[\s\S]{0,400}ownedDestination = null;/);
+  assert.match(source, /CreateDesktopShortcut\(launcher, destination\);[\s\S]{0,900}ownedDestination = null;/);
   assert.match(source, /Directory\.Exists\(destination\) \|\| File\.Exists\(destination\)/);
 });
 
@@ -42,6 +42,12 @@ test("green extractor creates a current-user desktop shortcut for the extracted 
   assert.match(source, /TargetPath/);
   assert.match(source, /SpareMvpDesktop\.exe/);
   assert.match(source, /CreateDesktopShortcut\(launcher, destination\)/);
+  assert.match(source, /备件规划及任务可靠度验证评估平台 V2\.0/);
+  assert.match(source, /ShortcutFileName = ProductName \+ "\.lnk"/);
+  assert.match(source, /Description[\s\S]{0,160}ProductName/);
+  assert.match(source, /MigrateOwnedLegacyShortcut\(launcher, destination\)/);
+  assert.match(source, /IsOwnedShortcut\(legacyShortcutPath, launcher, destination\)/);
+  assert.match(source, /String\.IsNullOrWhiteSpace\(details\[2\]\)/);
 });
 
 test("green package builds a guarded uninstaller into the sealed payload", () => {
@@ -70,5 +76,10 @@ test("green package builds a guarded uninstaller into the sealed payload", () =>
   assert.match(uninstaller, /!lifecycle\.BindingExists && HasLegacyUserState/);
   assert.match(uninstaller, /Directory\.GetFileSystemEntries\(legacy\)\.Length != 0/);
   assert.match(uninstaller, /项目数据库和用户数据已保留/);
+  assert.match(uninstaller, /ShortcutFileName = ProductName \+ "\.lnk"/);
+  assert.match(uninstaller, /DesktopShortcutPath\(LegacyShortcutFileName\)/);
+  assert.match(uninstaller, /removeLegacyShortcut = legacyShortcutExists && IsOwnedShortcut/);
+  assert.match(uninstaller, /removeLegacyShortcut && File\.Exists\(legacyShortcutPath\)/);
+  assert.match(uninstaller, /备件规划及任务可靠度验证评估平台 V2\.0/);
   assert.match(portablePackager, /'Uninstall-SpareMvp\.exe'/);
 });

@@ -69,6 +69,25 @@ test("active docs record lite Mesa analysis metric formulas", async () => {
   assert.doesNotMatch(docs, /四个结果分析页通过 current result 面板和正式 projection payload 解锁结果/);
 });
 
+test("user JSON exports use neutral filenames while preserving the system-data schema identifier", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /`system-data-\$\{tab\.key\}-\$\{date\}\.json`/);
+  assert.match(appSource, /`project-\$\{normalizeProjectFileSegment\(project\.id\)\}-\$\{date\}\.json`/);
+  assert.doesNotMatch(appSource, /`spare-mvp-\$\{tab\.key\}-data-/);
+  assert.doesNotMatch(appSource, /`spare-mvp-project-/);
+  assert.match(appSource, /schemaVersion: "spare-mvp-system-data-export-v1"/);
+  for (const key of [
+    "spare-mvp:lastBackendRun",
+    "spare-mvp:m4Session",
+    "spare-mvp:lastPublishedModelingImportId",
+    "spare-mvp:selectedRunContextByProject",
+    "spare-mvp.current-project-id"
+  ]) {
+    assert.match(appSource, new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
 test("basic support activity CSV computes preview before committing the staged Scenario", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const importSource = appSource.slice(

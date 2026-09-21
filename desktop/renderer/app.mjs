@@ -43,7 +43,7 @@ async function start() {
     }
     detail.textContent = status.running
       ? "检测到本绿色版服务正在运行，正在重新打开工作区。"
-      : "无需 Docker、WSL 或管理员权限，正在启动包内服务。";
+      : "正在启动包内服务。";
     await desktopBridge().start();
   } catch (error) {
     detail.textContent = "本机服务未能启动，请重试。";

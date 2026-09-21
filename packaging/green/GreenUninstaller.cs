@@ -9,7 +9,9 @@ using System.Windows.Forms;
 
 internal static class GreenUninstaller
 {
-    private const string ShortcutFileName = "spare_mvp 2.0.lnk";
+    private const string ProductName = "备件规划及任务可靠度验证评估平台 V2.0";
+    private const string ShortcutFileName = ProductName + ".lnk";
+    private const string LegacyShortcutFileName = "spare_mvp 2.0.lnk";
     private const string LauncherFileName = "SpareMvpDesktop.exe";
     private const string WorkerArgument = "--remove";
 
@@ -17,7 +19,7 @@ internal static class GreenUninstaller
     private static int Main(string[] args)
     {
         Application.EnableVisualStyles();
-        if (args.Length == 4 && args[0] == WorkerArgument) return RemoveInstalledFiles(args[1], args[2], args[3] == "deleted");
+        if (args.Length == 5 && args[0] == WorkerArgument) return RemoveInstalledFiles(args[1], args[2], args[3], args[4] == "deleted");
 
         try
         {
@@ -27,10 +29,10 @@ internal static class GreenUninstaller
             if (!lifecycle.BindingExists && HasLegacyUserState(installationRoot))
                 throw new InvalidOperationException("检测到尚未安全迁出的安装目录内用户数据。请先启动一次平台完成数据迁移，再执行卸载。");
             DialogResult answer = MessageBox.Show(
-                "将停止 spare_mvp 2.0，并删除当前安装的程序和实例临时状态：\r\n\r\n" + installationRoot +
+                "将停止" + ProductName + "，并删除当前安装的程序和实例临时状态：\r\n\r\n" + installationRoot +
                 "\r\n\r\n项目数据库和用户数据默认保留在：\r\n" + lifecycle.DataRoot +
                 "\r\n\r\n是否继续卸载程序？",
-                "卸载 spare_mvp 2.0",
+                "卸载" + ProductName,
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
@@ -40,7 +42,7 @@ internal static class GreenUninstaller
                 "是否同时永久删除以下用户数据？\r\n\r\n" + lifecycle.DataRoot +
                 "\r\n\r\n选择“是”将永久删除项目数据库、运行结果和迁移备份，且无法恢复。" +
                 "\r\n选择“否”将保留用户数据。选择“取消”将取消本次卸载。",
-                "用户数据处理",
+                ProductName + " 用户数据处理",
                 MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button3);
@@ -51,7 +53,7 @@ internal static class GreenUninstaller
                 DialogResult permanentDeleteAnswer = MessageBox.Show(
                     "最终确认永久删除用户数据：\r\n\r\n" + lifecycle.DataRoot +
                     "\r\n\r\n此操作无法恢复。是否确认永久删除？",
-                    "最终确认删除用户数据",
+                    ProductName + " 最终确认删除用户数据",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Warning,
                     MessageBoxDefaultButton.Button2);
@@ -61,12 +63,16 @@ internal static class GreenUninstaller
             RunStopScript(installationRoot, lifecycle.DataRoot, false, false);
             CloseDesktopProcesses(installationRoot);
             RunStopScript(installationRoot, lifecycle.DataRoot, true, deleteUserData);
-            StartRemovalWorker(installationRoot, DesktopShortcutPath(), deleteUserData);
+            StartRemovalWorker(
+                installationRoot,
+                DesktopShortcutPath(ShortcutFileName),
+                DesktopShortcutPath(LegacyShortcutFileName),
+                deleteUserData);
             return 0;
         }
         catch (Exception error)
         {
-            MessageBox.Show(error.Message, "卸载失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(error.Message, ProductName + " 卸载失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
@@ -92,7 +98,7 @@ internal static class GreenUninstaller
         foreach (string relative in required)
         {
             if (!File.Exists(Path.Combine(installationRoot, relative)))
-                throw new InvalidDataException("当前目录不是完整的 spare_mvp 2.0 绿色版，拒绝删除：" + relative);
+                throw new InvalidDataException("当前目录不是完整的" + ProductName + "，拒绝删除：" + relative);
         }
     }
 
@@ -209,11 +215,11 @@ internal static class GreenUninstaller
         }
     }
 
-    private static void StartRemovalWorker(string installationRoot, string shortcutPath, bool userDataDeleted)
+    private static void StartRemovalWorker(string installationRoot, string shortcutPath, string legacyShortcutPath, bool userDataDeleted)
     {
         string worker = Path.Combine(Path.GetTempPath(), "spare-mvp-uninstall-" + Guid.NewGuid().ToString("N") + ".exe");
         File.Copy(Application.ExecutablePath, worker, false);
-        Process.Start(new ProcessStartInfo(worker, WorkerArgument + " " + Quote(installationRoot) + " " + Quote(shortcutPath) +
+        Process.Start(new ProcessStartInfo(worker, WorkerArgument + " " + Quote(installationRoot) + " " + Quote(shortcutPath) + " " + Quote(legacyShortcutPath) +
             " " + (userDataDeleted ? "deleted" : "preserved"))
         {
             UseShellExecute = true,
@@ -221,7 +227,7 @@ internal static class GreenUninstaller
         });
     }
 
-    private static int RemoveInstalledFiles(string installationRoot, string shortcutPath, bool userDataDeleted)
+    private static int RemoveInstalledFiles(string installationRoot, string shortcutPath, string legacyShortcutPath, bool userDataDeleted)
     {
         try
         {
@@ -229,6 +235,8 @@ internal static class GreenUninstaller
             AssertInstallationRoot(installationRoot);
             bool shortcutExists = File.Exists(shortcutPath);
             bool removeShortcut = shortcutExists && IsOwnedShortcut(shortcutPath, Path.Combine(installationRoot, LauncherFileName));
+            bool legacyShortcutExists = File.Exists(legacyShortcutPath);
+            bool removeLegacyShortcut = legacyShortcutExists && IsOwnedShortcut(legacyShortcutPath, Path.Combine(installationRoot, LauncherFileName));
             Exception lastError = null;
             for (int attempt = 0; attempt < 30 && Directory.Exists(installationRoot); attempt++)
             {
@@ -246,17 +254,19 @@ internal static class GreenUninstaller
             if (Directory.Exists(installationRoot))
                 throw new IOException("无法删除安装目录，请关闭仍在使用其中文件的程序后重试。", lastError);
             if (removeShortcut && File.Exists(shortcutPath)) File.Delete(shortcutPath);
+            if (removeLegacyShortcut && File.Exists(legacyShortcutPath)) File.Delete(legacyShortcutPath);
             string dataResult = userDataDeleted ? "已按二次确认永久删除用户数据。" : "项目数据库和用户数据已保留。";
-            string result = shortcutExists && !removeShortcut
-                ? "spare_mvp 2.0 安装目录已删除。桌面快捷方式已被修改或指向其他安装，因此予以保留。" + dataResult
-                : "spare_mvp 2.0 已卸载，安装目录和本安装拥有的桌面快捷方式已删除。" + dataResult;
-            MessageBox.Show(result, "卸载完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            bool retainedShortcut = (shortcutExists && !removeShortcut) || (legacyShortcutExists && !removeLegacyShortcut);
+            string result = retainedShortcut
+                ? ProductName + "安装目录已删除。桌面快捷方式已被修改或指向其他安装，因此予以保留。" + dataResult
+                : ProductName + "已卸载，安装目录和本安装拥有的桌面快捷方式已删除。" + dataResult;
+            MessageBox.Show(result, ProductName + " 卸载完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
             ScheduleSelfDelete();
             return 0;
         }
         catch (Exception error)
         {
-            MessageBox.Show(error.Message, "卸载失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(error.Message, ProductName + " 卸载失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
@@ -303,11 +313,11 @@ internal static class GreenUninstaller
         }
     }
 
-    private static string DesktopShortcutPath()
+    private static string DesktopShortcutPath(string fileName)
     {
         string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         if (String.IsNullOrWhiteSpace(desktop)) throw new DirectoryNotFoundException("无法找到当前用户的桌面目录。");
-        return Path.Combine(desktop, ShortcutFileName);
+        return Path.Combine(desktop, fileName);
     }
 
     private static void ScheduleSelfDelete()

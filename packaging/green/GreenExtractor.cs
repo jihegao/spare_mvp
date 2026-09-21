@@ -12,7 +12,9 @@ internal static class GreenExtractor
 {
     private const string Magic = "SPAREPKG";
     private const int FooterSize = 48;
-    private const string ShortcutFileName = "spare_mvp 2.0.lnk";
+    private const string ProductName = "备件规划及任务可靠度验证评估平台 V2.0";
+    private const string ShortcutFileName = ProductName + ".lnk";
+    private const string LegacyShortcutFileName = "spare_mvp 2.0.lnk";
 
     [STAThread]
     private static int Main(string[] args)
@@ -47,7 +49,7 @@ internal static class GreenExtractor
             {
                 using (FolderBrowserDialog dialog = new FolderBrowserDialog())
                 {
-                    dialog.Description = "选择 spare_mvp 2.0 绿色版的解压位置";
+                    dialog.Description = "选择" + ProductName + "的解压位置";
                     dialog.SelectedPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                     if (dialog.ShowDialog() != DialogResult.OK) return 0;
                     parent = dialog.SelectedPath;
@@ -85,11 +87,20 @@ internal static class GreenExtractor
             string launcher = Path.Combine(destination, "SpareMvpDesktop.exe");
             if (!File.Exists(launcher)) throw new FileNotFoundException("解压后未找到桌面启动器。", launcher);
             CreateDesktopShortcut(launcher, destination);
+            try
+            {
+                MigrateOwnedLegacyShortcut(launcher, destination);
+            }
+            catch
+            {
+                DeleteOwnedShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), ShortcutFileName), launcher, destination);
+                throw;
+            }
             // Shortcut creation completes the owned extraction transaction.
             // A later launch failure leaves the complete package for manual use.
             ownedDestination = null;
             if (!noLaunch) Process.Start(new ProcessStartInfo(launcher) { WorkingDirectory = destination, UseShellExecute = true });
-            if (!unattended) MessageBox.Show("绿色版已解压到：\r\n" + destination + "\r\n\r\n桌面快捷方式已创建，平台正在启动。", "spare_mvp 2.0", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (!unattended) MessageBox.Show("平台已解压到：\r\n" + destination + "\r\n\r\n桌面快捷方式已创建，平台正在启动。", ProductName, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return 0;
         }
         catch (Exception error)
@@ -109,7 +120,7 @@ internal static class GreenExtractor
                 try { File.WriteAllText(Path.Combine(unattendedParent ?? ".", "spare-mvp-green-extract-error.log"), error.ToString(), Encoding.UTF8); }
                 catch { }
             }
-            else MessageBox.Show(error.Message, "绿色版解压失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            else MessageBox.Show(error.Message, ProductName + "解压失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
@@ -131,9 +142,70 @@ internal static class GreenExtractor
             Type shortcutType = shortcut.GetType();
             shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { launcher });
             shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { destination });
-            shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { "spare_mvp 2.0 绿色桌面版" });
+            shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { ProductName });
             shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { launcher + ",0" });
             shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
+        }
+        finally
+        {
+            if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut);
+            if (shell != null && Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
+    private static void MigrateOwnedLegacyShortcut(string launcher, string destination)
+    {
+        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        string legacyShortcutPath = Path.Combine(desktop, LegacyShortcutFileName);
+        if (!File.Exists(legacyShortcutPath)) return;
+        if (IsOwnedShortcut(legacyShortcutPath, launcher, destination)) File.Delete(legacyShortcutPath);
+    }
+
+    private static void DeleteOwnedShortcut(string shortcutPath, string launcher, string destination)
+    {
+        try
+        {
+            if (File.Exists(shortcutPath) && IsOwnedShortcut(shortcutPath, launcher, destination)) File.Delete(shortcutPath);
+        }
+        catch
+        {
+            // Preserve the original migration failure; ownership was checked before cleanup.
+        }
+    }
+
+    private static bool IsOwnedShortcut(string shortcutPath, string expectedLauncher, string expectedWorkingDirectory)
+    {
+        try
+        {
+            string[] details = ReadShortcutDetails(shortcutPath);
+            return !String.IsNullOrWhiteSpace(details[0]) &&
+                String.Equals(Path.GetFullPath(details[0]), Path.GetFullPath(expectedLauncher), StringComparison.OrdinalIgnoreCase) &&
+                !String.IsNullOrWhiteSpace(details[1]) &&
+                String.Equals(Path.GetFullPath(details[1]), Path.GetFullPath(expectedWorkingDirectory), StringComparison.OrdinalIgnoreCase) &&
+                String.IsNullOrWhiteSpace(details[2]);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string[] ReadShortcutDetails(string shortcutPath)
+    {
+        Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+        if (shellType == null) throw new PlatformNotSupportedException("Windows Script Host 不可用，无法核对桌面快捷方式。");
+        object shell = null;
+        object shortcut = null;
+        try
+        {
+            shell = Activator.CreateInstance(shellType);
+            shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
+            Type shortcutType = shortcut.GetType();
+            return new string[] {
+                (string)shortcutType.InvokeMember("TargetPath", BindingFlags.GetProperty, null, shortcut, null),
+                (string)shortcutType.InvokeMember("WorkingDirectory", BindingFlags.GetProperty, null, shortcut, null),
+                (string)shortcutType.InvokeMember("Arguments", BindingFlags.GetProperty, null, shortcut, null)
+            };
         }
         finally
         {
@@ -307,7 +379,7 @@ internal static class GreenExtractor
 
         internal ProgressForm()
         {
-            Text = "spare_mvp 2.0 绿色版";
+            Text = ProductName;
             Width = 460;
             Height = 150;
             StartPosition = FormStartPosition.CenterScreen;

@@ -59,6 +59,7 @@ class AnalysisXlsxExportTest(unittest.TestCase):
                     f"案例_项目-{SUPPORTED_ANALYSIS_TYPES[analysis_type]}-20260718-101112.xlsx",
                 )
                 workbook = load_workbook(io.BytesIO(download["body"]), data_only=False)
+                self.assertEqual(workbook.properties.creator, "备件规划及任务可靠度验证评估平台")
                 self.assertEqual(workbook.sheetnames, ["分析信息", "结果摘要", "结果明细"])
                 self.assertEqual(workbook["分析信息"]["A2"].value, "项目名称")
                 self.assertEqual(workbook["分析信息"]["B2"].value, "案例/项目")

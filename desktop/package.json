@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "main": "main.mjs",
-  "description": "spare_mvp 2.0 Windows native green launcher",
-  "author": "spare_mvp",
+  "description": "备件规划及任务可靠度验证评估平台 V2.0 Windows 桌面启动器",
+  "author": "备件规划及任务可靠度验证评估平台",
   "scripts": {
     "start": "electron .",
     "dist:win": "node scripts/patch-electron-builder-collector.mjs && electron-builder --win dir --x64 && node scripts/write-build-provenance.mjs ../dist/desktop-installer/win-unpacked"
@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "cn.sparemvp.desktop",
-    "productName": "备件规划与任务可靠度验证评估平台",
+    "productName": "备件规划及任务可靠度验证评估平台 V2.0",
     "artifactName": "spare-mvp-2.0-green.${ext}",
     "directories": {
       "output": "../dist/desktop-installer"
