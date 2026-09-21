@@ -1,6 +1,8 @@
 # Windows 绿色桌面版
 
-> **当前交付状态（2026-09-21）**：源码 `2252f03ae2ce21e1780638ee9b9e298b6516e174` 已完成 Windows 原生构建、隔离解压、安装、启动和基础 HTTP 冒烟，旧候选的 SQLite 句柄故障已经修复。该证据只覆盖 build/install/start/basic smoke；卸载、重装、数据生命周期、完整业务流程、#366 最终矩阵和正式发布仍未通过，不得据此关闭 issue 或标记 V2 正式发布。
+> **当前交付状态（2026-09-22）**：桌面包版本已收敛为 `2.0.0`。#380、#384、#385 和 #383 的实现已合入 `main`；最终源码提交、Windows 安装包及 SHA-256 仍须在 4700-4 绑定完成原生综合验收后冻结。本页后文保留旧候选的构建和故障记录作为历史证据，旧候选结果不得替代最终 `2.0.0` 验收。
+
+本轮正式发布门同时覆盖 #379、#381、#382、#366、#384、#383 和 #385。除既有桌面安全交付矩阵外，必须验证仿真任务切页及刷新恢复、重复提交复用、单重任务忙碌提示、用户隔离、真实进度与失败状态，以及实际备件满足率和利用率的分子、分母、零分母与缺失数据语义。发布证据绑定同一源码 SHA、安装包 SHA-256、输入指纹、环境版本、操作日志和截图；任一修复改变源码后重新构建并补跑受影响检查。
 
 最终离线交付文件为 `spare-mvp-2.0-green.exe`。它是普通用户权限运行的自解压包：用户选择目录后，程序解压完整平台并启动 `SpareMvpDesktop.exe`。该路线不安装或调用 Docker Desktop、WSL，不启用 Windows 可选功能，不接受第三方许可，也不安排 Windows 重启。
 
@@ -73,7 +75,7 @@ cd ..
 
 ## 安全交付技术契约（G0）
 
-范围为 [#380](https://github.com/jihegao/spare_mvp/pull/380)、[#381](https://github.com/jihegao/spare_mvp/issues/381)、[#382](https://github.com/jihegao/spare_mvp/issues/382)、[#379](https://github.com/jihegao/spare_mvp/issues/379) 和 [#366](https://github.com/jihegao/spare_mvp/issues/366) 的本轮剩余验收。代码基点为 `33974c58053da36000de05014b7856aa4352699b`，对应 main 基点 `5352a0d7757cbac012c75d516d1a7ac4ff15aa2a`。可开发、提交、推送及准备 PR；完成终点为原生 Windows 隔离验收和待发布交接。不得据此合并、正式发布、切换既有服务或关闭 issue；不操作 4700-3。
+当前范围为 [#379](https://github.com/jihegao/spare_mvp/issues/379)、[#381](https://github.com/jihegao/spare_mvp/issues/381)、[#382](https://github.com/jihegao/spare_mvp/issues/382)、[#366](https://github.com/jihegao/spare_mvp/issues/366)、[#384](https://github.com/jihegao/spare_mvp/issues/384)、[#383](https://github.com/jihegao/spare_mvp/issues/383) 和 [#385](https://github.com/jihegao/spare_mvp/issues/385) 的最终 `2.0.0` 验收。#380、#386、#387、#388、#389 的实现已合入主干；完成终点为同一源码和安装包在 4700-4 的原生隔离验收、受控安装、正式发布与逐项证据回填。缺少最终制品证据的条目保持开放或在已自动关闭的 issue 中明确记录待补证据；不操作 4700-3。
 
 ### 路径、身份与写入权
 
