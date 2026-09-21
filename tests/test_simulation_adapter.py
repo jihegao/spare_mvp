@@ -10,7 +10,11 @@ import warnings
 
 import jsonschema
 
-from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
+from src.spare_mvp_contract.adapter import (
+    AdapterError,
+    CORE_MONTE_CARLO_METRIC_KEYS,
+    SimulationAdapter,
+)
 from src.spare_mvp_backend.m9_6_case_package import build_m9_6_platform_case_export
 from src.spare_mvp_backend.project_payload import ProjectJsonExporter
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
@@ -2712,6 +2716,182 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "bad_analysis_request")
         self.assertEqual(ctx.exception.details["sweep_point_count"], 8)
         self.assertEqual(list(Path(tmp).glob("**/*")), [])
+
+    def test_core_monte_carlo_uses_shared_metric_projection_and_core_artifacts(self) -> None:
+        class FakeRustBackend:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def run_canonical_batch(self, samples, *, worker_threads, cache_dir):
+                self.calls.append((copy.deepcopy(samples), worker_threads, cache_dir))
+                results = []
+                for item in reversed(samples):
+                    metrics = {key: 0 for key in CORE_MONTE_CARLO_METRIC_KEYS}
+                    metrics.update({
+                        "mission_success_rate": 1.0,
+                        "spare_fill_rate": 1.0,
+                        "stop_reason": "horizon",
+                    })
+                    results.append({
+                        "sample_index": item["sample_index"],
+                        "seed": item["seed"],
+                        "sweep": copy.deepcopy(item["sweep"]),
+                        "result": {
+                            "metrics": metrics,
+                            "sample_requests": [{"stream": "sample", "count": 1}],
+                            "terminal_state": {"minute": 1},
+                            "stop_reason": "horizon",
+                            "time": 1,
+                        },
+                    })
+                return {
+                    "samples": results,
+                    "failed_samples": [],
+                    "engine_metadata": {
+                        "engine_version": "test-wheel",
+                        "source_commit": "test-commit",
+                        "semantic_profile": "event-time-v2",
+                    },
+                    "cache_groups": [{
+                        "source_inputs_sha256": "inputs-sha",
+                        "plan_fingerprint": "plan-sha",
+                        "status": "hit",
+                    }],
+                    "plan_cache_status": "hit",
+                    "timings": {"compile_seconds": 0.01},
+                    "worker_count": worker_threads,
+                }
+
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        config = {
+            "sample_count": 2,
+            "parallel_cores": 1,
+            "sweep": {
+                "failureRates": [1.0],
+                "spareMultipliers": [1.0],
+                "supportCapacities": [1],
+            },
+            "output_scope": "core",
+        }
+        fake = FakeRustBackend()
+        rust_adapter = SimulationAdapter(REPO_ROOT, rust_monte_carlo_backend=fake)
+        with tempfile.TemporaryDirectory() as python_tmp, tempfile.TemporaryDirectory() as rust_tmp:
+            python_bundle = self.adapter.run_monte_carlo_scenario(
+                copy.deepcopy(scenario),
+                output_dir=Path(python_tmp),
+                run_id="run-python-core",
+                monte_carlo_config={**copy.deepcopy(config), "backend": "python"},
+            )
+            rust_bundle = rust_adapter.run_monte_carlo_scenario(
+                copy.deepcopy(scenario),
+                output_dir=Path(rust_tmp),
+                run_id="run-rust-core",
+                monte_carlo_config={**copy.deepcopy(config), "backend": "rust_event_time_v2"},
+            )
+            python_sample_artifact = next(
+                item for item in python_bundle["artifact_manifest"]["artifacts"] if item["kind"] == "sample_results"
+            )
+            rust_sample_artifact = next(
+                item for item in rust_bundle["artifact_manifest"]["artifacts"] if item["kind"] == "sample_results"
+            )
+            python_samples = json.loads((Path(python_tmp) / python_sample_artifact["path"]).read_text())["samples"]
+            rust_samples = json.loads((Path(rust_tmp) / rust_sample_artifact["path"]).read_text())["samples"]
+            run_config_artifact = next(
+                item for item in rust_bundle["artifact_manifest"]["artifacts"] if item["kind"] == "run_config"
+            )
+            run_config = json.loads((Path(rust_tmp) / run_config_artifact["path"]).read_text())
+
+        expected_kinds = {
+            "run_config", "input_project", "compiled_scenario", "sample_results",
+            "aggregate_result", "metrics", "report", "log",
+        }
+        self.assertEqual({item["kind"] for item in rust_bundle["artifact_manifest"]["artifacts"]}, expected_kinds)
+        self.assertEqual(set(python_samples[0]["metrics"]), set(CORE_MONTE_CARLO_METRIC_KEYS))
+        self.assertEqual(set(rust_samples[0]["metrics"]), set(CORE_MONTE_CARLO_METRIC_KEYS))
+        self.assertEqual(rust_bundle["result"]["analysis_status"], "not_generated")
+        self.assertNotIn("analysis_outputs", rust_bundle["result"])
+        self.assertEqual(rust_bundle["run"]["monte_carlo_backend"], "rust_event_time_v2")
+        self.assertEqual(rust_bundle["run"]["execution_plan_fingerprints"], ["plan-sha"])
+        self.assertEqual(run_config["plan_cache_status"], "hit")
+        self.assertEqual(len(fake.calls), 1)
+        self.assertNotEqual(fake.calls[0][0][0]["seed"], fake.calls[0][0][1]["seed"])
+        self.assertEqual(
+            fake.calls[0][0][0]["canonical_inputs"],
+            fake.calls[0][0][1]["canonical_inputs"],
+        )
+        jsonschema.validate(rust_bundle["run"], json.loads((REPO_ROOT / "contracts/run.schema.json").read_text()))
+        jsonschema.validate(rust_bundle["result"], json.loads((REPO_ROOT / "contracts/result.schema.json").read_text()))
+        jsonschema.validate(
+            rust_bundle["artifact_manifest"],
+            json.loads((REPO_ROOT / "contracts/artifact_manifest.schema.json").read_text()),
+        )
+
+    def test_rust_monte_carlo_failure_is_explicit_and_does_not_fallback(self) -> None:
+        class FailingRustBackend:
+            def run_canonical_batch(self, samples, *, worker_threads, cache_dir):
+                raise RuntimeError("synthetic Rust failure")
+
+        adapter = SimulationAdapter(REPO_ROOT, rust_monte_carlo_backend=FailingRustBackend())
+        scenario = adapter.compile_scenario(
+            self._load_fixture("m9_6_platform_case_export.json")["project"],
+            model_family="aircraft_support_v1",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(AdapterError) as ctx:
+                adapter.run_monte_carlo_scenario(
+                    scenario,
+                    output_dir=Path(tmp),
+                    monte_carlo_config={
+                        "sample_count": 1,
+                        "parallel_cores": 1,
+                        "sweep": {
+                            "failureRates": [1.0],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [1],
+                        },
+                        "backend": "rust_event_time_v2",
+                        "output_scope": "core",
+                    },
+                )
+        self.assertEqual(ctx.exception.code, "rust_execution_failed")
+
+    def test_rust_monte_carlo_rejects_seed_identity_mismatch(self) -> None:
+        class WrongSeedRustBackend:
+            def run_canonical_batch(self, samples, *, worker_threads, cache_dir):
+                item = samples[0]
+                metrics = {key: 0 for key in CORE_MONTE_CARLO_METRIC_KEYS}
+                metrics.update({"mission_success_rate": 1.0, "spare_fill_rate": 1.0, "stop_reason": "horizon"})
+                return {"samples": [{
+                    "sample_index": item["sample_index"],
+                    "seed": item["seed"] + 1,
+                    "sweep": copy.deepcopy(item["sweep"]),
+                    "result": {"metrics": metrics},
+                }]}
+
+        adapter = SimulationAdapter(REPO_ROOT, rust_monte_carlo_backend=WrongSeedRustBackend())
+        scenario = adapter.compile_scenario(
+            self._load_fixture("m9_6_platform_case_export.json")["project"],
+            model_family="aircraft_support_v1",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(AdapterError) as ctx:
+                adapter.run_monte_carlo_scenario(
+                    scenario,
+                    output_dir=Path(tmp),
+                    monte_carlo_config={
+                        "sample_count": 1,
+                        "parallel_cores": 1,
+                        "sweep": {
+                            "failureRates": [1.0],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [1],
+                        },
+                        "backend": "rust_event_time_v2",
+                        "output_scope": "core",
+                    },
+                )
+        self.assertEqual(ctx.exception.code, "rust_result_contract_mismatch")
 
 if __name__ == "__main__":
     unittest.main()

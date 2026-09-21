@@ -2396,7 +2396,35 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
 
 
 def _normalize_experiment_plan_config(config: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(config, dict):
+        raise RunServiceError("bad_run_request", "ExperimentPlan config must be an object", field="config")
     plan_config = copy.deepcopy(config)
+    backend = plan_config.get("monteCarloBackend", "python")
+    output_scope = plan_config.get("monteCarloOutputScope", "full_analysis")
+    if backend not in {"python", "rust_event_time_v2"}:
+        raise RunServiceError(
+            "bad_run_request",
+            "monteCarloBackend must be python or rust_event_time_v2",
+            field="monteCarloBackend",
+            value=backend,
+        )
+    if output_scope not in {"core", "full_analysis"}:
+        raise RunServiceError(
+            "bad_run_request",
+            "monteCarloOutputScope must be core or full_analysis",
+            field="monteCarloOutputScope",
+            value=output_scope,
+        )
+    if backend == "rust_event_time_v2" and output_scope != "core":
+        raise RunServiceError(
+            "bad_run_request",
+            "rust_event_time_v2 requires monteCarloOutputScope=core",
+            field="monteCarloOutputScope",
+            backend=backend,
+            value=output_scope,
+        )
+    plan_config["monteCarloBackend"] = backend
+    plan_config["monteCarloOutputScope"] = output_scope
     branch_project = plan_config.get("projectJson") or plan_config.get("project_json")
     if not isinstance(branch_project, dict):
         plan_config["parallelCores"] = normalize_monte_carlo_parallel_cores(plan_config.get("parallelCores"))

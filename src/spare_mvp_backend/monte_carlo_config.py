@@ -37,6 +37,8 @@ class MonteCarloRunConfig:
     analysis_type: str = ""
     scenario_overrides: dict[str, Any] | None = None
     carry_list_config: dict[str, Any] | None = None
+    backend: str = "python"
+    output_scope: str = "full_analysis"
 
     def to_adapter_payload(self) -> dict[str, Any]:
         payload = {
@@ -47,6 +49,8 @@ class MonteCarloRunConfig:
                 "spareMultipliers": list(self.sweep["spareMultipliers"]),
                 "supportCapacities": list(self.sweep["supportCapacities"]),
             },
+            "backend": self.backend,
+            "output_scope": self.output_scope,
         }
         if self.mc_experiment_id:
             payload["mc_experiment_id"] = self.mc_experiment_id
@@ -119,6 +123,8 @@ def normalize_monte_carlo_run_config(
         analysis_type=normalized_analysis_type,
         scenario_overrides=scenario_overrides,
         carry_list_config=carry_list_config,
+        backend=str(plan_config.get("monteCarloBackend") or "python"),
+        output_scope=str(plan_config.get("monteCarloOutputScope") or "full_analysis"),
     )
 
 

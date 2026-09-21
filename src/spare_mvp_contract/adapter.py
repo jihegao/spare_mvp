@@ -17,6 +17,7 @@ import math
 import multiprocessing
 from pathlib import Path
 import re
+import time
 from typing import Any
 
 from src.spare_mvp_backend.project_payload import (
@@ -48,6 +49,11 @@ from src.spare_mvp_abm.aircraft_support_v1.organization_observability import (
     organization_graph_identity,
 )
 from src.spare_mvp_contract.task_reliability import build_task_reliability_result_fields
+from src.spare_mvp_contract.rust_monte_carlo import (
+    DefaultRustMonteCarloBackend,
+    RustMonteCarloBackend,
+    RustMonteCarloBackendError,
+)
 
 PROJECT_SCHEMA_VERSION = "project-v0"
 SCENARIO_SCHEMA_VERSION = "scenario-v0"
@@ -66,6 +72,36 @@ SPARE_SHORTFALL_TRUNCATION = {
     "mode": "clamp_0_1",
     "fields": ["fill_rate", "utilization", "shortage_probability"],
 }
+CORE_MONTE_CARLO_METRIC_KEYS = (
+    "avg_departure_delay",
+    "cancelled_sorties",
+    "completed_sorties",
+    "delayed_sorties",
+    "elapsed_minutes",
+    "failed_count",
+    "failed_sorties",
+    "in_flight_failures",
+    "launched_sorties",
+    "lru_failures",
+    "mean_transport_delay",
+    "mission_success_rate",
+    "planned_mission_waves",
+    "planned_sorties",
+    "postflight_count",
+    "preventive_maintenance_events",
+    "repairing_count",
+    "shortage_events",
+    "spare_consumed_total",
+    "spare_demand_total",
+    "spare_fill_rate",
+    "spare_immediately_filled_total",
+    "spare_stock_total",
+    "stop_reason",
+    "successful_mission_waves",
+    "total_transport_delay_minutes",
+    "transport_in_transit_count",
+    "transport_replenishment_events",
+)
 _PERIODIC_WEEKDAY_INDEXES = {
     "monday": 0,
     "mondaycompositetaskid": 0,
@@ -127,10 +163,16 @@ class AdapterError(ValueError):
 class SimulationAdapter:
     """Minimal M2a adapter over the repository-local contract bundle."""
 
-    def __init__(self, repo_root: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        repo_root: Path | str | None = None,
+        *,
+        rust_monte_carlo_backend: RustMonteCarloBackend | None = None,
+    ) -> None:
         self.repo_root = Path(repo_root).resolve() if repo_root else Path(__file__).resolve().parents[2]
         self.contracts_dir = self.repo_root / "contracts"
         self._compiled_project_snapshots: dict[str, dict[str, Any]] = {}
+        self.rust_monte_carlo_backend = rust_monte_carlo_backend or DefaultRustMonteCarloBackend()
 
     def validate_project(self, project: dict[str, Any]) -> dict[str, Any]:
         """Validate the roots required by the current Project JSON contract."""
@@ -2797,29 +2839,102 @@ class SimulationAdapter:
 
         inputs = scenario["simulation_inputs"]
         config = self._require_monte_carlo_config(monte_carlo_config=monte_carlo_config, legacy_config={})
+        backend = str(config.get("backend") or "python")
+        output_scope = str(config.get("output_scope") or "full_analysis")
+        if backend not in {"python", "rust_event_time_v2"}:
+            raise AdapterError(
+                "bad_analysis_request",
+                "Monte Carlo backend must be python or rust_event_time_v2",
+                backend=backend,
+            )
+        if output_scope not in {"core", "full_analysis"}:
+            raise AdapterError(
+                "bad_analysis_request",
+                "Monte Carlo output_scope must be core or full_analysis",
+                output_scope=output_scope,
+            )
+        if backend == "rust_event_time_v2" and output_scope != "core":
+            raise AdapterError(
+                "bad_analysis_request",
+                "rust_event_time_v2 requires output_scope=core",
+                backend=backend,
+                output_scope=output_scope,
+            )
+        core_only = output_scope == "core"
         run_id = run_id or f"run-{scenario['scenario_id']}-mc"
         result_id = f"result-{run_id}"
         manifest_id = f"artifact-manifest-{run_id}"
         mc_experiment_id = config.get("mc_experiment_id") or f"mc-{run_id.removeprefix('run-')}"
         now = _utc_now()
 
+        preparation_started = time.perf_counter()
         profile = self._monte_carlo_profile(scenario, monte_carlo_config=config)
         parallel_cores = self._validate_monte_carlo_parallel_cores(config.get("parallel_cores", 1))
         worker_count = min(parallel_cores, len(profile["sample_points"]))
         sampling_contract = self._aircraft_support_v1_monte_carlo_sampling_contract(profile)
-        samples, failed_samples = self._execute_aircraft_support_v1_monte_carlo_samples(
-            inputs,
-            profile["sample_points"],
-            steps=steps,
-            worker_count=worker_count,
-        )
+        canonical_input_fingerprint = hashlib.sha256(
+            json.dumps(inputs, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        preparation_seconds = time.perf_counter() - preparation_started
+        execution_started = time.perf_counter()
+        engine_metadata: dict[str, Any] = {
+            "engine_version": "python-reference",
+            "source_commit": None,
+            "semantic_profile": "legacy-minute-v1",
+        }
+        plan_cache_status = "not_applicable"
+        engine_timings: dict[str, Any] = {}
+        rust_metadata: dict[str, Any] = {}
+        if backend == "rust_event_time_v2":
+            samples, failed_samples, rust_metadata = self._execute_rust_monte_carlo_samples(
+                inputs,
+                profile["sample_points"],
+                steps=steps,
+                worker_count=worker_count,
+                cache_dir=Path(output_dir) / "sim-engine-cache",
+            )
+            engine_metadata = copy.deepcopy(rust_metadata.get("engine_metadata") or {})
+            engine_metadata.setdefault("semantic_profile", "event-time-v2")
+            plan_cache_status = str(rust_metadata.get("plan_cache_status") or "unknown")
+            raw_engine_timings = rust_metadata.get("timings") or {}
+            engine_timings = ({
+                str(key): float(value)
+                for key, value in raw_engine_timings.items()
+                if is_finite_json_number(value) and float(value) >= 0
+            } if isinstance(raw_engine_timings, dict) else {})
+            reported_worker_count = rust_metadata.get("worker_count")
+            if isinstance(reported_worker_count, int) and not isinstance(reported_worker_count, bool):
+                worker_count = min(len(profile["sample_points"]), max(1, reported_worker_count))
+        else:
+            samples, failed_samples = self._execute_aircraft_support_v1_monte_carlo_samples(
+                inputs,
+                profile["sample_points"],
+                steps=steps,
+                worker_count=worker_count,
+            )
+        execution_seconds = time.perf_counter() - execution_started
         if not samples:
             raise AdapterError(
                 "monte_carlo_all_samples_failed",
                 "aircraft_support_v1 Monte Carlo run has no successful samples to aggregate",
                 failed_samples=failed_samples,
             )
+        if core_only:
+            for sample in samples:
+                metrics_payload = sample.get("metrics") if isinstance(sample.get("metrics"), dict) else {}
+                missing_metrics = [key for key in CORE_MONTE_CARLO_METRIC_KEYS if key not in metrics_payload]
+                if missing_metrics:
+                    raise AdapterError(
+                        "rust_result_contract_mismatch" if backend == "rust_event_time_v2" else "sample_result_contract_mismatch",
+                        "core Monte Carlo sample is missing required metrics",
+                        sample_index=sample.get("sample_index"),
+                        missing_metrics=missing_metrics,
+                    )
+                sample["metrics"] = {
+                    key: copy.deepcopy(metrics_payload[key]) for key in CORE_MONTE_CARLO_METRIC_KEYS
+                }
 
+        aggregation_started = time.perf_counter()
         organization_identity = organization_graph_identity(
             inputs.get("support_network", {}).get("organization_graph")
         )
@@ -2839,8 +2954,45 @@ class SimulationAdapter:
             aggregate["mission_success_probability"] = aggregate["mission_success_rate"]
         elif "sortie_completion_rate" in aggregate:
             aggregate["mission_success_probability"] = aggregate["sortie_completion_rate"]
+        aggregation_seconds = time.perf_counter() - aggregation_started
+        cache_groups = copy.deepcopy(rust_metadata.get("cache_groups") or []) if backend == "rust_event_time_v2" else []
+        execution_plan_fingerprints = sorted({
+            str(group.get("plan_fingerprint"))
+            for group in cache_groups
+            if isinstance(group, dict) and group.get("plan_fingerprint")
+        })
+        if backend == "python":
+            execution_plan_fingerprints = [canonical_input_fingerprint]
+        elif not execution_plan_fingerprints and engine_metadata.get("execution_plan_fingerprint"):
+            execution_plan_fingerprints = [str(engine_metadata["execution_plan_fingerprint"])]
+        execution_metadata = {
+            "monte_carlo_backend": backend,
+            "monte_carlo_output_scope": output_scope,
+            "analysis_status": "not_generated" if core_only else "generated",
+            "engine_metadata": engine_metadata,
+            "canonical_input_fingerprint": canonical_input_fingerprint,
+            "execution_plan_fingerprints": execution_plan_fingerprints,
+            **({"execution_plan_fingerprint": execution_plan_fingerprints[0]} if len(execution_plan_fingerprints) == 1 else {}),
+            "cache_groups": cache_groups,
+            "plan_cache_status": plan_cache_status,
+            "parallel_cores": parallel_cores,
+            "worker_count": worker_count,
+            "completed_sample_count": len(samples),
+            "failed_sample_count": len(failed_samples),
+            "throughput": len(samples) / execution_seconds if execution_seconds > 0 else None,
+            "throughput_scope": "core_execution_samples_per_second",
+            "output_size_bytes": 0,
+            "timings": {
+                "sample_preparation_seconds": preparation_seconds,
+                "execution_seconds": execution_seconds,
+                "core_aggregation_seconds": aggregation_seconds,
+                "payload_serialization_seconds": 0.0,
+                "artifact_persistence_seconds": 0.0,
+                **engine_timings,
+            },
+        }
         base_artifact_id = f"monte_carlo_base-{run_id}"
-        projections = self._aircraft_support_v1_analysis_projections(
+        projections = None if core_only else self._aircraft_support_v1_analysis_projections(
             aggregate,
             base_artifact_id,
             samples=samples,
@@ -2848,7 +3000,7 @@ class SimulationAdapter:
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
             simulation_inputs=inputs,
         )
-        behavior_scope = AircraftSupportV1Model.behavior_scope()
+        behavior_scope = {} if core_only else AircraftSupportV1Model.behavior_scope()
         input_project = self._input_project_for_scenario(scenario)
         base_artifact = {
             "artifact_type": "monte_carlo_base",
@@ -2878,10 +3030,15 @@ class SimulationAdapter:
             "failed_samples": failed_samples,
             "aggregate_metrics": aggregate,
             "metric_moments": metric_moments,
+            **copy.deepcopy(execution_metadata),
             "logs_summary": {
                 "completed_samples": len(samples),
                 "failed_samples": len(failed_samples),
-                "executor": "local_sync_aircraft_support_v1" if worker_count == 1 else "process_pool_aircraft_support_v1",
+                "executor": (
+                    "rust_event_time_v2"
+                    if backend == "rust_event_time_v2"
+                    else "local_sync_aircraft_support_v1" if worker_count == 1 else "process_pool_aircraft_support_v1"
+                ),
                 "parallel_cores": parallel_cores,
                 "worker_count": worker_count,
             },
@@ -2903,6 +3060,7 @@ class SimulationAdapter:
             "sampling_contract": copy.deepcopy(sampling_contract),
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
             "organization_graph_identity": organization_identity,
+            **copy.deepcopy(execution_metadata),
         }
         sample_results = {
             "schema_version": "sample-results-v0",
@@ -2913,6 +3071,7 @@ class SimulationAdapter:
             "failed_samples": failed_samples,
             "organization_graph_identity": organization_identity,
             "organization_dispatch_summary": organization_summary,
+            **copy.deepcopy(execution_metadata),
         }
         aggregate_result = {
             "schema_version": "aggregate-result-v0",
@@ -2924,11 +3083,13 @@ class SimulationAdapter:
             "failed_sample_count": len(failed_samples),
             "organization_graph_identity": organization_identity,
             "organization_dispatch_summary": organization_summary,
+            **copy.deepcopy(execution_metadata),
         }
         metrics = {
             "schema_version": "metrics-v0",
             "run_id": run_id,
             "metrics": aggregate,
+            **copy.deepcopy(execution_metadata),
         }
         report = {
             "schema_version": "run-report-v0",
@@ -2948,21 +3109,23 @@ class SimulationAdapter:
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
             "organization_graph_identity": organization_identity,
             "organization_dispatch_summary": organization_summary,
+            **copy.deepcopy(execution_metadata),
         }
         event_log = {
             "schema_version": "run-log-v0",
             "run_id": run_id,
             "organization_graph_identity": organization_identity,
             "organization_dispatch_summary": organization_summary,
+            **copy.deepcopy(execution_metadata),
             "events": [
                 {"event": "run_started", "at": now},
-                {
+                *([{
                     "event": "m9_7_4_monte_carlo_scope_declared",
                     "at": now,
                     "behavior_driving_fields": behavior_scope["behavior_driving_fields"],
                     "fail_closed_fields": behavior_scope["fail_closed_fields"],
                     "m9_7_4_coverage_hardening_fields": behavior_scope["m9_7_4_coverage_hardening_fields"],
-                },
+                }] if not core_only else []),
                 {
                     "event": "samples_completed",
                     "at": now,
@@ -2972,7 +3135,7 @@ class SimulationAdapter:
                 {"event": "run_completed", "at": now, "status": "succeeded"},
             ],
         }
-        visualization_state_series = self._visualization_state_series_payload(
+        visualization_state_series = None if core_only else self._visualization_state_series_payload(
             run_id=run_id,
             scenario=scenario,
             model_family="aircraft_support_v1",
@@ -2996,7 +3159,8 @@ class SimulationAdapter:
             "lifecycle_trace": copy.deepcopy(samples[0].get("lifecycle_trace") or []),
             "organization_graph_identity": organization_identity,
             "organization_dispatch_summary": organization_summary,
-            "analysis_outputs": {
+            "analysis_status": execution_metadata["analysis_status"],
+            **({"analysis_outputs": {
                 "large_sample_summary": projections["large_sample_summary"]["data"],
                 "spare_shortage": projections["spare_shortfall"]["data"],
                 "carry_list": projections["carry_list"]["data"],
@@ -3004,7 +3168,7 @@ class SimulationAdapter:
                 "downtime_factors": projections["downtime_factors"]["data"],
                 "monte_carlo_metric_moments": metric_moments,
                 "organization_dispatch": organization_summary,
-            },
+            }} if projections is not None else {}),
         }
         run = {
             "schema_version": RUN_SCHEMA_VERSION,
@@ -3026,21 +3190,24 @@ class SimulationAdapter:
             "experiment_id": f"experiment-{run_id}",
             "experiment_type": "monte_carlo",
             "mc_experiment_id": mc_experiment_id,
+            **copy.deepcopy(execution_metadata),
         }
 
         output_root = Path(output_dir)
         run_dir = output_root / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        artifact_specs = [
+        core_artifact_specs = [
             ("run_config", "run-config.json", run_config, "run-config-v0"),
             ("input_project", "input-project.json", input_project, PROJECT_SCHEMA_VERSION),
             ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
             ("sample_results", "sample-results.json", sample_results, "sample-results-v0"),
             ("aggregate_result", "aggregate-result.json", aggregate_result, "aggregate-result-v0"),
-            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
             ("metrics", "metrics.json", metrics, "metrics-v0"),
             ("report", "report.json", report, "run-report-v0"),
             ("log", "events-log.json", event_log, "run-log-v0"),
+        ]
+        analysis_artifact_specs = [] if core_only else [
+            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
             ("monte_carlo_base", "monte-carlo-base.json", base_artifact, None),
             (
                 "visualization_state_series",
@@ -3053,17 +3220,45 @@ class SimulationAdapter:
             ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
             ("analysis_projection_downtime_factors", "downtime-factors.json", projections["downtime_factors"], "analysis-projection-v0"),
         ]
+        artifact_specs = core_artifact_specs if core_only else core_artifact_specs + analysis_artifact_specs
+        serialization_started = time.perf_counter()
+        for _kind, _filename, payload, _schema_version in artifact_specs:
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        serialization_seconds = time.perf_counter() - serialization_started
+        execution_metadata["timings"]["payload_serialization_seconds"] = serialization_seconds
+        for payload in [run_config, sample_results, aggregate_result, metrics, report, event_log, base_artifact]:
+            payload.setdefault("timings", {})["payload_serialization_seconds"] = serialization_seconds
+        run["timings"]["payload_serialization_seconds"] = serialization_seconds
+        artifact_write_started = time.perf_counter()
         artifacts = [
             self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
             for kind, filename, payload, schema_version in artifact_specs
         ]
+        artifact_persistence_seconds = time.perf_counter() - artifact_write_started
+        output_size_bytes = sum(int(artifact.get("size_bytes") or 0) for artifact in artifacts)
+        execution_metadata["timings"]["artifact_persistence_seconds"] = artifact_persistence_seconds
+        execution_metadata["output_size_bytes"] = output_size_bytes
+        payload_by_kind = {kind: payload for kind, _filename, payload, _schema_version in artifact_specs}
+        for payload in [run_config, sample_results, aggregate_result, metrics, report, event_log, base_artifact]:
+            payload.setdefault("timings", {})["artifact_persistence_seconds"] = artifact_persistence_seconds
+            payload["output_size_bytes"] = output_size_bytes
+        run["timings"]["artifact_persistence_seconds"] = artifact_persistence_seconds
+        run["output_size_bytes"] = output_size_bytes
+        for artifact in artifacts:
+            payload = payload_by_kind[artifact["kind"]]
+            target = output_root / artifact["path"]
+            self._write_json(target, payload, compact=artifact["kind"] == "visualization_state_series")
+            data = target.read_bytes()
+            artifact["sha256"] = hashlib.sha256(data).hexdigest()
+            artifact["size_bytes"] = len(data)
         for artifact in artifacts:
             kind = artifact.get("kind", "")
             if str(kind).startswith("analysis_projection_"):
                 artifact["source_artifact_id"] = base_artifact_id
                 artifact["analysis_type"] = str(kind).removeprefix("analysis_projection_")
-        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
-        self._annotate_representative_sample_artifact(artifacts, samples)
+        if not core_only:
+            self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
+            self._annotate_representative_sample_artifact(artifacts, samples)
         manifest = {
             "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
             "artifact_manifest_id": manifest_id,
@@ -3071,10 +3266,162 @@ class SimulationAdapter:
             "scenario_id": scenario["scenario_id"],
             "scenario_version": scenario["scenario_version"],
             "created_at": now,
+            **copy.deepcopy(execution_metadata),
             "artifacts": artifacts,
         }
         self._write_json(run_dir / "artifact-manifest.json", manifest)
         return {"run": run, "result": result, "artifact_manifest": manifest}
+
+    def _execute_rust_monte_carlo_samples(
+        self,
+        inputs: dict[str, Any],
+        sample_points: list[dict[str, Any]],
+        *,
+        steps: int,
+        worker_count: int,
+        cache_dir: Path,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        canonical_samples: list[dict[str, Any]] = []
+        points_by_index: dict[int, dict[str, Any]] = {}
+        for sample_index, point in enumerate(sample_points):
+            sample_inputs = copy.deepcopy(inputs)
+            self._apply_aircraft_support_v1_failure_multiplier(sample_inputs, point["failure_rate"])
+            self._apply_aircraft_support_v1_spare_multiplier(sample_inputs, point["spare_multiplier"])
+            self._apply_aircraft_support_v1_capacity(sample_inputs, point["support_capacity"])
+            sweep = {
+                "failure_rate": point["failure_rate"],
+                "spare_multiplier": point["spare_multiplier"],
+                "support_capacity": point["support_capacity"],
+            }
+            canonical_samples.append({
+                "sample_index": sample_index,
+                "seed": point["seed"],
+                "sweep": sweep,
+                "canonical_inputs": sample_inputs,
+                "steps": steps,
+            })
+            points_by_index[sample_index] = point
+        try:
+            raw_batch = self.rust_monte_carlo_backend.run_canonical_batch(
+                canonical_samples,
+                worker_threads=worker_count,
+                cache_dir=cache_dir,
+            )
+        except RustMonteCarloBackendError as exc:
+            raise AdapterError(exc.code, str(exc), **exc.details) from exc
+        except Exception as exc:
+            raise AdapterError(
+                "rust_execution_failed",
+                str(exc) or "Rust Monte Carlo execution failed",
+                exception_type=type(exc).__name__,
+            ) from exc
+        if isinstance(raw_batch, list):
+            payload: dict[str, Any] = {"samples": raw_batch}
+        elif isinstance(raw_batch, dict):
+            payload = copy.deepcopy(raw_batch)
+        else:
+            raise AdapterError(
+                "rust_result_contract_mismatch",
+                "Rust batch result must be an object or list",
+                result_type=type(raw_batch).__name__,
+            )
+        raw_samples = payload.get("samples")
+        raw_failures = payload.get("failed_samples", [])
+        if not isinstance(raw_samples, list) or not isinstance(raw_failures, list):
+            raise AdapterError(
+                "rust_result_contract_mismatch",
+                "Rust batch result samples and failed_samples must be lists",
+            )
+        samples = [self._normalize_rust_monte_carlo_sample(item, points_by_index) for item in raw_samples]
+        failures: list[dict[str, Any]] = []
+        for failure in raw_failures:
+            if not isinstance(failure, dict) or not isinstance(failure.get("sample_index"), int):
+                raise AdapterError(
+                    "rust_result_contract_mismatch",
+                    "Rust failed sample must contain integer sample_index",
+                )
+            failures.append(copy.deepcopy(failure))
+        indexes = [sample["sample_index"] for sample in samples] + [failure["sample_index"] for failure in failures]
+        if (
+            len(indexes) != len(set(indexes))
+            or any(index not in points_by_index for index in indexes)
+            or set(indexes) != set(points_by_index)
+        ):
+            raise AdapterError(
+                "rust_result_contract_mismatch",
+                "Rust batch result must contain exactly one outcome for each sample_index",
+                sample_indexes=indexes,
+            )
+        samples.sort(key=lambda item: item["sample_index"])
+        failures.sort(key=lambda item: item["sample_index"])
+        metadata = {
+            "engine_metadata": copy.deepcopy(payload.get("engine_metadata") or {}),
+            "plan_cache_status": payload.get("plan_cache_status", "unknown"),
+            "timings": copy.deepcopy(payload.get("timings") or {}),
+            "worker_count": payload.get("worker_count", worker_count),
+            "cache_groups": copy.deepcopy(payload.get("cache_groups") or []),
+        }
+        return samples, failures, metadata
+
+    def _normalize_rust_monte_carlo_sample(
+        self,
+        raw_sample: Any,
+        points_by_index: dict[int, dict[str, Any]],
+    ) -> dict[str, Any]:
+        if not isinstance(raw_sample, dict) or not isinstance(raw_sample.get("sample_index"), int):
+            raise AdapterError(
+                "rust_result_contract_mismatch",
+                "Rust sample must contain integer sample_index",
+            )
+        sample_index = raw_sample["sample_index"]
+        point = points_by_index.get(sample_index)
+        result = raw_sample.get("result") if isinstance(raw_sample.get("result"), dict) else raw_sample
+        metrics = result.get("metrics") if isinstance(result, dict) else None
+        if point is None or not isinstance(metrics, dict):
+            raise AdapterError(
+                "rust_result_contract_mismatch",
+                "Rust sample must reference a known sample and contain result.metrics",
+                sample_index=sample_index,
+            )
+        sweep = {
+            "failure_rate": point["failure_rate"],
+            "spare_multiplier": point["spare_multiplier"],
+            "support_capacity": point["support_capacity"],
+        }
+        if raw_sample.get("seed") != point["seed"]:
+            raise AdapterError(
+                "rust_result_contract_mismatch",
+                "Rust sample seed does not match the requested seed",
+                sample_index=sample_index,
+                expected_seed=point["seed"],
+                actual_seed=raw_sample.get("seed"),
+            )
+        if "sweep" in raw_sample and raw_sample.get("sweep") != sweep:
+            raise AdapterError(
+                "rust_result_contract_mismatch",
+                "Rust sample sweep does not match the requested sweep",
+                sample_index=sample_index,
+                expected_sweep=sweep,
+                actual_sweep=raw_sample.get("sweep"),
+            )
+        return {
+            "sample_index": sample_index,
+            "seed": point["seed"],
+            "sweep": copy.deepcopy(sweep),
+            "metrics": copy.deepcopy(metrics),
+            "mission_wave_reliability": copy.deepcopy(result.get("mission_wave_reliability") or []),
+            "period_outcome": copy.deepcopy(result.get("period_outcome") or {}),
+            "frames": [],
+            "events": copy.deepcopy(result.get("events") or []),
+            "downtime_events": copy.deepcopy(result.get("downtime_events") or []),
+            "lifecycle_trace": copy.deepcopy(result.get("lifecycle_trace") or []),
+            "organization_graph_identity": copy.deepcopy(result.get("organization_graph_identity") or {}),
+            "organization_dispatch_summary": copy.deepcopy(result.get("organization_dispatch_summary") or {}),
+            "rng_requests": copy.deepcopy(result.get("rng_requests") or result.get("sample_requests") or []),
+            "terminal_state": copy.deepcopy(result.get("terminal_state") or {}),
+            "stop_reason": result.get("stop_reason"),
+            "time": result.get("time"),
+        }
 
     def _execute_aircraft_support_v1_monte_carlo_samples(
         self,
