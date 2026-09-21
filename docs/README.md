@@ -57,6 +57,7 @@
 | [`../front/rms-allocation-engine.mjs`](../front/rms-allocation-engine.mjs) | RMS 分配本地计算入口，按规则归一化节点权重并换算失效率、MTBF 和 MTTR。 |
 | [`../front/rms-allocation-workbench.mjs`](../front/rms-allocation-workbench.mjs) | RMS 分配页面渲染模块。 |
 | [`../src/spare_mvp_backend/http_server.py`](../src/spare_mvp_backend/http_server.py) | 本地标准库 HTTP facade，同源服务 `/api` 与 `front/` 静态文件。 |
+| [`simulation-tasks.md`](simulation-tasks.md) | 耗时仿真任务的创建、状态、结果、并发和过期语义。 |
 | [`../src/spare_mvp_backend/simulation_analysis_cases.py`](../src/spare_mvp_backend/simulation_analysis_cases.py) | 阶段 6P 仿真分析验收数据包生成器。 |
 | [`../AGENTS.md`](../AGENTS.md) | 统一的 Agent 协作、契约归属和验证规则。 |
 

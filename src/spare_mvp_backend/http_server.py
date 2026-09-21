@@ -19,6 +19,12 @@ from src.spare_mvp_backend.api import BackendApi, BackendApiError
 from src.spare_mvp_backend.execution_context import VisualizationSessionStore
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
+from src.spare_mvp_backend.simulation_tasks import (
+    EngineRunner,
+    SimulationEngine,
+    SimulationEngineAdapter,
+    SimulationTaskService,
+)
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -56,6 +62,7 @@ def create_backend_server(
     repo_root: Path | str | None = None,
     database_path: Path | str = ":memory:",
     output_dir: Path | str | None = None,
+    simulation_engine: SimulationEngine | None = None,
 ) -> ThreadingHTTPServer:
     """Create a local HTTP server exposing the frontend `/api` contract."""
     root = Path(repo_root).resolve() if repo_root else Path(__file__).resolve().parents[2]
@@ -81,6 +88,27 @@ def create_backend_server(
     run_lifecycle_lock = threading.Lock()
     visualization_session_store = VisualizationSessionStore()
     visualization_session_lifecycle_lock = threading.RLock()
+
+    def execute_simulation_task(
+        request: dict[str, Any],
+        progress_callback: Any,
+    ) -> dict[str, Any]:
+        task_connection = open_connection()
+        try:
+            task_api = BackendApi(
+                ContractRepository(task_connection),
+                adapter,
+                output_dir=artifact_dir,
+                run_lifecycle_lock=run_lifecycle_lock,
+                visualization_session_store=visualization_session_store,
+                visualization_session_lifecycle_lock=visualization_session_lifecycle_lock,
+            )
+            return _run_lite_mesa_analysis_request(task_api, request, progress_callback=progress_callback)
+        finally:
+            task_connection.close()
+
+    task_engine = simulation_engine or SimulationEngineAdapter(execute_simulation_task)
+    simulation_task_service = SimulationTaskService(EngineRunner(task_engine))
 
     class BackendRequestHandler(BaseHTTPRequestHandler):
         server_version = "SpareMvpBackend/0.1"
@@ -141,12 +169,16 @@ def create_backend_server(
                     status = 410
                 elif exc.code == "request_too_large":
                     status = 413
+                elif exc.code == "simulation_task_not_found":
+                    status = 404
                 elif exc.code in {
                     "project_already_exists",
                     "project_version_conflict",
                     "experiment_plan_frozen",
                     "experiment_plan_version_conflict",
                     "frozen_plan_changed",
+                    "simulation_task_busy",
+                    "simulation_task_not_completed",
                 }:
                     status = 409
                 self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
@@ -204,6 +236,21 @@ def create_backend_server(
                 return api.login(str(body.get("username") or ""), str(body.get("password") or ""))
             if self.command == "GET" and route == "/auth/session":
                 return {"user": self._require_user()}
+            if self.command == "POST" and route == "/simulation-tasks":
+                actor = self._require_user()
+                _require_lite_mesa_task_kind(body)
+                return simulation_task_service.submit(actor["user_id"], body)
+            if self.command == "GET" and len(parts) == 2 and parts[0] == "simulation-tasks":
+                actor = self._require_user()
+                return simulation_task_service.status(actor["user_id"], parts[1])
+            if (
+                self.command == "GET"
+                and len(parts) == 3
+                and parts[0] == "simulation-tasks"
+                and parts[2] == "result"
+            ):
+                actor = self._require_user()
+                return simulation_task_service.result(actor["user_id"], parts[1])
             if self.command == "GET" and route.startswith("/audit-events"):
                 actor = self._require_user({"系统管理员", "数据管理员"})
                 query = urlparse(self.path).query
@@ -350,19 +397,9 @@ def create_backend_server(
                 actor = self._require_user()
                 return api.delete_experiment_plan(parts[1], parts[3], actor_user_id=actor["user_id"])
             if self.command == "POST" and route == "/mesa-analysis-runs":
-                self._require_user()
-                project_json = body.get("project") if isinstance(body.get("project"), dict) else body.get("projectJson")
-                context = body.get("context") if isinstance(body.get("context"), dict) else None
-                if context is None and not isinstance(project_json, dict):
-                    project_json = body
-                settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
-                return api.run_lite_mesa_analysis(
-                    project_json if isinstance(project_json, dict) else None,
-                    analysis_type=str(body.get("analysis_type") or body.get("analysisType") or ""),
-                    settings=settings,
-                    model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
-                    context=context,
-                )
+                actor = self._require_user()
+                submitted = simulation_task_service.submit(actor["user_id"], body)
+                return simulation_task_service.wait_result(actor["user_id"], submitted["task_id"])
             if self.command == "POST" and route == "/visualization-sessions":
                 actor = self._require_user()
                 context = body.get("context") if isinstance(body.get("context"), dict) else None
@@ -623,6 +660,39 @@ def _safe_download_filename(filename: str) -> str:
             safe_chars.append(char)
     safe = "".join(safe_chars).strip()
     return safe or "download"
+
+
+def _require_lite_mesa_task_kind(body: dict[str, Any]) -> None:
+    kind = str(body.get("kind") or "lite_mesa_analysis").strip()
+    if kind != "lite_mesa_analysis":
+        raise BackendApiError(
+            "unsupported_simulation_task_kind",
+            f"Unsupported simulation task kind: {kind or 'empty'}",
+            kind=kind,
+            supported_kinds=["lite_mesa_analysis"],
+        )
+
+
+def _run_lite_mesa_analysis_request(
+    api: BackendApi,
+    body: dict[str, Any],
+    *,
+    progress_callback: Any = None,
+) -> dict[str, Any]:
+    _require_lite_mesa_task_kind(body)
+    project_json = body.get("project") if isinstance(body.get("project"), dict) else body.get("projectJson")
+    context = body.get("context") if isinstance(body.get("context"), dict) else None
+    if context is None and not isinstance(project_json, dict):
+        project_json = body
+    settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
+    return api.run_lite_mesa_analysis(
+        project_json if isinstance(project_json, dict) else None,
+        analysis_type=str(body.get("analysis_type") or body.get("analysisType") or ""),
+        settings=settings,
+        model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
+        context=context,
+        progress_callback=progress_callback,
+    )
 
 
 def main() -> None:
