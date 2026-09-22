@@ -4139,7 +4139,7 @@ test("phase 6C reliability reuses per-sample detail and separate wave chart with
   assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
-  assert.match(formalReliabilitySource, /renderLiteMesaMissionReliabilityWaveChart\(rows, formalProjection\.sampleCount\)/);
+  assert.match(formalReliabilitySource, /renderLiteMesaMissionReliabilityWaveChart\(rows, formalProjection\.totalSamples\)/);
   assert.match(formalReliabilitySource, /renderTaskReliabilityDetailTable\(rows, "formal-mission-waves"\)/);
   assert.match(appSource, /function renderLiteMesaMissionReliabilityWaveChart/);
   assert.match(appSource, /meanMissionSuccessRate/);

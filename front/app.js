@@ -20139,7 +20139,7 @@ function renderFormalProjectionBody(formalProjection) {
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
-    return `${renderTaskReliabilityDetailTable(rows, "formal-mission-waves")} ${renderLiteMesaMissionReliabilityWaveChart(rows, formalProjection.sampleCount)}`;
+    return `${renderTaskReliabilityDetailTable(rows, "formal-mission-waves")} ${renderLiteMesaMissionReliabilityWaveChart(rows, formalProjection.totalSamples)}`;
   }
   if (formalProjection.analysisType === "downtime_factors") {
     const rows = formalProjection.rows || [];

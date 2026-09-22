@@ -176,7 +176,7 @@ def create_backend_server(
                     status = 413
                 elif exc.code == "analysis_export_too_large":
                     status = 413
-                elif exc.code == "simulation_task_not_found":
+                elif exc.code in {"simulation_task_not_found", "modeling_snapshot_not_found"}:
                     status = 404
                 elif exc.code in {
                     "project_already_exists",
