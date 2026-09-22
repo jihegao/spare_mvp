@@ -8773,22 +8773,22 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(resultCards, /总样本[\s\S]*<strong>4<\/strong>/);
     assert.match(resultCards, /成功样本[\s\S]*<strong>3<\/strong>/);
     assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
-    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
-    assert.match(resultCards, /使用可用度\(A\)[\s\S]*<strong>0\.81<\/strong>/);
-    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.50<\/strong>/);
-    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.13<\/strong>/);
+    assert.match(resultCards, /任务可靠度[\s\S]*<strong>73\.00%<\/strong>/);
+    assert.match(resultCards, /使用可用度\(A\)[\s\S]*<strong>81\.00%<\/strong>/);
+    assert.match(resultCards, /备件满足率[\s\S]*<strong>50\.00%<\/strong>/);
+    assert.match(resultCards, /备件利用率[\s\S]*<strong>12\.50%<\/strong>/);
     assert.doesNotMatch(resultCards, /比例|架次\/机\/天|小时|项/);
     assert.match(metricTable, /<th>样本均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
     assert.doesNotMatch(metricTable, /跨样本总体比率/);
-    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>备件满足率<\/td>\s*<td>0\.50<\/td>\s*<td>0\.5000<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
-    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.13<\/td>\s*<td>0\.0313<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
-    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>73\.00%<\/td>\s*<td>0\.0123<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>81\.00%<\/td>\s*<td>0\.0064<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>备件满足率<\/td>\s*<td>50\.00%<\/td>\s*<td>0\.5000<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>12\.50%<\/td>\s*<td>0\.0313<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00%<\/td>\s*<td>不可计算<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
     assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
     assert.doesNotMatch(metricTable, /维修积压/);
-    assert.doesNotMatch(metricTable, /比例²|\(架次\/机\/天\)²|小时²|项²/);
+    assert.doesNotMatch(metricTable, /\(架次\/机\/天\)²|小时²|项²/);
     for (const label of ["任务可靠度", "使用可用度\\(A\\)", "备件满足率", "备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }
@@ -8806,8 +8806,8 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.equal(exportRequest.experiment_name, "当前项目");
     assert.equal(exportRequest.analysis_name, "蒙特卡洛分析");
     assert.match(exportRequest.export_date, /^\d{8}$/);
-    assert.ok(exportRequest.summary.some((row) => row[0] === "备件满足率" && row[1] === "0.50"));
-    assert.ok(exportRequest.summary.some((row) => row[0] === "备件利用率" && row[1] === "0.13"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "备件满足率" && row[1] === "50.00%"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "备件利用率" && row[1] === "12.50%"));
     assert.equal(exportRequest.summary.some((row) => String(row[0]).includes("跨样本总体")), false);
     assert.deepEqual(exportRequest.detail_sections[0].columns, ["业务指标", "样本均值", "样本方差（n-1）", "单位", "有效样本数"]);
     assert.equal(exportRequest.detail_sections[0].rows.some((row) => row[0] === "维修积压"), false);
@@ -8816,6 +8816,34 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.equal(runtime.downloads.at(-1).download, `Runtime 项目-当前项目-蒙特卡洛分析-${exportRequest.export_date}.xlsx`);
   } finally {
     runtime.restore();
+  }
+});
+
+test("Monte Carlo small utilization stays distinguishable from zero in page and Excel", async () => {
+  for (const [mean, display] of [[1 / 2004, "0.05%"], [0.000001, "<0.01%"], [0, "0.00%"]]) {
+    const runtime = await setupRuntimeApp({
+      hash: "feature=spare-planning-monte-carlo-experiment-detail",
+      liteMesaAnalysisResponseOverrides: {
+        metric_moments: {
+          total_sample_count: 4, successful_sample_count: 4, failed_sample_count: 0,
+          metrics: [{ metric_id: "spare_utilization", mean, sample_variance: 0, valid_sample_count: 4 }]
+        }
+      }
+    });
+    try {
+      await runtime.click("[data-lite-mesa-action='run']");
+      const visibleDisplay = display.replace("<", "&lt;");
+      assert.ok(runtime.appNode.innerHTML.includes(`<strong>${visibleDisplay}</strong>`));
+      assert.ok(runtime.appNode.innerHTML.includes(`<td>${visibleDisplay}</td>`));
+      await runtime.click("[data-analysis-xlsx-export]");
+      const exported = analysisExportBodies(runtime).at(-1);
+      assert.deepEqual(exported.summary.find((row) => row[0] === "备件利用率"),
+        ["备件利用率", display, "均值：%；方差：比例²"]);
+      assert.deepEqual(exported.detail_sections[0].rows.find((row) => row[0] === "备件利用率"),
+        ["备件利用率", display, "0.0000", "均值：%；方差：比例²", 4]);
+    } finally {
+      runtime.restore();
+    }
   }
 });
 

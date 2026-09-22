@@ -7,6 +7,19 @@ import {
   normalizeMonteCarloMetricMoments
 } from "../front/monte-carlo-moments.mjs";
 
+test("ratio means distinguish zero, small utilization, and unavailable values", () => {
+  assert.equal(formatMonteCarloMoment(0, "ratio"), "0.00%");
+  assert.equal(formatMonteCarloMoment(1 / 501, "ratio"), "0.20%");
+  assert.equal(formatMonteCarloMoment(1 / (501 * 4), "ratio"), "0.05%");
+  assert.equal(formatMonteCarloMoment(0.000099, "ratio"), "<0.01%");
+  assert.equal(formatMonteCarloMoment(Number.MIN_VALUE, "ratio"), "<0.01%");
+  assert.equal(formatMonteCarloMoment(0.0001, "ratio"), "0.01%");
+  assert.equal(formatMonteCarloMoment(1, "ratio"), "100.00%");
+  assert.equal(formatMonteCarloMoment(null, "ratio"), "--");
+  assert.equal(formatMonteCarloMoment(0.03125, "ratio", { variance: true }), "0.0313");
+  assert.equal(formatMonteCarloMoment(0.125, "number"), "0.13");
+});
+
 test("moments exclude strings, nonfinite values, booleans, metadata, and use n-1", () => {
   const moments = buildMonteCarloMetricMoments([
     {

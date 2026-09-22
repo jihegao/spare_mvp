@@ -169,8 +169,12 @@ export function normalizeMonteCarloMetricMoments(payload, samples = [], counts =
   };
 }
 
-export function formatMonteCarloMoment(value, _valueFormat, { variance = false } = {}) {
+export function formatMonteCarloMoment(value, valueFormat, { variance = false } = {}) {
   if (!isFiniteNumber(value)) return variance ? "不可计算" : "--";
   if (variance) return value.toFixed(4);
+  if (valueFormat === "ratio") {
+    if (value > 0 && value < 0.0001) return "<0.01%";
+    return `${(value * 100).toFixed(2)}%`;
+  }
   return value.toFixed(2);
 }
