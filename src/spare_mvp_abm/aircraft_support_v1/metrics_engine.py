@@ -153,6 +153,7 @@ class MetricsEngineMixin:
                 self._downtime_event_sequence += 1
                 active["event_id"] = f"downtime-{self._downtime_event_sequence:06d}"
                 self._active_downtime_events[tail_number] = active
+            self._refresh_downtime_event(active, aircraft, job)
             active["end_minute"] = float(self.minute)
             active["duration_minutes"] = max(0.0, float(active["end_minute"]) - float(active["start_minute"]))
 
@@ -199,7 +200,7 @@ class MetricsEngineMixin:
         active_jobs: list[JobState] | tuple[JobState, ...],
     ) -> tuple[str, JobState | None] | None:
         spare_job = next(
-            (job for job in active_jobs if job.state == "waiting" and str(job.shortage_reason or "").startswith(("spare:", "in_transit"))),
+            (job for job in active_jobs if job.state == "waiting" and self._is_spare_shortage_job(job)),
             None,
         )
         equipment_job = next(
@@ -219,6 +220,61 @@ class MetricsEngineMixin:
         if preventive_job is not None:
             return "preventive", preventive_job
         return None
+
+    def _refresh_downtime_event(
+        self,
+        event: dict[str, Any],
+        aircraft: AircraftState,
+        job: JobState | None,
+    ) -> None:
+        """Refresh mutable end-state facts without changing the segment identity/count."""
+
+        event["fault_related"] = bool(
+            aircraft.failed_component_id is not None
+            or event.get("fault_related")
+            or (job is not None and job.kind == "repair")
+        )
+        if event.get("factor") != "spare_shortage" or job is None:
+            return
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        task = job.current_task if isinstance(job.current_task, dict) else {}
+        spare_type, required = self._shortage_spare_requirement(job, task)
+        node = self.nodes.get(job.resource_node_id)
+        available = int((node or {}).get("inventory", {}).get(spare_type, 0) or 0) if spare_type else None
+        arrivals = [
+            shipment.arrival_minute for shipment in self.transport_shipments
+            if shipment.job_id == job.job_id
+            and shipment.task_index == job.task_index
+            and shipment.spare_type == spare_type
+        ]
+        details.update({
+            "shortage_reason": job.shortage_reason,
+            "product_id": spare_type,
+            "spare_name": self._product_display_name(spare_type) if spare_type else None,
+            "required_quantity": required or None,
+            "available_quantity": available,
+            "shortage_quantity": max(0, required - available) if available is not None else None,
+            "scheduled_arrival_minute": min(arrivals) if arrivals else details.get("scheduled_arrival_minute"),
+        })
+
+    def _is_spare_shortage_job(self, job: JobState) -> bool:
+        """Classify only actual spare gates, including the four organization outcomes."""
+
+        reason = str(job.shortage_reason or "")
+        if reason == "in_transit" or reason.startswith("spare:"):
+            return True
+        reason_code, separator, product_id = reason.partition(":")
+        if not separator or reason_code not in {
+            "organization_no_available_ancestor",
+            "organization_no_available_supplier",
+            "organization_no_vertical_path",
+            "organization_no_supply_path",
+        }:
+            return False
+        task = job.current_task if isinstance(job.current_task, dict) else {}
+        return product_id in {
+            spare_type for spare_type, quantity in self._task_spare_requirements(job, task) if quantity > 0
+        }
 
     @staticmethod
     def _downtime_context_key(
@@ -283,7 +339,9 @@ class MetricsEngineMixin:
                 "required_quantity": required or None,
                 "available_quantity": available,
                 "shortage_quantity": max(0, required - available) if available is not None else None,
-                "arrival_minute": min(arrivals) if arrivals else None,
+                "shortage_reason": job.shortage_reason if job is not None else None,
+                "scheduled_arrival_minute": min(arrivals) if arrivals else None,
+                "arrival_minute": None,
                 "wait_end_minute": None,
             }
         elif factor == "equipment_shortage":
@@ -303,12 +361,22 @@ class MetricsEngineMixin:
                 "wait_minutes": None,
             }
         elif factor == "failure":
+            spare_requirements = self._task_spare_requirements(job, task) if job is not None else []
+            selected_method = job.maintenance_method if job is not None else None
+            effective_method = (
+                "replacement"
+                if selected_method == "replacement" and bool(spare_requirements)
+                else "non_replacement" if selected_method in {"replacement", "non_replacement"} else None
+            )
             details = {
                 "component_id": component_id or None,
                 "component_name": (component or {}).get("name"),
                 "failure_mode": (component or {}).get("failure_mode"),
                 "failure_minute": failure_minute,
                 "repair_completed_minute": None,
+                "maintenance_method": effective_method,
+                "selected_maintenance_method": selected_method,
+                "requires_spare": bool(spare_requirements),
             }
         else:
             activity = self._activity_by_id(job.activity_id) if job is not None else self._select_activity("preventive", aircraft=aircraft)
@@ -351,6 +419,7 @@ class MetricsEngineMixin:
             "support_node_name": (node or {}).get("name"),
             "job_id": job.job_id if job is not None else None,
             "job_kind": job.kind if job is not None else None,
+            "fault_related": bool(aircraft.failed_component_id is not None or (job is not None and job.kind == "repair")),
             "task_name": task.get("workName") or task.get("activityCode") or (job.activity_name if job is not None else None),
             "start_minute": start_minute,
             "end_minute": float(self.minute),
@@ -375,26 +444,86 @@ class MetricsEngineMixin:
                 phase = f"，当前阶段为{phase_name}"
         return f"飞机{aircraft.tail_number}{labels[factor]}{phase}"
 
-    def _close_downtime_event(self, tail_number: str) -> None:
+    def _close_downtime_event(self, tail_number: str, *, simulation_cutoff: bool = False) -> None:
         event = self._active_downtime_events.pop(tail_number, None)
         if event is None or float(event.get("duration_minutes", 0) or 0) <= 0:
             return
         details = event.get("details") if isinstance(event.get("details"), dict) else {}
         factor = str(event.get("factor") or "")
+        aircraft = self._aircraft_by_tail(tail_number)
+        active_jobs = [
+            job for job in self.jobs
+            if job.tail_number == tail_number and job.state in {"waiting", "running"}
+        ]
+        next_context = self._current_downtime_context(aircraft, active_jobs=active_jobs) if aircraft is not None else None
+        next_factor = next_context[0] if next_context is not None else ""
+        event_job = next((job for job in self.jobs if job.job_id == event.get("job_id")), None)
+        if simulation_cutoff:
+            event["end_reason"] = "simulation_cutoff"
+            event["status"] = "unresolved"
+            if factor == "spare_shortage":
+                shortage_reason = str(details.get("shortage_reason") or "")
+                event["end_state"] = "waiting_transfer" if shortage_reason == "in_transit" else "waiting_spare"
+            elif factor == "failure":
+                repair_job = next((job for job in active_jobs if job.kind == "repair"), None)
+                event["end_state"] = "repairing" if repair_job is not None and repair_job.state == "running" else "waiting_repair"
+            elif factor == "preventive":
+                event["end_state"] = "preventive_incomplete"
+            else:
+                event["end_state"] = "waiting_equipment"
+        elif factor in {"spare_shortage", "equipment_shortage"} and next_factor in {"failure", "preventive"}:
+            event["end_reason"] = "wait_completed"
+            event["end_state"] = "repairing" if next_factor == "failure" else "preventive_in_progress"
+            event["status"] = "continued"
+        elif factor == "failure" and aircraft is not None and aircraft.failed_component_id is None and not any(
+            job.kind == "repair" for job in active_jobs
+        ):
+            event["end_reason"] = "repair_completed"
+            event["end_state"] = "available"
+            event["status"] = "completed"
+        elif factor == "preventive" and aircraft is not None and not aircraft.preventive_due and not any(
+            job.kind == "preventive" for job in active_jobs
+        ):
+            event["end_reason"] = "maintenance_completed"
+            event["end_state"] = "available"
+            event["status"] = "completed"
+        else:
+            event["end_reason"] = "segment_changed"
+            event["end_state"] = next_factor or (aircraft.state if aircraft is not None else "unknown")
+            event["status"] = "continued" if next_factor else "completed"
         if factor == "equipment_shortage":
             details["wait_minutes"] = float(event["duration_minutes"])
         elif factor == "spare_shortage":
-            details["wait_end_minute"] = event.get("end_minute")
+            if not simulation_cutoff and next_factor != "spare_shortage":
+                details["wait_end_minute"] = event.get("end_minute")
+                arrived = [
+                    item for item in self.event_log
+                    if item.get("event") in {"transport_arrived", "organization_transport_arrived"}
+                    and isinstance(item.get("details"), dict)
+                    and (
+                        item["details"].get("job_id") == event.get("job_id")
+                        or (
+                            item["details"].get("product_id") == details.get("product_id")
+                            and item["details"].get("resource_id") == event.get("support_node_id")
+                        )
+                    )
+                ]
+                actual_arrivals = [
+                    item["details"].get("arrival_minute", item.get("time")) for item in arrived
+                    if item["details"].get("arrival_minute", item.get("time")) is not None
+                ]
+                details["arrival_minute"] = max(actual_arrivals) if actual_arrivals else None
         elif factor == "failure":
-            aircraft = self._aircraft_by_tail(tail_number)
             active_repair = any(
                 job.tail_number == tail_number and job.kind == "repair" and job.state in {"waiting", "running"}
                 for job in self.jobs
             )
             if aircraft is not None and aircraft.failed_component_id is None and not active_repair:
-                details["repair_completed_minute"] = event.get("end_minute")
+                details["repair_completed_minute"] = (
+                    event_job.completed_time if event_job is not None and event_job.completed_time is not None
+                    else event.get("end_minute")
+                )
         elif factor == "preventive":
-            aircraft = self._aircraft_by_tail(tail_number)
             active_preventive = any(
                 job.tail_number == tail_number and job.kind == "preventive" and job.state in {"waiting", "running"}
                 for job in self.jobs
@@ -405,7 +534,7 @@ class MetricsEngineMixin:
 
     def _close_all_downtime_events(self) -> None:
         for tail_number in list(self._active_downtime_events):
-            self._close_downtime_event(tail_number)
+            self._close_downtime_event(tail_number, simulation_cutoff=not self.running)
 
     def _downtime_event_summary(self) -> dict[str, dict[str, float | int]]:
         events = [*self.downtime_events, *self._active_downtime_events.values()]

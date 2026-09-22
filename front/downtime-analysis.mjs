@@ -18,10 +18,10 @@ const PHASE_LABELS = Object.freeze({
 });
 
 const DESCRIPTION_LABELS = Object.freeze({
-  failure: "装备发生故障，当前不可用并等待修复",
-  equipment_shortage: "保障设备不足，当前作业正在等待资源",
-  spare_shortage: "所需备件短缺，当前作业正在等待补给",
-  preventive: "装备正在执行预防性维修"
+  failure: "发生装备故障并形成停机维修时段",
+  equipment_shortage: "因保障设备不足形成等待时段",
+  spare_shortage: "因所需备件短缺形成等待补给时段",
+  preventive: "执行预防性维修并形成停机时段"
 });
 
 const OPERATIONAL_EVENT_LABELS = Object.freeze({
@@ -106,7 +106,7 @@ export function downtimeTaskLabel(event) {
 export function downtimeEventDescription(event) {
   const factor = downtimeEventFactor(event);
   const tailNumber = firstText(event?.tail_number, event?.tailNumber);
-  const subject = tailNumber ? `飞机${tailNumber}` : "当前装备";
+  const subject = tailNumber ? `飞机${tailNumber}` : "该装备";
   const description = DESCRIPTION_LABELS[factor] || "记录到未识别的停机事件";
   return `${subject}${description}`;
 }
@@ -126,15 +126,21 @@ export function downtimeEventDurationHours(event) {
 export function downtimeEventDisplayRow(event) {
   const details = event?.details && typeof event.details === "object" ? event.details : {};
   return {
+    sampleIndex: event?.sample_index ?? event?.sampleIndex ?? null,
+    sampleLabel: sampleDisplayLabel(event?.sample_index ?? event?.sampleIndex),
+    seed: event?.seed ?? null,
+    tailNumber: downtimeDisplayValue(event?.tail_number ?? event?.tailNumber, "未记录机号"),
+    status: downtimeDisplayValue(event?.status, "unknown"),
+    statusLabel: downtimeDisplayValue(event?.status_label ?? event?.statusLabel, "状态未记录"),
     factor: downtimeEventFactor(event),
     factorLabel: downtimeFactorLabel(downtimeEventFactor(event)),
     equipmentName: downtimeDisplayValue(
       event?.equipment_name ?? event?.equipmentName ?? event?.aircraft_type ?? event?.aircraftType ?? event?.tail_number
     ),
-    taskPhaseLabel: downtimeTaskLabel(event),
+    taskPhaseLabel: downtimeTaskLabelForExecutedMethod(event, details),
     supportNodeName: downtimeDisplayValue(event?.support_node_name ?? event?.supportNodeName, "未记录保障组织"),
     startTimeLabel: formatDowntimeSimulationTime(event?.start_minute ?? event?.startMinute ?? event?.start_time ?? event?.startTime),
-    endTimeLabel: formatDowntimeSimulationTime(event?.end_minute ?? event?.endMinute ?? event?.end_time ?? event?.endTime),
+    endTimeLabel: downtimeEndTimeLabel(event),
     durationHours: downtimeEventDurationHours(event),
     description: downtimeEventDescription(event),
     specificDetails: downtimeFactorSpecificDetails(downtimeEventFactor(event), details)
@@ -209,6 +215,7 @@ function downtimeFactorSpecificDetails(factor, details) {
       ["需求", details.required_quantity],
       ["可用", details.available_quantity],
       ["短缺", details.shortage_quantity],
+      ["短缺原因", details.shortage_reason_label ?? details.shortage_reason_code],
       ["到货/等待结束", formatDowntimeSimulationTime(details.arrival_minute ?? details.wait_end_minute)]
     ];
   }
@@ -216,6 +223,7 @@ function downtimeFactorSpecificDetails(factor, details) {
     return [
       ["故障部件", details.component_name],
       ["故障发生", formatDowntimeSimulationTime(details.failure_minute)],
+      ["维修方式", details.maintenance_method_label ?? maintenanceMethodLabel(details.maintenance_method, details.requires_spare)],
       ["修复完成", formatDowntimeSimulationTime(details.repair_completed_minute)]
     ];
   }
@@ -237,6 +245,53 @@ function downtimeFactorSpecificDetails(factor, details) {
     ];
   }
   return [["事件信息", "未识别的停机事件"]];
+}
+
+function sampleDisplayLabel(value) {
+  if (
+    value === null
+    || value === undefined
+    || typeof value === "boolean"
+    || (typeof value === "string" && !value.trim())
+  ) return "样本未记录";
+  const sampleIndex = Number(value);
+  return Number.isInteger(sampleIndex) && sampleIndex >= 0 ? `样本 ${sampleIndex + 1}` : "样本未记录";
+}
+
+function downtimeEndTimeLabel(event) {
+  const existing = firstText(event?.end_time_label, event?.endTimeLabel);
+  if (existing) return existing;
+  const label = formatDowntimeSimulationTime(event?.end_minute ?? event?.endMinute ?? event?.end_time ?? event?.endTime);
+  return String(event?.end_reason ?? event?.endReason ?? "") === "simulation_cutoff" ? `仿真截止：${label}` : label;
+}
+
+function maintenanceMethodLabel(value, requiresSpare) {
+  if (value === "replacement") return "换件维修";
+  if (value === "non_replacement") return "原位维修";
+  return requiresSpare === true ? "换件维修" : "维修方式未记录";
+}
+
+function downtimeTaskLabelForExecutedMethod(event, details) {
+  const method = details?.maintenance_method;
+  if (method !== "non_replacement") return downtimeTaskLabel(event);
+  const phase = firstText(
+    event?.mission_phase_name,
+    event?.missionPhaseName,
+    event?.phase_name,
+    event?.phaseName,
+    event?.task_name,
+    event?.taskName
+  );
+  if (!/(?:LRU|换件|更换)/iu.test(phase)) return downtimeTaskLabel(event);
+  return downtimeTaskLabel({
+    ...event,
+    mission_phase_name: "原位维修",
+    missionPhaseName: undefined,
+    phase_name: undefined,
+    phaseName: undefined,
+    task_name: undefined,
+    taskName: undefined
+  });
 }
 
 function formatDurationMinutes(value) {

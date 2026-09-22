@@ -2723,12 +2723,27 @@ test("modeling data-path inputs commit on change instead of rerendering on each 
 
 test("reliability block diagram prototype exposes node edge and k-out-of-n fields", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const viewportSource = await readFile(new URL("../front/rbd-viewport.mjs", import.meta.url), "utf8");
   const rbdSource = appSource.slice(
     appSource.indexOf("function renderReliabilityBlockDiagram"),
     appSource.indexOf("function renderResourceTable")
   );
   assert.match(rbdSource, /装备可靠性框图/);
-  assert.match(rbdSource, /organization-layout equipment-layout rbd-layout/);
+  assert.match(rbdSource, /organization-layout equipment-layout equipment-modeling-layout rbd-layout/);
+  assert.match(rbdSource, /data-equipment-tree-resize/);
+  assert.match(rbdSource, /data-rbd-viewport/);
+  assert.match(rbdSource, /data-rbd-viewport-stage/);
+  assert.match(rbdSource, /data-rbd-viewport-content/);
+  for (const action of ["in", "out", "reset", "fit"]) {
+    assert.match(rbdSource, new RegExp(`data-rbd-zoom-action="${action}"`));
+  }
+  assert.match(styleSource, /height:\s*clamp\(320px, 60vh, 640px\)/);
+  assert.match(styleSource, /\.rbd-viewport\s*\{[^}]*overflow:\s*auto/s);
+  assert.match(viewportSource, /export const RBD_MIN_ZOOM = 0\.1/);
+  assert.match(viewportSource, /export const RBD_MAX_ZOOM = 4/);
+  assert.match(viewportSource, /rbdZoomAroundPoint/);
+  assert.match(viewportSource, /stateStore\.set\(key/);
   assert.match(rbdSource, /装备结构树/);
   assert.match(rbdSource, /buildRbdEquipmentTreeNodes/);
   assert.match(rbdSource, /reliabilityDiagramProjectForSelection/);
@@ -4124,7 +4139,7 @@ test("phase 6C reliability reuses per-sample detail and separate wave chart with
   assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
-  assert.match(formalReliabilitySource, /renderLiteMesaMissionReliabilityWaveChart\(rows\)/);
+  assert.match(formalReliabilitySource, /renderLiteMesaMissionReliabilityWaveChart\(rows, formalProjection\.sampleCount\)/);
   assert.match(formalReliabilitySource, /renderTaskReliabilityDetailTable\(rows, "formal-mission-waves"\)/);
   assert.match(appSource, /function renderLiteMesaMissionReliabilityWaveChart/);
   assert.match(appSource, /meanMissionSuccessRate/);
@@ -4199,7 +4214,8 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
 
   assert.match(metricSource, /metricId: "sortie_rate", label: "出动架次率"/);
   assert.match(reliabilitySource, /metricLabels: \["出动架次率", "波次成功率", "整周期任务可靠度", "任务周期"\]/);
-  assert.match(reliabilityTableSource, /task-reliability-result-table/);
+  assert.match(reliabilityTableSource, /renderTaskReliabilityDetailTable\(rows\)/);
+  assert.match(reliabilityTableSource, /renderLiteMesaMissionReliabilityWaveChart\(rows, result\.periodTotalSamples \?\? result\.sampleCount\)/);
   assert.match(appSource, /<th>样本<\/th><th>波次<\/th><th>成功数<\/th><th>计划数<\/th><th>波次成功率<\/th>/);
   assert.doesNotMatch(reliabilityTableSource, /平均出动架次率|formatLiteMesaAnalysisMetricValue|样本明细/);
   assert.doesNotMatch(metricSource + reliabilitySource + reliabilityTableSource, /出动完成率/);
@@ -4212,12 +4228,12 @@ test("lite Mesa analysis visible copy omits Mesa session wording and renders per
     appSource.indexOf("function renderLiteMesaDowntimeEventSnapshots")
   );
   const reliabilityTableSource = analysisSource.slice(
-    analysisSource.indexOf('if (definition.analysisType === "mission_reliability")'),
-    analysisSource.indexOf('return `\\n    <div class="table-wrap"', analysisSource.indexOf('if (definition.analysisType === "mission_reliability")'))
+    analysisSource.indexOf('if (definition.analysisType === "mission_reliability")', analysisSource.indexOf("function renderLiteMesaAnalysisSessionBody")),
+    analysisSource.indexOf('if (definition.analysisType === "downtime_factors")', analysisSource.indexOf("function renderLiteMesaAnalysisSessionBody"))
   );
 
   assert.match(analysisSource, /后端内存运行/);
-  assert.match(reliabilityTableSource, /task-reliability-result-table/);
+  assert.match(reliabilityTableSource, /renderTaskReliabilityDetailTable\(rows\)/);
   assert.match(appSource, /<th>样本<\/th><th>波次<\/th><th>成功数<\/th><th>计划数<\/th><th>波次成功率<\/th>/);
   assert.match(appSource, /normalizeTaskReliabilityWaveRows\(rows\)/);
   assert.match(reliabilityTableSource, /renderLiteMesaMissionReliabilityWaveChart/);
@@ -4280,10 +4296,10 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
   assert.match(carryBodySource, /隐藏需求数值为 0 的备件/);
   assert.match(carryBodySource, /data-carry-aircraft-filter/);
   assert.match(carryBodySource, /<th>机型<\/th>/);
-  assert.match(carryBodySource, /<th>规划满足率<\/th><th>实际即时满足率<\/th><th>实际约束状态<\/th>/);
+  assert.match(carryBodySource, /<th>备件满足率<\/th><th>实际约束状态<\/th><th>备件利用率<\/th>/);
   assert.match(carryBodySource, /carryActualSatisfactionDisplay\(row\)/);
-  assert.match(carryBodySource, /carryProjectedSatisfactionDisplay\(row\)/);
   assert.match(carryBodySource, /carryConstraintDisplay\(row\)/);
+  assert.doesNotMatch(carryBodySource, /规划满足率|实际满足率下限|carryProjectedSatisfactionDisplay\(row\)/);
   assert.match(carryBodySource, /data-carry-recommended-sort="asc"/);
   assert.match(carryBodySource, /data-carry-recommended-sort="desc"/);
   assert.match(carryBodySource, /aria-label="按建议携行数量升序排列"/);
@@ -4324,7 +4340,7 @@ test("downtime analysis exposes four-factor multi-select, linked summaries, and 
   assert.match(renderSource, /请选择至少一种停机因素/);
   assert.match(renderSource, /暂无该类型停机事件/);
   assert.match(renderSource, /累计停机时长（小时）/);
-  assert.match(renderSource, /持续时长（小时）/);
+  assert.match(renderSource, /累计停机时长（小时）/);
   assert.match(downtimeSource, /formatDowntimeSimulationTime/);
   assert.match(downtimeSource, /repair: "修复性维修"/);
   assert.match(downtimeSource, /preventive: "预防性维修"/);
@@ -5420,9 +5436,11 @@ test("result analysis and Monte Carlo pages share backend XLSX export", async ()
   assert.match(exportSource, /exportAnalysisXlsx\(payload\)/);
   assert.match(exportSource, /visibleSpareShortfallRows\(result\)/);
   assert.match(exportSource, /visibleCarryListRows\(result\)/);
-  assert.match(exportSource, /visibleDowntimeAnalysisSnapshot\(result\)/);
+  assert.match(exportSource, /const taskId = result\?\.taskProgress\?\.taskId/);
+  assert.match(exportSource, /task_id: taskId/);
+  assert.match(exportSource, /sample_indices:[\s\S]*seeds:[\s\S]*statuses:/);
   assert.match(exportSource, /result\.resultFields \|\| normalizeTaskReliabilityResultFields\(result\)/);
-  assert.match(exportSource, /downtimeEventDisplayRow\(event\)/);
+  assert.doesNotMatch(exportSource, /downtimeEventDisplayRow\(event\)/);
   assert.match(exportSource, /并行核心数配置异常/);
   assert.doesNotMatch(exportSource, /\[analysisSettingExportLabel\(key\), value \?\? ""\]/);
   assert.match(exportSource, /导出失败：/);

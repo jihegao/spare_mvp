@@ -160,6 +160,44 @@ class SimulationTaskService:
                 payload["error"] = copy.deepcopy(task.error)
             return payload
 
+    def completed_result_for_export(
+        self,
+        owner_user_id: str,
+        task_id: str,
+        *,
+        analysis_type: str,
+    ) -> dict[str, Any]:
+        """Return an owned retained result only when it is complete and type-compatible."""
+        with self._condition:
+            task = self._owned_task_locked(owner_user_id, task_id)
+            if task.status == "running":
+                raise BackendApiError(
+                    "simulation_task_not_completed",
+                    "仿真任务尚未完成，暂时无法导出。",
+                    task_id=task.task_id,
+                    status=task.status,
+                )
+            if task.status != "completed" or not isinstance(task.result, dict):
+                raise BackendApiError(
+                    "simulation_task_export_unavailable",
+                    "仿真任务未成功完成，没有可导出的结果。",
+                    task_id=task.task_id,
+                    status=task.status,
+                )
+            expected_type = str(analysis_type or "").strip()
+            request_type = str(task.request.get("analysis_type") or "").strip()
+            result_type = str(task.result.get("analysis_type") or "").strip()
+            if expected_type != request_type or expected_type != result_type:
+                raise BackendApiError(
+                    "analysis_export_type_mismatch",
+                    "导出请求与仿真任务的分析类型不一致。",
+                    task_id=task.task_id,
+                    requested_analysis_type=expected_type,
+                    task_analysis_type=request_type,
+                    result_analysis_type=result_type,
+                )
+            return copy.deepcopy(task.result)
+
     def wait_result(
         self,
         owner_user_id: str,
@@ -230,7 +268,7 @@ class SimulationTaskService:
                     status="failed",
                     result=frozen_result,
                     error={
-                        "code": "simulation_task_blocked",
+                        "code": str(frozen_result.get("error_code") or "simulation_task_blocked"),
                         "message": message,
                         "details": {},
                     },

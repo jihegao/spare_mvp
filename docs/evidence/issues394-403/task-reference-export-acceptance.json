@@ -1,0 +1,163 @@
+{
+  "schema": "spare-mvp-issue401-402-current-case-task-export-v1",
+  "task_id_hash": "284ee265989f3bf71ad48f893337fb7c542d1c23922371800da0d1a1dd9175c1",
+  "input_fingerprint": "ef0d15c18c549772f3be5de0dd38a009bb3b81c5222291114401b0bba21e7721",
+  "task_status": "completed",
+  "completed_samples": 4,
+  "failed_samples": 0,
+  "seeds": [
+    20260621,
+    20260622,
+    20260623,
+    20260624
+  ],
+  "event_count": 271,
+  "event_counts_by_factor": {
+    "failure": 33,
+    "spare_shortage": 11,
+    "equipment_shortage": 0,
+    "preventive": 227
+  },
+  "event_counts_by_status": {
+    "completed": 257,
+    "unresolved": 11,
+    "continued": 3
+  },
+  "spare_shortage_reason_counts": {
+    "organization_no_available_ancestor": 11
+  },
+  "issue_codes": [],
+  "warnings": [],
+  "no_startup_inventory_warning": true,
+  "sample_event_examples": [
+    {
+      "event_id": "sample-0-downtime-000001",
+      "factor": "failure",
+      "sample_index": 0,
+      "seed": 20260621,
+      "tail_number": "F35-06",
+      "status": "completed",
+      "status_label": "修复完成",
+      "end_reason": "repair_completed",
+      "end_state": "available",
+      "start_time_label": "DAY_1 13:28",
+      "end_time_label": "DAY_1 16:28",
+      "duration_minutes": 180
+    },
+    {
+      "event_id": "sample-0-downtime-000002",
+      "factor": "preventive",
+      "sample_index": 0,
+      "seed": 20260621,
+      "tail_number": "F35-02",
+      "status": "completed",
+      "status_label": "维修完成",
+      "end_reason": "maintenance_completed",
+      "end_state": "available",
+      "start_time_label": "DAY_1 23:59",
+      "end_time_label": "DAY_2 23:59",
+      "duration_minutes": 1440
+    },
+    {
+      "event_id": "sample-0-downtime-000003",
+      "factor": "preventive",
+      "sample_index": 0,
+      "seed": 20260621,
+      "tail_number": "F35-05",
+      "status": "completed",
+      "status_label": "维修完成",
+      "end_reason": "maintenance_completed",
+      "end_state": "available",
+      "start_time_label": "DAY_1 23:59",
+      "end_time_label": "DAY_2 23:59",
+      "duration_minutes": 1440
+    },
+    {
+      "event_id": "sample-0-downtime-000004",
+      "factor": "preventive",
+      "sample_index": 0,
+      "seed": 20260621,
+      "tail_number": "F35-06",
+      "status": "completed",
+      "status_label": "维修完成",
+      "end_reason": "maintenance_completed",
+      "end_state": "available",
+      "start_time_label": "DAY_1 23:59",
+      "end_time_label": "DAY_2 23:59",
+      "duration_minutes": 1440
+    },
+    {
+      "event_id": "sample-0-downtime-000005",
+      "factor": "preventive",
+      "sample_index": 0,
+      "seed": 20260621,
+      "tail_number": "F35-07",
+      "status": "completed",
+      "status_label": "维修完成",
+      "end_reason": "maintenance_completed",
+      "end_state": "available",
+      "start_time_label": "DAY_4 16:23",
+      "end_time_label": "DAY_5 16:23",
+      "duration_minutes": 1440
+    },
+    {
+      "event_id": "sample-0-downtime-000006",
+      "factor": "preventive",
+      "sample_index": 0,
+      "seed": 20260621,
+      "tail_number": "F35-08",
+      "status": "completed",
+      "status_label": "维修完成",
+      "end_reason": "maintenance_completed",
+      "end_state": "available",
+      "start_time_label": "DAY_4 16:23",
+      "end_time_label": "DAY_5 16:23",
+      "duration_minutes": 1440
+    },
+    {
+      "event_id": "sample-0-downtime-000007",
+      "factor": "preventive",
+      "sample_index": 0,
+      "seed": 20260621,
+      "tail_number": "F35-03",
+      "status": "completed",
+      "status_label": "维修完成",
+      "end_reason": "maintenance_completed",
+      "end_state": "available",
+      "start_time_label": "DAY_4 23:59",
+      "end_time_label": "DAY_5 23:59",
+      "duration_minutes": 1440
+    },
+    {
+      "event_id": "sample-0-downtime-000008",
+      "factor": "preventive",
+      "sample_index": 0,
+      "seed": 20260621,
+      "tail_number": "F35-04",
+      "status": "completed",
+      "status_label": "维修完成",
+      "end_reason": "maintenance_completed",
+      "end_state": "available",
+      "start_time_label": "DAY_4 23:59",
+      "end_time_label": "DAY_5 23:59",
+      "duration_minutes": 1440
+    }
+  ],
+  "export": {
+    "filename_header": "attachment; filename=\"F35____-______-20260922-000000.xlsx\"; filename*=UTF-8''F35%E4%BB%BF%E7%9C%9F%E6%A1%88%E4%BE%8B-%E5%81%9C%E6%9C%BA%E5%9B%A0%E7%B4%A0%E5%88%86%E6%9E%90-20260922-000000.xlsx",
+    "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "bytes": 29526,
+    "sha256": "4a3e87df331d042378d0d44e2088bbc7e4d2858e7753e51fbc20c58ddc82a23a",
+    "filters": {
+      "factors": [
+        "spare_shortage",
+        "failure",
+        "equipment_shortage",
+        "preventive"
+      ],
+      "sample_indices": [],
+      "seeds": [],
+      "statuses": []
+    }
+  }
+}

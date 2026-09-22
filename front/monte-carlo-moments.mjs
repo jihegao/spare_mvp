@@ -1,8 +1,8 @@
 export const MONTE_CARLO_METRIC_DEFINITIONS = Object.freeze([
   { metricId: "mission_success_rate", label: "任务可靠度", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
   { metricId: "operational_availability", label: "使用可用度(A)", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
-  { metricId: "spare_fill_rate", label: "实际即时满足率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio", numeratorField: "spare_immediately_filled_total", denominatorField: "spare_demand_total" },
-  { metricId: "spare_utilization", label: "实际备件利用率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio", numeratorField: "spare_consumed_total", denominatorField: "spare_carried_total" },
+  { metricId: "spare_fill_rate", label: "备件满足率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio", numeratorField: "spare_immediately_filled_total", denominatorField: "spare_demand_total" },
+  { metricId: "spare_utilization", label: "备件利用率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio", numeratorField: "spare_consumed_total", denominatorField: "spare_carried_total" },
   { metricId: "ready_rate", label: "战备完好率", unit: "比例", varianceUnit: "比例²", valueFormat: "ratio" },
   { metricId: "sortie_rate", label: "出动架次率", unit: "架次/机/天", varianceUnit: "(架次/机/天)²", valueFormat: "number" },
   { metricId: "mean_transport_delay", label: "平均备件延误时间", unit: "小时", varianceUnit: "小时²", valueFormat: "number" },

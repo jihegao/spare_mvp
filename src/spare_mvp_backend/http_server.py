@@ -16,6 +16,11 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from uuid import uuid4
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
+from src.spare_mvp_backend.analysis_xlsx import (
+    AnalysisXlsxError,
+    AnalysisXlsxLimitError,
+    export_downtime_task_result_xlsx,
+)
 from src.spare_mvp_backend.execution_context import VisualizationSessionStore
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
@@ -169,6 +174,8 @@ def create_backend_server(
                     status = 410
                 elif exc.code == "request_too_large":
                     status = 413
+                elif exc.code == "analysis_export_too_large":
+                    status = 413
                 elif exc.code == "simulation_task_not_found":
                     status = 404
                 elif exc.code in {
@@ -176,9 +183,12 @@ def create_backend_server(
                     "project_version_conflict",
                     "experiment_plan_frozen",
                     "experiment_plan_version_conflict",
+                    "experiment_plan_name_conflict",
                     "frozen_plan_changed",
                     "simulation_task_busy",
                     "simulation_task_not_completed",
+                    "simulation_task_export_unavailable",
+                    "analysis_export_type_mismatch",
                 }:
                     status = 409
                 self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
@@ -279,7 +289,27 @@ def create_backend_server(
                 self._require_user()
                 return {"__file_download__": api.export_rms_allocation_xlsx(body)}
             if self.command == "POST" and route == "/analysis-results/export-xlsx":
-                self._require_user()
+                actor = self._require_user()
+                if body.get("task_id") is not None:
+                    analysis_type = str(body.get("analysis_type") or "").strip()
+                    if analysis_type != "downtime_factors":
+                        raise BackendApiError(
+                            "analysis_export_type_mismatch",
+                            "任务结果引用导出当前仅支持停机因素分析。",
+                            requested_analysis_type=analysis_type,
+                        )
+                    result = simulation_task_service.completed_result_for_export(
+                        actor["user_id"],
+                        str(body.get("task_id") or ""),
+                        analysis_type=analysis_type,
+                    )
+                    try:
+                        download = export_downtime_task_result_xlsx(result, body)
+                    except AnalysisXlsxLimitError as exc:
+                        raise BackendApiError("analysis_export_too_large", str(exc)) from exc
+                    except AnalysisXlsxError as exc:
+                        raise BackendApiError("analysis_export_invalid", str(exc)) from exc
+                    return {"__file_download__": download}
                 return {"__file_download__": api.export_analysis_xlsx(body)}
             if self.command == "GET" and route == "/projects":
                 return api.list_projects()

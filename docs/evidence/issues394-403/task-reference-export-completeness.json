@@ -1,0 +1,50 @@
+{
+  "schema": "spare-mvp-issue402-task-export-completeness-v1",
+  "passed": true,
+  "task_id_sha256": "12a0050f2be99f868a8804b74c111f1b840aa310b1f11c2625253d3ff68e1f1c",
+  "task_status": "completed",
+  "source_event_count": 271,
+  "xlsx_detail_row_count": 271,
+  "exact_full_row_matches": 271,
+  "exact_full_row_mismatches": 0,
+  "ordered_identity_fields": [
+    "sample",
+    "seed",
+    "tail_number",
+    "factor",
+    "start",
+    "end",
+    "duration_hours",
+    "status"
+  ],
+  "ordered_identity_match": true,
+  "summary_event_count_match": true,
+  "summary_total_hours_match": true,
+  "summary_total_hours": 9594.666667,
+  "detail_sheets": [
+    "停机事件明细"
+  ],
+  "xlsx_sha256": "4a3e87df331d042378d0d44e2088bbc7e4d2858e7753e51fbc20c58ddc82a23a",
+  "xlsx_bytes": 29526,
+  "content_disposition": "attachment; filename=\"F35____-______-20260922-000000.xlsx\"; filename*=UTF-8''F35%E4%BB%BF%E7%9C%9F%E6%A1%88%E4%BE%8B-%E5%81%9C%E6%9C%BA%E5%9B%A0%E7%B4%A0%E5%88%86%E6%9E%90-20260922-000000.xlsx",
+  "first_ordered_identity": [
+    "样本 3",
+    20260623,
+    "F35-01",
+    "装备故障",
+    "DAY_1 11:46",
+    "DAY_1 14:46",
+    3,
+    "修复完成"
+  ],
+  "last_ordered_identity": [
+    "样本 1",
+    20260621,
+    "F35-05",
+    "备件短缺",
+    "DAY_43 13:57",
+    "仿真截止：DAY_44 00:00",
+    10.05,
+    "未修复·仍等待备件"
+  ]
+}

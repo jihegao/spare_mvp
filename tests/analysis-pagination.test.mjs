@@ -14,7 +14,7 @@ function formalView() {
     const htmlEscape = value => String(value ?? '');
     const fixed = value => String(value ?? 0), pct = fixed;
     const analysisPaginationContext = () => 'formal-test';
-    const spareAircraftFilter = '', spareShortfallSort = {}, carryHideZeroDemand = false;
+    const spareAircraftFilter = '', spareShortfallSort = {}, carryAircraftFilter = '', carryHideZeroDemand = false, carryRecommendedSort = 'default';
     const analysisProductsById = () => new Map();
     const sortSpareShortfallRows = rows => rows;
     const analysisProductDisplayName = row => row.productId;
@@ -23,6 +23,10 @@ function formalView() {
     const carryUtilizationDisplay = fixed, formatReliabilityPercent = fixed;
     const carryProjectedSatisfactionDisplay = row => fixed(row.projectedSatisfactionRate);
     const carryActualSatisfactionDisplay = row => row.demand === null ? '数据不可用' : fixed(row.satisfactionRate);
+    const visibleCarryListRows = result => result.rows || [];
+    let missionSampleFilter = '', missionSampleFilterContext = '';
+    const filterTaskReliabilityRowsBySample = rows => rows;
+    const taskReliabilitySampleIndexes = rows => [...new Set(rows.map(row => row.sampleIndex).filter(Number.isInteger))];
     const visibleDowntimeAnomalySnapshots = result => result.snapshots || [];
     const renderLiteMesaMissionReliabilityWaveChart = rows => '<chart data-count="' + rows.length + '"></chart>';
     ${source.slice(source.indexOf('function taskReliabilityDetailCells('), source.indexOf('function renderLiteMesaMissionReliabilityWaveChart('))}

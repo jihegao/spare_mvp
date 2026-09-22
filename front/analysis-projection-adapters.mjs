@@ -11,6 +11,10 @@ import {
   normalizeTaskReliabilityResultFields,
   taskReliabilityMetricPairs
 } from "./task-reliability-contract.mjs";
+import {
+  normalizeCarryListValues,
+  optionalNonnegativeFiniteNumber
+} from "./carry-list-values.mjs";
 
 const PROJECTION_KINDS = Object.freeze({
   spare_shortfall: "analysis_projection_spare_shortfall",
@@ -182,58 +186,18 @@ function normalizeCarryList(payload) {
       const qty = row.recommended_quantity === null || row.recommended_quantity === undefined
         ? Math.max(1, priority === "高" ? Math.ceil(multiplier) : Math.round(multiplier))
         : Math.max(0, Math.round(requireFiniteNumber(row.recommended_quantity, "recommended_quantity")));
-      const carriedQuantity = optionalNonnegativeFiniteNumber(row.carried_quantity);
-      const usedQuantity = optionalNonnegativeFiniteNumber(row.consumed_quantity ?? row.used_quantity);
-      const hasRawQuantities = carriedQuantity !== null && usedQuantity !== null;
-      const demandQuantity = optionalNonnegativeFiniteNumber(row.demand_quantity ?? row.demand_count);
-      let immediatelyFilledQuantity = optionalNonnegativeFiniteNumber(
-        row.immediately_filled_quantity ?? row.observed_filled_count
-      );
-      if (demandQuantity !== null && immediatelyFilledQuantity !== null
-          && immediatelyFilledQuantity > demandQuantity + Number.EPSILON) {
-        immediatelyFilledQuantity = null;
-      }
-      const hasActualFillQuantities = demandQuantity !== null && immediatelyFilledQuantity !== null;
-      const minimumSatisfactionRate = row.minimum_satisfaction_rate === null || row.minimum_satisfaction_rate === undefined
-        ? 0.9
-        : clamp01(requireFiniteNumber(row.minimum_satisfaction_rate, "minimum_satisfaction_rate"));
-      const projectedSatisfactionRate = row.projected_satisfaction_rate === null || row.projected_satisfaction_rate === undefined
-        ? (row.satisfaction_rate === null || row.satisfaction_rate === undefined
-        ? Math.min(1, multiplier / Math.max(multiplier, 1))
-        : clamp01(requireFiniteNumber(row.satisfaction_rate, "satisfaction_rate")))
-        : clamp01(requireFiniteNumber(row.projected_satisfaction_rate, "projected_satisfaction_rate"));
-      const satisfactionRate = hasActualFillQuantities && demandQuantity > 0
-        ? clamp01(immediatelyFilledQuantity / demandQuantity)
-        : null;
+      const values = normalizeCarryListValues({ ...row, multiplier });
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         productId: stringValue(row.product_id, ""),
         name: stringValue(row.spare_type, "unknown_spare"),
         multiplier,
-        satisfy: projectedSatisfactionRate,
-        projectedSatisfactionRate,
-        demandQuantity,
-        immediatelyFilledQuantity,
-        observedFillRate: satisfactionRate,
-        satisfactionRate,
-        satisfactionConstraintMet: satisfactionRate === null
-          ? null
-          : satisfactionRate >= minimumSatisfactionRate,
-        satisfactionConstraintMargin: satisfactionRate === null
-          ? null
-          : satisfactionRate - minimumSatisfactionRate,
+        ...values,
+        satisfy: values.projectedSatisfactionRate,
         delay: Math.max(0, Math.round((multiplier - 1) * 24)),
         qty,
-        usedQuantity,
-        carriedQuantity,
         priority,
-        demand: demandQuantity,
-        shortage: optionalNonnegativeFiniteNumber(row.projected_shortage_count),
-        utilization: hasRawQuantities ? (carriedQuantity > 0 ? usedQuantity / carriedQuantity : null) : null,
-        utilizationStatus: !hasRawQuantities
-          ? "data_unavailable"
-          : carriedQuantity > 0 ? "available" : "zero_carried",
-        minimumSatisfactionRate,
+        demand: values.demandQuantity,
         hideZeroDemand: row.hide_zero_demand !== false,
         lifeLimited: Boolean(row.life_limited),
         lifeLandings: Math.max(0, Math.round(numberOrZero(row.life_landings))),
@@ -272,7 +236,7 @@ function normalizeCarryList(payload) {
     metrics: [
       ["默认目标", "携行备件越少越好"],
       ["携行备件数量", `${rows.reduce((sum, row) => sum + row.qty, 0)} 件`],
-      ["总体实际即时满足率", overallSatisfactionDisplay],
+      ["总体备件满足率", overallSatisfactionDisplay],
       ["总体备件利用率", overallUtilizationDisplay],
       ["最高携行倍率", fixed(max(rows.map((row) => row.multiplier), 0), 2)],
       ["高优先级备件", highPriority.map((row) => row.name).slice(0, 2).join(" / ") || "-"]
@@ -286,7 +250,8 @@ function normalizeMissionReliability(payload) {
   const sortieRate = requireFiniteNumber(data.sortie_rate, "sortie_rate");
   const state = data.target_met ? "满足" : "未达标";
   const seriesRows = normalizeMissionReliabilitySeries(data, { probability, sortieRate, state });
-  const chartRows = aggregateTaskReliabilityWaves(seriesRows);
+  const totalSamples = optionalNonNegativeInteger(data.total_samples, "total_samples");
+  const chartRows = aggregateTaskReliabilityWaves(seriesRows, { totalSampleCount: totalSamples });
   const steepestDrop = missionReliabilitySteepestDrop(chartRows);
   const resultFields = normalizeTaskReliabilityResultFields({
     result_fields: data.result_fields,
@@ -295,7 +260,6 @@ function normalizeMissionReliability(payload) {
     period_completion_probability: data.period_completion_probability,
     period_duration_days: data.period_duration_days
   });
-  const totalSamples = optionalNonNegativeInteger(data.total_samples, "total_samples");
   const successfulSamples = optionalNonNegativeInteger(data.successful_samples, "successful_samples");
   return {
     analysisType: "mission_reliability",
@@ -331,6 +295,7 @@ function missionReliabilitySteepestDrop(rows) {
   for (let index = 1; index < rows.length; index += 1) {
     const from = rows[index - 1];
     const to = rows[index];
+    if (from.probability === null || to.probability === null) continue;
     const drop = from.probability - to.probability;
     if (!best || drop > best.drop) {
       best = {
@@ -417,17 +382,6 @@ function requireObject(value, message) {
 function requireFiniteNumber(value, fieldName) {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${fieldName} must be a finite number`);
   return value;
-}
-
-function optionalNonnegativeFiniteNumber(value) {
-  if (
-    value === null
-    || value === undefined
-    || typeof value === "boolean"
-    || (typeof value === "string" && value.trim() === "")
-  ) return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
 }
 
 function optionalNonNegativeInteger(value, fieldName) {

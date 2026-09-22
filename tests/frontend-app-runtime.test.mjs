@@ -176,6 +176,30 @@ test("invalid project hash falls back and canonicalizes URL plus stored backend 
   }
 });
 
+test("secondary navigation preserves user-expanded groups across ordinary rerenders", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-part"
+  });
+
+  try {
+    const secondaryKey = JSON.stringify(["备件规划及任务可靠度验证评估模块", "仿真实验"]);
+    const escapedSecondaryKey = secondaryKey.replaceAll('"', "&quot;");
+    assert.ok(runtime.appNode.innerHTML.includes(`data-nav-secondary-key="${escapedSecondaryKey}" data-nav-active="false"`));
+
+    await runtime.toggle("[data-nav-secondary-key]", {
+      navSecondaryKey: secondaryKey,
+      navActive: "false"
+    }, { open: true });
+    await runtime.setHash("feature=spare-planning-support-spare");
+
+    assert.ok(runtime.appNode.innerHTML.includes(
+      `data-nav-secondary-key="${escapedSecondaryKey}" data-nav-active="false" open`
+    ));
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("legacy support activity references hydrate into the basic mission page and autosave canonically", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-basic-mission",
@@ -2803,12 +2827,12 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(detailPanel, /总体备件利用率[\s\S]*20\.00%/);
     assert.match(detailPanel, /满足下限备件[\s\S]*1\/2/);
-    assert.match(detailPanel, /总体实际即时满足率[\s\S]*37\.50%/);
+    assert.match(detailPanel, /总体备件满足率[\s\S]*37\.50%/);
     assert.match(detailPanel, /<th>机型<\/th><th>产品<\/th>/);
-    assert.match(detailPanel, /<th>规划满足率<\/th><th>实际即时满足率<\/th><th>实际约束状态<\/th>/);
-    assert.match(detailPanel, /<th>实际备件利用率<\/th>/);
-    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>90%<\/td><td>17%<\/td><td>未满足（-73\.33%）<\/td><td>100\.00%<\/td>/);
-    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>100%<\/td><td>满足（\+10\.00%）<\/td><td>11\.11%<\/td>/);
+    assert.match(detailPanel, /<th>备件满足率<\/th><th>实际约束状态<\/th><th>备件利用率<\/th>/);
+    assert.doesNotMatch(detailPanel, /规划满足率|实际满足率下限/);
+    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>17%<\/td><td>未满足（-73\.33 个百分点）<\/td><td>100\.00%<\/td>/);
+    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>满足（\+10\.00 个百分点）<\/td><td>11\.11%<\/td>/);
     assert.match(detailPanel, /隐藏需求数值为 0 的备件/);
     assert.match(detailPanel, /data-carry-hide-zero checked/);
     assert.match(detailPanel, /data-carry-aircraft-filter/);
@@ -2840,7 +2864,7 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     await runtime.change("[data-carry-hide-zero]", {}, { checked: false });
     const filteredAndSortedRows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table"'));
     assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO/);
-    assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO[\s\S]*<td>100%<\/td><td>--<\/td><td>数据不可用<\/td><td>--<\/td>/);
+    assert.match(filteredAndSortedRows, /零需求产品 \/ ZERO[\s\S]*<td>--<\/td><td>数据不可用<\/td><td>--<\/td>/);
     assert.ok(filteredAndSortedRows.indexOf("发动机控制模块 / EC-15") < filteredAndSortedRows.indexOf("零需求产品 / ZERO"));
   } finally {
     runtime.restore();
@@ -2865,6 +2889,30 @@ test("carry list overall utilization is unavailable when total carried quantity 
     await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "spare-planning-carry-list-analysis" });
     const body = analysisExportBodies(runtime).at(-1);
     assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("总体备件利用率"), "--");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("carry list treats an actual satisfaction rate exactly at 0.9 as meeting the constraint", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-carry-list-analysis",
+    projectJson: createRuntimeProjectJson({
+      products: [{ id: "boundary-spare", name: "边界备件", model: "B-90", kind: "LRU" }]
+    }),
+    liteMesaAnalysisResponseOverrides: {
+      rows: [{
+        aircraftModel: "J-15", productId: "boundary-spare", recommended: 9,
+        usedQuantity: 9, carriedQuantity: 9, demand: 10, immediatelyFilledQuantity: 9,
+        shortage: 1, minimumSatisfactionRate: 0.9, riskLevel: "低", lifeLimited: false
+      }]
+    }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.match(detailPanel, /边界备件 \/ B-90[\s\S]*<td>90%<\/td><td>满足（0\.00 个百分点）<\/td>/);
   } finally {
     runtime.restore();
   }
@@ -2966,12 +3014,12 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     assert.equal(body.analysis_type, "carry_list");
     assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
     assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("总体备件利用率"), "160.00%");
-    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "实际需求数量", "实际即时满足数量", "预计短缺数量", "规划满足率", "实际即时满足率", "实际满足率下限", "实际约束状态", "实际约束余量", "实际备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
-    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[8], row[10], row[11], row[12], row[13], row[14]]), [
-      ["J-15", "液压泵 / B-01", 2, 0, 0, "100%", "90%", "未满足", "-65.00%", "--", "否"],
-      ["J-15", "航电模块 / A-01", 4, 8, 4, "100%", "90%", "未满足", "-40.00%", "200.00%", "是"]
+    assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "实际需求数量", "实际即时满足数量", "预计短缺数量", "备件满足率", "实际约束状态", "实际约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[9], row[10], row[11], row[12]]), [
+      ["J-15", "液压泵 / B-01", 2, 0, 0, "未满足", "-65.00 个百分点", "--", "否"],
+      ["J-15", "航电模块 / A-01", 4, 8, 4, "未满足", "-40.00 个百分点", "200.00%", "是"]
     ]);
-    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[9]), ["25%", "50%"]);
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[8]), ["25%", "50%"]);
     assert.doesNotMatch(JSON.stringify(body), /J-16|零需求件/);
   } finally {
     runtime.restore();
@@ -2992,9 +3040,9 @@ test("task reliability Excel export preserves summary rounding and sample wave r
       period_total_samples: 2,
       successful_samples: 1,
       wave_rows: [
-        { sampleIndex: 0, dayIndex: 1, waveIndex: 1, plannedWaves: 2, successfulWaves: 1 },
-        { sampleIndex: 0, dayIndex: 1, waveIndex: 2, plannedWaves: 4, successfulWaves: 1 },
-        { sampleIndex: 1, dayIndex: 1, waveIndex: 1, plannedWaves: 6, successfulWaves: 3 }
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 1, plannedWaves: 2, successfulWaves: 1, missionSuccessRate: 0.5 },
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 2, plannedWaves: 4, successfulWaves: 1, missionSuccessRate: 0.25 },
+        { sampleIndex: 1, dayIndex: 1, waveIndex: 1, plannedWaves: 6, successfulWaves: 3, missionSuccessRate: 0.5 }
       ]
     },
     analysisXlsxExportDelayMs: 40
@@ -3031,7 +3079,48 @@ test("task reliability Excel export preserves summary rounding and sample wave r
   }
 });
 
-test("downtime Excel export reuses localized display rows and the current factor selection", async () => {
+test("task reliability sample filter changes only detail rows and exported detail", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    liteMesaAnalysisResponseOverrides: {
+      period_total_samples: 2,
+      successful_samples: 1,
+      wave_rows: [
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 1, plannedWaves: 1, successfulWaves: 1, missionSuccessRate: 1 },
+        { sampleIndex: 1, dayIndex: 1, waveIndex: 1, plannedWaves: 9, successfulWaves: 0, missionSuccessRate: 0 },
+        { sampleIndex: 1, dayIndex: 1, waveIndex: 2, plannedWaves: 2, successfulWaves: 1, missionSuccessRate: 0.5 }
+      ]
+    }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const chartBefore = runtime.appNode.innerHTML.match(/<div class="analysis-chart-panel">[\s\S]*?<p class="inline-status">[\s\S]*?<\/p>\s*<\/div>/)?.[0];
+    assert.ok(chartBefore);
+    assert.match(runtime.appNode.innerHTML, /data-task-reliability-sample-filter/);
+    assert.match(runtime.appNode.innerHTML, /<option value="0"[^>]*>样本 1<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="1"[^>]*>样本 2<\/option>/);
+    assert.match(chartBefore, /平均波次成功率 50\.00%；有效样本 2 \/ 总样本 2；排除无效样本 0/);
+
+    await runtime.change("[data-task-reliability-sample-filter]", {}, { value: "1" });
+    const detailTable = runtime.appNode.innerHTML.match(/<table class="lite-mesa-stat-table task-reliability-result-table">[\s\S]*?<\/table>/)?.[0] || "";
+    const chartAfter = runtime.appNode.innerHTML.match(/<div class="analysis-chart-panel">[\s\S]*?<p class="inline-status">[\s\S]*?<\/p>\s*<\/div>/)?.[0];
+    assert.doesNotMatch(detailTable, /样本 1/);
+    assert.equal((detailTable.match(/样本 2/g) || []).length, 2);
+    assert.equal(chartAfter, chartBefore, "sample detail filtering must not change the all-sample trend");
+
+    await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-task-reliability" });
+    const body = analysisExportBodies(runtime).at(-1);
+    assert.equal(new Map(body.analysis_information).get("明细范围"), "样本 2");
+    assert.equal(new Map(body.analysis_information).get("摘要口径"), "全部样本，不随明细筛选变化");
+    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[0]), ["样本 2", "样本 2"]);
+    assert.deepEqual(body.summary.slice(-2).map((row) => row[1]), [2, 1]);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("downtime Excel export sends only the completed task reference and active filters", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-downtime-factor-analysis",
     projectJson: createRuntimeProjectJson(),
@@ -3043,6 +3132,9 @@ test("downtime Excel export reuses localized display rows and the current factor
       event_details: [
         {
           factor: "spare_shortage",
+          sample_index: 1,
+          seed: 20260705,
+          status: "unresolved",
           tail_number: "J15-101",
           equipment_name: "液压泵",
           mission_name: "起飞任务",
@@ -3057,6 +3149,9 @@ test("downtime Excel export reuses localized display rows and the current factor
         },
         {
           factor: "failure",
+          sample_index: 0,
+          seed: 20260704,
+          status: "completed",
           tail_number: "J15-102",
           start_minute: 60,
           end_minute: 180,
@@ -3071,18 +3166,23 @@ test("downtime Excel export reuses localized display rows and the current factor
     for (const factor of ["failure", "equipment_shortage", "preventive"]) {
       await runtime.change("[data-downtime-factor-filter]", {}, { value: factor, checked: false, type: "checkbox" });
     }
+    assert.match(runtime.appNode.innerHTML, /<th>样本编号<\/th><th>随机种子<\/th><th>机号<\/th><th>事件状态<\/th>/);
+    await runtime.change("[data-downtime-detail-filter]", { downtimeDetailFilter: "sample" }, { value: "1" });
+    await runtime.change("[data-downtime-detail-filter]", { downtimeDetailFilter: "seed" }, { value: "20260705" });
+    await runtime.change("[data-downtime-detail-filter]", { downtimeDetailFilter: "status" }, { value: "unresolved" });
     await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-downtime-factor-analysis" });
 
     const body = analysisExportBodies(runtime).at(-1);
-    const serialized = JSON.stringify(body);
+    assert.equal(body.task_id, "simulation-task-runtime-1");
     assert.equal(body.analysis_type, "downtime_factors");
-    assert.equal(new Map(body.analysis_information).get("运行来源"), "当前项目");
-    assert.deepEqual(body.detail_sections[0].rows.map((row) => row[1]), ["备件短缺"]);
-    assert.match(serialized, /DAY_2 00:01/);
-    assert.match(serialized, /DAY_2 01:01/);
-    assert.match(serialized, /起飞任务；阶段：飞行前保障/);
-    assert.match(serialized, /当前装备所需备件短缺|飞机J15-101所需备件短缺/);
-    assert.doesNotMatch(serialized, /must-not-export|internal_run_id|debug|failure_mode|故障模式/);
+    assert.deepEqual(body.filters, {
+      factors: ["spare_shortage"],
+      sample_indices: [1],
+      seeds: [20260705],
+      statuses: ["unresolved"]
+    });
+    assert.deepEqual(Object.keys(body).sort(), ["analysis_type", "filters", "task_id"]);
+    assert.doesNotMatch(JSON.stringify(body), /event_details|detail_sections|summary|analysis_information|must-not-export|J15-101/);
   } finally {
     runtime.restore();
   }
@@ -3102,7 +3202,7 @@ test("analysis Excel export stays disabled while running and shows the backend C
     await new Promise((resolve) => setTimeout(resolve, 70));
     await runtime.flush();
     await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-task-reliability" });
-    assert.match(runtime.appNode.innerHTML, /导出失败：[\s\S]*工作簿内容校验失败，请调整筛选条件。请确认后端可用并重试。/);
+    assert.match(runtime.appNode.innerHTML, /导出失败：[\s\S]*工作簿内容校验失败，请调整筛选条件/);
     assert.equal(runtime.downloads.length, 0);
   } finally {
     runtime.restore();
@@ -3193,9 +3293,9 @@ test("task reliability analysis renders sample details and a separate cross-samp
       period_total_samples: 2,
       successful_samples: 1,
       wave_rows: [
-        { sampleIndex: 0, dayIndex: 1, waveIndex: 1, plannedWaves: 2, successfulWaves: 1 },
-        { sampleIndex: 0, dayIndex: 1, waveIndex: 2, plannedWaves: 4, successfulWaves: 1 },
-        { sampleIndex: 1, dayIndex: 1, waveIndex: 1, plannedWaves: 6, successfulWaves: 3 }
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 1, plannedWaves: 2, successfulWaves: 1, missionSuccessRate: 0.5 },
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 2, plannedWaves: 4, successfulWaves: 1, missionSuccessRate: 0.25 },
+        { sampleIndex: 1, dayIndex: 1, waveIndex: 1, plannedWaves: 6, successfulWaves: 3, missionSuccessRate: 0.5 }
       ]
     }
   });
@@ -3218,8 +3318,10 @@ test("task reliability analysis renders sample details and a separate cross-samp
     assert.match(detailPanel, /波次成功率趋势/);
     assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
     assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);
-    assert.match(detailPanel, /<title>第1天第1波次（2 个样本）：50%<\/title>/);
-    assert.match(runtime.appNode.innerHTML, />0\.5<\/text>/);
+    assert.match(detailPanel, /<title>第1天第1波次：平均波次成功率 50\.00%；有效样本 2 \/ 总样本 2；排除无效样本 0<\/title>/);
+    for (const tick of ["0%", "20%", "40%", "60%", "80%", "100%"]) {
+      assert.match(runtime.appNode.innerHTML, new RegExp(`>${tick}<\\/text>`));
+    }
     assert.doesNotMatch(detailPanel, /任务剖面可靠性|整周期任务失败次数|任务可靠度百分比|平均任务成功率/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<span>时间窗口<\/span>|data-lite-mesa-analysis-field="maxTimeWindow"/);
   } finally {
@@ -3244,8 +3346,38 @@ test("task reliability analysis marks missing counts unavailable and does not in
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(runtime.appNode.innerHTML, /<span>仿真总次数<\/span>\s*<strong>不可用<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<span>成功次数<\/span>\s*<strong>不可用<\/strong>/);
-    assert.match(detailPanel, /当前结果没有波次成功率明细/);
+    assert.match(detailPanel, /当前结果没有可计算平均成功率的有效波次/);
     assert.doesNotMatch(detailPanel, /样本 1|projection/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("task reliability trend retains an all-invalid business wave as an unavailable gap", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: {
+      period_total_samples: 2,
+      successful_samples: 1,
+      wave_rows: [
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 1, plannedWaves: 1, successfulWaves: 1, missionSuccessRate: 1 },
+        { sampleIndex: 1, dayIndex: 1, waveIndex: 1, plannedWaves: 1, successfulWaves: 0, missionSuccessRate: 0 },
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 2, plannedWaves: 1, successfulWaves: 1 },
+        { sampleIndex: 1, dayIndex: 1, waveIndex: 2, plannedWaves: 1, successfulWaves: 0, missionSuccessRate: "invalid" },
+        { sampleIndex: 0, dayIndex: 1, waveIndex: 3, plannedWaves: 1, successfulWaves: 1, missionSuccessRate: 0.75 }
+      ]
+    }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.match(detailPanel, /<td>第1天第2波次<\/td><td>1<\/td><td>1<\/td><td>--<\/td>/);
+    assert.match(detailPanel, /<text class="line-chart-x-label"[^>]*>第1天第2波次<\/text>/);
+    assert.doesNotMatch(detailPanel, /<circle[^>]*><title>第1天第2波次：平均波次成功率 0(?:\.00)?%/);
+    assert.equal((detailPanel.match(/<polyline points=/g) || []).length, 2, "the invalid middle wave must split the line into a visible gap");
+    assert.match(detailPanel, /第1天第3波次：平均波次成功率 75\.00%；有效样本 1 \/ 总样本 2；排除无效样本 1/);
   } finally {
     runtime.restore();
   }
@@ -3388,7 +3520,7 @@ test("downtime factor filters keep localized summaries, ranking, and complete ev
     assert.match(initial, /停机事件次数[\s\S]*<strong>4<\/strong>/);
     assert.match(initial, /累计停机时长[\s\S]*<strong>10\.00 小时<\/strong>/);
     assert.match(initial, /累计停机时长（小时）/);
-    assert.match(initial, /持续时长（小时）/);
+    assert.match(initial, /累计停机时长（小时）/);
     assert.match(initial, /DAY_1 01:00[\s\S]*DAY_1 05:00/);
     assert.match(initial, /昼间制空任务；阶段：备件补给/);
     assert.match(initial, /夜间巡逻任务；阶段：保障准备/);
@@ -3398,8 +3530,8 @@ test("downtime factor filters keep localized summaries, ranking, and complete ev
     assert.doesNotMatch(initial, /<td>repair<\/td>|<td>preventive<\/td>|>\d+(?:\.\d+)? min<|持续时长\(h\)|累计停机时长\(h\)/);
     assert.ok(initial.indexOf("装备故障</td>") < initial.indexOf("预防性维修</td>"));
     assert.ok(initial.indexOf("预防性维修</td>") < initial.indexOf("备件短缺</td>"));
-    assert.match(initial, /所需备件短缺，当前作业正在等待补给/);
-    assert.match(initial, /装备发生故障，当前不可用并等待修复/);
+    assert.match(initial, /因所需备件短缺形成等待补给时段/);
+    assert.match(initial, /发生装备故障并形成停机维修时段/);
     assert.match(initial, /综合检测仪/);
     assert.match(initial, /发动机定寿检查/);
     assert.doesNotMatch(initial, /故障模式|随机故障/);
@@ -3412,20 +3544,20 @@ test("downtime factor filters keep localized summaries, ranking, and complete ev
     const failureOnly = runtime.appNode.innerHTML;
     assert.match(failureOnly, /停机事件次数[\s\S]*<strong>1<\/strong>/);
     assert.match(failureOnly, /累计停机时长[\s\S]*<strong>4\.00 小时<\/strong>/);
-    assert.match(failureOnly, /装备发生故障，当前不可用并等待修复/);
-    assert.doesNotMatch(failureOnly, /所需备件短缺，当前作业正在等待补给|保障设备不足，当前作业正在等待资源|装备正在执行预防性维修/);
+    assert.match(failureOnly, /发生装备故障并形成停机维修时段/);
+    assert.doesNotMatch(failureOnly, /因所需备件短缺形成等待补给时段|因保障设备不足形成等待时段|执行预防性维修并形成停机时段/);
 
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: true });
     const combined = runtime.appNode.innerHTML;
     assert.match(combined, /停机事件次数[\s\S]*<strong>2<\/strong>/);
     assert.match(combined, /累计停机时长[\s\S]*<strong>6\.00 小时<\/strong>/);
-    assert.match(combined, /所需备件短缺，当前作业正在等待补给/);
-    assert.match(combined, /装备发生故障，当前不可用并等待修复/);
+    assert.match(combined, /因所需备件短缺形成等待补给时段/);
+    assert.match(combined, /发生装备故障并形成停机维修时段/);
 
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "failure", checked: false });
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false });
     assert.match(runtime.appNode.innerHTML, /请选择至少一种停机因素/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /downtime-factor-summary-table|所需备件短缺，当前作业正在等待补给|装备发生故障，当前不可用并等待修复/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /downtime-factor-summary-table|因所需备件短缺形成等待补给时段|发生装备故障并形成停机维修时段/);
     assert.equal(runtime.requests.filter((request) => request.url === "/api/mesa-analysis-runs").length, initialRequestCount);
   } finally {
     runtime.restore();
@@ -7049,7 +7181,7 @@ test("downtime pagination appears only beyond twenty details or snapshots", asyn
   }
 });
 
-test("downtime details and snapshots paginate independently and export the full filtered events", async () => {
+test("downtime details and snapshots paginate independently while export references the full server result", async () => {
   const events = Array.from({ length: 41 }, (_, index) => ({
     factor: index < 21 ? "failure" : "spare_shortage", equipment_name: `event-equipment-${index}`,
     start_minute: index, end_minute: index + 1, duration_hours: 1 / 60
@@ -7078,7 +7210,16 @@ test("downtime details and snapshots paginate independently and export the full 
     assert.equal((runtime.appNode.innerHTML.match(/<details class="lite-mesa-event-snapshot" open>/g) || []).length, 1);
     assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>[\s\S]*?随机种子 1040/);
     await runtime.click("[data-analysis-xlsx-export]", { analysisXlsxExport: "mission-reliability-downtime-factor-analysis" });
-    assert.equal(analysisExportBodies(runtime).at(-1).detail_sections[1].rows.length, 41);
+    assert.deepEqual(analysisExportBodies(runtime).at(-1), {
+      task_id: "simulation-task-runtime-1",
+      analysis_type: "downtime_factors",
+      filters: {
+        factors: ["spare_shortage", "failure", "equipment_shortage", "preventive"],
+        sample_indices: [],
+        seeds: [],
+        statuses: []
+      }
+    });
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false, type: "checkbox" });
     assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页 · 共 21 条/);
     assert.match(details(), /event-equipment-0</);
@@ -7090,6 +7231,51 @@ test("downtime details and snapshots paginate independently and export the full 
     await runtime.change("[data-downtime-factor-filter]", {}, { value: "failure", checked: true, type: "checkbox" });
     assert.match(runtime.appNode.innerHTML, /第 1 \/ 2 页/);
   } finally { runtime.restore(); }
+});
+
+test("downtime sample seed and status filters remove stale runtime snapshots with their canonical segments", async () => {
+  const events = [
+    {
+      factor: "failure", sample_index: 0, seed: 111, tail_number: "AC-01", status: "completed", status_label: "已修复",
+      equipment_name: "一号发动机", start_minute: 0, end_minute: 10, duration_minutes: 10
+    },
+    {
+      factor: "failure", sample_index: 1, seed: 222, tail_number: "AC-02", status: "unresolved", status_label: "未修复·仍等待维修",
+      equipment_name: "二号发动机", start_minute: 20, end_minute: 30, duration_minutes: 10
+    }
+  ];
+  const snapshots = [
+    { factor: "failure", sample_index: 0, seed: 111, simulation_time: 5, event: { event_type: "failure", details: { tail_number: "AC-01" } } },
+    { factor: "failure", sample_index: 1, seed: 222, simulation_time: 25, event: { event_type: "failure", details: { tail_number: "AC-02" } } }
+  ];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-downtime-factor-analysis",
+    liteMesaAnalysisResponseOverrides: { event_details: events, event_snapshots: snapshots }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    assert.match(runtime.appNode.innerHTML, /随机种子 111/);
+    assert.match(runtime.appNode.innerHTML, /随机种子 222/);
+
+    await runtime.change("[data-downtime-detail-filter]", { downtimeDetailFilter: "sample" }, { value: "1" });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /随机种子 111/);
+    assert.match(runtime.appNode.innerHTML, /随机种子 222/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /一号发动机/);
+    assert.match(runtime.appNode.innerHTML, /二号发动机/);
+
+    await runtime.change("[data-downtime-detail-filter]", { downtimeDetailFilter: "seed" }, { value: "222" });
+    await runtime.change("[data-downtime-detail-filter]", { downtimeDetailFilter: "status" }, { value: "unresolved" });
+    assert.match(runtime.appNode.innerHTML, /未修复·仍等待维修/);
+    assert.match(runtime.appNode.innerHTML, /随机种子 222/);
+
+    await runtime.change("[data-downtime-detail-filter]", { downtimeDetailFilter: "status" }, { value: "completed" });
+    assert.match(runtime.appNode.innerHTML, /当前筛选范围内没有可展示的停机事件明细/);
+    assert.match(runtime.appNode.innerHTML, /当前停机因素运行未捕获到停机事件日志/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /随机种子 111|随机种子 222/);
+  } finally {
+    runtime.restore();
+  }
 });
 
 test("experiment plan row selection is interactive for template-created projects at runtime", async () => {
@@ -7453,6 +7639,40 @@ test("experiment plan editor blocks invalid parallel cores before save", async (
       runtime.requests.some((request) => request.url.includes("/experiment-plans") && (request.options.method || "GET") !== "GET"),
       false
     );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("experiment plan name conflict keeps the editor value and does not create a client snapshot", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    experimentPlanSaveError: {
+      code: "experiment_plan_name_conflict",
+      message: "同一项目内实验名称已存在"
+    }
+  });
+
+  try {
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.name" },
+      { value: "重复方案", type: "text" }
+    );
+    await runtime.click("[data-save-plan]");
+    await waitForRuntimeHtml(runtime, /id="experiment-plan-name-error"[^>]*role="alert">实验名称已存在，请使用其他名称<\/p>/, "name conflict should be rendered next to the field");
+
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-path="experiment\.name"[^>]*value="重复方案"/);
+    assert.match(runtime.appNode.innerHTML, /data-save-plan/);
+    assert.equal(runtime.requests.filter((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans"
+      && (request.options.method || "GET") === "POST"
+    )).length, 1);
+    assert.equal(runtime.requests.some((request) => (
+      request.url === "/api/projects/project-runtime/modeling-snapshots"
+      && (request.options.method || "GET") === "POST"
+    )), false);
   } finally {
     runtime.restore();
   }
@@ -8433,6 +8653,31 @@ test("mission reliability and downtime analysis keep current Project as default 
   }
 });
 
+test("all four shared analysis entries render one busy error without mislabeling it as modeling validation", async () => {
+  for (const [featureId, button] of [
+    ["spare-planning-spare-shortfall-analysis", "[data-lite-mesa-analysis-action='run']"],
+    ["spare-planning-carry-list-analysis", "[data-lite-mesa-analysis-action='run']"],
+    ["mission-reliability-task-reliability", "[data-lite-mesa-analysis-action='run']"],
+    ["mission-reliability-downtime-factor-analysis", "[data-lite-mesa-analysis-action='run']"]
+  ]) {
+    const runtime = await setupRuntimeApp({
+      hash: `feature=${featureId}`,
+      simulationTaskStartError: {
+        code: "simulation_task_busy",
+        message: "另一项分析正在运行"
+      }
+    });
+    try {
+      await runtime.click(button);
+      await waitForRuntimeHtml(runtime, /已有仿真任务正在运行/, `${featureId} should render the shared busy message`);
+      assert.equal((runtime.appNode.innerHTML.match(/已有仿真任务正在运行/g) || []).length, 1);
+      assert.doesNotMatch(runtime.appNode.innerHTML, /建模粒度不足/);
+    } finally {
+      runtime.restore();
+    }
+  }
+});
+
 test("Monte Carlo detail renders canonical moments, units, valid n, and mixed execution counts", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
@@ -8530,25 +8775,26 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
     assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.73<\/strong>/);
     assert.match(resultCards, /使用可用度\(A\)[\s\S]*<strong>0\.81<\/strong>/);
-    assert.match(resultCards, /实际即时满足率（样本均值）[\s\S]*<strong>0\.50<\/strong>/);
-    assert.match(resultCards, /实际备件利用率（样本均值）[\s\S]*<strong>0\.13<\/strong>/);
+    assert.match(resultCards, /备件满足率[\s\S]*<strong>0\.50<\/strong>/);
+    assert.match(resultCards, /备件利用率[\s\S]*<strong>0\.13<\/strong>/);
     assert.doesNotMatch(resultCards, /比例|架次\/机\/天|小时|项/);
-    assert.match(metricTable, /<th>样本均值<\/th><th>跨样本总体比率<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
-    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>--<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>--<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>实际即时满足率<\/td>\s*<td>0\.50<\/td>\s*<td>8\.33%<\/td>\s*<td>0\.5000<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
-    assert.match(metricTable, /<td>实际备件利用率<\/td>\s*<td>0\.13<\/td>\s*<td>2\.78%<\/td>\s*<td>0\.0313<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
-    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>--<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<th>样本均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
+    assert.doesNotMatch(metricTable, /跨样本总体比率/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.73<\/td>\s*<td>0\.0123<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.81<\/td>\s*<td>0\.0064<\/td>\s*<td>比例<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>备件满足率<\/td>\s*<td>0\.50<\/td>\s*<td>0\.5000<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>0\.13<\/td>\s*<td>0\.0313<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00<\/td>\s*<td>不可计算<\/td>\s*<td>比例<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
     assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
-    assert.match(metricTable, /<td>维修积压<\/td>[\s\S]*?<td>项<\/td>/);
+    assert.doesNotMatch(metricTable, /维修积压/);
     assert.doesNotMatch(metricTable, /比例²|\(架次\/机\/天\)²|小时²|项²/);
-    for (const label of ["任务可靠度", "使用可用度\\(A\\)", "实际即时满足率", "实际备件利用率"]) {
+    for (const label of ["任务可靠度", "使用可用度\\(A\\)", "备件满足率", "备件利用率"]) {
       assert.equal((metricTable.match(new RegExp(label, "g")) || []).length, 1, `${label} should appear once in the main metric table`);
     }
     assert.doesNotMatch(runtime.appNode.innerHTML, /sample_id|mean_transport_delay|mission_success_rate|operational_availability|spare_fill_rate|spare_utilization/);
     assert.match(runtime.appNode.innerHTML, new RegExp("Mesa 分析完成：3/4 个样本，失败 1 个，总耗时 70\\.9 秒。"));
-    assert.match(runtime.appNode.innerHTML, /样本实际备件指标明细[\s\S]*8\.33%[\s\S]*2\.78%/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /样本实际备件指标明细|8\.33%|2\.78%/);
 
     await runtime.click("[data-analysis-xlsx-export]");
     const exportRequest = runtime.requests
@@ -8556,10 +8802,18 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
       .map((request) => JSON.parse(request.options.body || "{}"))
       .at(-1);
     assert.equal(exportRequest.analysis_type, "monte_carlo");
-    assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率" && row[1] === "0.50"));
-    assert.ok(exportRequest.summary.some((row) => row[0] === "实际即时满足率（跨样本总体）" && row[1] === "8.33%"));
-    assert.ok(exportRequest.summary.some((row) => row[0] === "实际备件利用率（跨样本总体）" && row[1] === "2.78%"));
-    assert.deepEqual(exportRequest.detail_sections[0].rows[0].slice(2), [12, 1, "8.33%", 36, 1, "2.78%"]);
+    assert.equal(exportRequest.project_name, "Runtime 项目");
+    assert.equal(exportRequest.experiment_name, "当前项目");
+    assert.equal(exportRequest.analysis_name, "蒙特卡洛分析");
+    assert.match(exportRequest.export_date, /^\d{8}$/);
+    assert.ok(exportRequest.summary.some((row) => row[0] === "备件满足率" && row[1] === "0.50"));
+    assert.ok(exportRequest.summary.some((row) => row[0] === "备件利用率" && row[1] === "0.13"));
+    assert.equal(exportRequest.summary.some((row) => String(row[0]).includes("跨样本总体")), false);
+    assert.deepEqual(exportRequest.detail_sections[0].columns, ["业务指标", "样本均值", "样本方差（n-1）", "单位", "有效样本数"]);
+    assert.equal(exportRequest.detail_sections[0].rows.some((row) => row[0] === "维修积压"), false);
+    assert.equal(exportRequest.detail_sections[0].rows.some((row) => row[0] === "备件满足率"), true);
+    assert.equal(JSON.stringify(exportRequest).includes("sample-render-fallback-check"), false);
+    assert.equal(runtime.downloads.at(-1).download, `Runtime 项目-当前项目-蒙特卡洛分析-${exportRequest.export_date}.xlsx`);
   } finally {
     runtime.restore();
   }
@@ -8710,11 +8964,13 @@ async function setupRuntimeApp({
   liteMesaAnalysisResponseDelayMs = 0,
   simulationTaskEntries = [],
   simulationTasksStayRunning = false,
+  simulationTaskStartError = null,
   visualizationSessionResponseOverrides = {},
   visualizationSessionResponseDelayMs = 0,
   visualizationSessionDeleteFailures = 0,
   analysisXlsxExportError = "",
   analysisXlsxExportDelayMs = 0,
+  experimentPlanSaveError = null,
   projectSaveHandler = null,
   confirmResponses = [],
   backendProjects = [{
@@ -8913,6 +9169,12 @@ async function setupRuntimeApp({
     }
     if (experimentPlanListMatch && method === "POST") {
       const body = JSON.parse(options.body || "{}");
+      if (experimentPlanSaveError) {
+        return jsonResponse({
+          code: experimentPlanSaveError.code || "experiment_plan_name_conflict",
+          message: experimentPlanSaveError.message || "实验名称已存在"
+        }, { ok: false, status: experimentPlanSaveError.status || 409 });
+      }
       return jsonResponse({
         experiment_plan_id: "plan-runtime-created",
         config: body.config || {}
@@ -8951,6 +9213,12 @@ async function setupRuntimeApp({
     const experimentPlanItemMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)$/);
     if (experimentPlanItemMatch && method === "PUT") {
       const body = JSON.parse(options.body || "{}");
+      if (experimentPlanSaveError) {
+        return jsonResponse({
+          code: experimentPlanSaveError.code || "experiment_plan_name_conflict",
+          message: experimentPlanSaveError.message || "实验名称已存在"
+        }, { ok: false, status: experimentPlanSaveError.status || 409 });
+      }
       const updatedPlan = {
         project_id: decodeURIComponent(experimentPlanItemMatch[1]),
         experiment_plan_id: decodeURIComponent(experimentPlanItemMatch[2]),
@@ -9125,6 +9393,12 @@ async function setupRuntimeApp({
     }
     if (url === "/api/simulation-tasks" && method === "POST") {
       const body = JSON.parse(options.body || "{}");
+      if (simulationTaskStartError) {
+        return jsonResponse({
+          code: simulationTaskStartError.code || "simulation_task_busy",
+          message: simulationTaskStartError.message || "已有仿真任务正在运行"
+        }, { ok: false, status: simulationTaskStartError.status || 409 });
+      }
       const taskId = `simulation-task-runtime-${runtimeSimulationTasks.size + 1}`;
       runtimeSimulationTasks.set(taskId, body);
       const samples = Number(body.settings?.samples || 2);
@@ -9309,7 +9583,9 @@ async function setupRuntimeApp({
         );
       }
       const body = JSON.parse(options.body || "{}");
-      const filename = `${body.project_name || "项目"}-${body.analysis_name || "分析结果"}-20260718-120000.xlsx`;
+      const filename = body.analysis_type === "monte_carlo"
+        ? `${body.project_name || "项目"}-${body.experiment_name || "当前项目"}-蒙特卡洛分析-${body.export_date || "20260718"}.xlsx`
+        : `${body.project_name || "项目"}-${body.analysis_name || "分析结果"}-20260718-120000.xlsx`;
       return {
         ok: true,
         status: 200,
@@ -9421,6 +9697,10 @@ async function setupRuntimeApp({
       });
       await flushRuntimeTasks();
     },
+    async toggle(selector, dataset = {}, props = {}) {
+      appListeners.toggle?.({ target: eventTarget(selector, dataset, props) });
+      await flushRuntimeTasks();
+    },
     async keydown(selector, dataset = {}, props = {}) {
       await appListeners.keydown?.({
         key: props.key || "",
@@ -9524,6 +9804,8 @@ function createRuntimeAnchor(downloads, objectUrls) {
 function eventTarget(selector, dataset = {}, props = {}) {
   return {
     dataset,
+    open: Boolean(props.open),
+    isConnected: props.isConnected ?? true,
     files: props.files || [],
     value: props.value ?? "",
     checked: Boolean(props.checked),
@@ -9984,7 +10266,7 @@ function jsonResponse(payload, { ok = true, status = 200 } = {}) {
 
 test("V2 per-sample reliability pagination retains counts and full export", async () => {
   const rows = Array.from({ length: 41 }, (_, index) => ({
-    sampleIndex: index, dayIndex: 1, waveIndex: 1, plannedWaves: 4, successfulWaves: 1
+    sampleIndex: index, dayIndex: 1, waveIndex: 1, plannedWaves: 4, successfulWaves: 1, missionSuccessRate: 0.25
   }));
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",

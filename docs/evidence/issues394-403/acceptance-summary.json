@@ -1,0 +1,114 @@
+{
+  "schema": "spare-mvp-issues394-403-current-case-acceptance-v1",
+  "baseline": {
+    "git_head": "8b55e81549d906c02cf3c3fde9c01b8e48c0923c",
+    "branch": "main",
+    "source_state": "modified-uncommitted",
+    "runtime_source_bundle_sha256": "5fc6a479cb1d9d5f54c94647923a9fc263acdf69588aec82e8ba0da3db3371fb",
+    "final_rbd_source_bundle_sha256_before": "91bae36192adc74784ff3c6eb143031a9d04b6f623be5437f5f51f18dbdd7160",
+    "final_rbd_source_bundle_sha256_after": "91bae36192adc74784ff3c6eb143031a9d04b6f623be5437f5f51f18dbdd7160",
+    "final_export_backend_bundle_sha256": "2cccf8e8db10d7acd79ec48db19d7cf5abb4158a1b8cf4dd36de9e66a9b4ca34"
+  },
+  "database": {
+    "source_path": "runs/system-start/spare_mvp.sqlite3",
+    "source_sha256_before": "2614c80566ac372a6c7428fd7b4b9dcbb4b0d5319f083d3a40c0f29761bbec2c",
+    "source_sha256_after": "2614c80566ac372a6c7428fd7b4b9dcbb4b0d5319f083d3a40c0f29761bbec2c",
+    "sqlite_backup_creation_sha256": "2a6d9a2d7ff275740115447653b1a55a6d77a2b866a674a49af54626e96621aa",
+    "sqlite_backup_post_runtime_main_file_sha256": "92c2648a82c01a98f58f2a8560d82243eabc1aca64452a774613f9579388fd5a",
+    "quick_check": "ok",
+    "source_was_opened_read_only": true,
+    "runtime_used_only_backup_copy": true,
+    "project_payload_sha256_before": "68f376719bdd5cd9d5f5b2cdfe0f9ffd84662042213d14b14c67b34222f33926",
+    "project_payload_sha256_after": "68f376719bdd5cd9d5f5b2cdfe0f9ffd84662042213d14b14c67b34222f33926"
+  },
+  "fixed_seed_actual_case": {
+    "passed": true,
+    "execution_path": "ContractRepository.get_project -> ProjectJsonExporter.export -> BackendApi.run_lite_mesa_analysis -> SimulationAdapter",
+    "project": "F35仿真案例",
+    "clean_project_sha256": "220f41d8a4e71e1a4c6a91143c100368c0cdd1440cbdcbace57a28ae56582fa5",
+    "seeds": [20260621, 20260622, 20260623, 20260624],
+    "completed_samples": 4,
+    "failed_samples": 0,
+    "raw_totals": {
+      "planned_sorties": 832,
+      "launched_sorties": 690,
+      "completed_sorties": 646,
+      "planned_mission_waves": 416,
+      "successful_mission_waves": 312,
+      "spare_demand_total": 12,
+      "spare_immediately_filled_total": 1,
+      "spare_consumed_total": 1,
+      "spare_carried_total_per_sample": [501, 501, 501, 501]
+    },
+    "evidence": "fixed-seed-actual-metrics.json"
+  },
+  "rbd_browser": {
+    "passed": true,
+    "browser": "Chromium 151.0.7922.34",
+    "stable_source_window": true,
+    "checks": {
+      "current_case_long_name_and_full_title": true,
+      "tree_width_before_px": 300,
+      "tree_width_after_px": 692,
+      "right_panel_width_after_px": 320,
+      "node_pagination": "71 rows; page 1/4 to page 2/4",
+      "zoom_min_percent": 10,
+      "zoom_max_percent": 400,
+      "wheel_zoom_percent": 110,
+      "viewport_height_px": 598,
+      "viewport_overflow": "auto/auto"
+    },
+    "note": "The longest named current-case label tested fit at 300 px; ellipsis CSS and the full title attribute were both present, so no visual clipping occurred in this exact case.",
+    "report": "rbd-browser-acceptance.json",
+    "screenshots": ["rbd-visible-viewport.png", "rbd-initial-long-name.png", "rbd-resized-zoom-pagination.png"],
+    "compact_screenshot_sha256": "4689e0165e5cff4c10aae1756ad43aaf09c2c796c3de1b2f121ac03a3eff074d"
+  },
+  "downtime_task_reference_export": {
+    "passed": true,
+    "task_status": "completed",
+    "completed_samples": 4,
+    "failed_samples": 0,
+    "seeds": [20260621, 20260622, 20260623, 20260624],
+    "event_count": 271,
+    "event_counts_by_factor": {
+      "failure": 33,
+      "spare_shortage": 11,
+      "equipment_shortage": 0,
+      "preventive": 227
+    },
+    "event_counts_by_status": {
+      "completed": 257,
+      "continued": 3,
+      "unresolved": 11
+    },
+    "spare_shortage_reason_counts": {
+      "organization_no_available_ancestor": 11
+    },
+    "startup_inventory_warning_count": 0,
+    "xlsx_sheets": ["分析信息", "结果摘要", "因素排行", "停机事件明细"],
+    "xlsx_detail_rows": 271,
+    "xlsx_sha256": "4a3e87df331d042378d0d44e2088bbc7e4d2858e7753e51fbc20c58ddc82a23a",
+    "xlsx_bytes": 29526,
+    "xlsx_source_ledger_completeness": {
+      "source_events": 271,
+      "detail_rows": 271,
+      "exact_full_row_matches": 271,
+      "exact_full_row_mismatches": 0,
+      "ordered_identity_match": true,
+      "summary_event_count_match": true,
+      "summary_total_hours_match": true,
+      "summary_total_hours": 9594.666667
+    },
+    "cutoff_example": "样本 1 / seed 20260621 / F35-05 / 仿真截止：DAY_44 00:00 / 未修复·仍等待备件 / 上级组织无可用库存 / 到货时间暂无",
+    "report": "task-reference-export-acceptance.json",
+    "completeness_report": "task-reference-export-completeness.json",
+    "workbook": "f35-downtime-task-reference.xlsx"
+  },
+  "boundaries": {
+    "automated_tests_are_not_represented_as_current_case_browser_acceptance": true,
+    "current_case_browser_and_runtime_evidence_is_separate": true,
+    "windows_packaging_or_acceptance_performed": false,
+    "source_database_modified": false,
+    "case_product_types_or_reliability_inputs_modified": false
+  }
+}

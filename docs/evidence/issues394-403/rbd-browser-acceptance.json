@@ -1,0 +1,56 @@
+{
+  "schema": "spare-mvp-issue400-rbd-browser-acceptance-v1",
+  "started_at": "2026-09-22T15:27:42.763Z",
+  "passed": true,
+  "browser_version": "151.0.7922.34",
+  "project_cards": [
+    "F35仿真案例\n\n演示案例\n\n更新 2026-09-18\n进入\n编辑\n删除\n导出"
+  ],
+  "project_id_hash": "7d72fe5f9d3200e401b4df550730cc541d772ec6ae675e08343edbace4e9e2e5",
+  "long_name": {
+    "text": "聚四氟乙烯软管组件FG116.325800",
+    "title": "聚四氟乙烯软管组件FG116.325800",
+    "client_width": 218,
+    "scroll_width": 218,
+    "overflow": "hidden",
+    "text_overflow": "ellipsis",
+    "white_space": "nowrap",
+    "exact": true
+  },
+  "clipped_label_count": 0,
+  "resize": {
+    "before_width": 300,
+    "tree_width": 692,
+    "detail_width": 320,
+    "layout_width": 1024,
+    "aria_max": 692,
+    "aria_now": 692
+  },
+  "pagination": {
+    "page_one": "上一页 第 1 / 4 页 · 共 71 条 下一页",
+    "page_two": "上一页 第 2 / 4 页 · 共 71 条 下一页"
+  },
+  "zoom": {
+    "after_wheel": {
+      "zoom": "110%",
+      "left": 15,
+      "top": 0
+    },
+    "fit_percent": 10,
+    "viewport": {
+      "client_width": 288,
+      "client_height": 598,
+      "scroll_width": 1724,
+      "scroll_height": 598,
+      "overflow_x": "auto",
+      "overflow_y": "auto"
+    }
+  },
+  "compact_screenshot_state": {
+    "tree_width": 500,
+    "detail_width": 512,
+    "zoom": "34%",
+    "visible_nodes": 5
+  },
+  "finished_at": "2026-09-22T15:27:52.063Z"
+}

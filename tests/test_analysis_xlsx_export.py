@@ -56,7 +56,11 @@ class AnalysisXlsxExportTest(unittest.TestCase):
                 )
                 self.assertEqual(
                     download["filename"],
-                    f"案例_项目-{SUPPORTED_ANALYSIS_TYPES[analysis_type]}-20260718-101112.xlsx",
+                    (
+                        "案例_项目-当前项目-蒙特卡洛分析-20260718.xlsx"
+                        if analysis_type == "monte_carlo"
+                        else f"案例_项目-{SUPPORTED_ANALYSIS_TYPES[analysis_type]}-20260718-101112.xlsx"
+                    ),
                 )
                 workbook = load_workbook(io.BytesIO(download["body"]), data_only=False)
                 self.assertEqual(workbook.properties.creator, "备件规划及任务可靠度验证评估平台")
@@ -68,6 +72,8 @@ class AnalysisXlsxExportTest(unittest.TestCase):
 
     def test_monte_carlo_export_preserves_weighted_summary_and_sample_actuals(self) -> None:
         payload = self._payload("monte_carlo")
+        payload["experiment_name"] = "方案 A:主案"
+        payload["export_date"] = "20260719"
         payload["summary"] = [
             ["实际即时满足率", "8.33%", "数量加权"],
             ["实际备件利用率", "2.78%", "数量加权"],
@@ -77,7 +83,9 @@ class AnalysisXlsxExportTest(unittest.TestCase):
             "columns": ["样本", "Seed", "实际需求数量", "实际即时满足数量", "实际即时满足率", "实际携行数量", "实际消耗数量", "实际备件利用率"],
             "rows": [["样本 1", 20260621, 12, 1, "8.33%", 36, 1, "2.78%"]],
         }]
-        workbook = load_workbook(io.BytesIO(export_analysis_snapshot_xlsx(payload)["body"]), data_only=False)
+        download = export_analysis_snapshot_xlsx(payload)
+        self.assertEqual(download["filename"], "案例_项目-方案 A_主案-蒙特卡洛分析-20260719.xlsx")
+        workbook = load_workbook(io.BytesIO(download["body"]), data_only=False)
         self.assertEqual(workbook["结果摘要"]["B2"].value, "8.33%")
         self.assertEqual(workbook["结果摘要"]["B3"].value, "2.78%")
         self.assertEqual(
