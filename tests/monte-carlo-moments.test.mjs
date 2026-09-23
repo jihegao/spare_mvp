@@ -20,6 +20,24 @@ test("ratio means distinguish zero, small utilization, and unavailable values", 
   assert.equal(formatMonteCarloMoment(0.125, "number"), "0.13");
 });
 
+test("reliability ratios render as 0 to 1 decimals without changing stored moments", () => {
+  const moments = buildMonteCarloMetricMoments([
+    { metrics: { mission_success_rate: 0.73, operational_availability: 0.81234, ready_rate: 0 } }
+  ]);
+  const byId = Object.fromEntries(moments.metrics.map((metric) => [metric.metricId, metric]));
+
+  assert.equal(byId.mission_success_rate.mean, 0.73);
+  assert.equal(byId.operational_availability.mean, 0.81234);
+  assert.equal(byId.ready_rate.mean, 0);
+  assert.equal(byId.mission_success_rate.valueFormat, "ratio_decimal");
+  assert.equal(byId.operational_availability.valueFormat, "ratio_decimal");
+  assert.equal(byId.ready_rate.valueFormat, "ratio_decimal");
+  assert.equal(formatMonteCarloMoment(byId.mission_success_rate.mean, "ratio_decimal"), "0.7300");
+  assert.equal(formatMonteCarloMoment(byId.operational_availability.mean, "ratio_decimal"), "0.8123");
+  assert.equal(formatMonteCarloMoment(byId.ready_rate.mean, "ratio_decimal"), "0.0000");
+  assert.equal(formatMonteCarloMoment(1, "ratio_decimal"), "1.0000");
+});
+
 test("moments exclude strings, nonfinite values, booleans, metadata, and use n-1", () => {
   const moments = buildMonteCarloMetricMoments([
     {

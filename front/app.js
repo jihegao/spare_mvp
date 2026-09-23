@@ -19492,7 +19492,11 @@ function simulationBlockedResultMessage(payload, fallback = "分析未能完成�
 function liteMesaBusinessMetricRows(result) {
   return (result?.metricMoments?.metrics || []).filter((metric) => metric.metricId !== "repair_backlog").map((metric) => ({
     ...metric,
-    unit: metric.valueFormat === "ratio" ? "均值：%；方差：比例²" : metric.unit,
+    unit: metric.valueFormat === "ratio"
+      ? "均值：%；方差：比例²"
+      : metric.valueFormat === "ratio_decimal"
+        ? "均值：0～1 小数；方差：比例²"
+        : metric.unit,
     label: ({ spare_fill_rate: "备件满足率", spare_utilization: "备件利用率" })[metric.metricId] || metric.label,
     meanLabel: metric.validSampleCount > 0 && metric.mean === null
       ? "不可计算"
@@ -21367,7 +21371,7 @@ function carrySatisfactionConstraintMarginDisplay(value) {
   const margin = Number(value);
   if (!Number.isFinite(margin)) return "不可用";
   const prefix = margin > 0 ? "+" : "";
-  return `${prefix}${(margin * 100).toFixed(2)} 个百分点`;
+  return `${prefix}${(margin * 100).toFixed(2)}%`;
 }
 
 function analysisPaginationContext(filters = []) {
