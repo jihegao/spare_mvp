@@ -167,21 +167,23 @@ function roundHalfEven(value, digits) {
 
 // Detail is never grouped: a sample and a business wave identify one observation.
 export function normalizeTaskReliabilityWaveRows(rows = []) {
-  const count = (value) => value !== null && value !== undefined && value !== "" && Number.isInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+  const count = (value) => optionalNonNegativeInteger(value);
   return rows.map((row, index) => {
-    const sampleIndex = count(row.sampleIndex ?? row.sample_index);
-    const dayIndex = count(row.dayIndex ?? row.day_index);
-    const waveIndex = count(row.waveIndex ?? row.wave_index);
-    const plannedWaves = count(row.plannedWaves ?? row.planned_waves);
-    const successfulWaves = count(row.successfulWaves ?? row.successful_waves);
-    const plannedSorties = count(row.plannedSorties ?? row.planned_sorties);
-    const launchedSorties = count(row.launchedSorties ?? row.launched_sorties);
-    const probability = plannedWaves > 0 && successfulWaves !== null
-      ? successfulWaves / plannedWaves
-      : Number(row.meanMissionSuccessRate ?? row.mean_mission_success_rate ?? row.missionSuccessRate ?? row.mission_success_probability ?? row.probability ?? 0);
-    const sortieRate = plannedSorties > 0 && launchedSorties !== null
-      ? launchedSorties / plannedSorties
-      : Number(row.meanSortieRate ?? row.mean_sortie_rate ?? row.sortieRate ?? row.sortie_rate ?? 0);
+    const sampleIndex = count(firstDefinedValue(row, ["sampleIndex", "sample_index"]));
+    const dayIndex = count(firstDefinedValue(row, ["dayIndex", "day_index"]));
+    const waveIndex = count(firstDefinedValue(row, ["waveIndex", "wave_index"]));
+    const plannedWaves = count(firstDefinedValue(row, ["plannedWaves", "planned_waves"]));
+    const successfulWaves = count(firstDefinedValue(row, ["successfulWaves", "successful_waves"]));
+    const plannedSorties = count(firstDefinedValue(row, ["plannedSorties", "planned_sorties"]));
+    const launchedSorties = count(firstDefinedValue(row, ["launchedSorties", "launched_sorties"]));
+    const probability = optionalFiniteRate(firstDefinedValue(row, [
+      "meanMissionSuccessRate",
+      "mean_mission_success_rate",
+      "missionSuccessRate",
+      "mission_success_probability",
+      "probability"
+    ]));
+    const sortieRate = optionalFiniteRate(firstDefinedValue(row, ["meanSortieRate", "mean_sortie_rate", "sortieRate", "sortie_rate"]));
     const waveLabel = dayIndex && waveIndex ? `第${dayIndex}天第${waveIndex}波次` : row.waveLabel ?? row.wave_label ?? row.timeLabel ?? "-";
     return {
       ...row, sequence: index + 1, sampleIndex,
@@ -189,37 +191,102 @@ export function normalizeTaskReliabilityWaveRows(rows = []) {
       dayIndex, waveIndex, waveLabel, timeLabel: waveLabel,
       waveKey: dayIndex && waveIndex ? `d${dayIndex}-w${waveIndex}` : row.waveKey ?? row.wave_key ?? `wave-${index + 1}`,
       plannedWaves, successfulWaves, plannedSorties, launchedSorties,
-      successfulSorties: count(row.successfulSorties ?? row.successful_sorties),
+      successfulSorties: count(firstDefinedValue(row, ["successfulSorties", "successful_sorties"])),
       probability, meanMissionSuccessRate: probability, missionSuccessRate: probability,
       sortieRate, meanSortieRate: sortieRate
     };
   });
 }
 
-export function aggregateTaskReliabilityWaves(rows = []) {
+export function aggregateTaskReliabilityWaves(rows = [], { totalSampleCount = null } = {}) {
+  const analysisSampleCount = optionalNonNegativeInteger(totalSampleCount);
   const groups = new Map();
   for (const row of normalizeTaskReliabilityWaveRows(rows)) {
-    const group = groups.get(row.waveKey) || [];
+    const businessKey = row.dayIndex !== null && row.waveIndex !== null
+      ? `d${row.dayIndex}-w${row.waveIndex}`
+      : row.waveKey;
+    const group = groups.get(businessKey) || [];
     group.push(row);
-    groups.set(row.waveKey, group);
+    groups.set(businessKey, group);
   }
   return [...groups.values()]
-    .sort((a, b) => (a[0].dayIndex || 0) - (b[0].dayIndex || 0) || (a[0].waveIndex || 0) - (b[0].waveIndex || 0))
+    .sort(compareBusinessWaveGroups)
     .map((group, index) => {
       const total = (key) => group.every((row) => row[key] !== null) ? group.reduce((sum, row) => sum + row[key], 0) : null;
       const plannedWaves = total("plannedWaves");
       const successfulWaves = total("successfulWaves");
       const plannedSorties = total("plannedSorties");
       const launchedSorties = total("launchedSorties");
-      // A legacy aggregate can retain its rate, but missing counts cannot weight multiple observations.
-      const probability = plannedWaves > 0 && successfulWaves !== null ? successfulWaves / plannedWaves : group.length === 1 ? group[0].probability : null;
-      const sortieRate = plannedSorties > 0 && launchedSorties !== null ? launchedSorties / plannedSorties : group.length === 1 ? group[0].sortieRate : null;
+      const validProbabilityRows = group.filter((row) => row.probability !== null);
+      const validSortieRows = group.filter((row) => row.sortieRate !== null);
+      const probability = arithmeticMean(validProbabilityRows.map((row) => row.probability));
+      const sortieRate = arithmeticMean(validSortieRows.map((row) => row.sortieRate));
+      const groupTotalSampleCount = Math.max(group.length, analysisSampleCount ?? 0);
       return {
         ...group[0], sequence: index + 1, sampleIndex: null,
-        sampleCount: group.every((row) => row.sampleIndex !== null) ? new Set(group.map((row) => row.sampleIndex)).size : group[0].sampleCount ?? 0,
+        sampleCount: validProbabilityRows.length,
+        totalSampleCount: groupTotalSampleCount,
+        validSampleCount: validProbabilityRows.length,
+        invalidSampleCount: groupTotalSampleCount - validProbabilityRows.length,
         plannedWaves, successfulWaves, plannedSorties, launchedSorties,
         probability, meanMissionSuccessRate: probability, sortieRate,
-        sorties: Math.round(sortieRate * 100), available: Math.round(probability * 100)
+        sorties: sortieRate === null ? null : Math.round(sortieRate * 100),
+        available: probability === null ? null : Math.round(probability * 100)
       };
-    }).filter((row) => row.probability !== null);
+    });
+}
+
+export function taskReliabilitySampleIndexes(rows = []) {
+  return [...new Set(normalizeTaskReliabilityWaveRows(rows)
+    .map((row) => row.sampleIndex)
+    .filter((sampleIndex) => sampleIndex !== null))]
+    .sort((left, right) => left - right);
+}
+
+export function filterTaskReliabilityRowsBySample(rows = [], selectedSampleIndex = null) {
+  const normalized = normalizeTaskReliabilityWaveRows(rows);
+  if (selectedSampleIndex === null || selectedSampleIndex === undefined || selectedSampleIndex === "") return normalized;
+  const sampleIndex = optionalNonNegativeInteger(selectedSampleIndex);
+  if (sampleIndex === null) return [];
+  return normalized.filter((row) => row.sampleIndex === sampleIndex);
+}
+
+function optionalNonNegativeInteger(value) {
+  if (value === null || value === undefined || typeof value === "boolean") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 0 ? numeric : null;
+}
+
+function optionalFiniteRate(value) {
+  if (value === null || value === undefined || typeof value === "boolean") return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 && numeric <= 1 ? numeric : null;
+}
+
+function firstDefinedValue(row, keys) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) return row[key];
+  }
+  return null;
+}
+
+function arithmeticMean(values) {
+  if (!values.length) return null;
+  return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toPrecision(15));
+}
+
+function compareBusinessWaveGroups(left, right) {
+  const leftRow = left[0];
+  const rightRow = right[0];
+  const leftHasBusinessOrder = leftRow.dayIndex !== null && leftRow.waveIndex !== null;
+  const rightHasBusinessOrder = rightRow.dayIndex !== null && rightRow.waveIndex !== null;
+  if (leftHasBusinessOrder !== rightHasBusinessOrder) return leftHasBusinessOrder ? -1 : 1;
+  if (leftHasBusinessOrder) {
+    return leftRow.dayIndex - rightRow.dayIndex || leftRow.waveIndex - rightRow.waveIndex;
+  }
+  return String(leftRow.waveKey).localeCompare(String(rightRow.waveKey), "zh-CN", { numeric: true });
 }

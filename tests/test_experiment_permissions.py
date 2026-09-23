@@ -25,8 +25,12 @@ class ExperimentPermissionsTest(unittest.TestCase):
         self.connection.close()
         self.temp.cleanup()
 
-    def create(self, actor='user-basic'):
-        return self.api.create_experiment_plan(self.project['project_id'], self.config, actor_user_id=actor)
+    def create(self, actor='user-basic', *, name=None):
+        config = {
+            **self.config,
+            'name': name or f"shared name {actor or 'legacy'}",
+        }
+        return self.api.create_experiment_plan(self.project['project_id'], config, actor_user_id=actor)
 
     def test_owner_is_preserved_and_own_plan_can_be_deleted(self):
         plan = self.create()
@@ -61,7 +65,7 @@ class ExperimentPermissionsTest(unittest.TestCase):
 
     def test_all_roles_unfreeze_and_clear_fingerprint_but_preserve_owner(self):
         for actor in ['user-basic', 'user-admin', 'user-data']:
-            plan = self.create()
+            plan = self.create(name=f'unfreeze {actor}')
             frozen = self.api.freeze_experiment_plan(self.project['project_id'], plan['experiment_plan_id'])
             self.assertEqual(frozen['status'], 'frozen')
             draft = self.api.unfreeze_experiment_plan(self.project['project_id'], plan['experiment_plan_id'], actor_user_id=actor)

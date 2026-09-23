@@ -152,7 +152,7 @@ test("normalizes carry list projection payload for formal KPI and table renderin
 
   assert.deepEqual(view.metrics.slice(1), [
     ["携行备件数量", "3 件"],
-    ["总体实际即时满足率", "12.50%"],
+    ["总体备件满足率", "12.50%"],
     ["总体备件利用率", "20.00%"],
     ["最高携行倍率", "1.40"],
     ["高优先级备件", "engine"]

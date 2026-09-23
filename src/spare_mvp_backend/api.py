@@ -46,7 +46,13 @@ from src.spare_mvp_backend.project_xlsx import (
 from src.spare_mvp_backend.project_xlsx_template import (
     ROOT as PROJECT_XLSX_ROOT, VERSION as PROJECT_XLSX_VERSION, export_project_xlsx, schema as project_excel_schema,
 )
-from src.spare_mvp_backend.repository import ContractRepository
+from src.spare_mvp_backend.repository import (
+    ContractRepository,
+    ExperimentPlanIdConflictError,
+    ExperimentPlanNameConflictError,
+    ExperimentPlanWriteError,
+    ModelingSnapshotProjectMismatchError,
+)
 from src.spare_mvp_backend.rms_allocation_xlsx import (
     RmsAllocationXlsxError,
     export_rms_allocation_xlsx,
@@ -948,27 +954,13 @@ class BackendApi:
         except RunServiceError as exc:
             raise self._run_service_error_to_backend_error(exc) from exc
         requested_snapshot_id = str(plan_config.pop("modeling_snapshot_id", "") or "").strip()
-        snapshot = (
-            self.repository.get_modeling_snapshot(requested_snapshot_id)
-            if requested_snapshot_id
-            else self.repository.get_latest_modeling_snapshot(project_id)
-        )
-        if snapshot is not None and snapshot.get("project_id") != project_id:
-            raise BackendApiError(
-                "modeling_snapshot_project_mismatch",
-                "modeling snapshot does not belong to project",
-                project_id=project_id,
-                modeling_snapshot_id=snapshot.get("snapshot_id"),
-            )
-        if snapshot is None:
-            snapshot = self.create_modeling_snapshot(project_id)
-        plan_key = {"config": plan_config, "modeling_snapshot_id": snapshot["snapshot_id"]}
+        plan_key = {"config": plan_config, "modeling_snapshot_id": requested_snapshot_id or None}
         if actor_user_id is not None:
             plan_key["created_by"] = actor_user_id
         plan = {
             "experiment_plan_id": experiment_plan_id or f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
             "project_id": project_id,
-            "modeling_snapshot_id": snapshot["snapshot_id"],
+            "modeling_snapshot_id": requested_snapshot_id or None,
             "schema_version": "experiment-plan-v0",
             "project_version": project["project_version"],
             "status": status,
@@ -976,15 +968,48 @@ class BackendApi:
             "config": plan_config,
         }
         try:
-            self.repository.upsert_experiment_plan(plan)
-        except ValueError as exc:
+            return self.repository.save_experiment_plan_atomic(
+                plan,
+                project_snapshot=project,
+                requested_snapshot_id=requested_snapshot_id or None,
+                is_update=experiment_plan_id is not None,
+            )
+        except ExperimentPlanNameConflictError as exc:
             raise BackendApiError(
-                "experiment_plan_frozen",
-                "Frozen ExperimentPlan cannot be updated",
+                "experiment_plan_name_conflict",
+                "ExperimentPlan name already exists in this project",
+                project_id=project_id,
+                experiment_plan_id=plan["experiment_plan_id"],
+                name=str(exc),
+            ) from exc
+        except KeyError as exc:
+            raise BackendApiError(
+                "modeling_snapshot_not_found",
+                "Modeling snapshot not found",
+                project_id=project_id,
+                modeling_snapshot_id=requested_snapshot_id,
+            ) from exc
+        except ModelingSnapshotProjectMismatchError as exc:
+            raise BackendApiError(
+                "modeling_snapshot_project_mismatch",
+                str(exc),
+                project_id=project_id,
+                modeling_snapshot_id=requested_snapshot_id,
+            ) from exc
+        except ExperimentPlanIdConflictError as exc:
+            raise BackendApiError(
+                "experiment_plan_id_conflict",
+                str(exc),
                 project_id=project_id,
                 experiment_plan_id=plan["experiment_plan_id"],
             ) from exc
-        return plan
+        except (ExperimentPlanWriteError, sqlite3.IntegrityError) as exc:
+            raise BackendApiError(
+                "experiment_plan_frozen",
+                str(exc),
+                project_id=project_id,
+                experiment_plan_id=plan["experiment_plan_id"],
+            ) from exc
 
     def freeze_experiment_plan(self, project_id: str, experiment_plan_id: str) -> dict[str, Any]:
         try:
@@ -1192,6 +1217,7 @@ class BackendApi:
         analysis_started = time.perf_counter()
         normalized_analysis_type = _normalize_analysis_type(analysis_type)
         resolved_context = self._resolve_execution_context(project_json=project_json, context=context)
+        analysis_source = self._analysis_source(resolved_context)
         requested_settings = copy.deepcopy(settings or {})
         if resolved_context.context["type"] == "frozen_plan":
             requested_settings.update(resolved_context.runtime_settings)
@@ -1226,6 +1252,7 @@ class BackendApi:
         context_metadata = {
             "analysis_session_id": f"analysis-session-{uuid4().hex}",
             "context": copy.deepcopy(resolved_context.context),
+            "analysis_source": analysis_source,
             "fingerprint": fingerprint,
             "execution_fingerprint": fingerprint,
         }
@@ -1244,6 +1271,7 @@ class BackendApi:
                 analysis_type=normalized_analysis_type,
                 model_family=model_family,
                 settings=normalized_settings,
+                error_code="modeling_validation_failed",
                 message="无法编译当前 Project 到 aircraft_support_v1；请补齐任务、装备、备件、保障节点和维修作业建模字段。",
                 issues=compile_result.get("issues", []),
                 errors=compile_result.get("errors", []),
@@ -1283,10 +1311,15 @@ class BackendApi:
                 analysis_type=normalized_analysis_type,
                 model_family=model_family,
                 settings=normalized_settings,
+                error_code=(
+                    "analysis_samples_timeout"
+                    if timeout_failures and len(timeout_failures) == len(failed_samples)
+                    else "analysis_samples_failed"
+                ),
                 message=(
                     "Mesa 分析样本全部超时；请减少样本数、提高并行核心数，或检查导致单样本异常缓慢的模型输入。"
                     if timeout_failures and len(timeout_failures) == len(failed_samples)
-                    else "Mesa 分析样本全部失败；当前建模粒度不足以生成会话内结果。"
+                    else "Mesa 分析样本全部执行失败；请检查样本错误详情后重试。"
                 ),
                 issues=[],
                 errors=failed_samples,
@@ -1440,6 +1473,33 @@ class BackendApi:
         }
         timings["total_seconds"] = time.perf_counter() - analysis_started
         return payload
+
+    def _analysis_source(self, resolved: ResolvedExecutionContext) -> dict[str, Any]:
+        project_info = (
+            resolved.project.get("projectInfo")
+            if isinstance(resolved.project.get("projectInfo"), dict)
+            else {}
+        )
+        project_id = str(resolved.project.get("project_id") or resolved.context.get("project_id") or "")
+        project_name = str(project_info.get("name") or project_id or "未命名项目").strip()
+        if resolved.experiment_plan_id is None:
+            return {
+                "kind": "current-project",
+                "projectName": project_name,
+                "projectId": project_id,
+                "experimentPlanName": None,
+                "experimentPlanId": None,
+            }
+        plan = self.repository.get_experiment_plan(resolved.experiment_plan_id)
+        config = plan.get("config") if isinstance(plan.get("config"), dict) else {}
+        plan_name = str(config.get("name") or resolved.experiment_plan_id).strip()
+        return {
+            "kind": "experiment-plan",
+            "projectName": project_name,
+            "projectId": str(plan.get("project_id") or project_id),
+            "experimentPlanName": plan_name,
+            "experimentPlanId": resolved.experiment_plan_id,
+        }
 
     def create_visualization_session(
         self,
@@ -3830,6 +3890,7 @@ def _blocked_lite_mesa_analysis_payload(
     analysis_type: str,
     model_family: str,
     settings: dict[str, Any],
+    error_code: str,
     message: str,
     issues: list[Any],
     errors: list[Any],
@@ -3859,6 +3920,7 @@ def _blocked_lite_mesa_analysis_payload(
         ),
         "limitations": _lite_mesa_analysis_limitations(),
         "settings": copy.deepcopy(settings),
+        "error_code": error_code,
         "message": message,
         "issues": copy.deepcopy(issues),
         "errors": copy.deepcopy(errors),

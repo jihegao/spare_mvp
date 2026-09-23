@@ -469,6 +469,59 @@ class BackendHttpApiTest(unittest.TestCase):
                 thread.join(timeout=5)
                 server.server_close()
 
+    def test_http_experiment_plan_missing_snapshot_returns_404_without_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "missing-snapshot.sqlite3"
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=database_path,
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                token = self._login_token(base_url, "data", "data")
+                project = small_aircraft_support_project("missing-snapshot")
+                self._json(base_url, "POST", "/projects", project, auth_token=token)
+                path = f"/projects/{project['project_id']}/experiment-plans"
+                original = self._json(
+                    base_url, "POST", path,
+                    {"config": {"name": "original", "steps": 1}}, auth_token=token,
+                )
+                original_plans = self._json(base_url, "GET", path)["experiment_plans"]
+                with sqlite3.connect(database_path) as connection:
+                    snapshot_count = connection.execute("SELECT COUNT(*) FROM modeling_snapshots").fetchone()[0]
+
+                for method, request_path in (
+                    ("POST", path),
+                    ("PUT", f"{path}/{original['experiment_plan_id']}"),
+                ):
+                    with self.subTest(method=method):
+                        status, error = self._json_error_with_status(
+                            base_url, method, request_path,
+                            {"config": {
+                                "name": "missing snapshot",
+                                "steps": 2,
+                                "modeling_snapshot_id": "snapshot-does-not-exist",
+                            }},
+                            auth_token=token,
+                        )
+                        self.assertEqual((status, error["code"]), (404, "modeling_snapshot_not_found"))
+                        self.assertEqual(error["details"]["modeling_snapshot_id"], "snapshot-does-not-exist")
+                        plans = self._json(base_url, "GET", path)["experiment_plans"]
+                        self.assertEqual(plans, original_plans)
+                        with sqlite3.connect(database_path) as connection:
+                            self.assertEqual(
+                                connection.execute("SELECT COUNT(*) FROM modeling_snapshots").fetchone()[0],
+                                snapshot_count,
+                            )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_experiment_plan_delete_soft_deletes_associated_runs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(

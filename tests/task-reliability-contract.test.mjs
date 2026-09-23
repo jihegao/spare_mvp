@@ -4,10 +4,12 @@ import assert from "node:assert/strict";
 import {
   TASK_RELIABILITY_RESULT_COLUMNS,
   aggregateTaskReliabilityWaves,
+  filterTaskReliabilityRowsBySample,
   normalizeTaskReliabilityWaveRows,
   formatReliabilityPercent,
   normalizeTaskReliabilityResultFields,
-  taskReliabilityMetricPairs
+  taskReliabilityMetricPairs,
+  taskReliabilitySampleIndexes
 } from "../front/task-reliability-contract.mjs";
 
 test("normalizes the task reliability result into the final ordered four-field contract", () => {
@@ -105,12 +107,14 @@ test("formats decimal half-even values consistently at binary, negative, zero, a
 });
 
 
-test("wave detail retains 104 observations while chart uses count-weighted business keys", () => {
+test("wave detail retains 104 observations while chart averages sample rates by business wave", () => {
   const source = Array.from({ length: 4 }, (_, sampleIndex) =>
     Array.from({ length: 26 }, (_, index) => ({
       sample_index: sampleIndex, day_index: Math.floor(index / 2) + 1, wave_index: index % 2 + 1,
       planned_waves: sampleIndex === 0 ? 1 : 3, successful_waves: sampleIndex === 0 ? 1 : 0,
-      planned_sorties: sampleIndex === 0 ? 2 : 4, launched_sorties: 2
+      planned_sorties: sampleIndex === 0 ? 2 : 4, launched_sorties: 2,
+      mean_mission_success_rate: sampleIndex === 0 ? 1 : 0,
+      mean_sortie_rate: sampleIndex === 0 ? 1 : 0.5
     }))
   ).flat().reverse();
   const detail = normalizeTaskReliabilityWaveRows(source);
@@ -120,26 +124,75 @@ test("wave detail retains 104 observations while chart uses count-weighted busin
   assert.equal(chart[0].waveLabel, "第1天第1波次");
   assert.equal(chart[0].plannedWaves, 10);
   assert.equal(chart[0].successfulWaves, 1);
-  assert.equal(chart[0].probability, 0.1);
-  assert.equal(chart[0].sortieRate, 8 / 14);
+  assert.equal(chart[0].probability, 0.25);
+  assert.equal(chart[0].sortieRate, 0.625);
   assert.equal(chart[0].sampleCount, 4);
+  assert.equal(chart[0].totalSampleCount, 4);
+  assert.equal(chart[0].validSampleCount, 4);
+  assert.equal(chart[0].invalidSampleCount, 0);
   assert.equal(detail.filter((row) => row.sampleIndex === 0).length, 26);
   // Missing a business wave never shifts another sample's following observation.
   const missing = source.filter((row) => row.sample_index !== 0 || row.day_index !== 1 || row.wave_index !== 1);
   const incomplete = aggregateTaskReliabilityWaves(missing);
   assert.equal(incomplete[0].sampleCount, 3);
   assert.equal(incomplete[0].probability, 0);
-  assert.equal(incomplete[1].probability, 0.1);
+  assert.equal(incomplete[1].probability, 0.25);
   assert.equal(source.length, 104);
 });
 
 
-test("missing sample counts do not silently become unweighted chart averages", () => {
+test("wave trend uses the arithmetic mean of valid sample rates without treating missing rates as zero", () => {
   const rows = [
-    { sample_index: 0, day_index: 1, wave_index: 1, mean_mission_success_rate: 1 },
-    { sample_index: 1, day_index: 1, wave_index: 1, mean_mission_success_rate: 0 }
+    { sample_index: 0, day_index: 1, wave_index: 1, planned_waves: 1, successful_waves: 1, mean_mission_success_rate: 1 },
+    { sample_index: 1, day_index: 1, wave_index: 1, planned_waves: 9, successful_waves: 0, mean_mission_success_rate: 0 },
+    { sample_index: 2, day_index: 1, wave_index: 1 },
+    { sample_index: 3, day_index: 1, wave_index: 2, planned_waves: 1, successful_waves: 1, mean_mission_success_rate: "invalid" },
+    { sample_index: 4, day_index: 1, wave_index: 3, planned_waves: 1, successful_waves: 1, mean_mission_success_rate: null }
   ];
-  assert.equal(normalizeTaskReliabilityWaveRows(rows).length, 2);
-  assert.deepEqual(aggregateTaskReliabilityWaves(rows), []);
-  assert.equal(aggregateTaskReliabilityWaves([{ waveKey: "d1-w1", sampleCount: 2, meanMissionSuccessRate: 0.5 }])[0].probability, 0.5);
+  const normalized = normalizeTaskReliabilityWaveRows(rows);
+  assert.equal(normalized[2].probability, null);
+  assert.equal(normalized[3].probability, null);
+  assert.equal(normalized[4].probability, null);
+  const chart = aggregateTaskReliabilityWaves(rows, { totalSampleCount: 4 });
+  assert.equal(chart.length, 3);
+  assert.equal(chart[0].probability, 0.5);
+  assert.equal(chart[0].totalSampleCount, 4);
+  assert.equal(chart[0].validSampleCount, 2);
+  assert.equal(chart[0].invalidSampleCount, 2);
+  assert.deepEqual(chart.slice(1).map((row) => [row.waveKey, row.probability, row.validSampleCount, row.invalidSampleCount]), [
+    ["d1-w2", null, 0, 4],
+    ["d1-w3", null, 0, 4]
+  ]);
+});
+
+test("sample selection only uses explicit zero-based sample identities and does not fabricate rows", () => {
+  const rows = [
+    { sample_index: 4, day_index: 2, wave_index: 1, probability: 0.8 },
+    { sampleIndex: 0, dayIndex: 1, waveIndex: 2, probability: 0.9 },
+    { day_index: 1, wave_index: 1, probability: 1 },
+    { sampleIndex: false, dayIndex: 1, waveIndex: 3, probability: 0.5 },
+    { sampleIndex: [], dayIndex: 1, waveIndex: 4, probability: [] }
+  ];
+  assert.deepEqual(taskReliabilitySampleIndexes(rows), [0, 4]);
+  assert.deepEqual(filterTaskReliabilityRowsBySample(rows, 0).map((row) => row.sampleIndex), [0]);
+  assert.deepEqual(filterTaskReliabilityRowsBySample(rows, 3), []);
+  assert.equal(normalizeTaskReliabilityWaveRows(rows)[2].sampleIndex, null);
+  assert.equal(normalizeTaskReliabilityWaveRows(rows)[3].sampleIndex, null);
+  assert.equal(normalizeTaskReliabilityWaveRows(rows)[4].sampleIndex, null);
+  assert.equal(normalizeTaskReliabilityWaveRows(rows)[4].probability, null);
+});
+
+test("wave aggregation sorts complete business coordinates and keeps legacy labels last", () => {
+  const chart = aggregateTaskReliabilityWaves([
+    { waveKey: "legacy-2", probability: 0.4 },
+    { sampleIndex: 0, dayIndex: 2, waveIndex: 1, probability: 0.6 },
+    { sampleIndex: 0, dayIndex: 1, waveIndex: 2, probability: 0.8 },
+    { sampleIndex: 0, dayIndex: 1, waveIndex: 1, probability: 1 }
+  ]);
+  assert.deepEqual(chart.map((row) => [row.dayIndex, row.waveIndex, row.waveKey]), [
+    [1, 1, "d1-w1"],
+    [1, 2, "d1-w2"],
+    [2, 1, "d2-w1"],
+    [null, null, "legacy-2"]
+  ]);
 });

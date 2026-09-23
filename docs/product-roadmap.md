@@ -19,6 +19,10 @@
 7. 早期仿真 ontology 与 contract-first 设想仅作为历史参考；当前数据契约必须以应用系统 schema、Project draft、run identity chain、权限、审计和产物治理为主，active schema 不再引入 ontology 版本字段。
 8. `reports/2026-06-19-page-revision-suggestions/README.md` 的页面建议先作为 M6.1.1 前置输入可用性和死按钮收口处理；当前项目数据管理已从独立 M5.2 工作台口径收敛为项目列表、模板管理、数据概览和经校验的 JSON 覆盖，原始 JSON 查看区已移除，页面清理不得顺手扩大为 M6.1.1 或 M6.2。
 
+## 当前分析工作台修订（2026-09-22）
+
+#385、#394–#403 的代码边界已收敛为会话分析结果、互斥停机分段、样本筛选、任务引用完整导出、实验名称事务及框图视口。当前交付规则见 [`analysis-results-contract.md`](analysis-results-contract.md)，任务结果仍有完成后 30 分钟的会话期限，不据此宣称持久化批量运行能力。本轮不包含 Windows 发布、案例 LRU/库存迁移或 issue 关闭；自动化与实际副本验收分别记录。
+
 ## 当前基线判断
 
 截至 2026-07-05，M3-1 的历史浏览器验收已被当前 canonical `/api/runs` + `aircraft_support_v1` 主线取代，但整体系统仍处在原型到真实系统迁移阶段。历史记录仍保留：截至 2026-06-19，M3-1 已证明同源后端浏览器闭环可行，但该证据不再代表现行模型族或运行入口。

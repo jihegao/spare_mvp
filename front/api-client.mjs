@@ -8,6 +8,7 @@ import { normalizeEquipmentTreeIntegrityForScenario } from "./equipment-tree-mod
 const DEFAULT_API_BASE = "/api";
 const DEFAULT_TIMEOUT_MS = 10000;
 const RUN_SUBMIT_TIMEOUT_MS = 180000;
+const ANALYSIS_EXPORT_TIMEOUT_MS = 120000;
 const LITE_MESA_SAMPLE_TIMEOUT_SECONDS = 90;
 const LITE_MESA_SESSION_TIMEOUT_MIN_SECONDS = 180;
 const LITE_MESA_SESSION_TIMEOUT_MAX_SECONDS = 900;
@@ -174,7 +175,13 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
       });
     },
     exportAnalysisXlsx(payload) {
-      return request({ method: "POST", path: "/analysis-results/export-xlsx", body: payload, responseType: "download" });
+      return request({
+        method: "POST",
+        path: "/analysis-results/export-xlsx",
+        body: payload,
+        responseType: "download",
+        timeoutMs: ANALYSIS_EXPORT_TIMEOUT_MS
+      });
     },
     deleteProject(projectId) {
       return request({ method: "DELETE", path: `/projects/${encodeURIComponent(projectId)}` });

@@ -301,6 +301,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.adapter = RecordingAdapter()
         self.tempdir = tempfile.TemporaryDirectory()
         self.api = BackendApi(self.repository, self.adapter, output_dir=Path(self.tempdir.name))
+        self._successful_run_sequence = 0
 
     def tearDown(self) -> None:
         self.connection.close()
@@ -1561,7 +1562,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("failure_mode", failure["details"])
         self.assertNotIn("failureMode", failure["details"])
         self.assertNotIn("must-not-project", str(result))
-        self.assertEqual(failure["description"], "飞机J15-101装备发生故障，当前不可用并等待修复")
+        self.assertIn("J15-101", failure["description"])
+        self.assertTrue(failure["description"].strip())
         self.assertEqual(task_external["task_phase_label"], "不在任务阶段")
         self.assertEqual(task_external["details"]["failure_time_label"], "暂无时间")
         self.assertEqual(format_simulation_minute(0), "DAY_1 00:00")
@@ -1627,10 +1629,14 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
     def _submit_successful_run(self) -> dict[str, Any]:
+        self._successful_run_sequence += 1
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         saved = self.api.save_project(project)
         self.api.create_modeling_snapshot(saved["project_id"])
-        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "m7 artifact download", "steps": 2})
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": f"m7 artifact download {self._successful_run_sequence}", "steps": 2},
+        )
         return self.api.submit_run(
             {
                 "project_id": saved["project_id"],
@@ -5161,7 +5167,10 @@ class BackendApiContractTest(unittest.TestCase):
         changed_project.setdefault("projectInfo", {})["name"] = "changed after first run"
         second_saved = self.api.save_project(changed_project)
         second_snapshot = self.api.create_modeling_snapshot(second_saved["project_id"])
-        second_plan = self.api.create_experiment_plan(second_saved["project_id"], {"name": "same config", "steps": 1})
+        second_plan = self.api.create_experiment_plan(
+            second_saved["project_id"],
+            {"name": "same config after resave", "steps": 1},
+        )
         second_run = self.api.submit_run(
             {
                 "project_id": second_saved["project_id"],

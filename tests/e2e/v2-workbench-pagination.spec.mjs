@@ -23,9 +23,18 @@ window.workbenchReview = {
     render();
   },
   selection() { return [...selectedBasicMissionPhaseIndexes]; },
+  rerender() { render(); },
+  rbd() {
+    scenario.equipment = { model: "J-15", wholeMachineModels: ["J-15"], quantity: 1 };
+    scenario.components = [
+      { id: "rbd-system", aircraftModel: "J-15", name: "超长名称可靠性系统节点用于浏览器验收", parentId: "aircraft-root", quantity: 1, runningRatio: 1, importance: 1, complexity: 1, mtbfHours: 1000 },
+      { id: "rbd-lru", aircraftModel: "J-15", name: "可更换单元", parentId: "rbd-system", quantity: 1, runningRatio: 1, importance: 1, complexity: 1, mtbfHours: 500 }
+    ];
+    render();
+  },
   switchProject() { currentProject = { ...currentProject, id: "review-project-next", projectBackendId: "project-review-next" }; render(); },
   reliability(count) {
-    const rows = Array.from({ length: count }, (_, i) => ({ sampleIndex: Math.floor(i / 26), dayIndex: Math.floor(i % 26 / 2) + 1, waveIndex: i % 2 + 1, plannedWaves: 1, successfulWaves: 1 }));
+    const rows = Array.from({ length: count }, (_, i) => ({ sampleIndex: Math.floor(i / 26), dayIndex: Math.floor(i % 26 / 2) + 1, waveIndex: i % 2 + 1, plannedWaves: 1, successfulWaves: 1, missionSuccessRate: 1 }));
     liteMesaAnalysisResults.mission_reliability = {
       status: "session_complete", rows, waveRows: rows, sampleCount: 4,
       resultFields: normalizeTaskReliabilityResultFields({ sortie_rate: 1, wave_success_rate: 1, period_completion_probability: 1, period_duration_days: 13 }),
@@ -50,6 +59,13 @@ test.beforeEach(async ({ page }) => {
 test("unified navigation preserves the RBD tab and role-specific administration", async ({ page }) => {
   await page.evaluate(() => window.workbenchReview.seed("spare-planning-equipment-system"));
   await expect(page.locator('[data-feature-id="mission-reliability-reliability-block-diagram"]')).toBeVisible();
+  const resultGroup = page.locator("details.nav-secondary").filter({ has: page.locator("summary", { hasText: "结果分析" }) });
+  await expect(resultGroup).not.toHaveAttribute("open", "");
+  await resultGroup.locator("summary").click();
+  await expect(resultGroup).toHaveAttribute("open", "");
+  await page.evaluate(() => window.workbenchReview.rerender());
+  await expect(resultGroup).toHaveAttribute("open", "");
+  await expect(resultGroup).toHaveAttribute("data-nav-secondary-key", /结果分析/);
   await expect(page.locator(".feature-nav")).not.toContainText("系统运行支持模块");
   await page.evaluate(() => window.workbenchReview.seed("spare-planning-equipment-system", "系统管理员"));
   await expect(page.locator(".feature-nav")).toContainText("系统运行支持模块");
@@ -57,6 +73,32 @@ test("unified navigation preserves the RBD tab and role-specific administration"
   await page.evaluate(() => window.workbenchReview.seed("spare-planning-equipment-system", "数据管理员"));
   await expect(page.locator('[data-feature-id="system-management-project-data-management"]')).toHaveCount(1);
   await expect(page.locator('[data-feature-id="system-management-user-management"]')).toHaveCount(0);
+});
+
+test("RBD viewport zooms within its scrollable frame and restores session zoom after rerender", async ({ page }) => {
+  await page.evaluate(() => window.workbenchReview.seed("mission-reliability-reliability-block-diagram"));
+  await page.evaluate(() => window.workbenchReview.rbd());
+  await page.locator("[data-select-rbd-equipment-aircraft]").first().click();
+  const viewport = page.locator("[data-rbd-viewport]");
+  const content = page.locator("[data-rbd-viewport-content]");
+  const zoomValue = page.locator("[data-rbd-zoom-value]");
+
+  await expect(viewport).toBeVisible();
+  await expect(page.locator('[data-rbd-zoom-action="in"]')).toBeVisible();
+  await expect(page.locator('[data-rbd-zoom-action="out"]')).toBeVisible();
+  await expect(page.locator('[data-rbd-zoom-action="reset"]')).toBeVisible();
+  await expect(page.locator('[data-rbd-zoom-action="fit"]')).toBeVisible();
+  expect(await viewport.evaluate((node) => getComputedStyle(node).height)).not.toBe("auto");
+  expect(await viewport.evaluate((node) => getComputedStyle(node).overflow)).toContain("auto");
+
+  await page.locator('[data-rbd-zoom-action="in"]').click();
+  await expect(zoomValue).toHaveText("110%");
+  await expect(content).toHaveCSS("transform", /matrix\(1\.1, 0, 0, 1\.1, 0, 0\)/);
+  await page.evaluate(() => window.workbenchReview.rerender());
+  await expect(zoomValue).toHaveText("110%");
+
+  await page.locator('[data-rbd-zoom-action="reset"]').click();
+  await expect(zoomValue).toHaveText("100%");
 });
 
 test("mission phases select and delete only the current page and reset on project switch", async ({ page }) => {

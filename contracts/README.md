@@ -77,6 +77,11 @@ Result fixture metrics are treated as Simulation Adapter normalized summaries de
 
 The `downtime_factors` user projection deliberately omits fault-mode fields from event details and anomaly snapshots, including nested event payloads. Task and phase context, localized event descriptions, and `DAY_n HH:MM` time labels remain canonical; model-internal events may retain fault mode when simulation algorithms require it.
 
+#401 的停机账本保留互斥时间段和原有主因优先级。分段增量字段包括 `end_reason`、`end_state`、`status` 及对应中文标签、`shortage_reason`、`repair_completed_minute` 和观测到货时间；任务截止不伪造完成或到货。页面、汇总、占比与 Excel 使用同一事件集合，样本身份保留原始 `sample_index` 和 `seed`。详细展示规则见 [`../docs/analysis-results-contract.md`](../docs/analysis-results-contract.md)。
+
+Monte Carlo 的原始 `metric_moments` 和比率字段继续兼容；页面/Excel 只展示保留指标的样本均值、n−1 方差、单位和有效 n，不展示总体比率、维修积压和逐样本备件明细。lite 分析结果增量保存 `analysis_source` 与稳定 `error_code`；Project 和模型输入结构不因这些展示修改而变化。
+
+
 M9.1 state-series replay is a separate visualization contract. `visualization_state_series.schema.json` requires each frame to carry run identity, typed aggregate state, event summaries, trace fields back to run config/input project/compiled Scenario/result/manifest artifacts, and event entries with `event_id`, `run_id`, `step`, `event_type`, and metric references. For `aircraft_support_v1`, mission rows in each frame also carry the task-planning fields used by the platform mission view: periodic task, composite task, basic task, day index, wave index, required aircraft type/count, duration, and assigned tail numbers. Older state-series artifacts without those mission planning fields must not be inferred from id/name/aircraft_type fallback labels; the mission schedule view should block and require a new formal `aircraft_support_v1` run.
 
 M9.2 online state stream is the run subscription envelope over that same frame contract. `GET /api/runs/{run_id}/state-stream` emits SSE events named `run_status`, `state_frame`, and `artifact_ready`; each `state_frame` carries the same frame shape as `visualization_state_series.frames[]` plus stream metadata such as `stream_id`, `artifact_id`, `frame_index`, and `frame_count`. `artifact_ready` hands the frontend back to canonical `/api/runs/{run_id}/artifacts/{artifact_id}` download and the normal `visualization_state_series` replay parser.

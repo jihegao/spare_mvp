@@ -2378,6 +2378,12 @@ select[multiple].table-edit-select {
   background: #fbfcfd;
 }
 
+.analysis-chart-panel {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .analysis-filter-bar {
   display: flex;
   align-items: center;
@@ -3767,6 +3773,26 @@ tr.clickable-table-row.selected-table-row td {
   width: 100%;
   height: auto;
 }
+
+.rbd-layout > .detail-panel,
+.rbd-layout .detail-card { min-width: 0; }
+.rbd-layout .tree-node-label { min-width: 0; max-width: 100%; }
+.rbd-layout .tree-node-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbd-viewport {
+  width: 100%;
+  height: clamp(320px, 60vh, 640px);
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-sizing: border-box;
+}
+[data-rbd-viewport-stage] { position: relative; }
+.rbd-viewport .rbd-canvas { position: absolute; inset: 0 auto auto 0; overflow: visible; padding: 0; }
+.rbd-viewport .rbd-diagram { display: block; min-width: 0; width: 100%; height: 100%; }
+.rbd-zoom-toolbar output { min-width: 4em; text-align: center; }
 
 .rbd-group {
   fill: #f8fafc;

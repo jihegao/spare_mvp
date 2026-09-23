@@ -17,6 +17,22 @@ from .migrations import apply_compatibility_migrations
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 
+class ExperimentPlanNameConflictError(ValueError):
+    """A project already contains another effective plan with the same name."""
+
+
+class ExperimentPlanWriteError(ValueError):
+    """An ExperimentPlan create/update invariant was violated."""
+
+
+class ExperimentPlanIdConflictError(ExperimentPlanWriteError):
+    """A create attempted to reuse an existing deterministic identifier."""
+
+
+class ModelingSnapshotProjectMismatchError(ExperimentPlanWriteError):
+    """A requested snapshot belongs to a different project."""
+
+
 def initialize_database(connection: sqlite3.Connection) -> None:
     """Create the current schema and upgrade compatible historical databases."""
     connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -804,6 +820,152 @@ class ContractRepository:
             self.connection.rollback()
             raise ValueError("frozen ExperimentPlan cannot be updated")
         self.connection.commit()
+
+    def save_experiment_plan_atomic(
+        self,
+        plan: dict[str, Any],
+        *,
+        project_snapshot: dict[str, Any],
+        requested_snapshot_id: str | None = None,
+        is_update: bool = False,
+    ) -> dict[str, Any]:
+        """Save a draft plan and its needed snapshot in one serialized transaction."""
+        plan_id = str(_required(plan, "experiment_plan_id"))
+        project_id = str(_required(plan, "project_id"))
+        candidate = json.loads(_to_json(plan))
+        config = candidate.get("config") if isinstance(candidate.get("config"), dict) else {}
+        candidate_name = config.get("name")
+        normalized_name = candidate_name.strip() if isinstance(candidate_name, str) else ""
+        if isinstance(candidate_name, str):
+            config["name"] = normalized_name
+        candidate["config"] = config
+
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            cursor = self.connection.execute(
+                "SELECT project_id, status, payload_json FROM experiment_plans WHERE experiment_plan_id = ?",
+                (plan_id,),
+            )
+            existing_row = cursor.fetchone()
+            existing = json.loads(existing_row[2]) if existing_row is not None else None
+            if is_update:
+                if existing is None:
+                    raise KeyError(plan_id)
+                if existing_row[0] != project_id:
+                    raise ExperimentPlanWriteError("ExperimentPlan does not belong to project")
+                if existing_row[1] == "frozen":
+                    raise ExperimentPlanWriteError("Frozen ExperimentPlan cannot be updated")
+
+            existing_name = ""
+            if isinstance(existing, dict):
+                existing_config = existing.get("config") if isinstance(existing.get("config"), dict) else {}
+                raw_existing_name = existing_config.get("name")
+                existing_name = raw_existing_name.strip() if isinstance(raw_existing_name, str) else ""
+            name_changed = not is_update or normalized_name != existing_name
+            if normalized_name and name_changed:
+                rows = self.connection.execute(
+                    "SELECT experiment_plan_id, payload_json FROM experiment_plans WHERE project_id = ?",
+                    (project_id,),
+                ).fetchall()
+                for other_id, payload_json in rows:
+                    if is_update and str(other_id) == plan_id:
+                        continue
+                    other = json.loads(payload_json)
+                    other_config = other.get("config") if isinstance(other.get("config"), dict) else {}
+                    other_name = other_config.get("name")
+                    if isinstance(other_name, str) and other_name.strip() == normalized_name:
+                        raise ExperimentPlanNameConflictError(normalized_name)
+            if not is_update and existing is not None:
+                raise ExperimentPlanIdConflictError("ExperimentPlan ID already exists")
+
+            snapshot = None
+            if requested_snapshot_id:
+                row = self.connection.execute(
+                    "SELECT payload_json FROM modeling_snapshots WHERE snapshot_id = ?",
+                    (requested_snapshot_id,),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(requested_snapshot_id)
+                snapshot = json.loads(row[0])
+            else:
+                row = self.connection.execute(
+                    """
+                    SELECT payload_json FROM modeling_snapshots
+                    WHERE project_id = ?
+                    ORDER BY created_at DESC, snapshot_id DESC
+                    LIMIT 1
+                    """,
+                    (project_id,),
+                ).fetchone()
+                if row is not None:
+                    snapshot = json.loads(row[0])
+                    if snapshot.get("project") != project_snapshot:
+                        snapshot = None
+            if snapshot is not None and snapshot.get("project_id") != project_id:
+                raise ModelingSnapshotProjectMismatchError("modeling snapshot does not belong to project")
+            if snapshot is None:
+                snapshot_id = self.next_modeling_snapshot_id(project_id)
+                snapshot = {
+                    "snapshot_id": snapshot_id,
+                    "project_id": project_id,
+                    "schema_version": "modeling-snapshot-v0",
+                    "project_version": project_snapshot["project_version"],
+                    "project": json.loads(_to_json(project_snapshot)),
+                }
+                self.connection.execute(
+                    """
+                    INSERT INTO modeling_snapshots (
+                      snapshot_id, project_id, schema_version, project_version, payload_json
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot_id,
+                        project_id,
+                        snapshot["schema_version"],
+                        snapshot["project_version"],
+                        _to_json(snapshot),
+                    ),
+                )
+            candidate["modeling_snapshot_id"] = snapshot["snapshot_id"]
+
+            values = (
+                project_id,
+                candidate.get("modeling_snapshot_id"),
+                _required(candidate, "schema_version"),
+                _required(candidate, "project_version"),
+                candidate.get("status", "draft"),
+                candidate.get("canonical_fingerprint"),
+                candidate.get("frozen_at"),
+                _to_json(candidate),
+            )
+            if is_update:
+                cursor = self.connection.execute(
+                    """
+                    UPDATE experiment_plans
+                    SET project_id = ?, modeling_snapshot_id = ?, schema_version = ?, project_version = ?,
+                        status = ?, canonical_fingerprint = ?, frozen_at = ?, payload_json = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE experiment_plan_id = ? AND status != 'frozen'
+                    """,
+                    (*values, plan_id),
+                )
+                if cursor.rowcount != 1:
+                    raise ExperimentPlanWriteError("Frozen ExperimentPlan cannot be updated")
+            else:
+                self.connection.execute(
+                    """
+                    INSERT INTO experiment_plans (
+                      experiment_plan_id, project_id, modeling_snapshot_id, schema_version, project_version,
+                      status, canonical_fingerprint, frozen_at, payload_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    (plan_id, *values),
+                )
+            self.connection.commit()
+            return candidate
+        except Exception:
+            self.connection.rollback()
+            raise
 
     def compare_and_swap_freeze_experiment_plan(
         self,
