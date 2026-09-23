@@ -29,6 +29,7 @@
       "preload.cjs",
       "service-manager.mjs",
       "diagnostics.mjs",
+      "window-zoom.mjs",
       "renderer/**/*",
       "package.json"
     ],

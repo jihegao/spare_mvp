@@ -134,7 +134,7 @@ test("desktop build entry keeps dependency and ASAR contracts unchanged", async 
   assert.deepEqual(packageJson.devDependencies, { electron: "38.1.2", "electron-builder": "26.0.20" });
   assert.equal(packageJson.build.asar, undefined);
   assert.deepEqual(packageJson.build.files, [
-    "main.mjs", "preload.cjs", "service-manager.mjs", "diagnostics.mjs", "renderer/**/*", "package.json",
+    "main.mjs", "preload.cjs", "service-manager.mjs", "diagnostics.mjs", "window-zoom.mjs", "renderer/**/*", "package.json",
   ]);
   assert.equal(
     packageJson.scripts["dist:win"],
@@ -145,6 +145,7 @@ test("desktop build entry keeps dependency and ASAR contracts unchanged", async 
     .filter(Boolean);
   assert.equal(sourceFiles.filter(file => file === "desktop/scripts/patch-electron-builder-collector.mjs").length, 1);
   assert.equal(sourceFiles.filter(file => file === "desktop/scripts/write-build-provenance.mjs").length, 1);
+  assert.equal(sourceFiles.filter(file => file === "desktop/window-zoom.mjs").length, 1);
   const greenBuilder = await readFile(new URL("../packaging/green/Build-GreenPackage.ps1", import.meta.url), "utf8");
   assert.match(greenBuilder, /desktop-build-provenance\.json/);
   assert.match(greenBuilder, /verify-green-inputs\.py/);
