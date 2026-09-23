@@ -681,9 +681,13 @@ test("support spare page auto-selects its only保障点 and preserves quantity t
   }
 });
 
-test("real Case-large relay spare edit survives save, display, and fresh runtime rehydrate", async () => {
+test("real Case-large reviewed spare edit survives save, display, and fresh runtime rehydrate", async () => {
   const caseLarge = JSON.parse(fs.readFileSync(new URL("../exports/project-case-large.json", import.meta.url), "utf8"));
   const projectId = caseLarge.project_id;
+  const targetSpare = caseLarge.supportResources.find((resource) => resource.type === "spare" && resource.quantity === 0);
+  assert.ok(targetSpare, "expected a zero-quantity reviewed spare in Case-large");
+  const targetNodeId = targetSpare.organizationNodeId;
+  const targetNodeName = targetSpare.supportNodeName;
   const backendProjects = [{
     project_id: projectId,
     experiment_name: "Case-large",
@@ -692,15 +696,15 @@ test("real Case-large relay spare edit survives save, display, and fresh runtime
     source_import_id: "",
     updated_at: "2026-07-18 00:00:00"
   }];
-  const resourceKey = "support-spare:support-org-dadui:product-j16-part-0018";
+  const resourceKey = targetSpare.id;
   const runtime = await setupRuntimeApp({ projectJson: caseLarge, backendProjects });
   let savedProject;
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash(`feature=spare-planning-spare-part&project=${projectId}`);
-    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "support-org-dadui" });
-    assert.match(runtime.appNode.innerHTML, /正在编辑保障点“中继”的备件数量。/);
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: targetNodeId });
+    assert.ok(runtime.appNode.innerHTML.includes(`正在编辑保障点“${targetNodeName}”的备件数量。`));
     assert.match(runtime.appNode.innerHTML, new RegExp(`data-support-resource-key="${resourceKey}"[^>]*value="0"`));
 
     await runtime.change(
@@ -722,7 +726,7 @@ test("real Case-large relay spare edit survives save, display, and fresh runtime
   try {
     await rehydrated.click("[data-enter-workbench]", { projectId });
     await rehydrated.setHash(`feature=spare-planning-spare-part&project=${projectId}`);
-    await rehydrated.click("[data-select-support-org-node]", { selectSupportOrgNode: "support-org-dadui" });
+    await rehydrated.click("[data-select-support-org-node]", { selectSupportOrgNode: targetNodeId });
     assert.match(rehydrated.appNode.innerHTML, new RegExp(`data-support-resource-key="${resourceKey}"[^>]*value="13"`));
   } finally {
     rehydrated.restore();

@@ -21,6 +21,7 @@ TEMPLATE_PATHS = (
     REPO_ROOT / "exports" / "project-case-large.json",
     REPO_ROOT / "exports" / "project-minimum-001.json",
 )
+CASE_LARGE_SOURCE_PROJECT_ID = "project-j35-8aircraft-43day-availability-20260909"
 
 
 class ImportableProjectJsonTemplateTest(unittest.TestCase):
@@ -55,11 +56,45 @@ class ImportableProjectJsonTemplateTest(unittest.TestCase):
             self.assertEqual(first, generator.build_templates())
             self.assertEqual(generator.template_drift(), [])
         large = first[REPO_ROOT / "exports/project-case-large.json"]
-        names = {mission["id"]: mission.get("supportActivityName") for mission in large["basicMissions"]}
-        self.assertEqual(names, generator.CASE_LARGE_OPERATIONS_BINDINGS)
-        self.assertTrue(any(activity.get("activityName") == "J16保障方案A" for activity in large["supportActivities"]))
+        self.assertEqual(large["project_id"], "project-case-large")
+        self.assertEqual(large["scenarioId"], "scenario-case-large")
+        self.assertEqual(large["projectInfo"]["sourceProjectId"], CASE_LARGE_SOURCE_PROJECT_ID)
+        self.assertEqual(large["missionProfile"]["durationDays"], 43)
+        self.assertEqual(large["combatUnit"]["quantity"], 8)
+        self.assertEqual(len(large["combatUnit"]["members"]), 8)
+        self.assertEqual({member["model"] for member in large["combatUnit"]["members"]}, {"J35"})
+        self.assertEqual({mission["equipmentType"] for mission in large["basicMissions"]}, {"J35"})
+        self.assertTrue(any(resource.get("type") == "spare" for resource in large["supportResources"]))
 
-    def test_default_excel_download_and_upload_keep_explicit_case_plan_bindings(self) -> None:
+    def test_explicit_case_large_database_uses_fixed_source_project_and_keeps_minimum(self) -> None:
+        spec = importlib.util.spec_from_file_location("project_template_generator", REPO_ROOT / "scripts/export-project-json-templates.py")
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        expected_large = json.loads((REPO_ROOT / "exports/project-case-large.json").read_text(encoding="utf-8"))
+        source_large = json.loads(json.dumps(expected_large))
+        source_large["project_id"] = generator.CASE_LARGE_SOURCE_PROJECT_ID
+        source_large["scenarioId"] = generator.CASE_LARGE_SOURCE_SCENARIO_ID
+        source_large["projectInfo"].pop("sourceProjectId", None)
+        source_large["projectInfo"]["isTemplate"] = False
+        source_large["projectInfo"]["is_template"] = False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            database = Path(tmp) / "source.sqlite3"
+            connection = sqlite3.connect(database)
+            initialize_database(connection)
+            api = BackendApi(ContractRepository(connection), self.adapter, output_dir=Path(tmp) / "outputs")
+            self.assertEqual(api.save_project(source_large)["status"], "saved")
+            connection.close()
+
+            generated = generator.build_templates(case_large_database_path=database)
+
+        self.assertEqual(generated[REPO_ROOT / "exports/project-case-large.json"], expected_large)
+        self.assertEqual(
+            generated[REPO_ROOT / "exports/project-minimum-001.json"],
+            json.loads((REPO_ROOT / "exports/project-minimum-001.json").read_text(encoding="utf-8")),
+        )
+
+    def test_default_excel_download_and_upload_keep_explicit_j35_case_plan_bindings(self) -> None:
         download = self.api.project_excel_template()
         self.assertEqual(download["filename"], "Project标准模板-v1.xlsx")
         preview = self.api.preview_project_xlsx({"content_base64": base64.b64encode(download["body"]).decode(), "file_name": download["filename"]})
@@ -67,7 +102,7 @@ class ImportableProjectJsonTemplateTest(unittest.TestCase):
         self.assertEqual(preview["compile_status"], "compiled")
         gate = self.adapter.compile_scenario_with_gate(preview["project_json"], model_family="aircraft_support_v1")
         inputs = gate["scenario"]["simulation_inputs"]
-        expected = {"J16": "j16-service-0103", "J16D": "j16-service-0104"}
+        expected = {"J35": "j35-service-0103"}
         for composite in inputs["mission_profile"]["composite_tasks"]:
             for item in composite["taskItems"]:
                 self.assertEqual(item["operations_plan_group_id"], expected[item["equipmentType"]])
@@ -90,6 +125,11 @@ class ImportableProjectJsonTemplateTest(unittest.TestCase):
                     self.assertNotIn("mtbfHours", owner)
                 self.assertTrue(project["projectInfo"]["isTemplate"])
                 self.assertTrue(project["projectInfo"]["is_template"])
+                serialized = json.dumps(project, ensure_ascii=False)
+                for forbidden in ("C:\\Users\\", "备份数据库0923", "spare_mvp.sqlite3"):
+                    self.assertNotIn(forbidden, serialized)
+                for runtime_key in ("runs", "results", "artifacts", "sessions", "auditEvents"):
+                    self.assertNotIn(runtime_key, project)
                 self.assertTrue(project["products"])
                 self.assertTrue(project["supportActivityJobs"])
                 self.assertTrue(all("jobs" not in activity for activity in project["supportActivities"]))

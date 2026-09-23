@@ -47,14 +47,14 @@
 
 ### 可导入 Project JSON 模板
 
-`exports/project-case-large.json` 和 `exports/project-minimum-001.json` 是经 clean Project 导出器规范化的可导入模板。默认重新生成只读取这两份已提交 JSON，不依赖本地 SQLite。Case-large 的四个 J16 任务明确绑定“J16使用保障基本保障活动”，J16D 任务明确绑定“J16D使用保障基本保障活动”；其他方案保留供选择。MINIMUM-001 保持独立的 `project-template-minimum-001`，避免覆盖运行案例：
+`exports/project-case-large.json` 和 `exports/project-minimum-001.json` 是经 clean Project 导出器规范化的可导入模板。默认重新生成只读取这两份已提交 JSON，不依赖本地 SQLite。Case-large 保持稳定的 `project-case-large` / `scenario-case-large` 模板身份，当前业务内容来自 #406 审定的 J35 43 天使用可用度项目；MINIMUM-001 保持独立的 `project-template-minimum-001`，避免覆盖运行案例：
 
 ```bash
 .venv/bin/python scripts/export-project-json-templates.py --write
 .venv/bin/python scripts/export-project-json-templates.py --check
 ```
 
-如需从明确授权的本地 `project-carrier-day-night` Project 重建最小模板，可显式添加 `--database <path>`；该可选源只读打开。`--check` 对比规范化业务内容，忽略 JSON 属性排列。
+如需从明确授权的本地 `project-carrier-day-night` Project 重建最小模板，可显式添加 `--database <path>`；如需从审定来源重新导出大案例，可添加 `--case-large-database <path>`，脚本只读取固定来源项目 `project-j35-8aircraft-43day-availability-20260909`，并通过 `ContractRepository`、`ProjectJsonExporter` 和稳定模板身份输出。两个可选源都只读打开，发布构建不使用这些路径。`--check` 对比规范化业务内容，忽略 JSON 属性排列。
 
 两份文件必须通过 clean schema、后端保存/重读和 `aircraft_support_v1` compile gate；保障作业定义保存在顶层 `supportActivityJobs[]`，活动只保留 `activityCodes[]`、`predecessors` 和规范运行保障点引用。
 
