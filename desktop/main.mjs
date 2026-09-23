@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { exportDiagnostics } from "./diagnostics.mjs";
 import { assertPortableIntegrity, managedRuntimeUrls, portableResourcesReady, runtimePaths, runningState, startServices, stopServices } from "./service-manager.mjs";
+import { enforceDefaultBusinessZoom } from "./window-zoom.mjs";
 
 const desktopRoot = path.dirname(fileURLToPath(import.meta.url));
 let launcherWindow;
@@ -64,6 +65,7 @@ function createBusinessWindow(runtimeState) {
     backgroundColor: "#ffffff",
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
   });
+  enforceDefaultBusinessZoom(businessWindow.webContents);
   businessWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   businessWindow.webContents.on("will-navigate", (event, targetUrl) => {
     const target = new URL(targetUrl);

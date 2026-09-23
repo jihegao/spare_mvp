@@ -2,6 +2,7 @@ desktop/main.mjs
 desktop/preload.cjs
 desktop/service-manager.mjs
 desktop/diagnostics.mjs
+desktop/window-zoom.mjs
 desktop/scripts/patch-electron-builder-collector.mjs
 desktop/scripts/write-build-provenance.mjs
 desktop/renderer/app.mjs
