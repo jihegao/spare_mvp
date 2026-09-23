@@ -2835,8 +2835,9 @@ test("carry list result exposes satisfaction, zero-demand, life-limit, and aircr
     assert.match(detailPanel, /<th>机型<\/th><th>产品<\/th>/);
     assert.match(detailPanel, /<th>备件满足率<\/th><th>实际约束状态<\/th><th>备件利用率<\/th>/);
     assert.doesNotMatch(detailPanel, /规划满足率|实际满足率下限/);
-    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>17%<\/td><td>未满足（-73\.33 个百分点）<\/td><td>100\.00%<\/td>/);
-    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>满足（\+10\.00 个百分点）<\/td><td>11\.11%<\/td>/);
+    assert.match(detailPanel, /发动机控制模块 \/ EC-15[\s\S]*<td>17%<\/td><td>未满足（-73\.33%）<\/td><td>100\.00%<\/td>/);
+    assert.match(detailPanel, /雷达组件 \/ RD-35[\s\S]*<td>100%<\/td><td>满足（\+10\.00%）<\/td><td>11\.11%<\/td>/);
+    assert.doesNotMatch(detailPanel, /百分点/);
     assert.match(detailPanel, /隐藏需求数值为 0 的备件/);
     assert.match(detailPanel, /data-carry-hide-zero checked/);
     assert.match(detailPanel, /data-carry-aircraft-filter/);
@@ -2916,7 +2917,7 @@ test("carry list treats an actual satisfaction rate exactly at 0.9 as meeting th
   try {
     await runtime.click("[data-lite-mesa-analysis-action='run']");
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
-    assert.match(detailPanel, /边界备件 \/ B-90[\s\S]*<td>90%<\/td><td>满足（0\.00 个百分点）<\/td>/);
+    assert.match(detailPanel, /边界备件 \/ B-90[\s\S]*<td>90%<\/td><td>满足（0\.00%）<\/td>/);
   } finally {
     runtime.restore();
   }
@@ -3020,8 +3021,8 @@ test("carry list Excel export follows aircraft, zero-demand, and recommended-qua
     assert.equal(new Map(body.summary.map(([label, value]) => [label, value])).get("总体备件利用率"), "160.00%");
     assert.deepEqual(body.detail_sections[0].columns, ["机型", "产品", "建议携行数量", "实际使用数量", "携行总数量", "实际需求数量", "实际即时满足数量", "预计短缺数量", "备件满足率", "实际约束状态", "实际约束余量", "备件利用率", "有寿件", "起落寿命", "使用寿命(h)", "优先级"]);
     assert.deepEqual(body.detail_sections[0].rows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[9], row[10], row[11], row[12]]), [
-      ["J-15", "液压泵 / B-01", 2, 0, 0, "未满足", "-65.00 个百分点", "--", "否"],
-      ["J-15", "航电模块 / A-01", 4, 8, 4, "未满足", "-40.00 个百分点", "200.00%", "是"]
+      ["J-15", "液压泵 / B-01", 2, 0, 0, "未满足", "-65.00%", "--", "否"],
+      ["J-15", "航电模块 / A-01", 4, 8, 4, "未满足", "-40.00%", "200.00%", "是"]
     ]);
     assert.deepEqual(body.detail_sections[0].rows.map((row) => row[8]), ["25%", "50%"]);
     assert.doesNotMatch(JSON.stringify(body), /J-16|零需求件/);
@@ -8777,18 +8778,18 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(resultCards, /总样本[\s\S]*<strong>4<\/strong>/);
     assert.match(resultCards, /成功样本[\s\S]*<strong>3<\/strong>/);
     assert.match(resultCards, /失败样本[\s\S]*<strong>1<\/strong>/);
-    assert.match(resultCards, /任务可靠度[\s\S]*<strong>73\.00%<\/strong>/);
-    assert.match(resultCards, /使用可用度\(A\)[\s\S]*<strong>81\.00%<\/strong>/);
+    assert.match(resultCards, /任务可靠度[\s\S]*<strong>0\.7300<\/strong>/);
+    assert.match(resultCards, /使用可用度\(A\)[\s\S]*<strong>0\.8100<\/strong>/);
     assert.match(resultCards, /备件满足率[\s\S]*<strong>50\.00%<\/strong>/);
     assert.match(resultCards, /备件利用率[\s\S]*<strong>12\.50%<\/strong>/);
     assert.doesNotMatch(resultCards, /比例|架次\/机\/天|小时|项/);
     assert.match(metricTable, /<th>样本均值<\/th><th>样本方差（n-1）<\/th><th>单位<\/th><th>有效样本数<\/th>/);
     assert.doesNotMatch(metricTable, /跨样本总体比率/);
-    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>73\.00%<\/td>\s*<td>0\.0123<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>3<\/td>/);
-    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>81\.00%<\/td>\s*<td>0\.0064<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>任务可靠度<\/td>\s*<td>0\.7300<\/td>\s*<td>0\.0123<\/td>\s*<td>均值：0～1 小数；方差：比例²<\/td>\s*<td>3<\/td>/);
+    assert.match(metricTable, /<td>使用可用度\(A\)<\/td>\s*<td>0\.8100<\/td>\s*<td>0\.0064<\/td>\s*<td>均值：0～1 小数；方差：比例²<\/td>\s*<td>3<\/td>/);
     assert.match(metricTable, /<td>备件满足率<\/td>\s*<td>50\.00%<\/td>\s*<td>0\.5000<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>备件利用率<\/td>\s*<td>12\.50%<\/td>\s*<td>0\.0313<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>2<\/td>/);
-    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.00%<\/td>\s*<td>不可计算<\/td>\s*<td>均值：%；方差：比例²<\/td>\s*<td>2<\/td>/);
+    assert.match(metricTable, /<td>战备完好率<\/td>\s*<td>0\.0000<\/td>\s*<td>不可计算<\/td>\s*<td>均值：0～1 小数；方差：比例²<\/td>\s*<td>2<\/td>/);
     assert.match(metricTable, /<td>出动架次率<\/td>[\s\S]*?<td>架次\/机\/天<\/td>/);
     assert.match(metricTable, /<td>平均备件延误时间<\/td>[\s\S]*?<td>小时<\/td>/);
     assert.doesNotMatch(metricTable, /维修积压/);
@@ -8812,6 +8813,12 @@ test("Monte Carlo detail renders canonical moments, units, valid n, and mixed ex
     assert.match(exportRequest.export_date, /^\d{8}$/);
     assert.ok(exportRequest.summary.some((row) => row[0] === "备件满足率" && row[1] === "50.00%"));
     assert.ok(exportRequest.summary.some((row) => row[0] === "备件利用率" && row[1] === "12.50%"));
+    assert.deepEqual(exportRequest.summary.find((row) => row[0] === "任务可靠度"),
+      ["任务可靠度", "0.7300", "均值：0～1 小数；方差：比例²"]);
+    assert.deepEqual(exportRequest.summary.find((row) => row[0] === "使用可用度(A)"),
+      ["使用可用度(A)", "0.8100", "均值：0～1 小数；方差：比例²"]);
+    assert.deepEqual(exportRequest.summary.find((row) => row[0] === "战备完好率"),
+      ["战备完好率", "0.0000", "均值：0～1 小数；方差：比例²"]);
     assert.equal(exportRequest.summary.some((row) => String(row[0]).includes("跨样本总体")), false);
     assert.deepEqual(exportRequest.detail_sections[0].columns, ["业务指标", "样本均值", "样本方差（n-1）", "单位", "有效样本数"]);
     assert.equal(exportRequest.detail_sections[0].rows.some((row) => row[0] === "维修积压"), false);
