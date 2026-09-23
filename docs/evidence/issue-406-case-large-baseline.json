@@ -1,0 +1,109 @@
+{
+  "issue": 406,
+  "recorded_at": "2026-09-23T20:35:00+08:00",
+  "applicable_release": "V2.0 next release baseline",
+  "data_commit": "e9229044485a30e7c2018df5b286e8cf0b4dee6f",
+  "source": {
+    "host": "4700-4",
+    "database_role": "Issue #406 authorized one-time read-only source; not packaged and not required at runtime",
+    "online_backup_sha256": "07e5e364a11e32701362c6f74d9e85fd7deadfedae6f61540835a86644229af2",
+    "online_backup_quick_check": "ok",
+    "project_id": "project-j35-8aircraft-43day-availability-20260909",
+    "project_name": "J35-43天使用可用度验证",
+    "project_updated_at": "2026-09-23 03:00:20.376-f9ffc539",
+    "export_boundary": [
+      "ContractRepository.get_project",
+      "ProjectJsonExporter.export"
+    ],
+    "excluded_source_state": [
+      "audit_events",
+      "experiment_plans",
+      "modeling_imports",
+      "modeling_snapshots",
+      "sessions",
+      "system_configs",
+      "users"
+    ]
+  },
+  "templates": {
+    "minimum": {
+      "path": "exports/project-minimum-001.json",
+      "project_id": "project-template-minimum-001",
+      "sha256_before": "5d0135b1ac7929497f0c9964e6bafde5b1d8a926b4635d297480df63541635cd",
+      "sha256_after": "5d0135b1ac7929497f0c9964e6bafde5b1d8a926b4635d297480df63541635cd",
+      "unchanged": true
+    },
+    "case_large": {
+      "path": "exports/project-case-large.json",
+      "project_id": "project-case-large",
+      "scenario_id": "scenario-case-large",
+      "source_project_id": "project-j35-8aircraft-43day-availability-20260909",
+      "sha256": "dd37321d012145b3b1554f23f58bca4d70843bfd49cc22233d4969be2f247569",
+      "business_counts": {
+        "aircraft": 8,
+        "basic_missions": 1,
+        "composite_tasks": 1,
+        "periodic_task_profiles": 7,
+        "airports": 0,
+        "organization_tree_nodes": 3,
+        "support_nodes": 2,
+        "support_resources": 816,
+        "spare_resources": 806,
+        "products": 443,
+        "components": 424,
+        "support_activities": 13,
+        "support_activity_jobs": 66,
+        "transport_policies": 1,
+        "duration_days": 43
+      },
+      "machine_specific_path_check": "passed",
+      "runtime_history_key_check": "passed",
+      "project_schema_check": "passed",
+      "compiled_input_schema_check": "passed"
+    }
+  },
+  "fresh_candidate_database": {
+    "construction": "scripts/initialize-case-database.py using committed Project JSON only",
+    "source_database_accessed": false,
+    "sha256": "fbf4bd5dc60dacde334a4281a779575dcd35c78b79b2f324ff9323a58ed60ff3",
+    "quick_check": "ok",
+    "project_ids": [
+      "project-case-large",
+      "project-template-minimum-001"
+    ],
+    "note": "This is the exact locally verified candidate database, not a claim that a final installer or release was published."
+  },
+  "representative_simulations": {
+    "executor": "CompiledAircraftSupportModel through the current lite Mesa sample path",
+    "seed": 20260621,
+    "minimum": {
+      "completed": true,
+      "elapsed_seconds": 0.009,
+      "simulation_days": 1.0,
+      "aircraft_count": 1,
+      "planned_sorties": 4,
+      "completed_sorties": 3
+    },
+    "case_large": {
+      "completed": true,
+      "elapsed_seconds": 2.743,
+      "compiled_input_sha256": "28ac5d7ad9f85db60b9952e7a8687fc81fd0ff225608c9e4661e8dc0844f16e3",
+      "simulation_days": 43.0,
+      "aircraft_count": 8,
+      "planned_mission_waves": 104,
+      "planned_sorties": 208,
+      "launched_sorties": 176,
+      "completed_sorties": 168,
+      "successful_mission_waves": 80,
+      "spare_demand_total": 2,
+      "shortage_events": 2
+    }
+  },
+  "verification": {
+    "python_unittest_passed": 391,
+    "node_test_passed": 200,
+    "node_test_failed": 0,
+    "template_drift_check": "passed",
+    "git_diff_check": "passed"
+  }
+}
